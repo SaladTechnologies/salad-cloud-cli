@@ -1,0 +1,218 @@
+name: test
+
+# Offline suite on all three desktop platforms. The live suite
+# (internal/livetest, build tag "live") is deliberately not run here: it
+# needs an API key and spends money, and by decision it stays a manual
+# pre-tag step (see Settled decisions in AGENTS.md).
+
+# While the repository is private, the jobs run only when started by hand
+# (gh workflow run test.yml [--ref <branch>]): its Actions minutes are billed,
+# and the macOS and Windows jobs spend most of them. On a public repository
+# they are free, so every push and pull request runs. Run it before tagging;
+# a version tag runs release.yml, which vets and tests on Linux before it
+# builds, so running this as well on the tag would duplicate it.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.repository.private }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt
+        # One platform is enough, and Windows checkouts may carry CRLF.
+        if: runner.os == 'Linux'
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then echo "gofmt needed:"; echo "$unformatted"; exit 1; fi
+      - name: vet
+        run: go vet ./...
+      - name: test
+        run: go test ./...
+      - name: test with the race detector
+        # -race needs cgo, which the Windows runner lacks a compiler for.
+        if: runner.os != 'Windows'
+        run: go test -race ./...
+      - name: cross-build all targets
+        shell: bash
+        run: bash scripts/build.sh
+      - name: run the native binary
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            Linux)   bin=dist/linux-amd64/saladcloud ;;
+            macOS)   bin=dist/darwin-arm64/saladcloud; [ "$(uname -m)" = x86_64 ] && bin=dist/darwin-amd64/saladcloud ;;
+            Windows) bin=dist/windows-amd64/saladcloud.exe ;;
+          esac
+          "$bin" version
+          "$bin" config path
+
+  govulncheck:
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: govulncheck
+        # Pinned like every other tool CI runs; Dependabot cannot see a
+        # go run version, so bump it by hand.
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
+  # The install scripts, run on each platform against archives goreleaser
+  # packages from this commit and served locally, so they are tested before a
+  # release exists. A tampered archive must be rejected. install-scripts is
+  # skipped whenever package is.
+  package:
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: tag the commit v0.0.0-ci
+        # The local tag makes goreleaser stamp and name everything v0.0.0-ci,
+        # so the installed binary's version can be checked against its archive.
+        run: git tag v0.0.0-ci
+      - name: package with goreleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        env:
+          # A commit that also carries a real v* tag (main right after a
+          # release) would otherwise be packaged under that tag.
+          GORELEASER_CURRENT_TAG: v0.0.0-ci
+        with:
+          version: "~> v2"
+          args: release --clean --skip=publish,announce,validate,docker,sbom,homebrew,scoop,winget
+      - name: collect the release files
+        run: mkdir release && cp dist/*.tar.gz dist/*.zip dist/checksums.txt release/
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release
+          path: release/
+
+  install-scripts:
+    needs: package
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every archive install.sh can pick: linux amd64/arm64, darwin
+        # arm64/amd64; and Windows.
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release
+          path: release
+      - name: install.sh
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p tampered && cp release/* tampered/
+          for f in tampered/*_linux_*.tar.gz tampered/*_darwin_*.tar.gz; do printf corrupt >> "$f"; done
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory release >/dev/null 2>&1 &
+          python3 -m http.server 8766 --bind 127.0.0.1 --directory tampered >/dev/null 2>&1 &
+          for port in 8765 8766; do
+            for i in $(seq 30); do curl -fsS -o /dev/null "http://127.0.0.1:$port/checksums.txt" && break; sleep 1; done
+          done
+          export SALAD_CLI_VERSION=v0.0.0-ci SALAD_CLI_INSTALL_DIR="$RUNNER_TEMP/bin"
+          SALAD_CLI_DOWNLOAD_URL=http://127.0.0.1:8765 sh install.sh
+          test "$("$RUNNER_TEMP/bin/saladcloud" version -o json | jq -r .version)" = v0.0.0-ci
+          rm -rf "$RUNNER_TEMP/bin"
+          if SALAD_CLI_DOWNLOAD_URL=http://127.0.0.1:8766 sh install.sh; then
+            echo "install.sh accepted a tampered archive" >&2; exit 1
+          fi
+          test ! -e "$RUNNER_TEMP/bin/saladcloud"
+      - name: install.ps1 (PowerShell 7 and Windows PowerShell 5.1)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory tampered | Out-Null
+          Copy-Item release/* tampered/
+          Add-Content -NoNewline -Path (Get-Item tampered/*_windows_amd64.zip) -Value corrupt
+          Start-Process python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', 'release' -WindowStyle Hidden
+          Start-Process python -ArgumentList '-m', 'http.server', '8766', '--bind', '127.0.0.1', '--directory', 'tampered' -WindowStyle Hidden
+          foreach ($port in 8765, 8766) {
+            foreach ($i in 1..30) {
+              try { Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$port/checksums.txt" | Out-Null; break } catch { Start-Sleep 1 }
+            }
+          }
+          $env:SALAD_CLI_VERSION = 'v0.0.0-ci'
+          $env:SALAD_CLI_NO_MODIFY_PATH = '1'
+          foreach ($shell in 'pwsh', 'powershell') {
+            $env:SALAD_CLI_INSTALL_DIR = Join-Path $env:RUNNER_TEMP "bin-$shell"
+            $env:SALAD_CLI_DOWNLOAD_URL = 'http://127.0.0.1:8765'
+            & $shell -NoProfile -Command 'Get-Content -Raw install.ps1 | Invoke-Expression'
+            if ($LASTEXITCODE) { throw "install.ps1 failed under $shell" }
+            $v = (& (Join-Path $env:SALAD_CLI_INSTALL_DIR 'saladcloud.exe') version -o json | ConvertFrom-Json).version
+            if ($v -ne 'v0.0.0-ci') { throw "installed version under $shell is '$v'" }
+            # A second install over the first exercises the rename-then-copy path.
+            & $shell -NoProfile -Command 'Get-Content -Raw install.ps1 | Invoke-Expression'
+            if ($LASTEXITCODE) { throw "reinstalling with install.ps1 failed under $shell" }
+            Remove-Item -Recurse -Force $env:SALAD_CLI_INSTALL_DIR
+            $env:SALAD_CLI_DOWNLOAD_URL = 'http://127.0.0.1:8766'
+            & $shell -NoProfile -Command 'try { Get-Content -Raw install.ps1 | Invoke-Expression; exit 0 } catch { Write-Host $_; exit 3 }'
+            if ($LASTEXITCODE -ne 3) { throw "install.ps1 accepted a tampered archive under $shell" }
+            if (Test-Path (Join-Path $env:SALAD_CLI_INSTALL_DIR 'saladcloud.exe')) { throw "tampered binary installed under $shell" }
+          }
+          # The runner exits with the last native exit code, which is the
+          # tampered run's expected 3; every check above has passed by here.
+          exit 0
+
+  # The install scripts against this repository's latest published release,
+  # resolved the way a user's run resolves it. Skipped until a release exists,
+  # and while the repository is private (its assets need authentication, which
+  # the installers do not send).
+  install-latest-release:
+    if: ${{ !github.event.repository.private }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+      SALAD_CLI_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: find a published release
+        id: release
+        shell: bash
+        run: |
+          if gh release list --repo "$SALAD_CLI_REPO" --limit 1 | grep -q .; then echo "exists=true" >> "$GITHUB_OUTPUT"
+          else echo "::notice::no published release of $SALAD_CLI_REPO yet; skipping"; fi
+      - name: install.sh
+        if: steps.release.outputs.exists == 'true' && runner.os != 'Windows'
+        run: |
+          SALAD_CLI_INSTALL_DIR="$RUNNER_TEMP/bin" sh install.sh
+          "$RUNNER_TEMP/bin/saladcloud" version
+      - name: install.ps1
+        if: steps.release.outputs.exists == 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:SALAD_CLI_INSTALL_DIR = Join-Path $env:RUNNER_TEMP 'bin'
+          $env:SALAD_CLI_NO_MODIFY_PATH = '1'
+          Get-Content -Raw install.ps1 | Invoke-Expression
+          & (Join-Path $env:SALAD_CLI_INSTALL_DIR 'saladcloud.exe') version
