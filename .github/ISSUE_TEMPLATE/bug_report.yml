@@ -1,0 +1,68 @@
+name: Report a bug
+description: Let us know if the CLI did something wrong or surprising.
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Thanks for taking the time to fill out this bug report! The CLI is in beta, so reports like this one are
+        exactly what we need. **Never paste an API key** — check anything you copy from your shell, environment, or
+        config file first. If this issue is security related, please disclose it to us responsibly as a
+        [GitHub security advisory](https://github.com/SaladTechnologies/salad-cloud-cli/security/advisories/new).
+  - type: textarea
+    id: version
+    attributes:
+      label: Output of `saladcloud version`
+      description: Run `saladcloud version` and paste the output.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: What did you run?
+      description: The exact command, with any secrets removed. If you used `-f`, include the definition file too.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened?
+      description: >-
+        Paste the output. If there was an error, re-running with `-o json` gives the single-line
+        `{"error":{...}}` document, which is the most useful form. Include the exit code if it matters.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How can we reproduce it?
+      description: Please provide as succinct a reproduction as possible. Say whether it happens every time.
+    validations:
+      required: false
+  - type: input
+    id: environment
+    attributes:
+      label: Shell and environment
+      description: e.g. PowerShell 7 on Windows 11, bash in WSL, zsh on macOS, GitHub Actions, run by an AI agent
+    validations:
+      required: false
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `saladcloud doctor` (for setup or connectivity problems)
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else we should know?

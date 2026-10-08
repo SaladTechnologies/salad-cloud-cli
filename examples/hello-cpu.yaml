@@ -1,0 +1,29 @@
+# A minimal SaladCloud container group: busybox printing a log line every 5 seconds.
+#
+#   saladcloud container-groups create -f examples/hello-cpu.yaml
+#
+# Definition files are YAML or JSON with the SaladCloud API's field names.
+name: saladcloud-demo
+display_name: SaladCloud CLI Demo
+# Start the group as soon as it is created.
+autostart_policy: true
+# Restart the container whenever it exits, for any reason.
+restart_policy: always
+replicas: 1
+container:
+  # Official multi-arch image; linux/amd64 is what Salad nodes run.
+  image: docker.io/library/busybox:1.36
+  # "batch" is the lowest-priority (cheapest) scheduling tier.
+  priority: batch
+  resources:
+    cpu: 1        # vCPU cores
+    memory: 1024  # MB
+  # Override the image entrypoint with a loop that writes a log line every
+  # 5 seconds, so `saladcloud logs --follow` has a live stream to show.
+  # The loop is a single-quoted YAML scalar on purpose: in a plain scalar,
+  # " #" starts a YAML comment, which would truncate the command at "demo
+  # and leave sh with an unterminated quote (the container then crash-loops).
+  command:
+    - sh
+    - -c
+    - 'i=0; while true; do i=$((i+1)); echo "hello from the saladcloud demo #$i $(date -u)"; sleep 5; done'
