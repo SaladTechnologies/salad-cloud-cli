@@ -1,0 +1,55 @@
+package cli
+
+import (
+	"fmt"
+	"io"
+	"runtime"
+
+	"github.com/spf13/cobra"
+
+	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/version"
+)
+
+type versionInfo struct {
+	Version   string `json:"version"`
+	Commit    string `json:"commit"`
+	OS        string `json:"os"`
+	Arch      string `json:"arch"`
+	Stage     string `json:"stage"`      // "beta" until the CLI leaves beta
+	IssuesURL string `json:"issues_url"` // where to report bugs
+}
+
+func init() {
+	Register(&cobra.Command{
+		Use:   "version",
+		Short: "Print the SaladCloud CLI version",
+		Args:  cobra.NoArgs,
+		RunE:  runVersion,
+	})
+	// saladcloud --version is the version command, so -o json returns the
+	// same document. The root runs only for --version or with no command at
+	// all, which prints the help as before.
+	rootCmd.Flags().Bool("version", false, "print the version (same as saladcloud version)")
+	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if v, _ := cmd.Flags().GetBool("version"); v {
+			return runVersion(cmd, args)
+		}
+		return cmd.Help()
+	}
+}
+
+func runVersion(cmd *cobra.Command, args []string) error {
+	v := versionInfo{
+		Version:   version.Version,
+		Commit:    version.Commit,
+		OS:        runtime.GOOS,
+		Arch:      runtime.GOARCH,
+		Stage:     version.Stage,
+		IssuesURL: version.IssuesURL,
+	}
+	return wrapErr(output.Emit(v, func(w io.Writer) {
+		fmt.Fprintf(w, "saladcloud %s (%s) %s/%s\n", v.Version, v.Commit, v.OS, v.Arch)
+		fmt.Fprintf(w, "This is a %s release; report issues at %s\n", v.Stage, v.IssuesURL)
+	}))
+}

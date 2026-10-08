@@ -1,0 +1,167 @@
+# Release build for the SaladCloud CLI. release.yml runs it on a v* tag;
+# test.yml runs it against a local v0.0.0-ci tag to package the archives the
+# installer tests install from. Archive names, their top-level folder, and the
+# checksums.txt format are what install.sh and install.ps1 expect: keep them.
+#
+# Publishers that need a repository or registry of their own (Homebrew tap,
+# Scoop bucket, winget, the container image) only upload when their token is
+# set in the release workflow's environment; without it the step is skipped.
+version: 2
+project_name: saladcloud
+
+before:
+  hooks:
+    - sh scripts/completions.sh
+
+builds:
+  - id: saladcloud
+    main: ./cmd/saladcloud
+    binary: saladcloud
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - >-
+        -s -w
+        -X github.com/saladtechnologies/salad-cloud-cli/internal/version.Version={{ if .IsSnapshot }}{{ .Version }}{{ else }}{{ .Tag }}{{ end }}
+        -X github.com/saladtechnologies/salad-cloud-cli/internal/version.Commit={{ .ShortCommit }}
+    # Reproducible: the file times come from the commit, not the build clock.
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: saladcloud
+    name_template: "saladcloud_{{ .Tag }}_{{ .Os }}_{{ .Arch }}"
+    wrap_in_directory: true
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    # Every file's time and owner come from the commit, so a rebuild of the
+    # same tag produces byte-identical archives.
+    files:
+      - src: "README.md"
+        info:
+          owner: root
+          group: root
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+      - src: "LICENSE"
+        info:
+          owner: root
+          group: root
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+      - src: "CHANGELOG.md"
+        info:
+          owner: root
+          group: root
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+      - src: "docs/**"
+        info:
+          owner: root
+          group: root
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+      - src: "completions/*"
+        info:
+          owner: root
+          group: root
+          mode: 0644
+          mtime: "{{ .CommitDate }}"
+    builds_info:
+      owner: root
+      group: root
+      mode: 0755
+      mtime: "{{ .CommitDate }}"
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+sboms:
+  - id: archives
+    artifacts: archive
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  disable: true
+
+release:
+  # A tag with a "-" (v0.1.0-beta.1) is a pre-release.
+  prerelease: auto
+  name_template: "SaladCloud CLI {{ .Tag }}"
+  header: |
+    {{- if .Prerelease }}
+    **This is a beta release of the SaladCloud CLI: expect bugs and changes.** Please report bugs and anything surprising at https://github.com/{{ .Env.GITHUB_REPOSITORY }}/issues/new/choose and include the output of `saladcloud version`.
+    {{ end }}
+    Install or upgrade to this release with `curl -fsSL https://raw.githubusercontent.com/{{ .Env.GITHUB_REPOSITORY }}/{{ .Tag }}/install.sh | SALAD_CLI_VERSION={{ .Tag }} sh` on macOS and Linux, or `$env:SALAD_CLI_VERSION='{{ .Tag }}'; irm https://raw.githubusercontent.com/{{ .Env.GITHUB_REPOSITORY }}/{{ .Tag }}/install.ps1 | iex` on Windows; both verify it against `checksums.txt`. Without `SALAD_CLI_VERSION` they install the latest release. Every archive carries a build provenance attestation: `gh attestation verify <archive> --repo {{ .Env.GITHUB_REPOSITORY }}`. See [CHANGELOG.md](https://github.com/{{ .Env.GITHUB_REPOSITORY }}/blob/{{ .Tag }}/CHANGELOG.md) for what changed.
+
+homebrew_casks:
+  - name: saladcloud
+    homepage: https://github.com/SaladTechnologies/salad-cloud-cli
+    description: A thin command-line wrapper over the SaladCloud Public API
+    license: MIT
+    repository:
+      owner: SaladTechnologies
+      name: homebrew-tap
+      token: '{{ envOrDefault "HOMEBREW_TAP_TOKEN" "" }}'
+    skip_upload: '{{ if envOrDefault "HOMEBREW_TAP_TOKEN" "" }}false{{ else }}true{{ end }}'
+    completions:
+      bash: completions/saladcloud.bash
+      zsh: completions/saladcloud.zsh
+      fish: completions/saladcloud.fish
+
+scoops:
+  - name: saladcloud
+    homepage: https://github.com/SaladTechnologies/salad-cloud-cli
+    description: A thin command-line wrapper over the SaladCloud Public API
+    license: MIT
+    repository:
+      owner: SaladTechnologies
+      name: scoop-bucket
+      token: '{{ envOrDefault "SCOOP_BUCKET_TOKEN" "" }}'
+    skip_upload: '{{ if envOrDefault "SCOOP_BUCKET_TOKEN" "" }}false{{ else }}true{{ end }}'
+
+winget:
+  - name: saladcloud
+    publisher: Salad Technologies
+    package_identifier: SaladTechnologies.SaladCloudCLI
+    homepage: https://github.com/SaladTechnologies/salad-cloud-cli
+    short_description: A thin command-line wrapper over the SaladCloud Public API
+    license: MIT
+    repository:
+      owner: SaladTechnologies
+      name: winget-pkgs
+      branch: "saladcloud-{{ .Version }}"
+      token: '{{ envOrDefault "WINGET_TOKEN" "" }}'
+      pull_request:
+        enabled: true
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master
+    skip_upload: '{{ if envOrDefault "WINGET_TOKEN" "" }}false{{ else }}true{{ end }}'
+
+dockers_v2:
+  - id: saladcloud
+    images:
+      - ghcr.io/saladtechnologies/saladcloud
+    tags:
+      - "{{ .Tag }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      org.opencontainers.image.source: https://github.com/SaladTechnologies/salad-cloud-cli
+      org.opencontainers.image.version: "{{ .Tag }}"
+      org.opencontainers.image.licenses: MIT

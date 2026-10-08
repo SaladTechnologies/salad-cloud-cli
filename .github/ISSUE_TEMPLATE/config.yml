@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://github.com/SaladTechnologies/salad-cloud-cli/discussions
+    about: Please use GitHub discussions for general chat and community-provided support.
+  - name: Account, billing, or workload support
+    url: https://docs.salad.com/support/contact
+    about: For problems with your SaladCloud account rather than the CLI, contact SaladCloud support (cloud@salad.com).

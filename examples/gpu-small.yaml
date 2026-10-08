@@ -1,0 +1,30 @@
+# A small GPU container group on the most common card on the network.
+#
+#   saladcloud container-groups create -f examples/gpu-small.yaml
+#
+# Definition files are YAML or JSON with the SaladCloud API's field names.
+name: gpu-demo
+display_name: SaladCloud GPU Demo
+autostart_policy: true
+restart_policy: always
+replicas: 1
+container:
+  # Official NVIDIA CUDA base image — swap in your GPU image.
+  image: docker.io/nvidia/cuda:12.4.1-base-ubuntu22.04
+  # "batch" is the lowest-priority (cheapest) scheduling tier.
+  priority: batch
+  resources:
+    cpu: 2
+    memory: 4096 # MB
+    gpu_classes:
+      # RTX 3060 (12 GB) — the most common card on the network; find
+      # ids/names with `saladcloud gpus list`.
+      - f51baccc-dc95-40fb-a5d1-6d0ee0db31d2
+  # Log the GPU every 30 seconds so there is something to see in
+  # `saladcloud logs --follow`.
+  command:
+    - sh
+    - -c
+    - while true; do nvidia-smi; sleep 30; done
+# Tip: `saladcloud container-groups create --gpu "RTX 3060 (12 GB)"` resolves GPU class names
+# to these ids, so you rarely have to hand-write them.

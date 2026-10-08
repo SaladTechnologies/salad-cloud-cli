@@ -1,0 +1,70 @@
+version: "2"
+
+run:
+  # The live suite builds only under this tag; lint it with the rest.
+  build-tags:
+    - live
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      extra:
+        group-params: true
+      module-path: github.com/saladtechnologies/salad-cloud-cli
+    goimports:
+      local-prefixes:
+        - github.com/saladtechnologies/salad-cloud-cli
+
+linters:
+  # errcheck, govet, ineffassign, staticcheck and unused, plus checks that find
+  # bugs rather than enforce a style.
+  default: standard
+  enable:
+    - bodyclose
+    - gocritic
+    - misspell
+    - nilerr
+    - nolintlint
+    - unconvert
+    - usestdlibvars
+    - wastedassign
+  settings:
+    errcheck:
+      exclude-functions:
+        # Setters that change the error in place and return it for chaining.
+        - (*github.com/saladtechnologies/salad-cloud-cli/internal/clierr.Error).WithHint
+        - (*github.com/saladtechnologies/salad-cloud-cli/internal/clierr.Error).WithStatus
+    misspell:
+      # No locale: the API spells cancelled with two l's, and that is in the contract.
+      ignore-rules:
+        - enviroment # the did-you-mean example in internal/input; cspell:ignore enviroment
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+    staticcheck:
+      checks:
+        # golangci-lint's defaults...
+        - all
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+        # ...and not De Morgan: "not one of these allowed characters" reads
+        # better negated whole.
+        - -QF1001
+  exclusions:
+    presets:
+      # Unchecked Close, os.Remove and fmt.Fprint*: cleanup on a path that is
+      # already failing, and writes to the terminal.
+      - std-error-handling
+    rules:
+      # Test servers and fixtures ignore write and decode errors; a failure
+      # there shows up as a wrong result in the test itself.
+      - path: _test\.go
+        linters:
+          - errcheck

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://raw.githubusercontent.com/streetsidesoftware/cspell/main/cspell.schema.json",
+  "version": "0.2",
+  "language": "en,en-US",
+  "dictionaries": ["salad-cloud-cli", "softwareTerms", "companies", "filetypes", "bash", "golang", "powershell"],
+  "dictionaryDefinitions": [
+    { "name": "salad-cloud-cli", "path": "./dictionaries/salad-cloud-cli.txt", "addWords": true },
+    { "name": "test-fixtures", "path": "./dictionaries/test-fixtures.txt", "addWords": true }
+  ],
+  "ignorePaths": ["dictionaries/**", ".git/**", ".gitignore", "go.mod", "go.sum", "**/testdata/**"],
+  "languageSettings": [
+    {
+      "languageId": "go",
+      "includeRegExpList": ["CStyleComment", "string"],
+      "ignoreRegExpList": [
+        "import\\s*\\((.|[\\r\\n])*?\\)",
+        "import\\s*.*\".*?\"",
+        "//\\s*go:generate.*",
+        "//\\s*nolint:.*",
+        "%[-+# 0-9.*]*[a-zA-Z]"
+      ]
+    }
+  ],
+  "overrides": [{ "filename": "**/*_test.go", "dictionaries": ["test-fixtures"] }],
+  "useGitignore": true
+}

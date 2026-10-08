@@ -1,0 +1,5 @@
+# Hand-wrapped at 120 columns with compact tables. Prettier pads every table
+# column to its widest cell (some rows here would reach 600 columns) and only
+# leaves tables compact under proseWrap "never", which would unwrap the prose.
+AGENTS.md
+docs/

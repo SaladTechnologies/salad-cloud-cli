@@ -1,0 +1,42 @@
+# Test fixtures: deliberate misspellings (did-you-mean and unknown-input
+# cases), fake key suffixes, non-English and generated strings. Checked only
+# in *_test.go, so a real typo elsewhere is still caught.
+abcé
+Agenerated
+baccc
+bogusverb
+CRDT
+cret
+EFGH
+enviroment
+envproj
+frobnicate
+Größe
+héllo
+hintless
+loggs
+lossier
+memroy
+Merge's
+myregistry
+NOAC
+NOEQUALS
+noextension
+nosuch
+ojson
+pasteable
+qmiss
+qwen
+replicaz
+resv
+safetensors
+sched
+shortkey
+stagng
+unconfident
+waitt
+webhok
+worktrees
+WXYZ
+xbfabc
+ключ

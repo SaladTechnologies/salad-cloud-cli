@@ -1,0 +1,46 @@
+# Scheduled scaling: scale a container group on a cron timetable.
+#
+#   saladcloud container-groups create -f examples/scheduled-scaling.yaml
+#
+# This group runs 2 replicas 9am-5pm on weekdays and 0 outside those hours
+# (cron schedules fire in UTC).
+#
+# GOTCHA: unlike their snake_case neighbors, the two scheduled-scaling
+# fields are KEBAB-case in the API — `scheduled-scaling-enabled` and
+# `scaling-actions`. The CLI rejects a snake_case spelling such as
+# `scaling_actions` as an unknown field and suggests the right one.
+# `saladcloud container-groups get <name>` shows a "Scheduled scaling" row once it landed.
+name: scheduled-demo
+display_name: Scheduled Scaling Demo
+autostart_policy: true
+restart_policy: always
+# The baseline count; the actions below override it whenever they fire.
+replicas: 2
+# Master switch for the schedule. With this false (or absent), any
+# scaling-actions are kept but do nothing.
+scheduled-scaling-enabled: true
+# Each action sets the replica count (0-500) when its 5-field cron
+# schedule (minute hour day-of-month month day-of-week) fires.
+scaling-actions:
+  - replicas: 2
+    schedule: "0 9 * * 1-5" # weekdays 09:00 — scale up to 2
+  - replicas: 0
+    schedule: "0 17 * * 1-5" # weekdays 17:00 — scale to zero
+container:
+  # Official multi-arch image; linux/amd64 is what Salad nodes run.
+  image: docker.io/library/busybox:1.36
+  # "batch" is the lowest-priority (cheapest) scheduling tier.
+  priority: batch
+  resources:
+    cpu: 1 # vCPU cores
+    memory: 1024 # MB
+  command:
+    - sh
+    - -c
+    - while true; do date -u; sleep 5; done
+# To clear the actions later:
+#
+#   echo '{"scaling-actions": []}' | saladcloud container-groups update scheduled-demo -f -
+#
+# The CLI sends your patch document verbatim as a JSON merge patch, so the
+# explicit empty array clears the field on the server.
