@@ -424,7 +424,7 @@ func findUnrequestedChanges(patch []byte, before, after *shared.ContainerGroup) 
 	// but when the field was previously absent the trees diverge at the
 	// object itself — without the ancestors marked, deliberately adding a
 	// probe would be reported as an unrequested side effect.
-	named := map[string]bool{}
+	named := make(map[string]bool)
 	var leaves []patchLeaf
 	collectLeaves(patchTree, "", &leaves)
 	for _, l := range leaves {
@@ -450,7 +450,7 @@ func collectChanges(beforeVal, afterVal any, path string, named map[string]bool,
 	bObj, bOK := beforeVal.(map[string]any)
 	aObj, aOK := afterVal.(map[string]any)
 	if bOK && aOK {
-		keys := map[string]bool{}
+		keys := make(map[string]bool)
 		for k := range bObj {
 			keys[k] = true
 		}
@@ -526,7 +526,7 @@ func warnUnrequestedChanges(w io.Writer, changes []unrequestedChange) {
 		if extra > 0 {
 			fmt.Fprintf(w, "warning:   and %d more\n", extra)
 		}
-		seen := map[string]bool{}
+		seen := make(map[string]bool)
 		for _, c := range shown {
 			if hint, at := remediationFor(c.Path); hint != "" && !seen[at] {
 				seen[at] = true
@@ -613,7 +613,7 @@ func findUnappliedCreateFields(request []byte, created *shared.ContainerGroup) [
 	collectLeaves(reqTree, "", &leaves)
 
 	var out []ignoredField
-	dropped := map[string]bool{}
+	dropped := make(map[string]bool)
 	for _, leaf := range leaves {
 		got, ok := lookupPath(createdTree, leaf.Path)
 		if !ok {
@@ -651,7 +651,7 @@ func findUnappliedCreateFields(request []byte, created *shared.ContainerGroup) [
 // responseFields are the top-level keys a container group response can
 // carry, by the SDK's json tags.
 var responseFields = func() map[string]bool {
-	fields := map[string]bool{}
+	fields := make(map[string]bool)
 	t := reflect.TypeFor[shared.ContainerGroup]()
 	for i := range t.NumField() {
 		if name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ","); name != "" && name != "-" {

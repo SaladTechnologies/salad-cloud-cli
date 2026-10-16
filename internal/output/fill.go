@@ -109,7 +109,7 @@ func decodeOrdered(dec *json.Decoder) (any, error) {
 	if t, ok := tok.(json.Delim); ok {
 		switch t {
 		case '{':
-			o := &object{vals: map[string]any{}}
+			o := &object{vals: make(map[string]any)}
 			for dec.More() {
 				kt, err := dec.Token()
 				if err != nil {
@@ -256,7 +256,7 @@ func fillStruct(o *object, v reflect.Value, mode fillMode) {
 	walk(v, v.Type(), 0)
 
 	// As in encoding/json, the shallowest field of a name wins.
-	best := map[string]field{}
+	best := make(map[string]field)
 	for _, f := range fields {
 		if b, ok := best[f.name]; !ok || f.depth < b.depth {
 			best[f.name] = f
@@ -283,7 +283,7 @@ func fillStruct(o *object, v reflect.Value, mode fillMode) {
 		}
 		keys = append(keys, f.name)
 	}
-	claimed := map[string]bool{}
+	claimed := make(map[string]bool)
 	for _, k := range keys {
 		claimed[k] = true
 	}
@@ -344,7 +344,7 @@ func setEmpty(v reflect.Value) (any, bool) {
 		if v.IsNil() || v.Len() > 0 {
 			return nil, false
 		}
-		return &object{vals: map[string]any{}}, true
+		return &object{vals: make(map[string]any)}, true
 	}
 	return nil, false
 }
@@ -367,7 +367,7 @@ func filler(t reflect.Type) any {
 	case reflect.Array:
 		return []any{}
 	case reflect.Map:
-		return &object{vals: map[string]any{}}
+		return &object{vals: make(map[string]any)}
 	}
 	return nil
 }

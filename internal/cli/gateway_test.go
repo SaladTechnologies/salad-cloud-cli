@@ -58,7 +58,9 @@ func TestUsageSummary(t *testing.T) {
 	if got := usageSummary(nil); got != "no usage reported" {
 		t.Errorf("nil usage = %q", got)
 	}
-	got := usageSummary(map[string]any{"prompt_tokens": 12.0, "completion_tokens": 3.0, "details": map[string]any{}})
+	got := usageSummary(
+		map[string]any{"prompt_tokens": 12.0, "completion_tokens": 3.0, "details": make(map[string]any)},
+	)
 	if got != "completion tokens 3, prompt tokens 12" {
 		t.Errorf("usage = %q", got)
 	}

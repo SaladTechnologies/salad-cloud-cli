@@ -114,7 +114,7 @@ func TestUnknownFieldList(t *testing.T) {
 	if len(unknowns) != 3 {
 		t.Fatalf("got %d unknowns, want 3: %+v", len(unknowns), unknowns)
 	}
-	byDesc := map[string]bool{} // desc fragment -> InArray
+	byDesc := make(map[string]bool) // desc fragment -> InArray
 	for _, u := range unknowns {
 		switch {
 		case strings.Contains(u.Desc, "top_unknown"):

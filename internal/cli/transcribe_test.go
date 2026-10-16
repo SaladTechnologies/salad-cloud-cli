@@ -109,7 +109,7 @@ func TestTranscribeFlagsAreTheEndpointFields(t *testing.T) {
 		t.Errorf("fields with url: transcribe %d, transcription-lite %d; want 20 and 9",
 			len(transcribeFields)+1, len(transcriptionLiteFields)+1)
 	}
-	full := map[string]inputField{}
+	full := make(map[string]inputField)
 	for _, f := range transcribeFields {
 		full[f.name] = f
 		if f.flag() != strings.ReplaceAll(f.name, "_", "-") {
@@ -253,7 +253,7 @@ func TestHumanSize(t *testing.T) {
 func TestListFieldsHelpNamesOnlyTheEndpointsFlags(t *testing.T) {
 	for _, ep := range transcribeEndpoints {
 		help := listFieldsHelp(ep.fields)
-		isList := map[string]bool{}
+		isList := make(map[string]bool)
 		for _, f := range ep.fields {
 			isList["--"+f.flag()] = f.kind == fieldList
 		}

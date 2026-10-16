@@ -29,7 +29,7 @@ var omitemptyAllowed = map[string]string{
 func TestNoOmitemptyInCLIStructs(t *testing.T) {
 	fset := token.NewFileSet()
 	checked := 0
-	used := map[string]bool{}
+	used := make(map[string]bool)
 	err := filepath.WalkDir("..", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err

@@ -63,7 +63,7 @@ func setPath(tree map[string]any, path string, v any) {
 	for _, seg := range segs[:len(segs)-1] {
 		next, ok := cur[seg].(map[string]any)
 		if !ok {
-			next = map[string]any{}
+			next = make(map[string]any)
 			cur[seg] = next
 		}
 		cur = next

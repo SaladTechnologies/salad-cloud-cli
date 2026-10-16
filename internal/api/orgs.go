@@ -52,7 +52,7 @@ const (
 func (c *Client) ListOrganizations(ctx context.Context) (*OrganizationList, *clierr.Error) {
 	all := OrganizationList{Items: []Organization{}}
 	token := ""
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for page := range maxOrgPages {
 		q := url.Values{"page_size": {strconv.Itoa(orgPageSize)}}
 		if token != "" {

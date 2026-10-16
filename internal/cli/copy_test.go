@@ -42,8 +42,8 @@ func TestCopyRules(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		formats := map[*ast.BasicLit]string{} // literal -> its role
-		patterns := map[*ast.BasicLit]bool{}  // regular expressions
+		formats := make(map[*ast.BasicLit]string) // literal -> its role
+		patterns := make(map[*ast.BasicLit]bool)  // regular expressions
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {

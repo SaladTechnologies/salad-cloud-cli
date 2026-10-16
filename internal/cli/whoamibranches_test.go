@@ -22,7 +22,7 @@ func whoamiTable(apiKey, org, project, gateway, auth, orgs string) string {
 
 func TestWhoamiBranches(t *testing.T) {
 	K := testAPIKey
-	twelve := map[string][]string{}
+	twelve := make(map[string][]string)
 	for i := 1; i <= 12; i++ {
 		twelve[fmt.Sprintf("org-%02d", i)] = []string{"default"}
 	}

@@ -183,7 +183,7 @@ func TestMarshalRequestKeepsSetEmpties(t *testing.T) {
 	v := fillOuter{
 		Name:   &s,
 		List:   []fillInner{{Tags: []int{}}, {ID: &s}},
-		Labels: map[string]string{},
+		Labels: make(map[string]string),
 		Nested: &fillInner{Tags: []int{}},
 		ByKey:  map[string]fillInner{"k": {Tags: []int{}}},
 		Bytes:  []byte{},

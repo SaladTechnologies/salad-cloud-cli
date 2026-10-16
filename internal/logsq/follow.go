@@ -109,7 +109,7 @@ func (f *Follower) Run(
 		clock = RealClock{}
 	}
 
-	f.seen = map[string]time.Time{}
+	f.seen = make(map[string]time.Time)
 	sinceU := since.UTC()
 	var maxSeen time.Time
 	hasSeen := false

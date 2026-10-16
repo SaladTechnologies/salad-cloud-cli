@@ -26,7 +26,7 @@ func newestPages[T any](
 	fetch func(page int) ([]T, *clierr.Error),
 	pageSize, want int,
 ) (items []T, more bool, cerr *clierr.Error) {
-	pages := map[int][]T{}
+	pages := make(map[int][]T)
 	get := func(p int) ([]T, *clierr.Error) {
 		if v, ok := pages[p]; ok {
 			return v, nil

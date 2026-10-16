@@ -156,7 +156,7 @@ func buildUpdatePatch(
 	u updateFlags,
 	currentEnv map[string]*string,
 ) (wire, intent json.RawMessage, cerr *clierr.Error) {
-	doc := map[string]any{}
+	doc := make(map[string]any)
 	if len(fileRaw) > 0 {
 		dec := json.NewDecoder(bytes.NewReader(fileRaw))
 		dec.UseNumber() // keep the file's numbers exactly as written
@@ -224,7 +224,7 @@ func buildUpdatePatch(
 	}
 	var removed []string // variables the file set to null, under -e
 	if len(u.Env) > 0 {
-		merged := map[string]any{}
+		merged := make(map[string]any)
 		for k, v := range currentEnv {
 			if v != nil {
 				merged[k] = *v

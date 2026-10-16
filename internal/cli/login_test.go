@@ -69,7 +69,7 @@ func loginCases() []loginCase {
 	}
 	cancelAtOrg := newFakeAPI()
 	cancelAtOrg.cancelOn = "/quotas"
-	noOrgs := withOrgs(map[string][]string{})
+	noOrgs := withOrgs(make(map[string][]string))
 	empty := "saladcloud: error: %s\nhint: %s\n"
 	errLine := func(msg, hint string) string { return fmt.Sprintf(empty, msg, hint) }
 	noHint := func(msg string) string { return "saladcloud: error: " + msg + "\n" }

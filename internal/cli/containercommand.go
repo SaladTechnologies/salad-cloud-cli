@@ -135,7 +135,7 @@ var saladcloudOnlyFlags = []string{
 // commandFlagNames is every spelling (--name and, where it has one, -x) of
 // the saladcloudOnlyFlags cmd actually has, its own or inherited.
 func commandFlagNames(cmd *cobra.Command) map[string]bool {
-	names := map[string]bool{}
+	names := make(map[string]bool)
 	for _, n := range saladcloudOnlyFlags {
 		f := cmd.Flags().Lookup(n)
 		if f == nil {

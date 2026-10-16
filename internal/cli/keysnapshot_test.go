@@ -143,7 +143,7 @@ func TestJSONKeySnapshot(t *testing.T) {
 	b.WriteString("# regenerate with -update-keys, and record any change in CHANGELOG.md.\n")
 	for _, root := range keySnapshotRoots {
 		var paths []string
-		keyPaths(reflect.TypeOf(root.v), "", map[reflect.Type]bool{}, &paths)
+		keyPaths(reflect.TypeOf(root.v), "", make(map[reflect.Type]bool), &paths)
 		sort.Strings(paths)
 		fmt.Fprintf(&b, "\n[%s]\n", root.name)
 		for _, p := range paths {
@@ -175,7 +175,7 @@ func TestJSONKeySnapshot(t *testing.T) {
 // lineDiff lists the lines only one side has.
 func lineDiff(want, got string) string {
 	in := func(s string) map[string]bool {
-		m := map[string]bool{}
+		m := make(map[string]bool)
 		for l := range strings.SplitSeq(s, "\n") {
 			m[l] = true
 		}

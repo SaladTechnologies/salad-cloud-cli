@@ -36,7 +36,7 @@ var groupVerbs = []string{
 
 // TestContainerGroupVerbsLiveUnderTheNoun pins the command tree.
 func TestContainerGroupVerbsLiveUnderTheNoun(t *testing.T) {
-	top := map[string]bool{}
+	top := make(map[string]bool)
 	for _, c := range rootCmd.Commands() {
 		top[c.Name()] = true
 	}

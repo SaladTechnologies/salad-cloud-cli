@@ -387,7 +387,7 @@ func TestHoldRuleIsANote(t *testing.T) {
 	if len(changes) != 2 {
 		t.Fatalf("changes = %v, want 2", changes)
 	}
-	byPath := map[string]unrequestedChange{}
+	byPath := make(map[string]unrequestedChange)
 	for _, c := range changes {
 		byPath[c.Path] = c
 	}

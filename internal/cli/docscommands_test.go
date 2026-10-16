@@ -65,7 +65,7 @@ func documentedLeaves() []*cobra.Command {
 // rowWords splits a cell's command spans into words, alternatives
 // ("get/restart") into separate words.
 func rowWords(cell string) map[string]bool {
-	words := map[string]bool{}
+	words := make(map[string]bool)
 	for _, m := range backtickSpan.FindAllStringSubmatch(cell, -1) {
 		for f := range strings.FieldsSeq(m[1]) {
 			for w := range strings.SplitSeq(f, "/") {
@@ -141,7 +141,7 @@ func TestEveryDocumentedCommandExists(t *testing.T) {
 
 func TestAliasTableMatchesTheTree(t *testing.T) {
 	_, aliasRows := commandDocRows(t)
-	documented := map[string][]string{}
+	documented := make(map[string][]string)
 	for _, row := range aliasRows {
 		var aliases []string
 		for _, m := range backtickSpan.FindAllStringSubmatch(row[1], -1) {
@@ -152,7 +152,7 @@ func TestAliasTableMatchesTheTree(t *testing.T) {
 			documented[m[1]] = aliases
 		}
 	}
-	actual := map[string][]string{}
+	actual := make(map[string][]string)
 	walkCommands(rootCmd, func(c *cobra.Command) {
 		if len(c.Aliases) == 0 || c.Hidden {
 			return

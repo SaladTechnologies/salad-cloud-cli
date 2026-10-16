@@ -28,7 +28,7 @@ var keyEnv = map[string]string{"SALAD_API_KEY": testAPIKey, "SALAD_ORGANIZATION"
 
 // with returns env plus the given name/value pairs.
 func with(env map[string]string, kv ...string) map[string]string {
-	out := map[string]string{}
+	out := make(map[string]string)
 	maps.Copy(out, env)
 	for i := 0; i+1 < len(kv); i += 2 {
 		out[kv[i]] = kv[i+1]
@@ -530,7 +530,7 @@ func TestConfigWritesNameOverridingVariables(t *testing.T) {
 						t.Errorf("env_overrides = %v, want %v", got, want)
 					}
 				}
-				named, firsts := map[string]bool{}, 0
+				named, firsts := make(map[string]bool), 0
 				for _, l := range lines(o.stderr) {
 					if strings.HasPrefix(l, "warning: commands ") {
 						firsts++ // the warning's first line, with one variable or several

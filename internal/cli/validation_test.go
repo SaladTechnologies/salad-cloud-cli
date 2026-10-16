@@ -101,7 +101,7 @@ func validationSites(t *testing.T, root string) []validationSite {
 		if err != nil {
 			return err
 		}
-		hints := map[*ast.CallExpr]string{} // a New call -> the hint chained onto it
+		hints := make(map[*ast.CallExpr]string) // a New call -> the hint chained onto it
 		ast.Inspect(f, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {

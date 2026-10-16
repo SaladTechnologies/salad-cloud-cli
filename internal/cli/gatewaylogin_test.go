@@ -49,7 +49,7 @@ func TestGatewayLoginBranches(t *testing.T) {
 		"ok":                        true,
 	}
 	with := func(m map[string]any, kv ...any) map[string]any {
-		out := map[string]any{}
+		out := make(map[string]any)
 		maps.Copy(out, m)
 		for i := 0; i+1 < len(kv); i += 2 {
 			out[kv[i].(string)] = kv[i+1]

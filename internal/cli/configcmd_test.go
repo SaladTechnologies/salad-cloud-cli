@@ -96,7 +96,7 @@ func TestConfigListEmitsItems(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &doc); err != nil || len(doc.Items) != 4 {
 		t.Fatalf("config list -o json = %s (%v), want four entries in items", out, err)
 	}
-	got := map[string]string{}
+	got := make(map[string]string)
 	for _, it := range doc.Items {
 		if it.Value != nil {
 			got[it.Key] = *it.Value

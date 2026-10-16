@@ -31,7 +31,7 @@ const (
 
 func annotate(c *cobra.Command, key, value string) {
 	if c.Annotations == nil {
-		c.Annotations = map[string]string{}
+		c.Annotations = make(map[string]string)
 	}
 	c.Annotations[key] = value
 }

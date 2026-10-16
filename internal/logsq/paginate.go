@@ -81,7 +81,7 @@ func FetchWindow(
 ) *clierr.Error {
 	cur := start.UTC().Truncate(time.Millisecond)
 	endStr := CeilRequestTime(end)
-	boundary := map[string]time.Time{} // already-emitted entries with parsed Time >= cur
+	boundary := make(map[string]time.Time) // already-emitted entries with parsed Time >= cur
 	for {
 		page, cerr := fetch(ctx, query, FormatRequestTime(cur), endStr, pageSize)
 		if cerr != nil {
@@ -111,7 +111,7 @@ func FetchWindow(
 		// (starting at the floored millisecond) can re-return: this page's
 		// entries at or after next, plus previous carries still at or after
 		// next (relevant when the window fails to advance).
-		newBoundary := map[string]time.Time{}
+		newBoundary := make(map[string]time.Time)
 		for i := range page.Items {
 			t, perr := time.Parse(time.RFC3339Nano, page.Items[i].Time)
 			if perr != nil {

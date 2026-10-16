@@ -69,7 +69,7 @@ func newFakeAPI() *fakeAPI {
 		keys:        map[string]bool{testAPIKey: true},
 		orgs:        map[string][]string{"my-org": {"default", "staging"}, "acme-prod": {"default"}},
 		display:     map[string]string{"my-org": "My Org", "acme-prod": "Acme Production"},
-		status:      map[string]int{},
+		status:      make(map[string]int),
 		gatewayKeys: map[string]int{testGatewayKey: http.StatusOK},
 	}
 }

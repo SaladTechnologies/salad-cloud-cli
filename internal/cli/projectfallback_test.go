@@ -104,7 +104,7 @@ func TestAssumedProjectMissing(t *testing.T) {
 		},
 		{
 			"get, the organization is not visible",
-			map[string]string{},
+			make(map[string]string),
 			[]string{"container-groups", "get", "my-app"},
 			clierr.CodeNotFound, `organization "my-org" (from SALAD_ORGANIZATION) not found`,
 		},

@@ -23,7 +23,7 @@ func declared(t *testing.T, prefix string) map[string]string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := map[string]string{}
+	out := make(map[string]string)
 	for _, d := range f.Decls {
 		g, ok := d.(*ast.GenDecl)
 		if !ok || g.Tok != token.CONST {
@@ -55,7 +55,7 @@ func TestKindsListsEveryConstant(t *testing.T) {
 	if len(Kinds) != len(consts) {
 		t.Errorf("Kinds has %d entries, clierr.go declares %d Kind constants", len(Kinds), len(consts))
 	}
-	seen := map[Kind]bool{}
+	seen := make(map[Kind]bool)
 	for _, k := range Kinds {
 		if seen[k] {
 			t.Errorf("Kinds lists %q twice", k)
@@ -224,8 +224,8 @@ func checkGuide(t *testing.T, kindConsts map[string]string, pairs []pair) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	table := map[string]string{} // kind value -> exit code cell
-	inKinds := false             // only the Error kinds section: other tables name other things
+	table := make(map[string]string) // kind value -> exit code cell
+	inKinds := false                 // only the Error kinds section: other tables name other things
 	for line := range strings.SplitSeq(string(data), "\n") {
 		if strings.HasPrefix(line, "#") {
 			inKinds = strings.TrimSpace(line) == "### Error kinds"
@@ -239,7 +239,7 @@ func checkGuide(t *testing.T, kindConsts map[string]string, pairs []pair) {
 		}
 		table[m[1]] = strings.TrimSpace(m[2])
 	}
-	values := map[string]bool{}
+	values := make(map[string]bool)
 	for _, v := range kindConsts {
 		values[v] = true
 		if _, ok := table[v]; !ok {

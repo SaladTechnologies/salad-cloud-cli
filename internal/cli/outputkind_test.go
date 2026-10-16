@@ -93,7 +93,7 @@ var outputKinds = map[string]outputKind{
 }
 
 func TestEveryLeafDeclaresItsOutputKind(t *testing.T) {
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {
 		if !c.HasSubCommands() && c.Runnable() && !c.Hidden && c.Name() != "help" && c.Parent() != nil &&

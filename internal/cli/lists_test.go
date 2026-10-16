@@ -24,7 +24,7 @@ func TestJobIDsMustBeFullUUIDs(t *testing.T) {
 		{[]string{"inference", "jobs", "cancel", "c39e9f69", "--endpoint", "transcribe"}, "saladcloud inference jobs list --endpoint transcribe"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
-			stubAPI(t, map[string]string{}) // any request would 404
+			stubAPI(t, make(map[string]string)) // any request would 404
 			_, err := runRoot(t, tc.args...)
 			want := `job IDs must be full UUIDs, not "c39e9f69"; to list them, run ` + tc.list
 			var cerr *clierr.Error

@@ -195,7 +195,7 @@ func TestUpdateNamesTheGroupToStartFrom(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	stubAPI(t, map[string]string{})
+	stubAPI(t, make(map[string]string))
 	_, err := runRoot(t, "cg", "update", "my-app", "-f", doc)
 	var cerr *clierr.Error
 	ok := errors.As(err, &cerr)
