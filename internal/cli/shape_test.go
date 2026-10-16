@@ -70,8 +70,8 @@ func assertShape(t *testing.T, path string, typ reflect.Type, doc any) {
 	for typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
 	}
-	if typ.Implements(reflect.TypeOf((*json.Marshaler)(nil)).Elem()) ||
-		reflect.PointerTo(typ).Implements(reflect.TypeOf((*json.Marshaler)(nil)).Elem()) {
+	if typ.Implements(reflect.TypeFor[json.Marshaler]()) ||
+		reflect.PointerTo(typ).Implements(reflect.TypeFor[json.Marshaler]()) {
 		return // encodes itself
 	}
 	switch typ.Kind() {

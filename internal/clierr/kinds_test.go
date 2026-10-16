@@ -226,7 +226,7 @@ func checkGuide(t *testing.T, kindConsts map[string]string, pairs []pair) {
 	}
 	table := map[string]string{} // kind value -> exit code cell
 	inKinds := false             // only the Error kinds section: other tables name other things
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		if strings.HasPrefix(line, "#") {
 			inKinds = strings.TrimSpace(line) == "### Error kinds"
 		}

@@ -143,7 +143,7 @@ func decodeOrdered(dec *json.Decoder) (any, error) {
 	return tok, nil
 }
 
-var marshalerType = reflect.TypeOf((*json.Marshaler)(nil)).Elem()
+var marshalerType = reflect.TypeFor[json.Marshaler]()
 
 // opaque reports whether t encodes itself, so its fields say nothing about
 // the document it produces.

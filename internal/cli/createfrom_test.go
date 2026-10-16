@@ -79,7 +79,7 @@ func TestCopyDocument(t *testing.T) {
 	}
 
 	// The create schema accepts the whole document.
-	if u := input.UnknownFieldList(raw, reflect.TypeOf(containergroups.ContainerGroupCreationRequest{})); len(u) > 0 {
+	if u := input.UnknownFieldList(raw, reflect.TypeFor[containergroups.ContainerGroupCreationRequest]()); len(u) > 0 {
 		t.Errorf("copy has fields create rejects: %v", u)
 	}
 	for _, gone := range []string{

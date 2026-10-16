@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -162,13 +163,21 @@ func restNoBody(ctx context.Context, c *Client, method, path string, body any) *
 // seg path-escapes one URL path segment.
 func seg(s string) string { return url.PathEscape(s) }
 
+// subPath is "/" and each of parts path-escaped, joined with "/"; "" when there are none.
+func subPath(parts []string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	escaped := make([]string, len(parts))
+	for i, part := range parts {
+		escaped[i] = seg(part)
+	}
+	return "/" + strings.Join(escaped, "/")
+}
+
 // groupPath builds /organizations/{org}/projects/{project}/containers[/...].
 func (c *Client) groupPath(parts ...string) string {
-	p := fmt.Sprintf("/organizations/%s/projects/%s/containers", seg(c.org), seg(c.project))
-	for _, part := range parts {
-		p += "/" + seg(part)
-	}
-	return p
+	return fmt.Sprintf("/organizations/%s/projects/%s/containers", seg(c.org), seg(c.project)) + subPath(parts)
 }
 
 // numericEnumNames maps the enum values some responses carry as raw

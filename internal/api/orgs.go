@@ -53,7 +53,7 @@ func (c *Client) ListOrganizations(ctx context.Context) (*OrganizationList, *cli
 	all := OrganizationList{Items: []Organization{}}
 	token := ""
 	seen := map[string]bool{}
-	for page := 0; page < maxOrgPages; page++ {
+	for page := range maxOrgPages {
 		q := url.Values{"page_size": {strconv.Itoa(orgPageSize)}}
 		if token != "" {
 			q.Set("page_token", token)

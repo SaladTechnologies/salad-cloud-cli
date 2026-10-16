@@ -6,6 +6,7 @@
 package logsq
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -92,12 +93,7 @@ func Compile(f Filters) (string, *clierr.Error) {
 }
 
 func validSeverity(s string) bool {
-	for _, v := range Severities {
-		if s == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(Severities, s)
 }
 
 // quoteValue renders s as a double-quoted query-language string literal,

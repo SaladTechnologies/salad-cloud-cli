@@ -14,11 +14,7 @@ import (
 
 // inferencePath builds /organizations/{org}/inference-endpoints[/...].
 func (c *Client) inferencePath(parts ...string) string {
-	p := fmt.Sprintf("/organizations/%s/inference-endpoints", seg(c.org))
-	for _, part := range parts {
-		p += "/" + seg(part)
-	}
-	return p
+	return fmt.Sprintf("/organizations/%s/inference-endpoints", seg(c.org)) + subPath(parts)
 }
 
 // inferencePageSize is the largest page the inference endpoints accept:

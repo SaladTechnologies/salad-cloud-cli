@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,8 +45,8 @@ func redactUploadURL(job *inferenceendpoints.InferenceEndpointJob) {
 		return
 	}
 	if u, ok := in["url"].(string); ok {
-		if i := strings.IndexByte(u, '?'); i >= 0 {
-			in["url"] = u[:i]
+		if before, _, ok := strings.Cut(u, "?"); ok {
+			in["url"] = before
 		}
 	}
 }
@@ -263,9 +264,7 @@ func buildTranscribeInput(
 			return nil, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
 				"invalid --input-extra: %v (must be a JSON object)", err)
 		}
-		for k, v := range extra {
-			in[k] = v
-		}
+		maps.Copy(in, extra)
 	}
 	return in, nil
 }
@@ -313,7 +312,7 @@ func listFieldsHelp(fields []inputField) string {
 		") is a repeatable flag, one value each, joined with commas for you."
 	var b strings.Builder
 	width := 0
-	for _, word := range strings.Fields(sentence) {
+	for word := range strings.FieldsSeq(sentence) {
 		switch {
 		case width == 0:
 		case width+1+len(word) > 74:

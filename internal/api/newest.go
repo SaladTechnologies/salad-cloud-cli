@@ -1,6 +1,7 @@
 package api
 
 import (
+	"slices"
 	"sort"
 	"time"
 
@@ -46,8 +47,8 @@ func newestPages[T any](
 		if cerr != nil {
 			return nil, false, cerr
 		}
-		for i := len(v) - 1; i >= 0; i-- {
-			items = append(items, v[i])
+		for _, item := range slices.Backward(v) {
+			items = append(items, item)
 		}
 	}
 	more = p >= 1 || len(items) > want

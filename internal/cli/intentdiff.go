@@ -178,7 +178,7 @@ func collectLeaves(v any, path string, out *[]patchLeaf) {
 // this is null" from "the response has no such field".
 func lookupPath(tree any, path string) (any, bool) {
 	cur := tree
-	for _, seg := range strings.Split(path, ".") {
+	for seg := range strings.SplitSeq(path, ".") {
 		obj, ok := cur.(map[string]any)
 		if !ok {
 			return nil, false
@@ -392,8 +392,8 @@ func holdRule(path string, named map[string]bool, before, after any) bool {
 // whether a caller could have caused the change. Everything else is
 // server-managed churn and is excluded from the inverse report.
 func callerWritable(path string) bool {
-	return input.FieldPathKnown(reflect.TypeOf(containergroups.ContainerGroupCreationRequest{}), path) ||
-		input.FieldPathKnown(reflect.TypeOf(containergroups.ContainerGroupPatch{}), path)
+	return input.FieldPathKnown(reflect.TypeFor[containergroups.ContainerGroupCreationRequest](), path) ||
+		input.FieldPathKnown(reflect.TypeFor[containergroups.ContainerGroupPatch](), path)
 }
 
 // findUnrequestedChanges reports caller-writable fields whose value moved
@@ -652,7 +652,7 @@ func findUnappliedCreateFields(request []byte, created *shared.ContainerGroup) [
 // carry, by the SDK's json tags.
 var responseFields = func() map[string]bool {
 	fields := map[string]bool{}
-	t := reflect.TypeOf(shared.ContainerGroup{})
+	t := reflect.TypeFor[shared.ContainerGroup]()
 	for i := range t.NumField() {
 		if name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ","); name != "" && name != "-" {
 			fields[name] = true

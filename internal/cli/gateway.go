@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -127,10 +128,8 @@ func pickModel(flag string, ids []string) (string, *clierr.Error) {
 		if len(ids) == 0 {
 			return flag, nil
 		}
-		for _, id := range ids {
-			if id == flag {
-				return flag, nil
-			}
+		if slices.Contains(ids, flag) {
+			return flag, nil
 		}
 		return "", clierr.New(
 			clierr.CodeInvalidInput,

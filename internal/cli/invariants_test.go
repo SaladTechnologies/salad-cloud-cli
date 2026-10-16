@@ -8,6 +8,7 @@ package cli
 
 import (
 	"bytes"
+	"maps"
 	"net/http"
 	"regexp"
 	"sort"
@@ -28,9 +29,7 @@ var keyEnv = map[string]string{"SALAD_API_KEY": testAPIKey, "SALAD_ORGANIZATION"
 // with returns env plus the given name/value pairs.
 func with(env map[string]string, kv ...string) map[string]string {
 	out := map[string]string{}
-	for k, v := range env {
-		out[k] = v
-	}
+	maps.Copy(out, env)
 	for i := 0; i+1 < len(kv); i += 2 {
 		out[kv[i]] = kv[i+1]
 	}

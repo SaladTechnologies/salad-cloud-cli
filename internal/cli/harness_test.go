@@ -461,7 +461,7 @@ func (o outcome) all() string { return o.stdout + "\n" + o.stderr + "\n" + o.dev
 // lines splits text into its non-empty lines.
 func lines(s string) []string {
 	var out []string
-	for _, l := range strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n") {
+	for l := range strings.SplitSeq(strings.ReplaceAll(s, "\r\n", "\n"), "\n") {
 		if strings.TrimSpace(l) != "" {
 			out = append(out, l)
 		}

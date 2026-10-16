@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -317,8 +318,8 @@ func runChildQuiet(name string, args []string) *clierr.Error {
 // lastLine is the last non-blank line of s, trimmed.
 func lastLine(s string) string {
 	lines := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		if l := strings.TrimSpace(lines[i]); l != "" {
+	for _, line := range slices.Backward(lines) {
+		if l := strings.TrimSpace(line); l != "" {
 			return l
 		}
 	}

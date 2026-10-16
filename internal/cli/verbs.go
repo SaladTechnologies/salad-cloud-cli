@@ -70,12 +70,11 @@ func commandsNamed(root *cobra.Command, word, next string) []string {
 			}
 			if sub.Name() == word || sub.HasAlias(word) || slices.Contains(sub.SuggestFor, word) {
 				path := sub.CommandPath()
-				if sub.HasSubCommands() && next != "" {
-					for _, v := range sub.Commands() {
-						if v.IsAvailableCommand() && (v.Name() == next || v.HasAlias(next)) {
-							path += " " + v.Name()
-							break
-						}
+				if next != "" {
+					if i := slices.IndexFunc(sub.Commands(), func(v *cobra.Command) bool {
+						return v.IsAvailableCommand() && (v.Name() == next || v.HasAlias(next))
+					}); i >= 0 {
+						path += " " + sub.Commands()[i].Name()
 					}
 				}
 				paths = append(paths, path)

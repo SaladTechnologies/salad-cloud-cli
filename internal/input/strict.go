@@ -115,7 +115,7 @@ func UnknownFieldsError(lead string, unknowns []Unknown, tail string) *clierr.Er
 // field rejected by the patch type is a legitimate create-time field.
 func FieldPathKnown(t reflect.Type, path string) bool {
 	cur := unwrapType(t)
-	for _, seg := range strings.Split(path, ".") {
+	for seg := range strings.SplitSeq(path, ".") {
 		if i := strings.IndexByte(seg, '['); i >= 0 {
 			seg = seg[:i]
 		}

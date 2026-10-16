@@ -102,7 +102,7 @@ func copyDocument(g *shared.ContainerGroup, newName string, displayNameSet bool)
 	}
 	delete(obj, "autostart_policy")
 	var dropped []string
-	filtered, ok := input.FilterTree(obj, reflect.TypeOf(containergroups.ContainerGroupCreationRequest{}), "", &dropped).(map[string]any)
+	filtered, ok := input.FilterTree(obj, reflect.TypeFor[containergroups.ContainerGroupCreationRequest](), "", &dropped).(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("unexpected group document")
 	}

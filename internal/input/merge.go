@@ -2,6 +2,7 @@ package input
 
 import (
 	"encoding/json"
+	"maps"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 )
@@ -40,9 +41,7 @@ func mergeValues(base, overlay any) any {
 		return overlay
 	}
 	out := make(map[string]any, len(bm)+len(om))
-	for k, v := range bm {
-		out[k] = v
-	}
+	maps.Copy(out, bm)
 	for k, ov := range om {
 		if bv, exists := out[k]; exists {
 			out[k] = mergeValues(bv, ov)

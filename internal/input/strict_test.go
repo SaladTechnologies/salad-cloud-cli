@@ -20,9 +20,9 @@ import (
 // that were silently accepted before strict.go existed (the SDK structs'
 // custom Unmarshaler bypasses yaml.UnmarshalStrict's field checking).
 func TestCheckUnknownFields(t *testing.T) {
-	createT := reflect.TypeOf(containergroups.ContainerGroupCreationRequest{})
-	patchT := reflect.TypeOf(containergroups.ContainerGroupPatch{})
-	jobT := reflect.TypeOf(inferenceendpoints.InferenceEndpointJobPrototype{})
+	createT := reflect.TypeFor[containergroups.ContainerGroupCreationRequest]()
+	patchT := reflect.TypeFor[containergroups.ContainerGroupPatch]()
+	jobT := reflect.TypeFor[inferenceendpoints.InferenceEndpointJobPrototype]()
 
 	tests := []struct {
 		name    string
@@ -103,7 +103,7 @@ func TestCheckUnknownFields(t *testing.T) {
 // TestUnknownFieldList covers lenient mode: all unknowns collected, array
 // membership flagged (create cannot graft those; update can).
 func TestUnknownFieldList(t *testing.T) {
-	createT := reflect.TypeOf(containergroups.ContainerGroupCreationRequest{})
+	createT := reflect.TypeFor[containergroups.ContainerGroupCreationRequest]()
 	doc := `{
 		"name": "a",
 		"top_unknown": 1,
@@ -217,7 +217,7 @@ func TestLoadLenient(t *testing.T) {
 // their values, arrays and maps are walked against their element types,
 // and free-form fields pass through.
 func TestFilterTree(t *testing.T) {
-	patchT := reflect.TypeOf(containergroups.ContainerGroupPatch{})
+	patchT := reflect.TypeFor[containergroups.ContainerGroupPatch]()
 	doc := map[string]any{
 		"replicas":        float64(2),
 		"id":              "resp-only",

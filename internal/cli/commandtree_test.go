@@ -75,7 +75,7 @@ func TestHelpNeverSpellsARemovedCommand(t *testing.T) {
 	walkTree(rootCmd, func(c *cobra.Command) {
 		for field, text := range map[string]string{"Use": c.Use, "Short": c.Short, "Long": c.Long, "Example": c.Example} {
 			for _, re := range removedSpellings {
-				for _, line := range strings.Split(text, "\n") {
+				for line := range strings.SplitSeq(text, "\n") {
 					if m := re.FindString(line); m != "" {
 						t.Errorf("%s %s spells a removed form: %q", c.CommandPath(), field, strings.TrimSpace(m))
 					}

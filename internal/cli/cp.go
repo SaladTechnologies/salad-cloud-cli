@@ -66,18 +66,16 @@ func parseRemoteSpec(arg string) (*remoteSpec, *clierr.Error) {
 	if cerr := msysRewritten(arg); cerr != nil {
 		return nil, cerr
 	}
-	i := strings.Index(arg, ":")
-	if i < 0 {
+	head, path, ok := strings.Cut(arg, ":")
+	if !ok {
 		return nil, nil
 	}
-	head := arg[:i]
 	if len(head) == 1 && isASCIILetter(head[0]) {
 		return nil, nil // Windows drive letter
 	}
 	if strings.Contains(head, `\`) {
 		return nil, nil
 	}
-	path := arg[i+1:]
 	if head == "" || path == "" {
 		return nil, badRemotePath(arg)
 	}

@@ -188,7 +188,7 @@ func errorDoc(t *testing.T, r result) map[string]any {
 // note:.
 func machineStderr(t *testing.T, r result) {
 	t.Helper()
-	for _, l := range strings.Split(strings.TrimRight(r.Stderr, "\n"), "\n") {
+	for l := range strings.SplitSeq(strings.TrimRight(r.Stderr, "\n"), "\n") {
 		if l != "" && !strings.HasPrefix(l, "warning: ") && !strings.HasPrefix(l, "note: ") {
 			t.Errorf("json-mode stderr carries %q", l)
 		}

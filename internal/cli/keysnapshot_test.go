@@ -80,7 +80,7 @@ var keySnapshotRoots = []struct {
 	{"(cpu availability row)", organizations.CpuAvailability{}},
 }
 
-var jsonMarshaler = reflect.TypeOf((*json.Marshaler)(nil)).Elem()
+var jsonMarshaler = reflect.TypeFor[json.Marshaler]()
 
 // keyPaths appends every key path typ can carry under prefix: "[]" marks an
 // array element, "{}" a map value; a type already open on the current path
@@ -176,7 +176,7 @@ func TestJSONKeySnapshot(t *testing.T) {
 func lineDiff(want, got string) string {
 	in := func(s string) map[string]bool {
 		m := map[string]bool{}
-		for _, l := range strings.Split(s, "\n") {
+		for l := range strings.SplitSeq(s, "\n") {
 			m[l] = true
 		}
 		return m

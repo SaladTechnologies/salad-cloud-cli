@@ -861,7 +861,7 @@ hint: to save it, pipe it to saladcloud login --api-key -
 			}
 			got := strings.ReplaceAll(o.transcript, o.configPath, tc.path)
 			var trimmed []string
-			for _, l := range strings.Split(got, "\n") {
+			for l := range strings.SplitSeq(got, "\n") {
 				trimmed = append(trimmed, strings.TrimRight(l, " "))
 			}
 			if got = strings.Join(trimmed, "\n"); got != tc.want {

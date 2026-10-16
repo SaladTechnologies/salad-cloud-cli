@@ -244,7 +244,7 @@ func TestWaitProgressRepeatsEveryMinute(t *testing.T) {
 	// Poll every 5s: 25 unchanged pending polls span 0s-120s, so the line
 	// prints at 0s, 60s and 120s; the running poll at 125s ends the wait.
 	steps := make([]waitStep, 0, 26)
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		steps = append(steps, statusStep(shared.CONTAINER_GROUP_STATUS_PENDING))
 	}
 	steps = append(steps, statusStep(shared.CONTAINER_GROUP_STATUS_RUNNING))

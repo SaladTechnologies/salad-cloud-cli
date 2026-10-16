@@ -40,7 +40,7 @@ func Parse(markdown string) []Release {
 		}
 		body = nil
 	}
-	for _, line := range strings.Split(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n") {
 		if m := headingRE.FindStringSubmatch(line); m != nil {
 			flush()
 			r := Release{Version: m[1]}
@@ -151,7 +151,7 @@ func parseSemver(s string) ([3]int, bool) {
 }
 
 func compare(a, b [3]int) int {
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if a[i] != b[i] {
 			if a[i] > b[i] {
 				return 1

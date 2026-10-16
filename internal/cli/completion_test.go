@@ -53,7 +53,7 @@ func runComplete(t *testing.T, args ...string) (stdout, stderr string) {
 // the shell scripts discard; anything left came from the CLI.
 func cliStderr(stderr string) string {
 	var kept []string
-	for _, l := range strings.Split(strings.TrimSpace(stderr), "\n") {
+	for l := range strings.SplitSeq(strings.TrimSpace(stderr), "\n") {
 		if l != "" && !strings.HasPrefix(l, "Completion ended with directive") {
 			kept = append(kept, l)
 		}

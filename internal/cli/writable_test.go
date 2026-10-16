@@ -111,7 +111,7 @@ func TestWritableDocument(t *testing.T) {
 	}
 	if unknowns := input.UnknownFieldList(
 		b,
-		reflect.TypeOf(containergroups.ContainerGroupPatch{}),
+		reflect.TypeFor[containergroups.ContainerGroupPatch](),
 	); len(
 		unknowns,
 	) != 0 {

@@ -27,7 +27,7 @@ func commandDocRows(t *testing.T) (commandRows []string, aliasRows [][2]string) 
 		t.Fatal(err)
 	}
 	inAliases := false
-	for _, line := range strings.Split(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.ReplaceAll(string(data), "\r\n", "\n"), "\n") {
 		switch {
 		case strings.HasPrefix(line, "## "):
 			inAliases = line == "## Aliases"
@@ -67,8 +67,8 @@ func documentedLeaves() []*cobra.Command {
 func rowWords(cell string) map[string]bool {
 	words := map[string]bool{}
 	for _, m := range backtickSpan.FindAllStringSubmatch(cell, -1) {
-		for _, f := range strings.Fields(m[1]) {
-			for _, w := range strings.Split(f, "/") {
+		for f := range strings.FieldsSeq(m[1]) {
+			for w := range strings.SplitSeq(f, "/") {
 				words[w] = true
 			}
 		}
@@ -115,7 +115,7 @@ func TestEveryDocumentedCommandExists(t *testing.T) {
 		// The leading plain words of the first span name the command; a last
 		// word with "/" lists alternatives under the same parent.
 		var words []string
-		for _, f := range strings.Fields(spans[0][1]) {
+		for f := range strings.FieldsSeq(spans[0][1]) {
 			if strings.ContainsAny(f[:1], "<[-(.¦") || strings.Contains(f, "|") || strings.Contains(f, "¦") {
 				break
 			}
@@ -125,7 +125,7 @@ func TestEveryDocumentedCommandExists(t *testing.T) {
 			continue
 		}
 		last := words[len(words)-1]
-		for _, alt := range strings.Split(last, "/") {
+		for alt := range strings.SplitSeq(last, "/") {
 			path := append(append([]string{}, words[:len(words)-1]...), alt)
 			c, rest, err := rootCmd.Find(path)
 			if err != nil || len(rest) > 0 || c.Name() != alt {

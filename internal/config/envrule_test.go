@@ -66,7 +66,7 @@ func ruleFiles(t *testing.T, root string) []string {
 	t.Helper()
 	if out, err := exec.Command("git", "-C", root, "ls-files").Output(); err == nil && len(out) > 0 {
 		var files []string
-		for _, f := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		for f := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
 			files = append(files, filepath.Join(root, filepath.FromSlash(f)))
 		}
 		return files

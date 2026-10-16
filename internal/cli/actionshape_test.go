@@ -118,14 +118,14 @@ func TestActionResultJSONTags(t *testing.T) {
 		typ      reflect.Type
 		identity []string
 	}{
-		{"groupActionResult", reflect.TypeOf(groupActionResult{}), []string{"name"}},
-		{"scaleResult", reflect.TypeOf(scaleResult{}), []string{"name", "replicas"}},
-		{"instanceActionResult", reflect.TypeOf(instanceActionResult{}), []string{"group", "id"}},
-		{"jobActionResult", reflect.TypeOf(jobActionResult{}), []string{"endpoint", "id"}},
-		{"queueActionResult", reflect.TypeOf(queueActionResult{}), []string{"name"}},
-		{"queueJobActionResult", reflect.TypeOf(queueJobActionResult{}), []string{"queue", "id"}},
-		{"cpResult", reflect.TypeOf(cpResult{}), []string{"group", "instance"}},
-		{"logoutResult", reflect.TypeOf(logoutResult{}), nil},
+		{"groupActionResult", reflect.TypeFor[groupActionResult](), []string{"name"}},
+		{"scaleResult", reflect.TypeFor[scaleResult](), []string{"name", "replicas"}},
+		{"instanceActionResult", reflect.TypeFor[instanceActionResult](), []string{"group", "id"}},
+		{"jobActionResult", reflect.TypeFor[jobActionResult](), []string{"endpoint", "id"}},
+		{"queueActionResult", reflect.TypeFor[queueActionResult](), []string{"name"}},
+		{"queueJobActionResult", reflect.TypeFor[queueJobActionResult](), []string{"queue", "id"}},
+		{"cpResult", reflect.TypeFor[cpResult](), []string{"group", "instance"}},
+		{"logoutResult", reflect.TypeFor[logoutResult](), nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

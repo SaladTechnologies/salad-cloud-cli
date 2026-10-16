@@ -319,7 +319,7 @@ func TestReadKeys(t *testing.T) {
 func TestReadKeysCRLF(t *testing.T) {
 	k := &keyReader{r: strings.NewReader("key\r\nmy-org\r\n\nnext\r")}
 	var got []string
-	for i := 0; i < 4; i++ {
+	for range 4 {
 		line, err := k.readLine(io.Discard)
 		if err != nil {
 			t.Fatal(err)

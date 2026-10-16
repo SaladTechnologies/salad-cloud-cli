@@ -362,7 +362,7 @@ func realisticFetcher(all []Entry) Fetcher {
 // size. Every page size must now return every entry exactly once, in order.
 func TestFetchWindowResumesFromEmissionTimeNotPageMaxTime(t *testing.T) {
 	var all []Entry
-	for i := 0; i < 47; i++ {
+	for i := range 47 {
 		emitted := winStart.Add(time.Duration(i) * 400 * time.Millisecond)
 		received := emitted.Add(1500 * time.Millisecond)
 		all = append(

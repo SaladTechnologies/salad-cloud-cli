@@ -21,11 +21,7 @@ const queueJobsMaxPages = 400
 
 // queuePath builds /organizations/{org}/projects/{project}/queues[/...].
 func (c *Client) queuePath(parts ...string) string {
-	p := fmt.Sprintf("/organizations/%s/projects/%s/queues", seg(c.org), seg(c.project))
-	for _, part := range parts {
-		p += "/" + seg(part)
-	}
-	return p
+	return fmt.Sprintf("/organizations/%s/projects/%s/queues", seg(c.org), seg(c.project)) + subPath(parts)
 }
 
 // ListQueues lists the project's queues.

@@ -82,8 +82,8 @@ const maxListedPaths = 8
 // response schemas. requestPath is set for unknownRelocated and
 // unknownMisplaced.
 func classifyUnknown(path string) (kind unknownKind, requestPath string) {
-	createT := reflect.TypeOf(containergroups.ContainerGroupCreationRequest{})
-	responseT := reflect.TypeOf(shared.ContainerGroup{})
+	createT := reflect.TypeFor[containergroups.ContainerGroupCreationRequest]()
+	responseT := reflect.TypeFor[shared.ContainerGroup]()
 
 	if input.FieldPathKnown(createT, path) {
 		return unknownCreateOnly, ""

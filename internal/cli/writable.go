@@ -49,7 +49,7 @@ func writableDocument(g *shared.ContainerGroup) (any, []string, error) {
 		deletePath(obj, respPath)
 	}
 	var dropped []string
-	filtered := input.FilterTree(obj, reflect.TypeOf(containergroups.ContainerGroupPatch{}), "", &dropped)
+	filtered := input.FilterTree(obj, reflect.TypeFor[containergroups.ContainerGroupPatch](), "", &dropped)
 	sort.Strings(dropped)
 	return filtered, dropped, nil
 }

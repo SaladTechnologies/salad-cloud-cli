@@ -33,7 +33,7 @@ func readValidationTable(t *testing.T) []*validationRow {
 	}
 	var rows []*validationRow
 	in := false
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		line = strings.TrimRight(line, "\r")
 		switch {
 		case strings.HasPrefix(line, "## Validation table"):
