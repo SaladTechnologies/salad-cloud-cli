@@ -220,8 +220,8 @@ func TestFetchWindowRoundsRequestTimesOutward(t *testing.T) {
 	var calls []fetchCall
 	var got []Entry
 	fetch := scriptFetcher(nil, &calls)
-	start := time.Date(2026, time.March, 1, 0, 0, 0, 400_700, time.UTC) // .0004007s
-	end := time.Date(2026, time.March, 1, 0, 0, 1, 2_000_500, time.UTC) // 1.0020005s
+	start := time.Date(2026, time.March, 1, 0, 0, 0, 400700, time.UTC) // .0004007s
+	end := time.Date(2026, time.March, 1, 0, 0, 1, 2000500, time.UTC)  // 1.0020005s
 	if err := FetchWindow(t.Context(), fetch, "q", start, end, 100, collectEmit(&got)); err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}

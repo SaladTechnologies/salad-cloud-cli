@@ -64,6 +64,7 @@ func wrapArgs(root *cobra.Command) {
 				}
 				return argsError(cmd, args, err)
 			}
+			//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
 			if cerr := missingRequiredFlag(cmd); cerr != nil {
 				return cerr
 			}

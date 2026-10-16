@@ -34,8 +34,8 @@ var restHTTPClient = &http.Client{Timeout: restTimeout, Transport: debugTranspor
 // Probe makes one unauthenticated GET and returns its status, through the
 // same transport as every other request (so --debug shows it and it carries
 // the User-Agent). doctor uses it to tell "unreachable" from "rejected".
-func Probe(ctx context.Context, url string) (int, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func Probe(ctx context.Context, target string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return 0, err
 	}

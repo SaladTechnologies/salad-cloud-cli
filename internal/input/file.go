@@ -29,7 +29,7 @@ func read(path string) (name string, data []byte, cerr *clierr.Error) {
 	return name, data, nil
 }
 
-// load is the shared body of Load, LoadRaw, and LoadLenient: read,
+// loadFile is the shared body of Load, LoadRaw, and LoadLenient: read,
 // strict-unmarshal into out, convert to JSON, and walk the document for
 // fields out's struct type does not know. In strict mode (Load/LoadRaw) the
 // first unknown field is a clierr.KindUnknownField error; in lenient mode
@@ -40,7 +40,7 @@ func read(path string) (name string, data []byte, cerr *clierr.Error) {
 // Nullable fields), and a custom unmarshaler opts a type out of strict field
 // checking entirely — so without the walk, every typo'd field is a silent
 // no-op (see strict.go).
-func load(path string, out any, strict bool) (json.RawMessage, []Unknown, *clierr.Error) {
+func loadFile(path string, out any, strict bool) (json.RawMessage, []Unknown, *clierr.Error) {
 	name, data, cerr := read(path)
 	if cerr != nil {
 		return nil, nil, cerr
@@ -75,7 +75,7 @@ func load(path string, out any, strict bool) (json.RawMessage, []Unknown, *clier
 // CodeInvalidInput error naming the offending path (fields typed `any`,
 // like an inference job's input, stay free-form).
 func Load(path string, out any) *clierr.Error {
-	_, _, cerr := load(path, out, true)
+	_, _, cerr := loadFile(path, out, true)
 	return cerr
 }
 
@@ -87,7 +87,7 @@ func Load(path string, out any) *clierr.Error {
 // SDK's omitempty-tagged structs drops explicit empty values ([], "", 0),
 // which in merge-patch semantics mean "clear this field".
 func LoadRaw(path string, out any) (json.RawMessage, *clierr.Error) {
-	raw, _, cerr := load(path, out, true)
+	raw, _, cerr := loadFile(path, out, true)
 	return raw, cerr
 }
 
@@ -120,5 +120,5 @@ func ReadDocument(path string) (name string, raw json.RawMessage, cerr *clierr.E
 // the --allow-unknown-fields path — the forward-compat escape hatch for API
 // fields newer than this CLI's pinned SDK model.
 func LoadLenient(path string, out any) (json.RawMessage, []Unknown, *clierr.Error) {
-	return load(path, out, false)
+	return loadFile(path, out, false)
 }

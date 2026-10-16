@@ -55,6 +55,7 @@ ssh-key setup.`,
 				return cerr
 			}
 
+			//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
 			if runErr := runChild("sftp", buildSFTPArgs(target, user, resolveIdentity(identity), "")); runErr != nil {
 				return runErr
 			}

@@ -25,6 +25,7 @@ func addWatchFlags(cmd *cobra.Command) {
 	// Check the watch flags before the command builds its client, so a bad
 	// combination is a usage error even with no API key set.
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
+		//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
 		if cerr := validateWatchFlags(cmd); cerr != nil {
 			return cerr
 		}
@@ -55,6 +56,7 @@ func validateWatchFlags(cmd *cobra.Command) *clierr.Error {
 func runMaybeWatch(cmd *cobra.Command, render func(ctx context.Context) *clierr.Error) error {
 	watch, _ := cmd.Flags().GetBool("watch")
 	if !watch {
+		//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
 		if cerr := render(cmd.Context()); cerr != nil {
 			return cerr
 		}

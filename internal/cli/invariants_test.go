@@ -412,7 +412,7 @@ func TestCredentialsNeverPrinted(t *testing.T) {
 // key's value (the word "paste").
 func TestNoHelpAsksForAKey(t *testing.T) {
 	if strings.Contains(strings.ToLower(agentdoc.Body()), "paste") {
-		t.Errorf("the agent block mentions paste")
+		t.Error("the agent block mentions paste")
 	}
 	prepareTree()
 	var all []*cobra.Command

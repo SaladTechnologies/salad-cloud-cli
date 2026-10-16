@@ -329,6 +329,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		Lookback:   lookback,
 		Clock:      logsq.RealClock{},
 	}
+	//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
 	if cerr := follower.Run(ctx, query, fetch, since, pageSize, emit); cerr != nil {
 		return cerr
 	}

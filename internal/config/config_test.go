@@ -251,7 +251,7 @@ func TestSaveReplacesAtomically(t *testing.T) {
 	// only: on Windows os.SameFile reads the file IDs when it compares, by
 	// path, so both stats name the current file.
 	if after, err := os.Stat(p); runtime.GOOS != "windows" && (err != nil || os.SameFile(before, after)) {
-		t.Errorf("Save rewrote the file in place (same file before and after); want a temp file renamed over it")
+		t.Error("Save rewrote the file in place (same file before and after); want a temp file renamed over it")
 	}
 	if got, err := Load(); err != nil || got != want {
 		t.Errorf("Load after Save = %+v, %v; want %+v", got, err, want)

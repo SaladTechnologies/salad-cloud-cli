@@ -152,10 +152,11 @@ func FieldPathKnown(t reflect.Type, path string) bool {
 // place a field really lives when a request and response disagree on its
 // location (create takes container.priority; responses return priority).
 func FindFieldPath(t reflect.Type, leaf string) string {
-	return findFieldPath(unwrapType(t), leaf, "", 0)
+	return searchFieldPath(unwrapType(t), leaf, "", 0)
 }
 
-func findFieldPath(t reflect.Type, leaf, path string, depth int) string {
+// searchFieldPath is FindFieldPath below path, at most 4 levels down.
+func searchFieldPath(t reflect.Type, leaf, path string, depth int) string {
 	if t == nil || t.Kind() != reflect.Struct || depth > 4 {
 		return ""
 	}
@@ -169,7 +170,7 @@ func findFieldPath(t reflect.Type, leaf, path string, depth int) string {
 	}
 	sort.Strings(names) // deterministic when several branches could match
 	for _, n := range names {
-		if found := findFieldPath(unwrapType(fields[n]), leaf, childPath(path, n), depth+1); found != "" {
+		if found := searchFieldPath(unwrapType(fields[n]), leaf, childPath(path, n), depth+1); found != "" {
 			return found
 		}
 	}

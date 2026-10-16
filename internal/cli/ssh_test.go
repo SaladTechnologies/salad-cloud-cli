@@ -355,7 +355,7 @@ func TestHelperExit255(t *testing.T) {
 	if os.Getenv("SALAD_CLI_TEST_HELPER_EXIT") == "" {
 		t.Skip("a helper for TestRunChildHints")
 	}
-	os.Exit(255)
+	os.Exit(255) //nolint:revive // deep-exit: the test binary run as a child that exits 255
 }
 
 // TestRunChildHints: a child that exits 255 (ssh or sftp could not open the

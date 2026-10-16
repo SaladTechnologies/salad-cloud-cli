@@ -45,8 +45,8 @@ var ErrMalformed = errors.New("malformed SaladCloud block")
 // StartMarker returns the opening marker for a block written by the given
 // CLI version. The version is informational: detection matches any
 // "<!-- SALADCLOUD START" line, so an older block is still replaced.
-func StartMarker(version string) string {
-	return fmt.Sprintf("%s (saladcloud agent init %s) -->", startPrefix, version)
+func StartMarker(cliVersion string) string {
+	return fmt.Sprintf("%s (saladcloud agent init %s) -->", startPrefix, cliVersion)
 }
 
 // body is the block content between the markers. Every line is a fact from
@@ -83,17 +83,17 @@ func Body() string { return body }
 
 // Block returns the complete block (start marker, body, end marker) with
 // LF line endings and a trailing newline.
-func Block(version string) string {
-	return StartMarker(version) + "\n" + body + "\n" + endMarker + "\n"
+func Block(cliVersion string) string {
+	return StartMarker(cliVersion) + "\n" + body + "\n" + endMarker + "\n"
 }
 
-// Apply merges the block for version into existing and reports whether the
+// Apply merges the block for cliVersion into existing and reports whether the
 // result differs from existing. An existing block (any version) is replaced
 // in place; otherwise the block is appended after a blank line. Line endings
 // follow the existing file: if it contains CRLF anywhere, the block is
 // written with CRLF too.
-func Apply(existing, version string) (result string, changed bool, err error) {
-	block := Block(version)
+func Apply(existing, cliVersion string) (result string, changed bool, err error) {
+	block := Block(cliVersion)
 	crlf := strings.Contains(existing, "\r\n")
 	if crlf {
 		block = strings.ReplaceAll(block, "\n", "\r\n")

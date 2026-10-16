@@ -174,9 +174,8 @@ func TestMain(m *testing.M) {
 		fmt.Println("livetest: SALAD_API_KEY and SALAD_ORGANIZATION must both be set; nothing ran")
 		os.Exit(1)
 	}
-	code := m.Run()
+	m.Run()
 	sweep()
-	os.Exit(code)
 }
 
 // sweep deletes everything this run created, by prefix. Best-effort: a leaked

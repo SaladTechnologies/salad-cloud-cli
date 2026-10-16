@@ -94,7 +94,7 @@ func TestEmitTable(t *testing.T) {
 	// Default mode is table (capture's cleanup guarantees the reset).
 	v := row{Name: "my-group", State: "running"}
 	err := Emit(v, func(w io.Writer) {
-		fmt.Fprintf(w, "NAME\tSTATE\n")
+		fmt.Fprint(w, "NAME\tSTATE\n")
 		fmt.Fprintf(w, "%s\t%s\n", v.Name, v.State)
 	})
 	if err != nil {
