@@ -418,4 +418,5 @@ vite.config.ts.timestamp-*
 *.tar.gz
 *.zip
 checksums.txt
+/completions/
 dist/
