@@ -6,7 +6,7 @@
     { "name": "salad-cloud-cli", "path": "./dictionaries/salad-cloud-cli.txt", "addWords": true },
     { "name": "test-fixtures", "path": "./dictionaries/test-fixtures.txt", "addWords": true }
   ],
-  "ignorePaths": [".git/**", ".gitattributes", ".gitignore", "go.mod", "go.sum", "package-lock.json", "**/testdata/**"],
+  "ignorePaths": ["dictionaries/**", ".git/**", ".gitattributes", ".gitignore", "go.mod", "go.sum", "package-lock.json", "**/testdata/**"],
   "language": "en,en-US",
   "languageSettings": [
     {
