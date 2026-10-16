@@ -370,3 +370,28 @@ CLI bugs and API behavior that contradicts the API reference both go to GitHub i
 the response, and the behavior you expected, never a key. Maintainers pass API problems on to the platform team. The
 CLI works around an API behavior only once `docs/notes.md` documents what the user sees; it never works around one
 silently. Platform asks, evidence and internal locations stay out of this repository.
+
+## Coding Standards
+
+### Go
+
+- Run `just fmt-go` after editing Go code, and `just fmt-check-go`, `just lint-go`, and `just test-go` before calling the work done. Never run `gofmt`, `goimports`, or `go fmt` directly, they disagree with `.golangci.yaml`. Never run the formatting and linting tools directly with flags that override our configuration.
+- Fix every golangci-lint finding. A suppression is `//nolint:<linter> // <reason>` on the narrowest line, never a bare `//nolint`, a file-wide directive, or a `.golangci.yaml` exclusion.
+- Add dependencies with `go get` then `go mod tidy`, and commit `go.mod` and `go.sum` together. A dependency's license must be on the justfile's allowlist. Developer tools go in `mise.toml`, never a `tool` directive.
+- Log with `log/slog` through a passed-in `*slog.Logger` and its `...Context` methods: attributes only, snake_case keys, lowercase constant messages.
+- Return errors wrapped with `%w` and match them with `errors.Is`/`errors.As`. Never `panic`; only `main` calls `os.Exit` or creates a root context, and tests use `t.Context()`.
+- Godoc every package and exported identifier. Wrap comments by hand at 120 columns; the formatter wraps code only.
+- Tests use the standard `testing` package and `github.com/google/go-cmp/cmp`, are table-driven, and call `t.Parallel()`.
+
+### PowerShell
+
+- Run `just fmt-powershell` after editing a PowerShell script, and `just fmt-check-powershell` and `just lint-powershell` before calling the work done. Never run the formatting and linting tools directly with settings that override our configuration.
+- Fix every PSScriptAnalyzer finding. A suppression is a `[Diagnostics.CodeAnalysis.SuppressMessageAttribute('<rule>', '<target>', Justification = '<reason>')]` on the narrowest function or `param` block it covers, never on the whole script, and never a `PSScriptAnalyzerSettings.psd1` exclusion.
+- A script that is run directly starts with `#!/usr/bin/env pwsh` and is committed as executable: `git update-index --chmod=+x -- <file>`, which also works on Windows.
+- Scripts begin, after any shebang, with `[CmdletBinding(SupportsShouldProcess = $true)] param()`, `#Requires -Version 7.4`, `Set-StrictMode -Version Latest`, `$ErrorActionPreference = 'Stop'`, and `$PSNativeCommandUseErrorActionPreference = $true`. Functions use the same `[CmdletBinding()]`, minus `SupportsShouldProcess` if read-only. Prefer cmdlets and guard each change with `$PSCmdlet.ShouldProcess()` so `-WhatIf` works.
+
+### Shell Scripts
+
+- Run `just fmt-shell` after editing a shell script, and `just fmt-check-shell` and `just lint-shell` before calling the work done. Never run the formatting and linting tools directly with flags that override our configuration.
+- Fix every ShellCheck finding. A suppression is `# shellcheck disable=SC<n> # <reason>` on the line before the one command it covers, never a file-wide directive or a `.shellcheckrc` exclusion.
+- A script that is run directly starts with a shebang and is committed as executable: `git update-index --chmod=+x -- <file>`, which also works on Windows. A file that is only `source`d has no shebang and starts with a `# shellcheck shell=bash` directive instead.

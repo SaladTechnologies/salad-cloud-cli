@@ -8,9 +8,9 @@ right now. The following sections outline the different ways to contribute to th
 ## Discussing
 
 The easiest way to contribute to the project is by participating in
-[GitHub discussions](https://github.com/SaladTechnologies/salad-cloud-cli/discussions). The community often chimes in with
-helpful advice when you have a question, and you may also find yourself providing answers and helping others. Be sure to
-review the [code of conduct](./CODE_OF_CONDUCT.md) before participating.
+[GitHub discussions](https://github.com/SaladTechnologies/salad-cloud-cli/discussions). The community often chimes in
+with helpful advice when you have a question, and you may also find yourself providing answers and helping others. Be
+sure to review the [code of conduct](./CODE_OF_CONDUCT.md) before participating.
 
 _Please do not use GitHub issues to ask a question._ We will politely close a GitHub issue that asks a question and
 kindly refer you to one of the aforementioned avenues.
@@ -38,8 +38,8 @@ If the problem is with your SaladCloud account, billing, or a specific workload 
 ## Requesting Features
 
 We love a good idea. Do you have one? Consider jumping into
-[GitHub discussions](https://github.com/SaladTechnologies/salad-cloud-cli/discussions) first. The community may have some
-interesting insights.
+[GitHub discussions](https://github.com/SaladTechnologies/salad-cloud-cli/discussions) first. The community may have
+some interesting insights.
 
 You can create a [GitHub issue](https://github.com/SaladTechnologies/salad-cloud-cli/issues/new/choose) to request new
 features.
@@ -55,12 +55,12 @@ _Please do not use public GitHub issues to report a security vulnerability._
 
 Interested in changing the world?
 
-Before starting on any code contribution, please discuss it with the team first to ensure it fits the product's direction
-and the CLI's public contracts. Exit codes, JSON output shapes, and error kinds are depended on by scripts and agents,
-so changes to them are held to a high bar.
+Before starting on any code contribution, please discuss it with the team first to ensure it fits the product's
+direction and the CLI's public contracts. Exit codes, JSON output shapes, and error kinds are depended on by scripts and
+agents, so changes to them are held to a high bar.
 
-The development workflow, layout, and contracts are documented in [`AGENTS.md`](../AGENTS.md). In short, a change is done
-when `go vet ./...`, `go test ./...` and `make lint` pass, and the docs and `CHANGELOG.md` reflect it.
+The development workflow, layout, and contracts are documented in [`AGENTS.md`](../AGENTS.md). In short, a change is
+done when `go vet ./...`, `go test ./...` and `make lint` pass, and the docs and `CHANGELOG.md` reflect it.
 
 Additionally, please consider taking a moment to read Miguel de Icaza's blog post titled
 [Open Source Contribution Etiquette](https://tirania.org/blog/archive/2010/Dec-31.html) and Ilya Grigorik's blog post

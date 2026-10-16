@@ -23,9 +23,9 @@ builds:
       - -trimpath
     ldflags:
       - >-
-        -s -w
-        -X github.com/saladtechnologies/salad-cloud-cli/internal/version.Version={{ if .IsSnapshot }}{{ .Version }}{{ else }}{{ .Tag }}{{ end }}
-        -X github.com/saladtechnologies/salad-cloud-cli/internal/version.Commit={{ .ShortCommit }}
+        -s -w -X github.com/saladtechnologies/salad-cloud-cli/internal/version.Version={{ if .IsSnapshot }}{{ .Version
+        }}{{ else }}{{ .Tag }}{{ end }} -X github.com/saladtechnologies/salad-cloud-cli/internal/version.Commit={{
+        .ShortCommit }}
     # Reproducible: the file times come from the commit, not the build clock.
     mod_timestamp: "{{ .CommitTimestamp }}"
     goos: [linux, darwin, windows]

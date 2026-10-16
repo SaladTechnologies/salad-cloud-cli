@@ -1,70 +1,357 @@
 version: "2"
 
 run:
-  # The live suite builds only under this tag; lint it with the rest.
-  build-tags:
-    - live
+  modules-download-mode: readonly # a go.mod or go.sum that needs changes fails instead of being rewritten
+  relative-path-mode: gomod
+  tests: true
+
+linters:
+  default: all
+  disable:
+    # Deprecated (`all` still enables them) in favor of the exhaustruct_v5 and gomodguard_v2 configured below.
+    - exhaustruct
+    - gomodguard
+    - wsl
+    # Not Go idiom: short names in small scopes are the standard style (Go Code Review Comments, "Variable Names").
+    - varnamelen
+    # Whitespace-placement style that gofmt/gofumpt do not share; formatting belongs to the formatters below.
+    - nlreturn
+    - wsl_v5
+    # `if err := f(); err != nil` is idiomatic and scopes err to the check.
+    - noinlineerr
+    # White-box unit tests in the package under test are idiomatic; black-box tests may still use `<pkg>_test`.
+    - testpackage
+    # golines aligns struct tags while formatting; two tools owning the same columns fight.
+    - tagalign
+    # No license header policy.
+    - goheader
+
+  settings:
+    cyclop:
+      max-complexity: 10
+      package-average: 5.0
+
+    depguard:
+      rules:
+        main:
+          list-mode: lax
+          files:
+            - $all
+          deny:
+            - pkg: log$
+              desc: use log/slog with structured attributes
+            - pkg: io/ioutil
+              desc: deprecated; use io and os
+            - pkg: math/rand$
+              desc: use math/rand/v2, or crypto/rand for anything secret
+            - pkg: unsafe
+              desc: no unsafe code in this module
+            - pkg: github.com/pkg/errors
+              desc: use errors and fmt.Errorf with %w
+            - pkg: golang.org/x/exp/slices
+              desc: use the standard slices package
+            - pkg: golang.org/x/exp/maps
+              desc: use the standard maps package
+            - pkg: github.com/sirupsen/logrus
+              desc: use log/slog
+            - pkg: go.uber.org/zap
+              desc: use log/slog
+            - pkg: github.com/rs/zerolog
+              desc: use log/slog
+            - pkg: github.com/stretchr/testify
+              desc: use the standard testing package; compare values with github.com/google/go-cmp/cmp
+
+    dupl:
+      threshold: 100
+
+    embeddedstructfieldcheck:
+      forbid-mutex: true
+
+    errcheck:
+      check-blank: true # `_ = f()` must be a `//nolint:errcheck // <reason>`
+      check-type-assertions: true
+
+    errchkjson:
+      report-no-exported: true
+
+    exhaustive:
+      check:
+        - map
+        - switch
+      default-signifies-exhaustive: false # a new enum value breaks every switch that does not name it
+
+    exhaustruct_v5:
+      # Every field of this module's struct types is set in each literal, so a new field breaks every construction site.
+      # Types from other modules (stdlib options structs and the like) are exempt: explicit mode checks only the types
+      # enforce-patterns matches, where the default (implicit) mode checks every struct type.
+      explicit-mode: true
+      enforce-patterns:
+        - ^github\.com/saladtechnologies/salad-cloud-cli(/.+)?\..+$
+      allow-empty-returns: true # `return T{}, err`
+
+    fatcontext:
+      check-struct-pointers: true
+
+    forbidigo:
+      analyze-types: true
+      exclude-godoc-examples: false
+      forbid:
+        - pattern: ^(fmt\.Print.*|print|println)$
+          msg: write to an io.Writer the caller passes in, or log through log/slog
+        - pattern: ^os\.Exit$
+          msg: return an error; only main exits, under a nolint with its reason
+        - pattern: ^panic$
+          msg: return an error; a panic for a broken invariant needs a nolint with its reason
+        - pattern: ^context\.(Background|TODO)$
+          msg: accept a context.Context parameter; only main creates the root context (tests use t.Context())
+
+    funcorder:
+      constructor: true
+      struct-method: true
+
+    funlen:
+      ignore-comments: true
+      lines: 100
+      statements: 50
+
+    gochecksumtype:
+      default-signifies-exhaustive: false
+
+    gocognit:
+      min-complexity: 15
+
+    gocritic:
+      enable-all: true
+      disabled-checks:
+        - importShadow # revive's import-shadowing reports the same thing
+        - unnamedResult # wants named results, which nonamedreturns forbids
+        - whyNoLint # nolintlint enforces the reason
+
+    gocyclo:
+      min-complexity: 15
+
+    godoclint:
+      default: all
+      options:
+        max-len:
+          length: 116 # 120 columns minus the `// ` and one tab of indentation
+
+    godot:
+      capital: true
+      scope: toplevel
+
+    gomoddirectives:
+      check-module-path: true
+      exclude-forbidden: true
+      go-debug-forbidden: true
+      tool-forbidden: true # developer tools are pinned in mise.toml, not go.mod
+
+    gomodguard_v2:
+      local-replace-directives: true
+      blocked:
+        - module: github.com/pkg/errors
+          reason: use errors and fmt.Errorf with %w
+        - module: github.com/sirupsen/logrus
+          reason: use log/slog
+        - module: github.com/stretchr/testify
+          reason: use the standard testing package and github.com/google/go-cmp
+        - module: github.com/rs/zerolog
+          reason: use log/slog
+        - module: go.uber.org/zap
+          reason: use log/slog
+
+    gosec:
+      excludes:
+        - G104 # unchecked errors: errcheck reports them, with check-blank
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment # reorders fields for padding at the cost of readable grouping
+
+    iface:
+      enable:
+        - identical
+        - opaque
+        - unexported
+        - unused
+
+    interfacebloat:
+      max: 5
+
+    lll:
+      line-length: 120
+      tab-width: 4
+
+    misspell:
+      locale: US
+
+    nakedret:
+      max-func-lines: 0
+
+    nilnil:
+      detect-opposite: true
+      only-two: false
+
+    nolintlint:
+      allow-unused: false
+      require-explanation: true
+      require-specific: true
+
+    paralleltest:
+      check-cleanup: true
+
+    revive:
+      enable-all-rules: true
+      rules:
+        # Covered by a dedicated linter configured above.
+        - name: add-constant # mnd
+          disabled: true
+        - name: cognitive-complexity # gocognit
+          disabled: true
+        - name: cyclomatic # cyclop, gocyclo
+          disabled: true
+        - name: function-length # funlen
+          disabled: true
+        - name: line-length-limit # lll
+          disabled: true
+        - name: unchecked-type-assertion # forcetypeassert
+          disabled: true
+        - name: unhandled-error # errcheck
+          disabled: true
+        # No policy to enforce.
+        - name: banned-characters
+          disabled: true
+        - name: file-header
+          disabled: true
+        - name: max-public-structs
+          disabled: true
+        - name: string-format
+          disabled: true
+        # Configured.
+        - name: argument-limit
+          arguments:
+            - 7
+        - name: comments-density
+          disabled: true # a ratio, not a rule; godoclint requires the comments that matter
+        - name: enforce-map-style
+          arguments:
+            - make
+        - name: enforce-repeated-arg-type-style
+          arguments:
+            - short # matches gofumpt's group-params
+        - name: enforce-slice-style
+          arguments:
+            - nil
+        - name: enforce-switch-style
+          arguments:
+            - allowNoDefault # exhaustive requires every enum case instead
+        - name: file-length-limit
+          arguments:
+            - max: 1000
+              skipComments: true
+              skipBlankLines: true
+        - name: filename-format
+          arguments:
+            - ^[a-z][a-z0-9_]*\.go$
+        - name: function-result-limit
+          arguments:
+            - 3
+        - name: max-control-nesting
+          arguments:
+            - 4
+
+    sloglint:
+      attr-only: true # slog.String("key", v), never loose key-value pairs
+      context: all # the *Context variants, so handlers see trace and request data
+      forbidden-keys:
+        - level
+        - msg
+        - source
+        - time
+      key-naming-case: snake
+      msg-style: lowercased
+      no-global: all # loggers are passed in, never slog.Default()
+      static-msg: true
+
+    staticcheck:
+      checks:
+        - all
+
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+          toml: snake
+          yaml: snake
+
+    unused:
+      field-writes-are-uses: false
+      local-variables-are-used: false
+
+    usestdlibvars:
+      constant-kind: true
+      crypto-hash: true
+      default-rpc-path: true
+      sql-isolation-level: true
+      time-date-month: true
+      time-layout: true
+      time-month: true
+      tls-signature-scheme: true
+
+    usetesting:
+      context-background: true
+      context-todo: true
+      os-temp-dir: true
+
+  exclusions:
+    generated: strict
+    rules:
+      # Tests: table literals repeat, failures are reported with t.Fatalf, not returned as wrapped sentinels, and Test
+      # functions are exported for the test runner, not documented as API.
+      - path: _test\.go$
+        linters:
+          - dupl
+          - err113
+          - exhaustruct_v5
+          - forcetypeassert
+          - funlen
+          - goconst
+          - godoclint
+          - maintidx
+          - wrapcheck
 
 formatters:
   enable:
+    - gci
     - gofumpt
-    - goimports
+    - golines
   settings:
+    gci:
+      custom-order: true
+      sections:
+        - standard
+        - default
+        - localmodule
     gofumpt:
-      extra:
-        group-params: true
       module-path: github.com/saladtechnologies/salad-cloud-cli
-    goimports:
-      local-prefixes:
-        - github.com/saladtechnologies/salad-cloud-cli
-
-linters:
-  # errcheck, govet, ineffassign, staticcheck and unused, plus checks that find
-  # bugs rather than enforce a style.
-  default: standard
-  enable:
-    - bodyclose
-    - gocritic
-    - misspell
-    - nilerr
-    - nolintlint
-    - unconvert
-    - usestdlibvars
-    - wastedassign
-  settings:
-    errcheck:
-      exclude-functions:
-        # Setters that change the error in place and return it for chaining.
-        - (*github.com/saladtechnologies/salad-cloud-cli/internal/clierr.Error).WithHint
-        - (*github.com/saladtechnologies/salad-cloud-cli/internal/clierr.Error).WithStatus
-    misspell:
-      # No locale: the API spells cancelled with two l's, and that is in the contract.
-      ignore-rules:
-        - enviroment # the did-you-mean example in internal/input; cspell:ignore enviroment
-    nolintlint:
-      require-explanation: true
-      require-specific: true
-    staticcheck:
-      checks:
-        # golangci-lint's defaults...
-        - all
-        - -ST1000
-        - -ST1003
-        - -ST1016
-        - -ST1020
-        - -ST1021
-        - -ST1022
-        # ...and not De Morgan: "not one of these allowed characters" reads
-        # better negated whole.
-        - -QF1001
+      extra:
+        balance-calls: true
+        clothe-returns: true
+        group-params: true
+    golines:
+      max-len: 120
+      # Off: golines wraps an overlong comment line on its own and leaves the overflow as an orphaned line instead of
+      # reflowing the paragraph. lll (120 columns) fails overlong comments instead, and the author rewraps them.
+      shorten-comments: false
+      tab-len: 4
   exclusions:
-    presets:
-      # Unchecked Close, os.Remove and fmt.Fprint*: cleanup on a path that is
-      # already failing, and writes to the terminal.
-      - std-error-handling
-    rules:
-      # Test servers and fixtures ignore write and decode errors; a failure
-      # there shows up as a wrong result in the test itself.
-      - path: _test\.go
-        linters:
-          - errcheck
+    generated: strict
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  uniq-by-line: false
+
+severity:
+  default: error
