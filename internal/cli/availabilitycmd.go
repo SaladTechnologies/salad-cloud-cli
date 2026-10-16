@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/organizationdata"
@@ -223,7 +224,7 @@ func countCell(v *int64) string {
 	if v == nil {
 		return "-"
 	}
-	return fmt.Sprintf("%d", *v)
+	return strconv.FormatInt(*v, 10)
 }
 
 func init() {

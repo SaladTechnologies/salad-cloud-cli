@@ -5,6 +5,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -90,7 +91,7 @@ func copyDocument(g *shared.ContainerGroup, newName string, displayNameSet bool)
 	}
 	obj, ok := tree.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("unexpected group document")
+		return nil, errors.New("unexpected group document")
 	}
 	for reqPath, respPath := range requestToResponsePath {
 		if v, present := lookupPath(obj, respPath); present {
@@ -104,7 +105,7 @@ func copyDocument(g *shared.ContainerGroup, newName string, displayNameSet bool)
 	var dropped []string
 	filtered, ok := input.FilterTree(obj, reflect.TypeFor[containergroups.ContainerGroupCreationRequest](), "", &dropped).(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("unexpected group document")
+		return nil, errors.New("unexpected group document")
 	}
 	if newName != "" && newName != ptr.Deref(g.Name) && !displayNameSet {
 		filtered["display_name"] = newName

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
@@ -82,13 +83,13 @@ func writeInstanceDetail(w io.Writer, inst *containergroups.ContainerGroupInstan
 	row("ID", ptr.Deref(inst.Id))
 	row("Machine", ptr.Deref(inst.MachineId))
 	row("State", instanceState(inst))
-	row("Ready", fmt.Sprintf("%t", ptr.Deref(inst.Ready)))
-	row("Started", fmt.Sprintf("%t", ptr.Deref(inst.Started)))
+	row("Ready", strconv.FormatBool(ptr.Deref(inst.Ready)))
+	row("Started", strconv.FormatBool(ptr.Deref(inst.Started)))
 	row("CPU", instanceCPU(inst))
 	row("Memory", instanceMem(inst))
 	row("Pull progress", instancePull(inst))
 	row("SSH", instanceSSH(inst))
-	row("Version", fmt.Sprintf("%d", ptr.Deref(inst.Version)))
+	row("Version", strconv.FormatInt(ptr.Deref(inst.Version), 10))
 	row("Updated", timeCell(inst.UpdateTime))
 }
 

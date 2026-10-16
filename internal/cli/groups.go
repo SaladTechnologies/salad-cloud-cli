@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -149,15 +150,15 @@ func writeGroupDetail(w io.Writer, g *shared.ContainerGroup) {
 	if c := g.Container; c != nil {
 		row("Image", ptr.Deref(c.Image))
 		if r := c.Resources; r != nil {
-			row("CPU", fmt.Sprintf("%d", ptr.Deref(r.Cpu)))
-			row("Memory (MB)", fmt.Sprintf("%d", ptr.Deref(r.Memory)))
+			row("CPU", strconv.FormatInt(ptr.Deref(r.Cpu), 10))
+			row("Memory (MB)", strconv.FormatInt(ptr.Deref(r.Memory), 10))
 			if len(r.GpuClasses) > 0 {
 				row("GPU classes", strings.Join(r.GpuClasses, ", "))
 			}
 		}
 	}
 	row("Priority", priorityString(g.Priority))
-	row("Replicas", fmt.Sprintf("%d", ptr.Deref(g.Replicas)))
+	row("Replicas", strconv.FormatInt(ptr.Deref(g.Replicas), 10))
 	if s := scheduledScalingString(g); s != "" {
 		row("Scheduled scaling", s)
 	}

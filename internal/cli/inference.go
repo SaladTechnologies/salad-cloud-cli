@@ -565,7 +565,7 @@ cancelled exits 1 with the job's status and last event. --timeout (default
 			}
 			ctx := cmd.Context() // cancelled by the one signal handler in Execute
 			id := ptr.Deref(job.Id)
-			d := liveJobWaitDeps(client, endpoint, id, fmt.Sprintf("waiting for job %s", id))
+			d := liveJobWaitDeps(client, endpoint, id, "waiting for job "+id)
 			final, cerr := waitForJobTerminal(ctx, d, id, timeout, waitPoll)
 			if cerr != nil {
 				return cerr

@@ -568,7 +568,7 @@ func runQueueJobCreate(cmd *cobra.Command, args []string) error {
 		view:  queueJobView,
 		now:   time.Now,
 		sleep: ctxSleep,
-		label: fmt.Sprintf("waiting for job %s", id),
+		label: "waiting for job " + id,
 		where: "in queue " + queue,
 		check: fmt.Sprintf("saladcloud queues jobs get %s --queue %s", id, queue),
 	}

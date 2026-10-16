@@ -541,7 +541,7 @@ func TestSetupDoctor(t *testing.T) {
 		case "api-key":
 			expect(t, "doctor api-key row", row, map[string]any{
 				"status": "fail",
-				"detail": fmt.Sprintf("%s (from SALAD_API_KEY) rejected", mask(badKey)),
+				"detail": mask(badKey) + " (from SALAD_API_KEY) rejected",
 				"hint": fmt.Sprintf(
 					"remove SALAD_API_KEY to use the saved API key (%s), or set it to a working key",
 					mask(k),

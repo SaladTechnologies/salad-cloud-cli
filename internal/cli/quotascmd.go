@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -58,5 +59,5 @@ func int64Cell(v *int64) string {
 	if v == nil {
 		return "-"
 	}
-	return fmt.Sprintf("%d", *v)
+	return strconv.FormatInt(*v, 10)
 }
