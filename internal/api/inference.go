@@ -103,7 +103,7 @@ func (c *Client) ListInferenceJobs(
 		return nil, false, err
 	}
 	fetch := func(page int) ([]inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
-		coll, cerr := restJSON[inferenceendpoints.InferenceEndpointJobCollection](
+		coll, err := restJSON[inferenceendpoints.InferenceEndpointJobCollection](
 			ctx,
 			c,
 			"GET",
@@ -111,8 +111,8 @@ func (c *Client) ListInferenceJobs(
 			"",
 			nil,
 		)
-		if cerr != nil {
-			return nil, cerr
+		if err != nil {
+			return nil, err
 		}
 		return coll.Items, nil
 	}

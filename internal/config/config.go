@@ -105,15 +105,15 @@ func Writable() error {
 	if err != nil {
 		return err
 	}
-	if f, err := os.OpenFile(p, os.O_WRONLY, 0); err == nil {
+	if f, openErr := os.OpenFile(p, os.O_WRONLY, 0); openErr == nil {
 		f.Close()
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+	} else if !errors.Is(openErr, os.ErrNotExist) {
+		return openErr
 	}
 	dir := filepath.Dir(p)
 	for {
-		st, err := os.Stat(dir)
-		if err == nil {
+		st, statErr := os.Stat(dir)
+		if statErr == nil {
 			if !st.IsDir() {
 				return fmt.Errorf("%s is not a folder", dir)
 			}
@@ -141,7 +141,7 @@ func Save(f File) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+	if err = os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(f, "", "  ")

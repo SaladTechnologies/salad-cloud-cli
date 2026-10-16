@@ -198,7 +198,7 @@ func sweep() {
 	var listing struct {
 		Items []struct{ Name string } `json:"items"`
 	}
-	if err := json.Unmarshal(out, &listing); err != nil {
+	if err = json.Unmarshal(out, &listing); err != nil {
 		return
 	}
 	for _, it := range listing.Items {
@@ -344,7 +344,7 @@ func TestGroupLifecycle(t *testing.T) {
 	if err := os.WriteFile(patch, []byte(`{"replicas":3}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if r := run(t, "container-groups", "update", g, "-f", patch); r.Code != 0 {
+	if r = run(t, "container-groups", "update", g, "-f", patch); r.Code != 0 {
 		t.Fatalf("update exit %d: %s", r.Code, r.Stderr)
 	}
 	// get --writable must round-trip through update -f with no rejection
@@ -383,7 +383,7 @@ func TestGroupLifecycle(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if r := run(t, "container-groups", "update", g, "-f", sched); r.Code != 0 {
+	if r = run(t, "container-groups", "update", g, "-f", sched); r.Code != 0 {
 		t.Fatalf("enable scheduled scaling exit %d: %s", r.Code, r.Stderr)
 	}
 	r = run(t, "container-groups", "scale", g, "--replicas", "1", "-o", "json")
@@ -404,10 +404,10 @@ func TestGroupLifecycle(t *testing.T) {
 	}
 	// --keep-schedule: re-enable, scale again with the flag, and the schedule
 	// must survive (two writes under the hood).
-	if r := run(t, "container-groups", "update", g, "-f", sched); r.Code != 0 {
+	if r = run(t, "container-groups", "update", g, "-f", sched); r.Code != 0 {
 		t.Fatalf("re-enable scheduled scaling exit %d: %s", r.Code, r.Stderr)
 	}
-	if r := run(t, "container-groups", "scale", g, "--replicas", "2", "--keep-schedule"); r.Code != 0 {
+	if r = run(t, "container-groups", "scale", g, "--replicas", "2", "--keep-schedule"); r.Code != 0 {
 		t.Fatalf("scale --keep-schedule exit %d: %s", r.Code, r.Stderr)
 	} else if !strings.Contains(r.Stderr, "re-enabled") {
 		t.Errorf("scale --keep-schedule did not report the re-enable; stderr %q", r.Stderr)

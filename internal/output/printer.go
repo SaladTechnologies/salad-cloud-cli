@@ -66,7 +66,7 @@ func Emit(v any, table func(w io.Writer)) error {
 			return err
 		}
 		var buf bytes.Buffer
-		if err := json.Indent(&buf, ASCII(data), "", "  "); err != nil {
+		if err = json.Indent(&buf, ASCII(data), "", "  "); err != nil {
 			return err
 		}
 		_, err = fmt.Fprintln(Stdout, buf.String())

@@ -91,7 +91,7 @@ write (the API does not honor the flag in the same patch as replicas), for
 			if err != nil {
 				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
 			}
-			if cerr := validateScaleReplicas(n); cerr != nil {
+			if cerr = validateScaleReplicas(n); cerr != nil {
 				return cerr
 			}
 			client, _, cerr := NewClient(cmd)

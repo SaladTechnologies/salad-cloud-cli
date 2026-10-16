@@ -527,7 +527,7 @@ func runQueueJobCreate(cmd *cobra.Command, args []string) error {
 	}
 	var proto queues.QueueJobPrototype
 	if file != "" {
-		if cerr := loadJobFile(file, &proto); cerr != nil {
+		if cerr = loadJobFile(file, &proto); cerr != nil {
 			return cerr
 		}
 		if proto.Input == nil {
@@ -563,8 +563,8 @@ func runQueueJobCreate(cmd *cobra.Command, args []string) error {
 	id := ptr.Deref(job.Id)
 	d := jobWaitDeps[queues.QueueJob]{
 		get: func(ctx context.Context) (*queues.QueueJob, *clierr.Error) {
-			j, cerr := client.GetQueueJob(ctx, queue, id)
-			return j, queueJobNotFound(cerr, queue, id)
+			j, err := client.GetQueueJob(ctx, queue, id)
+			return j, queueJobNotFound(err, queue, id)
 		},
 		view:  queueJobView,
 		now:   time.Now,

@@ -441,9 +441,9 @@ Host alias.`,
 			if useConfig {
 				instances := collection.Instances
 				if instance != "" {
-					inst, cerr := resolveSSHInstance(collection.Instances, group, instance)
-					if cerr != nil {
-						return cerr
+					inst, err := resolveSSHInstance(collection.Instances, group, instance)
+					if err != nil {
+						return err
 					}
 					instances = []containergroups.ContainerGroupInstance{*inst}
 				}

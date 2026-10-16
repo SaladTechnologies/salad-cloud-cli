@@ -192,7 +192,7 @@ func runLogin(cmd *cobra.Command, args []string) error {
 			} else {
 				tell("%s", invalidPastedKey)
 			}
-			if cerr := l.askForKey(false); cerr != nil {
+			if cerr = l.askForKey(false); cerr != nil {
 				return cerr
 			}
 			continue

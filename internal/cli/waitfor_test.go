@@ -448,7 +448,7 @@ func TestSettleFlags(t *testing.T) {
 	if err := cmd.Flags().Set("timeout", "0"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, cerr := settleFlagValues(cmd); cerr == nil || cerr.Code != clierr.CodeUsage {
+	if _, _, cerr = settleFlagValues(cmd); cerr == nil || cerr.Code != clierr.CodeUsage {
 		t.Errorf("zero timeout while waiting = %v, want a usage error", cerr)
 	}
 	if err := cmd.Flags().Set("no-wait", "true"); err != nil {

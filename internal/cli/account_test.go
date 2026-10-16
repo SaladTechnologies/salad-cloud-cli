@@ -42,7 +42,7 @@ func TestOrgsListAndGet(t *testing.T) {
 	var list struct {
 		Items []map[string]any `json:"items"`
 	}
-	if err := json.Unmarshal([]byte(out), &list); err != nil || len(list.Items) != 1 {
+	if err = json.Unmarshal([]byte(out), &list); err != nil || len(list.Items) != 1 {
 		t.Fatalf("orgs list -o json = %s (%v)", out, err)
 	}
 	if _, present := list.Items[0]["update_time"]; !present {
@@ -79,7 +79,7 @@ func TestQuotasGet(t *testing.T) {
 		t.Fatalf("quotas get: %v", err)
 	}
 	var doc map[string]map[string]any
-	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+	if err = json.Unmarshal([]byte(out), &doc); err != nil {
 		t.Fatalf("quotas get -o json = %s", out)
 	}
 	q := doc["container_groups_quotas"]

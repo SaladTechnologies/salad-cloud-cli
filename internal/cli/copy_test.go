@@ -58,7 +58,7 @@ func TestCopyRules(t *testing.T) {
 			}
 			if name == "MustCompile" || name == "Compile" { // a pattern, not output
 				for _, a := range call.Args {
-					if lit, ok := a.(*ast.BasicLit); ok {
+					if lit, isLit := a.(*ast.BasicLit); isLit {
 						patterns[lit] = true
 					}
 				}

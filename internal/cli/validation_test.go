@@ -121,7 +121,7 @@ func validationSites(t *testing.T, root string) []validationSite {
 			if !ok || len(call.Args) < 3 {
 				return true
 			}
-			if sel, ok := call.Fun.(*ast.SelectorExpr); !ok || sel.Sel.Name != "New" {
+			if sel, isSel := call.Fun.(*ast.SelectorExpr); !isSel || sel.Sel.Name != "New" {
 				return true
 			}
 			codeSel, ok := call.Args[0].(*ast.SelectorExpr)

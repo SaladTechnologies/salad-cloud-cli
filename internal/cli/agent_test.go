@@ -52,7 +52,7 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 		t.Fatalf("first run: %v", err)
 	}
 	var res agentInitResult
-	if err := json.Unmarshal([]byte(out), &res); err != nil {
+	if err = json.Unmarshal([]byte(out), &res); err != nil {
 		t.Fatalf("first run output is not JSON: %v\n%s", err, out)
 	}
 	if res.Action != "created" || res.Reason != "default" || res.File == nil ||
@@ -72,7 +72,7 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}
-	if err := json.Unmarshal([]byte(out), &res); err != nil {
+	if err = json.Unmarshal([]byte(out), &res); err != nil {
 		t.Fatal(err)
 	}
 	if res.Action != "unchanged" {
@@ -88,7 +88,7 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 	stale := "# Project\n\nUser intro.\n\n" +
 		agentdoc.StartMarker("0.0.1") + "\nstale\n<!-- SALADCLOUD END -->\n" +
 		"\n## Testing\nUser outro.\n"
-	if err := os.WriteFile(filepath.Join(dir, agentdoc.FileAgents), []byte(stale), 0o600); err != nil {
+	if err = os.WriteFile(filepath.Join(dir, agentdoc.FileAgents), []byte(stale), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	out, err = runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")

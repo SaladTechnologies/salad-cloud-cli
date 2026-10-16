@@ -492,7 +492,7 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 			}
 			flags := collectUpdateFlags(cmd)
 			flags.Command = command
-			if cerr := validateUpdateFlags(flags); cerr != nil {
+			if cerr = validateUpdateFlags(flags); cerr != nil {
 				return cerr
 			}
 			file, _ := cmd.Flags().GetString("file")
@@ -531,7 +531,7 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 				if err != nil {
 					return err
 				}
-				if cerr := namingGroup(rejectUnknowns(u), args[0]); cerr != nil {
+				if cerr = namingGroup(rejectUnknowns(u), args[0]); cerr != nil {
 					return cerr
 				}
 				raw = r
@@ -545,9 +545,9 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 				flags.ResolveGpu = lazyGpuResolver(cmd, client)
 				var env map[string]*string
 				if len(flags.Env) > 0 {
-					current, cerr := client.GetGroup(cmd.Context(), args[0])
-					if cerr != nil {
-						return groupNotFound(cerr, args[0], client.Org(), client.Project())
+					current, err := client.GetGroup(cmd.Context(), args[0])
+					if err != nil {
+						return groupNotFound(err, args[0], client.Org(), client.Project())
 					}
 					env = envOf(current)
 				}

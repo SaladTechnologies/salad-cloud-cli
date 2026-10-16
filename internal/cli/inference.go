@@ -537,7 +537,7 @@ cancelled exits 1 with the job's status and last event. --timeout (default
 			}
 			var proto inferenceendpoints.InferenceEndpointJobPrototype
 			if file != "" {
-				if cerr := loadJobFile(file, &proto); cerr != nil {
+				if cerr = loadJobFile(file, &proto); cerr != nil {
 					return cerr
 				}
 				if proto.Input == nil {

@@ -315,7 +315,7 @@ func runAvailability(cmd *cobra.Command, args []string) error {
 	if cerr != nil {
 		return cerr
 	}
-	if cerr := client.RequireOrg(); cerr != nil {
+	if cerr = client.RequireOrg(); cerr != nil {
 		return cerr
 	}
 
@@ -325,14 +325,14 @@ func runAvailability(cmd *cobra.Command, args []string) error {
 		if fromProject != "" {
 			r.Project, r.ProjectSource = fromProject, "flag"
 		}
-		src, cerr := api.New(r)
-		if cerr != nil {
-			return cerr
+		src, err := api.New(r)
+		if err != nil {
+			return err
 		}
 		warnOnAssumedProject(src, r)
-		g, cerr := src.GetGroup(cmd.Context(), fromGroup)
-		if cerr != nil {
-			return groupNotFound(cerr, fromGroup, src.Org(), src.Project())
+		g, err := src.GetGroup(cmd.Context(), fromGroup)
+		if err != nil {
+			return groupNotFound(err, fromGroup, src.Org(), src.Project())
 		}
 		base = requirementsOf(g)
 	}
@@ -348,9 +348,9 @@ func runAvailability(cmd *cobra.Command, args []string) error {
 		return id
 	}
 	if len(af.Gpus) > 0 || len(base.GpuClasses) > 0 {
-		list, cerr := client.ListGpuClasses(cmd.Context())
-		if cerr != nil {
-			return cerr
+		list, err := client.ListGpuClasses(cmd.Context())
+		if err != nil {
+			return err
 		}
 		classes = list.Items
 	}

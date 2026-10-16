@@ -508,7 +508,7 @@ func runCreate(
 	if cerr != nil {
 		return cerr
 	}
-	if cerr := validateCreateRequest(&req); cerr != nil {
+	if cerr = validateCreateRequest(&req); cerr != nil {
 		return cerr
 	}
 	c, cerr := getClient()
@@ -648,7 +648,7 @@ together, so it starts with the program: -- python app.py --port 8080, not
 				return cerr
 			}
 			noAutostart, _ := cmd.Flags().GetBool("no-autostart")
-			if cerr := validateWaitAutostart(wait, noAutostart); cerr != nil {
+			if cerr = validateWaitAutostart(wait, noAutostart); cerr != nil {
 				return cerr
 			}
 			file, _ := cmd.Flags().GetString("file")

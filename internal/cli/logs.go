@@ -210,7 +210,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	// resolved the organization, so a placeholder stands in for it here.
 	preflight := baseFilters
 	preflight.Org = "-"
-	if _, cerr := logsq.Compile(preflight); cerr != nil {
+	if _, cerr = logsq.Compile(preflight); cerr != nil {
 		return cerr
 	}
 
@@ -218,7 +218,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	if cerr != nil {
 		return cerr
 	}
-	if cerr := client.RequireOrg(); cerr != nil {
+	if cerr = client.RequireOrg(); cerr != nil {
 		return cerr
 	}
 	// A group's logs are filtered by its project, which the log query never
@@ -226,7 +226,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	// the command warns and a missing one is no valid project set (exit 2)
 	// rather than an empty result.
 	if group != "" && res.ProjectSource == config.SourceDefault {
-		if cerr := client.CheckProject(cmd.Context()); cerr != nil {
+		if cerr = client.CheckProject(cmd.Context()); cerr != nil {
 			return cerr
 		}
 	}
@@ -271,9 +271,9 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		q.SetQuery(query)
 		q.SetPageSize(int64(pageSize))
 		q.SetSortOrder(logs.LOG_ENTRY_QUERY_SORT_ORDER_ASC)
-		coll, cerr := client.QueryLogs(ctx, q)
-		if cerr != nil {
-			return nil, cerr
+		coll, err := client.QueryLogs(ctx, q)
+		if err != nil {
+			return nil, err
 		}
 		page := &logsq.Page{
 			PageMinTime: ptr.Deref(coll.PageMinTime),
@@ -289,17 +289,17 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	}
 
 	if !follow {
-		query, cerr := logsq.Compile(baseFilters)
-		if cerr != nil {
-			return cerr
+		query, err := logsq.Compile(baseFilters)
+		if err != nil {
+			return err
 		}
 		emitted := 0
 		countingEmit := func(e logsq.Entry) error {
 			emitted++
 			return emit(e)
 		}
-		if cerr := logsq.FetchWindow(cmd.Context(), fetch, query, since, until, pageSize, countingEmit); cerr != nil {
-			return cerr
+		if err := logsq.FetchWindow(cmd.Context(), fetch, query, since, until, pageSize, countingEmit); err != nil {
+			return err
 		}
 		// An empty one-shot result is easy to misread as a hang or a bug;
 		// say so on stderr in table mode. JSON/NDJSON stays machine-clean,

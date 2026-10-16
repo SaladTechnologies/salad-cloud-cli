@@ -169,14 +169,14 @@ func loadFromBase(cmd *cobra.Command, ref, file string, allowUnknown bool, name 
 	if cerr != nil {
 		return base, nil, nil, cerr
 	}
-	if cerr := client.RequireOrg(); cerr != nil {
+	if cerr = client.RequireOrg(); cerr != nil {
 		return base, nil, nil, cerr
 	}
 	explicitProject := project != ""
 	if !explicitProject {
 		project = client.Project()
 	}
-	if cerr := checkCopyTarget(project == client.Project(), name, group); cerr != nil {
+	if cerr = checkCopyTarget(project == client.Project(), name, group); cerr != nil {
 		return base, nil, nil, cerr
 	}
 
@@ -188,7 +188,7 @@ func loadFromBase(cmd *cobra.Command, ref, file string, allowUnknown bool, name 
 			return base, nil, nil, lerr
 		}
 		if !allowUnknown {
-			if cerr := rejectUnknowns(u); cerr != nil {
+			if cerr = rejectUnknowns(u); cerr != nil {
 				return base, nil, nil, cerr
 			}
 		}

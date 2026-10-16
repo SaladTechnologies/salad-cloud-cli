@@ -453,7 +453,7 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 	if cerr != nil {
 		return cerr
 	}
-	if cerr := client.RequireOrg(); cerr != nil {
+	if cerr = client.RequireOrg(); cerr != nil {
 		return cerr
 	}
 
@@ -466,7 +466,7 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		}
 		defer fh.Close()
 		remote = transcribeRemoteName(source, time.Now())
-		signedURL, cerr := client.UploadFile(
+		url, cerr = client.UploadFile(
 			cmd.Context(),
 			remote,
 			fh,
@@ -477,7 +477,6 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		if cerr != nil {
 			return cerr
 		}
-		url = signedURL
 		if output.Mode() == "table" {
 			fmt.Fprintf(os.Stderr, "uploaded %s (%s) to S4\n", source, humanSize(fileSize))
 		}

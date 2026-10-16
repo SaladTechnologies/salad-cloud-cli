@@ -31,11 +31,11 @@ func newestPages[T any](
 		if v, ok := pages[p]; ok {
 			return v, nil
 		}
-		v, cerr := fetch(p)
-		if cerr == nil {
+		v, err := fetch(p)
+		if err == nil {
 			pages[p] = v
 		}
-		return v, cerr
+		return v, err
 	}
 	last, cerr := lastPage(get, pageSize)
 	if cerr != nil {

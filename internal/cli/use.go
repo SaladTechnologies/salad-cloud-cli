@@ -100,7 +100,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 	if cerr != nil {
 		return cerr
 	}
-	if cerr := client.CheckOrg(cmd.Context()); cerr != nil {
+	if cerr = client.CheckOrg(cmd.Context()); cerr != nil {
 		if cerr.Code != clierr.CodeNotFound {
 			return u.failed(cerr)
 		}

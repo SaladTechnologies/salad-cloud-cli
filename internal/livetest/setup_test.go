@@ -682,7 +682,7 @@ func TestRunTimeRejectedKey(t *testing.T) {
 	)
 
 	d = newCfg(t)
-	if r := d.run(t, nil, badKey+"\n", "config", "set", "api-key", "-"); r.Code != 0 {
+	if r = d.run(t, nil, badKey+"\n", "config", "set", "api-key", "-"); r.Code != 0 {
 		t.Fatalf("config set api-key - exit %d: %s", r.Code, r.Stderr)
 	}
 	r = d.run(t, map[string]string{"SALAD_ORGANIZATION": org}, "", "quotas", "get", "-o", "json")
