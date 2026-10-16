@@ -9,7 +9,7 @@ import (
 )
 
 // dayPrefix matches a leading whole-day component ("3d", "1d12h") that Go's
-// time.ParseDuration does not understand.
+// [time.ParseDuration] does not understand.
 var dayPrefix = regexp.MustCompile(`^(\d+)d(.*)$`)
 
 // ParseTimeRef turns a user-supplied time reference into an absolute UTC

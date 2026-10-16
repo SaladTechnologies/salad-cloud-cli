@@ -16,10 +16,11 @@ import (
 // DebugLevel is how much --debug reports on stderr.
 type DebugLevel int
 
+// The debug levels, in increasing detail.
 const (
-	DebugOff      DebugLevel = iota
-	DebugRequests            // --debug: method, URL, status, duration per request
-	DebugBodies              // --debug=body: plus headers and bodies, redacted
+	DebugOff      DebugLevel = iota // no --debug: nothing
+	DebugRequests                   // --debug: method, URL, status, duration per request
+	DebugBodies                     // --debug=body: plus headers and bodies, redacted
 )
 
 var (

@@ -26,6 +26,7 @@ const (
 	// target. AGENTS.md is the cross-agent convention (Codex, Cursor,
 	// Copilot, Gemini CLI, …); Claude Code reads CLAUDE.md instead.
 	FileAgents = "AGENTS.md"
+	// FileClaude is the file Claude Code reads instead of FileAgents.
 	FileClaude = "CLAUDE.md"
 
 	// EnvClaudeCode is set in the environment of every process Claude Code

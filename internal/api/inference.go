@@ -1,6 +1,7 @@
 // Managed inference endpoints (transcription etc.) are ORG-scoped — their
 // paths have no project segment: /organizations/{org}/inference-endpoints.
 // Same SDK-types-over-our-transport split as the rest of the client.
+
 package api
 
 import (

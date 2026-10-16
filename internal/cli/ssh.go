@@ -13,6 +13,7 @@
 //     normally, so 'saladcloud container-groups cp' exit codes are trustworthy but
 //     'saladcloud container-groups ssh <group> -- <cmd>' exit codes are not (the CLI prints
 //     a stderr note).
+
 package cli
 
 import (

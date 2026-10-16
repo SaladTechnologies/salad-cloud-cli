@@ -19,7 +19,7 @@ func tell(format string, args ...any) {
 }
 
 // ask writes prompt to the terminal device and reads the answer, hidden when
-// asked. Ctrl-C returns errInterrupt and end of input io.EOF: both end the
+// asked. Ctrl-C returns errInterrupt and end of input [io.EOF]: both end the
 // exchange (answerEnded), and the terminal is already restored.
 func ask(prompt string, hidden bool) (string, error) {
 	fmt.Fprint(con.Device(), prompt+" ")

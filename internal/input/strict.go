@@ -13,6 +13,7 @@
 // — the --allow-unknown-fields escape hatch downgrades rejection to
 // warnings so a definition can carry API fields newer than this CLI's
 // pinned SDK model.
+
 package input
 
 import (
@@ -265,7 +266,7 @@ func isNullable(t reflect.Type) bool {
 
 // structFields maps a struct's JSON field names to their Go types,
 // flattening anonymous embedded structs. Returns nil when the struct has
-// no json-tagged fields at all (an opaque type like time.Time).
+// no json-tagged fields at all (an opaque type like [time.Time]).
 func structFields(t reflect.Type) map[string]reflect.Type {
 	fields := make(map[string]reflect.Type)
 	collectFields(t, fields)

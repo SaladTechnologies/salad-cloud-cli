@@ -2,6 +2,7 @@
 // client against the same relay endpoint 'saladcloud container-groups ssh' uses. SFTP is
 // the reliable half of the relay: unlike one-shot ssh commands, sftp exit
 // codes propagate correctly, so cp's exit code is trustworthy.
+
 package cli
 
 import (

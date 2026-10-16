@@ -44,7 +44,7 @@ func encodeFilled(v any) ([]byte, error) {
 	return encode(v, fillAll)
 }
 
-// MarshalRequest encodes an SDK request value for the wire: json.Marshal,
+// MarshalRequest encodes an SDK request value for the wire: [json.Marshal],
 // plus every set-but-empty slice or map that the SDK's omitempty tags drop.
 // An empty probe headers list is the case that needs it: the API rejects an
 // HTTP probe without "headers", and accepts "headers": []. Unset fields stay
@@ -100,7 +100,7 @@ func (o *object) MarshalJSON() ([]byte, error) {
 }
 
 // decodeOrdered reads one JSON value, objects as *object and numbers as
-// json.Number so re-encoding reproduces them exactly.
+// [json.Number] so re-encoding reproduces them exactly.
 func decodeOrdered(dec *json.Decoder) (any, error) {
 	tok, err := dec.Token()
 	if err != nil {

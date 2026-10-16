@@ -1,6 +1,7 @@
 // The inference plumbing: `saladcloud inference` mirrors the managed
 // inference-endpoints API surface noun-for-noun. Plumbing is cheap and
 // generic; flagship porcelain (transcribe.go) composes over it client-side.
+
 package cli
 
 import (

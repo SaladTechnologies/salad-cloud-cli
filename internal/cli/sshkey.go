@@ -3,6 +3,7 @@
 // (ssh-ed25519 or ssh-rsa), registered in the portal, so setup
 // discovers/generates a local key pair and hands the public key to the
 // user for portal registration.
+
 package cli
 
 import (

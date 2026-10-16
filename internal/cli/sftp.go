@@ -2,6 +2,7 @@
 // exploratory counterpart to 'saladcloud container-groups cp' (which drives sftp with a
 // one-command batch file). Same relay endpoint, same instance resolution,
 // same flags as ssh; exit codes propagate correctly over SFTP.
+
 package cli
 
 import (

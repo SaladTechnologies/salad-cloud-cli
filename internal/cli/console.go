@@ -149,7 +149,7 @@ type keyReader struct {
 
 // readLine reads keystrokes up to Enter, and returns the line trimmed. Printable characters are kept and echoed;
 // Backspace removes the last one; Ctrl-C returns errInterrupt; Ctrl-D or
-// Ctrl-Z on an empty line, or the end of input, returns io.EOF (later in a
+// Ctrl-Z on an empty line, or the end of input, returns [io.EOF] (later in a
 // line they do nothing). Other control
 // characters (an arrow key's escape sequence, paste markers) are kept unechoed,
 // for the caller's checks to judge.
@@ -205,7 +205,7 @@ func (k *keyReader) readLine(echo io.Writer) (string, error) {
 	}
 }
 
-// readLine reads one line and trims surrounding whitespace. io.EOF with
+// readLine reads one line and trims surrounding whitespace. [io.EOF] with
 // partial data still yields the data (a pipe without a trailing newline).
 func readLine(r *bufio.Reader) (string, error) {
 	line, err := r.ReadString('\n')

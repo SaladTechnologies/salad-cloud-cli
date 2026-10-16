@@ -114,7 +114,7 @@ func Stream(v any, line string) error {
 }
 
 // flush pushes buffered bytes through if the writer supports it.
-// os.Stdout is unbuffered in Go, so there is nothing to do for it.
+// [os.Stdout] is unbuffered in Go, so there is nothing to do for it.
 func flush(w io.Writer) error {
 	if f, ok := w.(interface{ Flush() error }); ok {
 		return f.Flush()

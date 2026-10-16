@@ -2,6 +2,7 @@
 // requirements right now. It is a query command (it acts directly, filters
 // are flags) and the only command that calls the availability endpoints,
 // which are expensive on the platform: nothing else asks implicitly.
+
 package cli
 
 import (

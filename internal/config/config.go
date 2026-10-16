@@ -23,10 +23,10 @@ type File struct {
 }
 
 // Path returns the config file location:
-// filepath.Join(os.UserConfigDir(), "saladcloud", "config.json").
+// [filepath.Join]([os.UserConfigDir](), "saladcloud", "config.json").
 //
 // If the SALAD_CLI_CONFIG_DIR environment variable is set, that directory is
-// used instead of os.UserConfigDir()/saladcloud. This exists primarily so
+// used instead of [os.UserConfigDir]()/saladcloud. This exists primarily so
 // tests (and sandboxed environments) can redirect config I/O without
 // touching the real user config.
 func Path() (string, error) {
@@ -47,6 +47,7 @@ type ReadError struct {
 	Corrupt bool // read, but not a valid config document
 }
 
+// Error names the file when it is corrupt, and is the read error otherwise.
 func (e *ReadError) Error() string {
 	if e.Corrupt {
 		// Every command loads the config, including `config set`, so a
@@ -56,6 +57,7 @@ func (e *ReadError) Error() string {
 	return e.Err.Error()
 }
 
+// Unwrap returns the read or parse error.
 func (e *ReadError) Unwrap() error { return e.Err }
 
 // Reason is why the file could not be read, without its path.
@@ -183,6 +185,13 @@ type Resolved struct {
 	SkippedProject, SkippedProjectOrg string
 }
 
+// DefaultProject is the project assumed when none is set anywhere.
+const DefaultProject = "default"
+
+// SourceDefault is the provenance reported for a value that came from a
+// built-in fallback rather than a flag, the environment, or the file.
+const SourceDefault = "default"
+
 // Resolve applies per-field precedence flag > env > config file.
 // Environment variables: SALAD_API_KEY, SALAD_ORGANIZATION, SALAD_PROJECT.
 // Missing values are never an error — the value and source just stay "" —
@@ -195,14 +204,6 @@ type Resolved struct {
 // stderr, and a fallback that does not exist is reported as no valid
 // project set. Commands decide what they require. The only error case is a
 // present but unreadable/corrupt config file.
-
-// DefaultProject is the project assumed when none is set anywhere.
-const DefaultProject = "default"
-
-// SourceDefault is the provenance reported for a value that came from a
-// built-in fallback rather than a flag, the environment, or the file.
-const SourceDefault = "default"
-
 func Resolve(orgFlag, projectFlag string) (Resolved, error) {
 	f, err := Load()
 	if err != nil {

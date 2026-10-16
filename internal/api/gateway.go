@@ -10,6 +10,7 @@
 // live and billed?", which nothing answers short of a completion. Hence
 // exactly two calls here — list models, and one minimal completion — and a
 // hand-rolled client, since the pinned SDK has no gateway surface.
+
 package api
 
 import (

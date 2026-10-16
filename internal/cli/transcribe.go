@@ -4,6 +4,7 @@
 // exactly after its endpoint and its flags are that endpoint's input fields;
 // everything here could be done with 'saladcloud inference jobs create
 // --endpoint <name>', just less pleasantly.
+
 package cli
 
 import (

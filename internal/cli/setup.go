@@ -19,7 +19,7 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
-// stderrTee, when set, is where errw writes instead of os.Stderr: the test
+// stderrTee, when set, is where errw writes instead of [os.Stderr]: the test
 // harness records stderr in order with stdout and the terminal.
 var stderrTee io.Writer
 

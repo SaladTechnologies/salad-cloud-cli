@@ -6,6 +6,7 @@
 // setup surface: the separate key, model discovery, and one completion to
 // prove the key is live — with a prompt of the user's choosing, because a
 // key check that says something back is also the demo.
+
 package cli
 
 import (

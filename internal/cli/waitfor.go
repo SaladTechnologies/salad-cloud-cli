@@ -5,6 +5,7 @@
 // only AFTER the wait succeeds. That keeps two promises at once — stdout is
 // empty on any nonzero exit (timeout, interrupt), and json mode's single
 // document describes the settled state rather than the pre-wait response.
+
 package cli
 
 import (

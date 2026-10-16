@@ -7,6 +7,7 @@
 // builds its own client (no project-fallback note, no warnings), gives up
 // after completionTimeout, and turns any error into no suggestions, so a
 // missing key or an offline machine never breaks the shell.
+
 package cli
 
 import (

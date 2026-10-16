@@ -36,7 +36,7 @@ func read(path string) (name string, data []byte, cerr *clierr.Error) {
 // (LoadLenient) they are all returned for the caller to warn about.
 //
 // The unknown-field walk exists because yaml.UnmarshalStrict cannot do the
-// job alone: the SDK's request structs implement json.Unmarshaler (for
+// job alone: the SDK's request structs implement [json.Unmarshaler] (for
 // Nullable fields), and a custom unmarshaler opts a type out of strict field
 // checking entirely — so without the walk, every typo'd field is a silent
 // no-op (see strict.go).

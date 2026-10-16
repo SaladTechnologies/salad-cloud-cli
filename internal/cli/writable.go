@@ -9,6 +9,7 @@
 // document the patch schema accepts, so `get --writable | update -f -`
 // round-trips cleanly and `jq` edits compose. It is derived from the SDK
 // types, not a hand-kept list, so it tracks the schema.
+
 package cli
 
 import (
