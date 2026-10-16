@@ -74,7 +74,7 @@ func Since(releases []Release, since string) ([]Release, error) {
 	if since == "" {
 		return releases, nil
 	}
-	if d, err := time.Parse("2006-01-02", since); err == nil {
+	if d, err := time.Parse(time.DateOnly, since); err == nil {
 		var out []Release
 		for _, r := range releases {
 			if r.Unreleased() {
@@ -84,7 +84,7 @@ func Since(releases []Release, since string) ([]Release, error) {
 			if r.Date == nil {
 				continue
 			}
-			rd, err := time.Parse("2006-01-02", *r.Date)
+			rd, err := time.Parse(time.DateOnly, *r.Date)
 			if err == nil && rd.After(d) {
 				out = append(out, r)
 			}

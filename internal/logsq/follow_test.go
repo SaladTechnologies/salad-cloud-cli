@@ -32,7 +32,7 @@ func (c *fakeClock) Sleep(ctx context.Context, d time.Duration) error {
 }
 
 var (
-	followNow   = time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC)
+	followNow   = time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
 	followSince = followNow.Add(-10 * time.Minute)
 )
 

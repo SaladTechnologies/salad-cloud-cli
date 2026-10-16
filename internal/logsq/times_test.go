@@ -11,17 +11,25 @@ func TestFormatRequestTimeFloors(t *testing.T) {
 		in   time.Time
 		want string
 	}{
-		{"already ms", time.Date(2026, 9, 1, 18, 13, 52, 0, time.UTC), "2026-09-01T18:13:52.000Z"},
-		{"exact ms fraction", time.Date(2026, 9, 1, 18, 13, 52, 123000000, time.UTC), "2026-09-01T18:13:52.123Z"},
-		{"sub-ms floors", time.Date(2026, 9, 1, 18, 13, 52, 555970600, time.UTC), "2026-09-01T18:13:52.555Z"},
+		{"already ms", time.Date(2026, time.September, 1, 18, 13, 52, 0, time.UTC), "2026-09-01T18:13:52.000Z"},
+		{
+			"exact ms fraction",
+			time.Date(2026, time.September, 1, 18, 13, 52, 123000000, time.UTC),
+			"2026-09-01T18:13:52.123Z",
+		},
+		{
+			"sub-ms floors",
+			time.Date(2026, time.September, 1, 18, 13, 52, 555970600, time.UTC),
+			"2026-09-01T18:13:52.555Z",
+		},
 		{
 			"just under next ms floors",
-			time.Date(2026, 9, 1, 18, 13, 52, 999999999, time.UTC),
+			time.Date(2026, time.September, 1, 18, 13, 52, 999999999, time.UTC),
 			"2026-09-01T18:13:52.999Z",
 		},
 		{
 			"non-UTC converts",
-			time.Date(2026, 9, 1, 20, 13, 52, 1, time.FixedZone("CEST", 2*3600)),
+			time.Date(2026, time.September, 1, 20, 13, 52, 1, time.FixedZone("CEST", 2*3600)),
 			"2026-09-01T18:13:52.000Z",
 		},
 	}
@@ -40,13 +48,25 @@ func TestCeilRequestTime(t *testing.T) {
 		in   time.Time
 		want string
 	}{
-		{"already ms unchanged", time.Date(2026, 9, 1, 18, 13, 52, 123000000, time.UTC), "2026-09-01T18:13:52.123Z"},
-		{"whole second unchanged", time.Date(2026, 9, 1, 18, 13, 52, 0, time.UTC), "2026-09-01T18:13:52.000Z"},
-		{"sub-ms rounds up", time.Date(2026, 9, 1, 18, 13, 52, 555970600, time.UTC), "2026-09-01T18:13:52.556Z"},
-		{"1ns rounds up", time.Date(2026, 9, 1, 18, 13, 52, 1, time.UTC), "2026-09-01T18:13:52.001Z"},
+		{
+			"already ms unchanged",
+			time.Date(2026, time.September, 1, 18, 13, 52, 123000000, time.UTC),
+			"2026-09-01T18:13:52.123Z",
+		},
+		{
+			"whole second unchanged",
+			time.Date(2026, time.September, 1, 18, 13, 52, 0, time.UTC),
+			"2026-09-01T18:13:52.000Z",
+		},
+		{
+			"sub-ms rounds up",
+			time.Date(2026, time.September, 1, 18, 13, 52, 555970600, time.UTC),
+			"2026-09-01T18:13:52.556Z",
+		},
+		{"1ns rounds up", time.Date(2026, time.September, 1, 18, 13, 52, 1, time.UTC), "2026-09-01T18:13:52.001Z"},
 		{
 			"carries into next second",
-			time.Date(2026, 9, 1, 18, 13, 52, 999999999, time.UTC),
+			time.Date(2026, time.September, 1, 18, 13, 52, 999999999, time.UTC),
 			"2026-09-01T18:13:53.000Z",
 		},
 	}

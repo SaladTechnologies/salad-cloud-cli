@@ -33,7 +33,7 @@ func ParseTimeRef(s string, now time.Time) (time.Time, *clierr.Error) {
 		if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 			return t.UTC(), nil
 		}
-		if t, err := time.Parse("2006-01-02", s); err == nil {
+		if t, err := time.Parse(time.DateOnly, s); err == nil {
 			return t.UTC(), nil
 		}
 	}

@@ -98,7 +98,7 @@ func watchLoop(ctx context.Context, d watchDeps, render func(ctx context.Context
 		case i > 0:
 			fmt.Fprintln(d.out)
 		}
-		fmt.Fprintf(d.out, "Every %s, at %s (Ctrl-C to stop)\n\n", d.refresh, d.now().Format("15:04:05"))
+		fmt.Fprintf(d.out, "Every %s, at %s (Ctrl-C to stop)\n\n", d.refresh, d.now().Format(time.TimeOnly))
 		if cerr := render(ctx); cerr != nil {
 			if ctx.Err() != nil {
 				return nil //nolint:nilerr // interrupted mid-request: --watch ends with exit 0

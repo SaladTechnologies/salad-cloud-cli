@@ -27,7 +27,7 @@ func scriptedJobWaitDeps(
 	statuses []inferenceendpoints.Status,
 	progress *bytes.Buffer,
 ) jobWaitDeps[inferenceendpoints.InferenceEndpointJob] {
-	clock := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
+	clock := time.Date(2026, time.September, 2, 0, 0, 0, 0, time.UTC)
 	i := 0
 	return jobWaitDeps[inferenceendpoints.InferenceEndpointJob]{
 		view:  inferenceJobView,
@@ -118,7 +118,7 @@ func TestWaitForJobTerminalTimeout(t *testing.T) {
 // continue; the wait still succeeds once the job does.
 func TestWaitForJobTransientErrorsKeepPolling(t *testing.T) {
 	var progress bytes.Buffer
-	clock := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
+	clock := time.Date(2026, time.September, 2, 0, 0, 0, 0, time.UTC)
 	calls := 0
 	d := jobWaitDeps[inferenceendpoints.InferenceEndpointJob]{
 		view: inferenceJobView,

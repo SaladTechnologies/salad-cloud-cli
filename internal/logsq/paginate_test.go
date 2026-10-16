@@ -70,8 +70,8 @@ func assertTexts(t *testing.T, got []Entry, want ...string) {
 }
 
 var (
-	winStart = time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
-	winEnd   = time.Date(2026, 3, 1, 1, 0, 0, 0, time.UTC)
+	winStart = time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+	winEnd   = time.Date(2026, time.March, 1, 1, 0, 0, 0, time.UTC)
 )
 
 func TestFetchWindowSinglePartialPage(t *testing.T) {
@@ -220,8 +220,8 @@ func TestFetchWindowRoundsRequestTimesOutward(t *testing.T) {
 	var calls []fetchCall
 	var got []Entry
 	fetch := scriptFetcher(nil, &calls)
-	start := time.Date(2026, 3, 1, 0, 0, 0, 400_700, time.UTC) // .0004007s
-	end := time.Date(2026, 3, 1, 0, 0, 1, 2_000_500, time.UTC) // 1.0020005s
+	start := time.Date(2026, time.March, 1, 0, 0, 0, 400_700, time.UTC) // .0004007s
+	end := time.Date(2026, time.March, 1, 0, 0, 1, 2_000_500, time.UTC) // 1.0020005s
 	if err := FetchWindow(t.Context(), fetch, "q", start, end, 100, collectEmit(&got)); err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestFetchWindowSameTimestampLoopGuard(t *testing.T) {
 		{page: &Page{}},
 	}, &calls)
 	if err := FetchWindow(t.Context(), fetch, "q",
-		time.Date(2026, 3, 1, 0, 0, 1, 0, time.UTC), winEnd, 2, collectEmit(&got)); err != nil {
+		time.Date(2026, time.March, 1, 0, 0, 1, 0, time.UTC), winEnd, 2, collectEmit(&got)); err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
 	assertTexts(t, got, "a", "b")

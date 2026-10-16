@@ -66,7 +66,7 @@ func TestListInferenceEndpointsPagesWithNullTotal(t *testing.T) {
 // the inference jobs listing does.
 func jobServer(t *testing.T, total int, byID bool, requests *int32) *httptest.Server {
 	t.Helper()
-	base := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	base := time.Date(2026, time.October, 1, 0, 0, 0, 0, time.UTC)
 	order := make([]int, total)
 	for i := range order {
 		order[i] = i

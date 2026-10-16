@@ -91,7 +91,7 @@ func runWaitFrom(
 	h := &waitHarness{
 		t:             t,
 		steps:         steps,
-		now:           time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
+		now:           time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC),
 		allowedSleeps: allowedSleeps,
 		cancel:        cancel,
 	}
@@ -356,7 +356,7 @@ func TestWaitForGroupSettlePredicate(t *testing.T) {
 	h := &waitHarness{
 		t:             t,
 		steps:         []waitStep{step(true), step(true), step(false)},
-		now:           time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
+		now:           time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC),
 		allowedSleeps: 10,
 		cancel:        cancel,
 	}
@@ -403,7 +403,7 @@ func TestSettleTimeoutSaysPatchAccepted(t *testing.T) {
 	h := &waitHarness{
 		t:             t,
 		steps:         []waitStep{pending, pending, pending},
-		now:           time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
+		now:           time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC),
 		allowedSleeps: 10,
 		cancel:        cancel,
 	}

@@ -64,7 +64,7 @@ func tlsGetWithCert(t *testing.T, notBefore, notAfter time.Time) error {
 }
 
 func TestNetworkErrExpiredCert(t *testing.T) {
-	expired := time.Date(2026, 9, 28, 16, 55, 34, 0, time.UTC)
+	expired := time.Date(2026, time.September, 28, 16, 55, 34, 0, time.UTC)
 	err := tlsGetWithCert(t, expired.Add(-90*24*time.Hour), expired)
 
 	now = func() time.Time { return expired.Add(5*time.Hour + 20*time.Minute) }

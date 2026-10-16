@@ -17,7 +17,7 @@ func fakeWatchDeps(out *bytes.Buffer, tty bool, tick chan time.Time) watchDeps {
 		out:     out,
 		errOut:  out,
 		tty:     tty,
-		now:     func() time.Time { return time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC) },
+		now:     func() time.Time { return time.Date(2026, time.October, 2, 12, 0, 0, 0, time.UTC) },
 		after:   func(time.Duration) <-chan time.Time { return tick },
 		refresh: 5 * time.Second,
 	}
