@@ -86,7 +86,7 @@ type doctorRun struct {
 	saved                 config.File
 	res                   config.Resolved
 	reachable             bool
-	keyOK, gatewayOnly    bool
+	keyOK                 bool
 	orgs                  []string      // the key's organizations; nil: unknown
 	orgChecked            *clierr.Error // the organization check, once made
 	orgCheckMade, orgGood bool
@@ -239,7 +239,6 @@ func (d *doctorRun) apiKeyRow() checkResult {
 	res := d.res
 	if res.APIKey == "" {
 		if res.GatewayAPIKey != "" {
-			d.gatewayOnly = true
 			return row(
 				name,
 				checkWarn,

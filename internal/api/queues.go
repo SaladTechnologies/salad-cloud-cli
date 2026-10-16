@@ -62,7 +62,7 @@ func (c *Client) DeleteQueue(ctx context.Context, name string) *clierr.Error {
 	if err := c.requireOrgProject(); err != nil {
 		return err
 	}
-	return restNoBody(ctx, c, "DELETE", c.queuePath(name), nil)
+	return restNoBody(ctx, c, "DELETE", c.queuePath(name))
 }
 
 // QueueJobsCap is the most jobs ListQueueJobs reads: queueJobsMaxPages full
@@ -148,5 +148,5 @@ func (c *Client) CancelQueueJob(ctx context.Context, queue, id string) *clierr.E
 	if err := c.requireOrgProject(); err != nil {
 		return err
 	}
-	return restNoBody(ctx, c, "DELETE", c.queuePath(queue, "jobs", id), nil)
+	return restNoBody(ctx, c, "DELETE", c.queuePath(queue, "jobs", id))
 }

@@ -212,7 +212,6 @@ type fakeConsole struct {
 	answers    []string
 	device     bytes.Buffer
 	transcript *bytes.Buffer // when set, the device's lines are recorded here too
-	reads      int
 }
 
 func (c *fakeConsole) Terminal() bool { return c.terminal }
@@ -229,7 +228,6 @@ func (c *fakeConsole) ReadLine() (string, error)   { return c.next(false) }
 // next gives the next answer and leaves the device as a terminal would: a
 // visible answer echoed, then the line ended.
 func (c *fakeConsole) next(hidden bool) (string, error) {
-	c.reads++
 	defer c.Device().Write([]byte{'\n'})
 	if len(c.answers) == 0 {
 		return "", io.EOF

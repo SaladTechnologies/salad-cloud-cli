@@ -155,8 +155,8 @@ func doRestJSON[T any](ctx context.Context, c *Client, method, path, contentType
 }
 
 // restNoBody is restJSON for verbs whose success response body is ignored.
-func restNoBody(ctx context.Context, c *Client, method, path string, body any) *clierr.Error {
-	_, err := restJSON[json.RawMessage](ctx, c, method, path, "", body)
+func restNoBody(ctx context.Context, c *Client, method, path string) *clierr.Error {
+	_, err := restJSON[json.RawMessage](ctx, c, method, path, "", nil)
 	return err
 }
 

@@ -58,7 +58,7 @@ type gatewayTestResult struct {
 
 // newGateway resolves configuration and builds the gateway client. Its
 // errors from the gateway go through gatewayFailed.
-func newGateway(cmd *cobra.Command) (*api.Gateway, *gatewayKey, *clierr.Error) {
+func newGateway() (*api.Gateway, *gatewayKey, *clierr.Error) {
 	res, err := config.Resolve("", "")
 	if err != nil {
 		path, _ := config.Path()
@@ -176,7 +176,7 @@ To see which key is in effect and where it came from, run saladcloud whoami.`,
 every key, so no AI Gateway key is needed; with one set, it is sent.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			g, _, cerr := newGateway(cmd)
+			g, _, cerr := newGateway()
 			if cerr != nil && cerr.Code == clierr.CodeAuth {
 				g, cerr = api.NewPublicGateway(), nil
 			}
@@ -235,7 +235,7 @@ budget then defaults to 1024).`,
   saladcloud ai-gateway test --model <model-id> -o json   # ids: saladcloud ai-gateway models list`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			g, key, cerr := newGateway(cmd)
+			g, key, cerr := newGateway()
 			if cerr != nil {
 				return cerr
 			}

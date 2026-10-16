@@ -58,12 +58,12 @@ func shouldReenableSchedule(keep bool, before, after *shared.ContainerGroup) boo
 	return ptr.Deref(before.ScheduledScalingEnabled) && !ptr.Deref(after.ScheduledScalingEnabled)
 }
 
-// plural renders a count with its noun: "1 replica", "3 replicas".
-func plural(n int64, noun string) string {
+// replicas renders a replica count: "1 replica", "3 replicas".
+func replicas(n int64) string {
 	if n == 1 {
-		return "1 " + noun
+		return "1 replica"
 	}
-	return fmt.Sprintf("%d %ss", n, noun)
+	return fmt.Sprintf("%d replicas", n)
 }
 
 func init() {
@@ -132,7 +132,7 @@ write (the API does not honor the flag in the same patch as replicas), for
 			}
 			v := scaleResult{Name: args[0], Action: "scaled", Replicas: n, OK: true}
 			return wrapErr(output.Emit(v, func(w io.Writer) {
-				fmt.Fprintf(w, "Scaled %s to %s\n", v.Name, plural(v.Replicas, "replica"))
+				fmt.Fprintf(w, "Scaled %s to %s\n", v.Name, replicas(v.Replicas))
 			}))
 		},
 	}

@@ -204,8 +204,7 @@ func TestNoteRegistryCredentials(t *testing.T) {
 }
 
 func TestPlural(t *testing.T) {
-	if plural(1, "replica") != "1 replica" || plural(0, "replica") != "0 replicas" ||
-		plural(3, "replica") != "3 replicas" {
-		t.Errorf("plural: %q %q %q", plural(1, "replica"), plural(0, "replica"), plural(3, "replica"))
+	if replicas(1) != "1 replica" || replicas(0) != "0 replicas" || replicas(3) != "3 replicas" {
+		t.Errorf("replicas: %q %q %q", replicas(1), replicas(0), replicas(3))
 	}
 }

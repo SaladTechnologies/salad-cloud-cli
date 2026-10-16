@@ -169,5 +169,5 @@ func (c *Client) CancelInferenceJob(ctx context.Context, endpoint, id string) *c
 	if err := c.RequireOrg(); err != nil {
 		return err
 	}
-	return restNoBody(ctx, c, "DELETE", c.inferencePath(endpoint, "jobs", id), nil)
+	return restNoBody(ctx, c, "DELETE", c.inferencePath(endpoint, "jobs", id))
 }

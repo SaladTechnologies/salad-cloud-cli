@@ -106,7 +106,7 @@ func (c *Client) orgGone(ctx context.Context, path string) *clierr.Error {
 	}
 	defer c.checkingOrg.Store(false)
 	if path != c.quotasPath() {
-		if err := restNoBody(ctx, c, "GET", c.quotasPath(), nil); err == nil || err.Code != clierr.CodeNotFound {
+		if err := restNoBody(ctx, c, "GET", c.quotasPath()); err == nil || err.Code != clierr.CodeNotFound {
 			return nil
 		}
 	}
@@ -130,7 +130,7 @@ func (c *Client) assumedProjectMissing(ctx context.Context, method, path string)
 	}
 	defer c.checkingProject.Store(false)
 	if method != "GET" || path != c.groupPath() {
-		if err := restNoBody(ctx, c, "GET", c.groupPath(), nil); err == nil || err.Code != clierr.CodeNotFound {
+		if err := restNoBody(ctx, c, "GET", c.groupPath()); err == nil || err.Code != clierr.CodeNotFound {
 			return nil
 		}
 	}
@@ -268,7 +268,7 @@ func (c *Client) DeleteGroup(ctx context.Context, name string) *clierr.Error {
 	if err := c.requireOrgProject(); err != nil {
 		return err
 	}
-	return restNoBody(ctx, c, "DELETE", c.groupPath(name), nil)
+	return restNoBody(ctx, c, "DELETE", c.groupPath(name))
 }
 
 // StartGroup starts a container group.
@@ -276,7 +276,7 @@ func (c *Client) StartGroup(ctx context.Context, name string) *clierr.Error {
 	if err := c.requireOrgProject(); err != nil {
 		return err
 	}
-	return restNoBody(ctx, c, "POST", c.groupPath(name, "start"), nil)
+	return restNoBody(ctx, c, "POST", c.groupPath(name, "start"))
 }
 
 // StopGroup stops a container group.
@@ -284,7 +284,7 @@ func (c *Client) StopGroup(ctx context.Context, name string) *clierr.Error {
 	if err := c.requireOrgProject(); err != nil {
 		return err
 	}
-	return restNoBody(ctx, c, "POST", c.groupPath(name, "stop"), nil)
+	return restNoBody(ctx, c, "POST", c.groupPath(name, "stop"))
 }
 
 // ListInstances lists the instances of a container group.
@@ -341,7 +341,7 @@ func (c *Client) RestartInstance(ctx context.Context, group, id string) *clierr.
 	if err := c.requireOrgProject(); err != nil {
 		return err
 	}
-	return restNoBody(ctx, c, "POST", c.groupPath(group, "instances", id, "restart"), nil)
+	return restNoBody(ctx, c, "POST", c.groupPath(group, "instances", id, "restart"))
 }
 
 // RecreateInstance recreates a container group instance.
@@ -349,7 +349,7 @@ func (c *Client) RecreateInstance(ctx context.Context, group, id string) *clierr
 	if err := c.requireOrgProject(); err != nil {
 		return err
 	}
-	return restNoBody(ctx, c, "POST", c.groupPath(group, "instances", id, "recreate"), nil)
+	return restNoBody(ctx, c, "POST", c.groupPath(group, "instances", id, "recreate"))
 }
 
 // ReallocateInstance reallocates a container group instance to another node.
@@ -357,7 +357,7 @@ func (c *Client) ReallocateInstance(ctx context.Context, group, id string) *clie
 	if err := c.requireOrgProject(); err != nil {
 		return err
 	}
-	return restNoBody(ctx, c, "POST", c.groupPath(group, "instances", id, "reallocate"), nil)
+	return restNoBody(ctx, c, "POST", c.groupPath(group, "instances", id, "reallocate"))
 }
 
 // QueryLogs queries log entries for the resolved organization.
@@ -404,7 +404,7 @@ func (c *Client) CheckOrg(ctx context.Context) *clierr.Error {
 	if err := c.RequireOrg(); err != nil {
 		return err
 	}
-	return restNoBody(ctx, c, "GET", c.quotasPath(), nil)
+	return restNoBody(ctx, c, "GET", c.quotasPath())
 }
 
 // CheckProject validates the resolved org + project with a status-only request.
@@ -412,7 +412,7 @@ func (c *Client) CheckProject(ctx context.Context) *clierr.Error {
 	if err := c.requireOrgProject(); err != nil {
 		return err
 	}
-	return restNoBody(ctx, c, "GET", c.groupPath(), nil)
+	return restNoBody(ctx, c, "GET", c.groupPath())
 }
 
 // GetQuotas fetches the resolved organization's quotas.

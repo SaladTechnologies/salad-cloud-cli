@@ -163,7 +163,7 @@ func readPublicKey(path string) (string, *clierr.Error) {
 
 // sshKeySetup is one run of ssh-key setup.
 type sshKeySetup struct {
-	home, keyPath string // keyPath: the CLI's own key, without .pub
+	keyPath string // the CLI's own key, without .pub
 }
 
 func runSSHKeySetup(cmd *cobra.Command, args []string) error {
@@ -177,7 +177,7 @@ func runSSHKeySetup(cmd *cobra.Command, args []string) error {
 			config.Reason(err),
 		)
 	}
-	k := sshKeySetup{home: home, keyPath: filepath.Join(home, ".ssh", sshDedicatedKeyName)}
+	k := sshKeySetup{keyPath: filepath.Join(home, ".ssh", sshDedicatedKeyName)}
 	path, found := findLocalPublicKey(home)
 	if found {
 		priv := strings.TrimSuffix(path, ".pub")
