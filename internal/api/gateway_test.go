@@ -8,10 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
-
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 func newTestGateway(t *testing.T, url string) *Gateway {
@@ -29,7 +28,8 @@ func TestNewGatewayNeedsItsOwnKey(t *testing.T) {
 	if cerr == nil || cerr.Code != clierr.CodeAuth {
 		t.Fatalf("NewGateway without a gateway key = %v, want an auth error", cerr)
 	}
-	if cerr.Message != "no AI Gateway key set" || cerr.HintText() != "run saladcloud ai-gateway login in a terminal, or set SALAD_AI_GATEWAY_API_KEY" {
+	if cerr.Message != "no AI Gateway key set" ||
+		cerr.HintText() != "run saladcloud ai-gateway login in a terminal, or set SALAD_AI_GATEWAY_API_KEY" {
 		t.Errorf("message %q, hint %q", cerr.Message, cerr.HintText())
 	}
 }
@@ -41,7 +41,11 @@ func TestGatewayListModelsAndComplete(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/models":
-			w.Write([]byte(`{"object":"list","data":[{"id":"qwen3.6-35b-a3b","object":"model","owned_by":"salad"},{"id":"gemma-4-26b","object":"model"}]}`))
+			w.Write(
+				[]byte(
+					`{"object":"list","data":[{"id":"qwen3.6-35b-a3b","object":"model","owned_by":"salad"},{"id":"gemma-4-26b","object":"model"}]}`,
+				),
+			)
 		case "/chat/completions":
 			var req map[string]any
 			json.NewDecoder(r.Body).Decode(&req)
@@ -57,7 +61,11 @@ func TestGatewayListModelsAndComplete(t *testing.T) {
 			if kw == nil || kw["enable_thinking"] != false {
 				t.Errorf("chat_template_kwargs = %v, want enable_thinking false", req["chat_template_kwargs"])
 			}
-			w.Write([]byte(`{"model":"qwen3.6-35b-a3b","choices":[{"message":{"role":"assistant","content":"  Hi there.\n"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":3}}`))
+			w.Write(
+				[]byte(
+					`{"model":"qwen3.6-35b-a3b","choices":[{"message":{"role":"assistant","content":"  Hi there.\n"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":3}}`,
+				),
+			)
 		default:
 			http.NotFound(w, r)
 		}
@@ -95,7 +103,11 @@ func TestGatewayCheckKeyUsesACompletion(t *testing.T) {
 			var req map[string]any
 			json.NewDecoder(r.Body).Decode(&req)
 			if req["model"] != "big" || req["max_tokens"] != float64(1) {
-				t.Errorf("probe = model %v max_tokens %v, want the first model in sorted order (DefaultModel) and 1 token", req["model"], req["max_tokens"])
+				t.Errorf(
+					"probe = model %v max_tokens %v, want the first model in sorted order (DefaultModel) and 1 token",
+					req["model"],
+					req["max_tokens"],
+				)
 			}
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte(`{"error":{"message":"invalid api key"}}`))
@@ -114,7 +126,12 @@ func TestGatewayCheckKeyUsesACompletion(t *testing.T) {
 
 func TestGatewayCompletionReasoningFields(t *testing.T) {
 	var c GatewayCompletion
-	if err := json.Unmarshal([]byte(`{"model":"m","choices":[{"message":{"content":"","reasoning":"thinking hard"},"finish_reason":"length"}],"usage":{"completion_tokens":64}}`), &c); err != nil {
+	if err := json.Unmarshal(
+		[]byte(
+			`{"model":"m","choices":[{"message":{"content":"","reasoning":"thinking hard"},"finish_reason":"length"}],"usage":{"completion_tokens":64}}`,
+		),
+		&c,
+	); err != nil {
 		t.Fatal(err)
 	}
 	if c.Reply() != "" || c.FinishReason() != "length" || c.ReasoningLen() != len("thinking hard") {
@@ -149,7 +166,13 @@ func TestGatewayErrorMapping(t *testing.T) {
 			continue
 		}
 		if cerr.Code != tt.wantCode || ptr.Deref(cerr.HTTPStatus) != tt.status {
-			t.Errorf("status %d: code %d http %d, want code %d", tt.status, cerr.Code, ptr.Deref(cerr.HTTPStatus), tt.wantCode)
+			t.Errorf(
+				"status %d: code %d http %d, want code %d",
+				tt.status,
+				cerr.Code,
+				ptr.Deref(cerr.HTTPStatus),
+				tt.wantCode,
+			)
 		}
 		if text := cerr.Message + " " + cerr.HintText(); !strings.Contains(text, tt.wantText) {
 			t.Errorf("status %d: %q lacks %q", tt.status, text, tt.wantText)

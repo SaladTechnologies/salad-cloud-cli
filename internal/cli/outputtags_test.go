@@ -64,7 +64,12 @@ func TestNoOmitemptyInCLIStructs(t *testing.T) {
 					used[name] = true
 					continue
 				}
-				t.Errorf("%s: %s's json tag %q has omitempty; a CLI struct encodes every key it sets", fset.Position(field.Pos()), name, tag)
+				t.Errorf(
+					"%s: %s's json tag %q has omitempty; a CLI struct encodes every key it sets",
+					fset.Position(field.Pos()),
+					name,
+					tag,
+				)
 			}
 			return true
 		})

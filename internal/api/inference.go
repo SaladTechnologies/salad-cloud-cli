@@ -36,13 +36,22 @@ func inferencePage(page int) string {
 
 // ListInferenceEndpoints lists the managed inference endpoints available to
 // the resolved organization, paging through the whole catalog.
-func (c *Client) ListInferenceEndpoints(ctx context.Context) (*inferenceendpoints.InferenceEndpointCollection, *clierr.Error) {
+func (c *Client) ListInferenceEndpoints(
+	ctx context.Context,
+) (*inferenceendpoints.InferenceEndpointCollection, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return nil, err
 	}
 	var all *inferenceendpoints.InferenceEndpointCollection
 	for page := 1; page <= inferenceMaxPages; page++ {
-		coll, cerr := restJSON[inferenceendpoints.InferenceEndpointCollection](ctx, c, "GET", c.inferencePath()+inferencePage(page), "", nil)
+		coll, cerr := restJSON[inferenceendpoints.InferenceEndpointCollection](
+			ctx,
+			c,
+			"GET",
+			c.inferencePath()+inferencePage(page),
+			"",
+			nil,
+		)
 		if cerr != nil {
 			return nil, cerr
 		}
@@ -74,7 +83,10 @@ func jobsWanted(limit, cap int) int {
 }
 
 // GetInferenceEndpoint fetches one managed inference endpoint by name.
-func (c *Client) GetInferenceEndpoint(ctx context.Context, name string) (*inferenceendpoints.InferenceEndpoint, *clierr.Error) {
+func (c *Client) GetInferenceEndpoint(
+	ctx context.Context,
+	name string,
+) (*inferenceendpoints.InferenceEndpoint, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return nil, err
 	}
@@ -85,12 +97,23 @@ func (c *Client) GetInferenceEndpoint(ctx context.Context, name string) (*infere
 // endpoint, newest first: limit of them (0 means all, up to
 // InferenceJobsCap). The API lists oldest first, so this reads from the
 // last page backwards (newestPages); more reports older jobs left out.
-func (c *Client) ListInferenceJobs(ctx context.Context, endpoint string, limit int) (jobs []inferenceendpoints.InferenceEndpointJob, more bool, cerr *clierr.Error) {
+func (c *Client) ListInferenceJobs(
+	ctx context.Context,
+	endpoint string,
+	limit int,
+) (jobs []inferenceendpoints.InferenceEndpointJob, more bool, cerr *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return nil, false, err
 	}
 	fetch := func(page int) ([]inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
-		coll, cerr := restJSON[inferenceendpoints.InferenceEndpointJobCollection](ctx, c, "GET", c.inferencePath(endpoint, "jobs")+inferencePage(page), "", nil)
+		coll, cerr := restJSON[inferenceendpoints.InferenceEndpointJobCollection](
+			ctx,
+			c,
+			"GET",
+			c.inferencePath(endpoint, "jobs")+inferencePage(page),
+			"",
+			nil,
+		)
 		if cerr != nil {
 			return nil, cerr
 		}
@@ -108,19 +131,40 @@ func (c *Client) ListInferenceJobs(ctx context.Context, endpoint string, limit i
 }
 
 // CreateInferenceJob queues a job on an inference endpoint.
-func (c *Client) CreateInferenceJob(ctx context.Context, endpoint string, proto inferenceendpoints.InferenceEndpointJobPrototype) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
+func (c *Client) CreateInferenceJob(
+	ctx context.Context,
+	endpoint string,
+	proto inferenceendpoints.InferenceEndpointJobPrototype,
+) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return nil, err
 	}
-	return restJSON[inferenceendpoints.InferenceEndpointJob](ctx, c, "POST", c.inferencePath(endpoint, "jobs"), "", proto)
+	return restJSON[inferenceendpoints.InferenceEndpointJob](
+		ctx,
+		c,
+		"POST",
+		c.inferencePath(endpoint, "jobs"),
+		"",
+		proto,
+	)
 }
 
 // GetInferenceJob fetches one inference endpoint job by id.
-func (c *Client) GetInferenceJob(ctx context.Context, endpoint, id string) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
+func (c *Client) GetInferenceJob(
+	ctx context.Context,
+	endpoint, id string,
+) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return nil, err
 	}
-	return restJSON[inferenceendpoints.InferenceEndpointJob](ctx, c, "GET", c.inferencePath(endpoint, "jobs", id), "", nil)
+	return restJSON[inferenceendpoints.InferenceEndpointJob](
+		ctx,
+		c,
+		"GET",
+		c.inferencePath(endpoint, "jobs", id),
+		"",
+		nil,
+	)
 }
 
 // CancelInferenceJob cancels one inference endpoint job.

@@ -114,7 +114,11 @@ func nameGuess(kind, name, verb string) string {
 	if strings.IndexFunc(name, func(r rune) bool {
 		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-')
 	}) >= 0 {
-		return fmt.Sprintf("it looks like a display name; %s the name from the portal URL, the part after /%ss/", verb, kind)
+		return fmt.Sprintf(
+			"it looks like a display name; %s the name from the portal URL, the part after /%ss/",
+			verb,
+			kind,
+		)
 	}
 	return "names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending with a letter or digit"
 }
@@ -200,7 +204,13 @@ func nameRetry(kind, answer, key string) string {
 		return fmt.Sprintf("That is not a valid %s name: names are at most 63 characters.", kind)
 	}
 	guess := nameGuess(kind, answer, "type")
-	return fmt.Sprintf(`"%s" is not a valid %s name. %s%s`, answer, kind, strings.ToUpper(guess[:1]), guess[1:]+period(guess))
+	return fmt.Sprintf(
+		`"%s" is not a valid %s name. %s%s`,
+		answer,
+		kind,
+		strings.ToUpper(guess[:1]),
+		guess[1:]+period(guess),
+	)
 }
 
 // article is "an" before organization, "a" before project.
@@ -251,7 +261,11 @@ func malformedKey(label, key, origin string) *clierr.Error {
 
 // malformedKeyRetry is malformedKey's line at a prompt, before asking again.
 func malformedKeyRetry(label string) string {
-	return fmt.Sprintf("That %s contains characters an %s cannot have. Check for quotes or stray characters in it.", label, label)
+	return fmt.Sprintf(
+		"That %s contains characters an %s cannot have. Check for quotes or stray characters in it.",
+		label,
+		label,
+	)
 }
 
 // orgListShown is how many organization names a hint lists before cutting

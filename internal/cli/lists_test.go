@@ -27,7 +27,8 @@ func TestJobIDsMustBeFullUUIDs(t *testing.T) {
 			_, err := runRoot(t, tc.args...)
 			want := `job IDs must be full UUIDs, not "c39e9f69"; to list them, run ` + tc.list
 			cerr, ok := err.(*clierr.Error)
-			if !ok || cerr.Code != clierr.CodeInvalidInput || cerr.Kind != clierr.KindInvalidInput || errText(cerr) != want {
+			if !ok || cerr.Code != clierr.CodeInvalidInput || cerr.Kind != clierr.KindInvalidInput ||
+				errText(cerr) != want {
 				t.Errorf("%v, want (6, invalid_input) %s", err, want)
 			}
 		})
@@ -62,7 +63,12 @@ func TestAIGatewayModelsListNeedsNoKey(t *testing.T) {
 	}
 
 	// A bare 'models' is a noun now.
-	if _, err := runRoot(t, "ai-gateway", "models"); err == nil || !strings.Contains(err.Error(), "ai-gateway models needs a verb: list") {
+	if _, err := runRoot(
+		t,
+		"ai-gateway",
+		"models",
+	); err == nil ||
+		!strings.Contains(err.Error(), "ai-gateway models needs a verb: list") {
 		t.Errorf("bare ai-gateway models = %v, want a usage error listing list", err)
 	}
 }

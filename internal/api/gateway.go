@@ -105,7 +105,11 @@ func (g *Gateway) CheckKey(ctx context.Context) (*GatewayModels, *clierr.Error) 
 	}
 	model, ok := DefaultModel(models.IDs())
 	if !ok {
-		return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "the AI Gateway listed no models; cannot check the key")
+		return nil, clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"the AI Gateway listed no models; cannot check the key",
+		)
 	}
 	if _, cerr := g.Complete(ctx, model, "ping", 1, false); cerr != nil {
 		return models, cerr
@@ -174,7 +178,12 @@ func (c *GatewayCompletion) Reply() string {
 // (reasoning_effort, a top-level enable_thinking, a reasoning object and a
 // /no_think suffix are ignored). With thinking on, the hosted models spend
 // hundreds of tokens before the first word of the answer.
-func (g *Gateway) Complete(ctx context.Context, model, prompt string, maxTokens int, thinking bool) (*GatewayCompletion, *clierr.Error) {
+func (g *Gateway) Complete(
+	ctx context.Context,
+	model, prompt string,
+	maxTokens int,
+	thinking bool,
+) (*GatewayCompletion, *clierr.Error) {
 	body := map[string]any{
 		"model":      model,
 		"messages":   []map[string]string{{"role": "user", "content": prompt}},
@@ -224,7 +233,12 @@ func gatewayJSON[T any](ctx context.Context, g *Gateway, method, path string, bo
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		out := new(T)
 		if err := json.Unmarshal(respBody, out); err != nil {
-			return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot decode the AI Gateway's response: %v", err)
+			return nil, clierr.New(
+				clierr.CodeGeneric,
+				clierr.KindAPIError,
+				"cannot decode the AI Gateway's response: %v",
+				err,
+			)
 		}
 		return out, nil
 	}

@@ -538,7 +538,14 @@ func warnUnrequestedChanges(w io.Writer, changes []unrequestedChange) {
 		// Only one rule is classified today (holdRule), so its sentence is
 		// spelled out here rather than routed through the remediation map,
 		// whose entry is worded for the flag flipping WITHOUT a replicas write.
-		fmt.Fprintf(w, "note: %s: %s -> %s; setting replicas puts scheduled scaling on hold (actions kept); to re-enable it, put %s\n", c.Path, c.Before, c.After, reenableSchedule)
+		fmt.Fprintf(
+			w,
+			"note: %s: %s -> %s; setting replicas puts scheduled scaling on hold (actions kept); to re-enable it, put %s\n",
+			c.Path,
+			c.Before,
+			c.After,
+			reenableSchedule,
+		)
 	}
 }
 

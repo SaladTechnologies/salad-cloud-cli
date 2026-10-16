@@ -7,11 +7,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/util"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -31,7 +30,8 @@ type instanceActionResult struct {
 // instancePull renders PullingProgress when the instance is downloading,
 // "-" otherwise.
 func instancePull(inst *containergroups.ContainerGroupInstance) string {
-	if inst.State != nil && *inst.State == containergroups.THE_CONTAINER_GROUP_INSTANCE_STATE_DOWNLOADING && inst.PullingProgress != nil {
+	if inst.State != nil && *inst.State == containergroups.THE_CONTAINER_GROUP_INSTANCE_STATE_DOWNLOADING &&
+		inst.PullingProgress != nil {
 		return fmt.Sprintf("%.0f%%", *inst.PullingProgress)
 	}
 	return "-"
@@ -188,7 +188,10 @@ const maxDeletionCost = 100000
 
 // instanceVerb builds one bodiless instance verb (restart, recreate,
 // reallocate): <id> positional, -c for the group.
-func instanceVerb(use, short, pastTense string, call func(client *api.Client, cmd *cobra.Command, group, id string) *clierr.Error) *cobra.Command {
+func instanceVerb(
+	use, short, pastTense string,
+	call func(client *api.Client, cmd *cobra.Command, group, id string) *clierr.Error,
+) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   use + " <id> -c <group>",
 		Short: short,
@@ -343,7 +346,8 @@ so raising it protects an instance doing long work. 0-100000.`,
 		},
 	}
 	addGroupFlag(updateCmd)
-	updateCmd.Flags().Int64("deletion-cost", 0, "deletion cost, 0-100000 (required); lower is removed first on scale-down")
+	updateCmd.Flags().
+		Int64("deletion-cost", 0, "deletion cost, 0-100000 (required); lower is removed first on scale-down")
 	_ = updateCmd.MarkFlagRequired("deletion-cost")
 	instancesCmd.AddCommand(updateCmd)
 
@@ -352,11 +356,14 @@ so raising it protects an instance doing long work. 0-100000.`,
 		func(client *api.Client, cmd *cobra.Command, group, id string) *clierr.Error {
 			return client.RestartInstance(cmd.Context(), group, id)
 		}))
-	instancesCmd.AddCommand(instanceVerb("recreate",
-		"Recreate the container on an instance (same machine, fresh container; the ID may be a unique prefix)", "recreated",
+	instancesCmd.AddCommand(instanceVerb(
+		"recreate",
+		"Recreate the container on an instance (same machine, fresh container; the ID may be a unique prefix)",
+		"recreated",
 		func(client *api.Client, cmd *cobra.Command, group, id string) *clierr.Error {
 			return client.RecreateInstance(cmd.Context(), group, id)
-		}))
+		},
+	))
 	instancesCmd.AddCommand(instanceVerb("reallocate",
 		"Move an instance to a different machine (the ID may be a unique prefix)", "reallocated",
 		func(client *api.Client, cmd *cobra.Command, group, id string) *clierr.Error {

@@ -31,7 +31,10 @@ func (c *Client) availabilityPath(endpoint string) string {
 // platform query, so callers make one per class and never in a loop. An
 // overloaded availability service answers 200 with every count 0, so a
 // zero cannot be told apart from an empty class; on_call_gpu 0 is the tell.
-func (c *Client) GetGpuAvailability(ctx context.Context, req AvailabilityRequest) (*organizations.GpuAvailability, *clierr.Error) {
+func (c *Client) GetGpuAvailability(
+	ctx context.Context,
+	req AvailabilityRequest,
+) (*organizations.GpuAvailability, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return nil, err
 	}
@@ -40,7 +43,10 @@ func (c *Client) GetGpuAvailability(ctx context.Context, req AvailabilityRequest
 
 // GetCpuAvailability is GetGpuAvailability for CPU-only requirements
 // (sce-cpu-availability); any GPU classes in req are dropped.
-func (c *Client) GetCpuAvailability(ctx context.Context, req AvailabilityRequest) (*organizations.CpuAvailability, *clierr.Error) {
+func (c *Client) GetCpuAvailability(
+	ctx context.Context,
+	req AvailabilityRequest,
+) (*organizations.CpuAvailability, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return nil, err
 	}

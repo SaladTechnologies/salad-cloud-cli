@@ -54,10 +54,13 @@ func TestGetGpuAvailabilityRequest(t *testing.T) {
 	if gotKey != "test-key" {
 		t.Errorf("Salad-Api-Key = %q, want test-key", gotKey)
 	}
-	if want := `{"gpu_classes":["gpu-class-1"],"cpu":4,"storage_amount":1073741824,"country_codes":["us"]}`; string(gotBody) != want {
+	if want := `{"gpu_classes":["gpu-class-1"],"cpu":4,"storage_amount":1073741824,"country_codes":["us"]}`; string(
+		gotBody,
+	) != want {
 		t.Errorf("body = %s, want %s", gotBody, want)
 	}
-	if ptr.Deref(avail.AvailableGpuHigh) != 9 || ptr.Deref(avail.AvailableGpuLow) != 30 || avail.AvailableGpuMedium != nil {
+	if ptr.Deref(avail.AvailableGpuHigh) != 9 || ptr.Deref(avail.AvailableGpuLow) != 30 ||
+		avail.AvailableGpuMedium != nil {
 		t.Errorf("decoded = %+v", avail)
 	}
 }
@@ -73,7 +76,10 @@ func TestGetCpuAvailabilityDropsGpuClasses(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv.URL)
-	avail, cerr := c.GetCpuAvailability(context.Background(), AvailabilityRequest{GpuClasses: []string{"x"}, Memory: ptr.To(int64(2048))})
+	avail, cerr := c.GetCpuAvailability(
+		context.Background(),
+		AvailabilityRequest{GpuClasses: []string{"x"}, Memory: ptr.To(int64(2048))},
+	)
 	if cerr != nil {
 		t.Fatal(cerr)
 	}

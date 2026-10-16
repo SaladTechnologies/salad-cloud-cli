@@ -236,14 +236,25 @@ func TestNoPromptAndCIDropTheSteps(t *testing.T) {
 		atATerminal(t, true, "windows", "table")
 		setEnv(t, "SALAD_API_KEY", keyABCD)
 		t.Setenv(v, "1")
-		if got := warned(afterRemove, stillSupplied("SALAD_API_KEY")); got != "warning: commands still use SALAD_API_KEY (****...ABCD)\n" {
+		if got := warned(
+			afterRemove,
+			stillSupplied("SALAD_API_KEY"),
+		); got != "warning: commands still use SALAD_API_KEY (****...ABCD)\n" {
 			t.Errorf("%s=1: got %q", v, got)
 		}
 	}
 }
 
 func TestBeforePrompt(t *testing.T) {
-	setEnv(t, "SALAD_API_KEY", keyABCD, "SALAD_ORGANIZATION", "acme-prod", "SALAD_AI_GATEWAY_API_KEY", "sk-gw-0000000000EFGH")
+	setEnv(
+		t,
+		"SALAD_API_KEY",
+		keyABCD,
+		"SALAD_ORGANIZATION",
+		"acme-prod",
+		"SALAD_AI_GATEWAY_API_KEY",
+		"sk-gw-0000000000EFGH",
+	)
 	empty := config.File{}
 	for _, tc := range []struct {
 		command string
@@ -260,17 +271,29 @@ func TestBeforePrompt(t *testing.T) {
 		}
 	}
 	three := overridesOf(empty, "SALAD_API_KEY", "SALAD_ORGANIZATION", "SALAD_AI_GATEWAY_API_KEY")
-	if got := beforePrompt("login", three); !strings.HasPrefix(got, "SALAD_API_KEY (****...ABCD), SALAD_ORGANIZATION (acme-prod) and SALAD_AI_GATEWAY_API_KEY (****...EFGH) are set") {
+	if got := beforePrompt(
+		"login",
+		three,
+	); !strings.HasPrefix(
+		got,
+		"SALAD_API_KEY (****...ABCD), SALAD_ORGANIZATION (acme-prod) and SALAD_AI_GATEWAY_API_KEY (****...EFGH) are set",
+	) {
 		t.Errorf("three variables: %q", got)
 	}
 }
 
 func TestOverrideNames(t *testing.T) {
 	setEnv(t, "SALAD_ORGANIZATION", "my-org")
-	if got := overrideNames(overridesOf(config.File{Organization: "my-org"}, "SALAD_ORGANIZATION")); got == nil || len(got) != 0 {
+	if got := overrideNames(
+		overridesOf(config.File{Organization: "my-org"}, "SALAD_ORGANIZATION"),
+	); got == nil ||
+		len(got) != 0 {
 		t.Errorf("equal values: %#v, want []", got)
 	}
-	if got := overrideNames(overridesOf(config.File{Organization: "acme-prod"}, "SALAD_ORGANIZATION", "SALAD_API_KEY")); len(got) != 1 || got[0] != "SALAD_ORGANIZATION" {
+	if got := overrideNames(
+		overridesOf(config.File{Organization: "acme-prod"}, "SALAD_ORGANIZATION", "SALAD_API_KEY"),
+	); len(got) != 1 ||
+		got[0] != "SALAD_ORGANIZATION" {
 		t.Errorf("one differing: %#v", got)
 	}
 }

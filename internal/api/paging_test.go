@@ -26,7 +26,13 @@ func pagedServer(t *testing.T, total int, key string, requests *int32) *httptest
 		for i := (page - 1) * size; i < page*size && i < total; i++ {
 			items = append(items, fmt.Sprintf(`{%q:"item-%d"}`, key, i))
 		}
-		fmt.Fprintf(w, `{"items":[%s],"page":%d,"page_size":%d,"total_size":null}`, strings.Join(items, ","), page, size)
+		fmt.Fprintf(
+			w,
+			`{"items":[%s],"page":%d,"page_size":%d,"total_size":null}`,
+			strings.Join(items, ","),
+			page,
+			size,
+		)
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -42,7 +48,14 @@ func TestListInferenceEndpointsPagesWithNullTotal(t *testing.T) {
 			t.Fatal(cerr)
 		}
 		if len(coll.Items) != tc.total || int(n) != tc.pages {
-			t.Errorf("%d endpoints: listed %d in %d requests, want %d in %d", tc.total, len(coll.Items), n, tc.total, tc.pages)
+			t.Errorf(
+				"%d endpoints: listed %d in %d requests, want %d in %d",
+				tc.total,
+				len(coll.Items),
+				n,
+				tc.total,
+				tc.pages,
+			)
 		}
 	}
 }
@@ -73,7 +86,13 @@ func jobServer(t *testing.T, total int, byID bool, requests *int32) *httptest.Se
 			items = append(items, fmt.Sprintf(`{"id":%q,"create_time":%q,"input":{"n":%d}}`,
 				id(i), base.Add(time.Duration(i)*time.Second).Format(time.RFC3339Nano), i))
 		}
-		fmt.Fprintf(w, `{"items":[%s],"page":%d,"page_size":%d,"total_size":null}`, strings.Join(items, ","), page, size)
+		fmt.Fprintf(
+			w,
+			`{"items":[%s],"page":%d,"page_size":%d,"total_size":null}`,
+			strings.Join(items, ","),
+			page,
+			size,
+		)
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -180,7 +199,15 @@ func TestListQueueJobsReadBudget(t *testing.T) {
 			t.Fatal(cerr)
 		}
 		if int(n) != tc.requests || partial != tc.partial {
-			t.Errorf("%d jobs, limit %d: %d requests (partial %v), want %d (partial %v)", tc.total, tc.limit, n, partial, tc.requests, tc.partial)
+			t.Errorf(
+				"%d jobs, limit %d: %d requests (partial %v), want %d (partial %v)",
+				tc.total,
+				tc.limit,
+				n,
+				partial,
+				tc.requests,
+				tc.partial,
+			)
 		}
 		if want := min(tc.total, max(tc.limit, 0)); tc.limit > 0 && len(jobs) != want {
 			t.Errorf("%d jobs, limit %d: listed %d, want %d", tc.total, tc.limit, len(jobs), want)

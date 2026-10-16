@@ -86,7 +86,14 @@ func CheckUnknownFields(data []byte, t reflect.Type) *clierr.Error {
 // before and after (each "" or ending/starting with its own separator).
 func UnknownFieldsError(lead string, unknowns []Unknown, tail string) *clierr.Error {
 	if len(unknowns) == 1 {
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindUnknownField, "%sunknown field %s%s", lead, unknowns[0].Detail(), tail)
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindUnknownField,
+			"%sunknown field %s%s",
+			lead,
+			unknowns[0].Detail(),
+			tail,
+		)
 	}
 	shown := unknowns
 	suffix := ""

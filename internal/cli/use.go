@@ -150,7 +150,13 @@ func runUse(cmd *cobra.Command, args []string) error {
 			WithHint("%s", unwritableHint("use"))
 	}
 	ovs := overridesOf(f, envOrganization, envProject)
-	result := useResult{Organization: org, Project: strOrNil(project), EnvOverrides: overrideNames(ovs), Action: "switched", OK: true}
+	result := useResult{
+		Organization: org,
+		Project:      strOrNil(project),
+		EnvOverrides: overrideNames(ovs),
+		Action:       "switched",
+		OK:           true,
+	}
 	if err := output.Emit(result, func(w io.Writer) {
 		if project == "" {
 			fmt.Fprintf(w, "Switched to %s, no project set\n", org)
@@ -186,14 +192,18 @@ func (u *useRun) failed(cerr *clierr.Error) *clierr.Error {
 	case cerr.IsCancel():
 		return u.cancelled()
 	case rejected(cerr):
-		e := clierr.New(clierr.CodeAuth, clierr.KindAuth, "API key %s%s is invalid", maskAPIKey(u.key), fromTag(u.keyFrom)).WithStatus(401)
+		e := clierr.New(clierr.CodeAuth, clierr.KindAuth, "API key %s%s is invalid", maskAPIKey(u.key), fromTag(u.keyFrom)).
+			WithStatus(401)
 		switch {
 		case quotedKey(u.key):
 			return e.WithHint("remove the quotes around it")
 		case u.keyFrom != envAPIKey:
 			return e.WithHint("run saladcloud login to save a new key")
 		case u.saved.APIKey != "" && u.saved.APIKey != u.key:
-			return e.WithHint("remove SALAD_API_KEY to use the saved API key (%s), or set it to a working key", maskAPIKey(u.saved.APIKey))
+			return e.WithHint(
+				"remove SALAD_API_KEY to use the saved API key (%s), or set it to a working key",
+				maskAPIKey(u.saved.APIKey),
+			)
 		}
 		return e.WithHint("set SALAD_API_KEY to a working key, or remove it and run saladcloud login")
 	case cerr.Code == clierr.CodeRateLimited:

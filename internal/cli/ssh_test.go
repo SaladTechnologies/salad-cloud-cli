@@ -171,7 +171,17 @@ func TestRemoteCommand(t *testing.T) {
 func TestBuildSSHArgsInteractive(t *testing.T) {
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
 	got := buildSSHArgs(target, "root", "", nil)
-	want := []string{"-p", "30123", "-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=/cfg/known_hosts", "-o", "HostKeyAlias=saladcloud-aaaa1111", "root@203.0.113.7"}
+	want := []string{
+		"-p",
+		"30123",
+		"-o",
+		"StrictHostKeyChecking=accept-new",
+		"-o",
+		"UserKnownHostsFile=/cfg/known_hosts",
+		"-o",
+		"HostKeyAlias=saladcloud-aaaa1111",
+		"root@203.0.113.7",
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("args = %v, want %v", got, want)
 	}

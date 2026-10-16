@@ -6,10 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-
-	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
@@ -18,7 +17,21 @@ import (
 
 // groupVerbs are the commands whose subject is a container group. They live
 // under 'saladcloud container-groups' and nowhere at the top level.
-var groupVerbs = []string{"create", "list", "get", "update", "start", "stop", "delete", "scale", "instances", "ssh", "sftp", "cp", "logs"}
+var groupVerbs = []string{
+	"create",
+	"list",
+	"get",
+	"update",
+	"start",
+	"stop",
+	"delete",
+	"scale",
+	"instances",
+	"ssh",
+	"sftp",
+	"cp",
+	"logs",
+}
 
 // TestContainerGroupVerbsLiveUnderTheNoun pins the command tree.
 func TestContainerGroupVerbsLiveUnderTheNoun(t *testing.T) {
@@ -152,7 +165,10 @@ func TestAliasRule(t *testing.T) {
 // TestAIGatewayHasNoAliases: gateway would bring back the container-gateway
 // confusion and ai is the word any future AI product wants.
 func TestAIGatewayHasNoAliases(t *testing.T) {
-	if c, _, err := rootCmd.Find([]string{"ai-gateway", "models", "list"}); err != nil || c.Parent().Parent().Name() != "ai-gateway" {
+	if c, _, err := rootCmd.Find(
+		[]string{"ai-gateway", "models", "list"},
+	); err != nil ||
+		c.Parent().Parent().Name() != "ai-gateway" {
 		t.Fatalf("ai-gateway models list not found (err %v)", err)
 	}
 	for _, name := range []string{"gateway", "ai", "connect"} {
@@ -279,7 +295,10 @@ func TestResourceNounsTakeListAndGet(t *testing.T) {
 // both job nouns take cancel; delete is gone with no alias.
 func TestJobsCancelNotDelete(t *testing.T) {
 	for _, noun := range [][]string{{"inference", "jobs"}, {"queues", "jobs"}} {
-		if c, _, err := rootCmd.Find(append(append([]string{}, noun...), "cancel")); err != nil || c.Name() != "cancel" {
+		if c, _, err := rootCmd.Find(
+			append(append([]string{}, noun...), "cancel"),
+		); err != nil ||
+			c.Name() != "cancel" {
 			t.Errorf("%v cancel: not found", noun)
 		}
 		p, _, _ := rootCmd.Find(noun)
@@ -370,7 +389,12 @@ func TestRepeatableFlagsAreRepeated(t *testing.T) {
 	walkTree(rootCmd, func(c *cobra.Command) {
 		c.Flags().VisitAll(func(f *pflag.Flag) {
 			if strings.HasSuffix(f.Value.Type(), "Slice") {
-				t.Errorf("%s --%s is a %s; repeatable flags are repeated, never comma-split", c.CommandPath(), f.Name, f.Value.Type())
+				t.Errorf(
+					"%s --%s is a %s; repeatable flags are repeated, never comma-split",
+					c.CommandPath(),
+					f.Name,
+					f.Value.Type(),
+				)
 			}
 		})
 	})

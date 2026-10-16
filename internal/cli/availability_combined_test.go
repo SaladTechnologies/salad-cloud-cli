@@ -22,7 +22,11 @@ func stubAvailability(t *testing.T) *[]int {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/gpu-classes"):
-			w.Write([]byte(`{"items":[{"id":"` + classA + `","name":"RTX A (12 GB)"},{"id":"` + classB + `","name":"RTX B (24 GB)"}]}`))
+			w.Write(
+				[]byte(
+					`{"items":[{"id":"` + classA + `","name":"RTX A (12 GB)"},{"id":"` + classB + `","name":"RTX B (24 GB)"}]}`,
+				),
+			)
 		case strings.HasSuffix(r.URL.Path, "/sce-gpu-availability"):
 			var req struct {
 				GpuClasses []string `json:"gpu_classes"`
@@ -116,7 +120,15 @@ func TestAvailabilityCPUHasNullCombined(t *testing.T) {
 // reports an on-call count other than 0; the JSON keeps the field.
 func TestAvailabilityOnCallColumn(t *testing.T) {
 	stubAvailability(t) // on-call counts 7 and 99
-	if out, err := runRoot(t, "availability", "--gpu", classA, "--gpu", classB); err != nil || !strings.Contains(out, "ON-CALL") {
+	if out, err := runRoot(
+		t,
+		"availability",
+		"--gpu",
+		classA,
+		"--gpu",
+		classB,
+	); err != nil ||
+		!strings.Contains(out, "ON-CALL") {
 		t.Errorf("non-zero on-call counts: err %v, table lacks ON-CALL:\n%s", err, out)
 	}
 

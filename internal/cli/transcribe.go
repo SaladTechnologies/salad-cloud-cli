@@ -15,10 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/inferenceendpoints"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-
-	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/inferenceendpoints"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
@@ -130,8 +129,11 @@ func transcriptText(out any, wantSRT, wantFile bool) (string, *clierr.Error) {
 				return s, nil
 			}
 		}
-		return "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
-			"the job succeeded, but its output has no SRT document (expected output.srt_content)").WithHint("inspect the job document with -o json")
+		return "", clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"the job succeeded, but its output has no SRT document (expected output.srt_content)",
+		).WithHint("inspect the job document with -o json")
 	}
 	if isMap {
 		if s, ok := m["text"].(string); ok && s != "" {
@@ -182,7 +184,11 @@ func (f inputField) flag() string { return strings.ReplaceAll(f.name, "_", "-") 
 // transcribeFields are the transcribe endpoint's input fields besides url
 // (the positional), from its published input schema.
 var transcribeFields = []inputField{
-	{"language_code", fieldString, "language of the audio, for example en or de (omit to detect it automatically; setting it forces that language)"},
+	{
+		"language_code",
+		fieldString,
+		"language of the audio, for example en or de (omit to detect it automatically; setting it forces that language)",
+	},
 	{"audio_stream_index", fieldInt, "zero-based audio stream to transcribe in multitrack media"},
 	{"multichannel", fieldBool, "preserve audio channels for channel-based diarization"},
 	{"return_as_file", fieldBool, "return a temporary result URL instead of inline output (table mode prints the URL)"},
@@ -192,7 +198,11 @@ var transcribeFields = []inputField{
 	{"sentence_diarization", fieldBool, "add speaker labels to sentence segments"},
 	{"srt", fieldBool, "produce an SRT subtitle document (table mode prints it instead of the text)"},
 	{"translate", fieldString, "Whisper translation: to_eng translates to English"},
-	{"llm_translation", fieldList, "a language to translate the transcript into, repeatable (--llm-translation german --llm-translation french)"},
+	{
+		"llm_translation",
+		fieldList,
+		"a language to translate the transcript into, repeatable (--llm-translation german --llm-translation french)",
+	},
 	{"srt_translation", fieldList, "a language to translate the SRT into, repeatable"},
 	{"custom_prompt", fieldString, "an instruction for processing the transcript"},
 	{"custom_vocabulary", fieldList, "a domain term to improve accuracy, repeatable"},
@@ -221,7 +231,12 @@ var transcriptionLiteFields = []inputField{
 // govern everything else and the request is the one 'inference jobs create
 // --input' would send for the same intent. --input-extra is merged last,
 // key by key, and wins.
-func buildTranscribeInput(url string, fields []inputField, flags *pflag.FlagSet, inputExtra string) (map[string]any, *clierr.Error) {
+func buildTranscribeInput(
+	url string,
+	fields []inputField,
+	flags *pflag.FlagSet,
+	inputExtra string,
+) (map[string]any, *clierr.Error) {
 	in := map[string]any{"url": url}
 	for _, f := range fields {
 		if !flags.Changed(f.flag()) {
@@ -263,7 +278,11 @@ var transcribeEndpoints = []struct {
 	short  string
 }{
 	{"transcribe", transcribeFields, "Transcribe an audio or video file on the transcribe endpoint"},
-	{"transcription-lite", transcriptionLiteFields, "Transcribe an audio or video file on the cheaper transcription-lite endpoint"},
+	{
+		"transcription-lite",
+		transcriptionLiteFields,
+		"Transcribe an audio or video file on the cheaper transcription-lite endpoint",
+	},
 }
 
 func init() {
@@ -372,7 +391,11 @@ endpoint's price row, run saladcloud inference get ` + endpoint + `.`,
 	}
 	f.String("input-extra", "", "extra input fields as a JSON object, merged over the built input (extra wins)")
 	f.Bool("no-wait", false, "queue the job and exit instead of waiting for the transcript")
-	f.Bool("keep-upload", false, "keep a local file's S4 upload after the transcript is back (and show its signed URL in -o json)")
+	f.Bool(
+		"keep-upload",
+		false,
+		"keep a local file's S4 upload after the transcript is back (and show its signed URL in -o json)",
+	)
 	f.Duration("timeout", transcribeWaitTimeout, "give up waiting after this long (the job keeps running server-side)")
 	return cmd
 }
@@ -398,7 +421,12 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 	}
 	if flags.Lookup("summarize") != nil {
 		if n, _ := flags.GetInt64("summarize"); n < 0 {
-			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid --summarize %d: the endpoint takes 0 to 2000", n)
+			return clierr.New(
+				clierr.CodeInvalidInput,
+				clierr.KindInvalidInput,
+				"invalid --summarize %d: the endpoint takes 0 to 2000",
+				n,
+			)
 		}
 	}
 	// Validate the input (and --input-extra's JSON) now, so a bad value
@@ -438,7 +466,14 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		}
 		defer fh.Close()
 		remote = transcribeRemoteName(source, time.Now())
-		signedURL, cerr := client.UploadFile(cmd.Context(), remote, fh, transcribeMime(source), true, transcribeSignedURLExp)
+		signedURL, cerr := client.UploadFile(
+			cmd.Context(),
+			remote,
+			fh,
+			transcribeMime(source),
+			true,
+			transcribeSignedURLExp,
+		)
 		if cerr != nil {
 			return cerr
 		}
@@ -476,7 +511,12 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 			if remote != "" {
 				fmt.Fprintf(os.Stderr, "note: %s\n", signedLinkNote)
 			}
-			fmt.Fprintf(os.Stderr, "hint: to check on it, run saladcloud inference jobs get %s --endpoint %s\n", id, endpoint)
+			fmt.Fprintf(
+				os.Stderr,
+				"hint: to check on it, run saladcloud inference jobs get %s --endpoint %s\n",
+				id,
+				endpoint,
+			)
 		}))
 	}
 
@@ -505,8 +545,12 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		if remote != "" {
 			detail += " (" + signedLinkNote + ")"
 		}
-		return clierr.New(clierr.CodeGeneric, clierr.KindTranscriptionFailed,
-			"%s", detail).WithHint("to see the full job document, run saladcloud inference jobs get %s --endpoint %s -o json", id, endpoint)
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindTranscriptionFailed,
+			"%s",
+			detail,
+		).WithHint("to see the full job document, run saladcloud inference jobs get %s --endpoint %s -o json", id, endpoint)
 	}
 	text, cerr := transcriptText(final.Output, srt, asFile)
 	if cerr != nil {

@@ -131,7 +131,13 @@ func TestCopyDocumentDisplayName(t *testing.T) {
 		var doc map[string]any
 		_ = json.Unmarshal(raw, &doc)
 		if doc["display_name"] != tc.want {
-			t.Errorf("copyDocument(%q, %v) display_name = %v, want %q", tc.name, tc.displaySet, doc["display_name"], tc.want)
+			t.Errorf(
+				"copyDocument(%q, %v) display_name = %v, want %q",
+				tc.name,
+				tc.displaySet,
+				doc["display_name"],
+				tc.want,
+			)
 		}
 	}
 }
@@ -174,7 +180,11 @@ func TestNoteRegistryCredentials(t *testing.T) {
 		t.Error("no note for a file without credentials")
 	}
 	buf.Reset()
-	noteRegistryCredentials(&buf, json.RawMessage(`{"container":{"registry_authentication":{"basic":{"username":"u","password":"p"}}}}`), private)
+	noteRegistryCredentials(
+		&buf,
+		json.RawMessage(`{"container":{"registry_authentication":{"basic":{"username":"u","password":"p"}}}}`),
+		private,
+	)
 	if buf.Len() != 0 {
 		t.Errorf("note printed although the file supplies credentials: %q", buf.String())
 	}
@@ -194,7 +204,8 @@ func TestNoteRegistryCredentials(t *testing.T) {
 }
 
 func TestPlural(t *testing.T) {
-	if plural(1, "replica") != "1 replica" || plural(0, "replica") != "0 replicas" || plural(3, "replica") != "3 replicas" {
+	if plural(1, "replica") != "1 replica" || plural(0, "replica") != "0 replicas" ||
+		plural(3, "replica") != "3 replicas" {
 		t.Errorf("plural: %q %q %q", plural(1, "replica"), plural(0, "replica"), plural(3, "replica"))
 	}
 }

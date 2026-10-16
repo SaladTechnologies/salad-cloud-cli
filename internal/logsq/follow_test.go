@@ -49,7 +49,12 @@ func staticQuery(t *testing.T) string {
 
 // runFollower wires a Follower with fakes and runs it to completion,
 // returning the follower itself so tests can inspect its seen map.
-func runFollower(t *testing.T, results []scriptedResult, allowedSleeps int, poll, maxBackoff, lookback time.Duration) (emitted []Entry, calls []fetchCall, sleeps []time.Duration, f *Follower) {
+func runFollower(
+	t *testing.T,
+	results []scriptedResult,
+	allowedSleeps int,
+	poll, maxBackoff, lookback time.Duration,
+) (emitted []Entry, calls []fetchCall, sleeps []time.Duration, f *Follower) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -176,7 +181,12 @@ func TestFollowEmptyPollsKeepWindow(t *testing.T) {
 	assertTexts(t, emitted, "e1")
 	for i := 1; i <= 2; i++ {
 		if want := "2026-03-01T09:57:00.000Z"; calls[i].start != want {
-			t.Errorf("poll %d window start = %s, want %s (max seen must not move on empty polls)", i, calls[i].start, want)
+			t.Errorf(
+				"poll %d window start = %s, want %s (max seen must not move on empty polls)",
+				i,
+				calls[i].start,
+				want,
+			)
 		}
 	}
 	if _, ok := f.seen[DedupKey(e1)]; !ok {

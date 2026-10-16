@@ -125,9 +125,21 @@ func warnOverrides(w io.Writer, when overrideWhen, ovs []override) {
 		case when == afterRemove || o.saved == "" && when == afterSave:
 			line = fmt.Sprintf("warning: commands still use %s (%s)", o.setting.env, o.setting.show(o.value))
 		case when == asSaved:
-			line = fmt.Sprintf("warning: commands use %s (%s) instead of the saved %s (%s)", o.setting.env, o.setting.show(o.value), o.setting.what, o.setting.show(o.saved))
+			line = fmt.Sprintf(
+				"warning: commands use %s (%s) instead of the saved %s (%s)",
+				o.setting.env,
+				o.setting.show(o.value),
+				o.setting.what,
+				o.setting.show(o.saved),
+			)
 		default:
-			line = fmt.Sprintf("warning: commands will use %s (%s) instead of the %s you just saved (%s)", o.setting.env, o.setting.show(o.value), o.setting.what, o.setting.show(o.saved))
+			line = fmt.Sprintf(
+				"warning: commands will use %s (%s) instead of the %s you just saved (%s)",
+				o.setting.env,
+				o.setting.show(o.value),
+				o.setting.what,
+				o.setting.show(o.saved),
+			)
 		}
 		if !steps {
 			fmt.Fprintln(w, line)
@@ -199,7 +211,12 @@ func removalSteps(ovs []override) string {
 	}
 	fmt.Fprintf(&b, "  bash, zsh:  unset %s\n", strings.Join(names, " "))
 	fmt.Fprintf(&b, "  fish:       set -e %s\n", strings.Join(names, " "))
-	fmt.Fprintf(&b, "If %s back in a new terminal, delete %s from your shell profile (~/.zshrc, ~/.bashrc or similar).\n", comes, it)
+	fmt.Fprintf(
+		&b,
+		"If %s back in a new terminal, delete %s from your shell profile (~/.zshrc, ~/.bashrc or similar).\n",
+		comes,
+		it,
+	)
 	return b.String()
 }
 
@@ -212,7 +229,12 @@ func beforePrompt(command string, ovs []override) string {
 		return ""
 	case 1:
 		o := ovs[0]
-		return fmt.Sprintf("%s is set in this shell (%s); commands will use it instead of what %s saves.", o.setting.env, o.setting.show(o.value), command)
+		return fmt.Sprintf(
+			"%s is set in this shell (%s); commands will use it instead of what %s saves.",
+			o.setting.env,
+			o.setting.show(o.value),
+			command,
+		)
 	}
 	parts := make([]string, len(ovs))
 	for i, o := range ovs {

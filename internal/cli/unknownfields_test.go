@@ -19,7 +19,11 @@ import (
 
 func TestRejectUnknownsNoHatchForTypos(t *testing.T) {
 	cerr := rejectUnknowns([]input.Unknown{
-		{Desc: `unknown field "replica" at the top level (did you mean "replicas"?)`, Path: "replica", Hint: "replicas"},
+		{
+			Desc: `unknown field "replica" at the top level (did you mean "replicas"?)`,
+			Path: "replica",
+			Hint: "replicas",
+		},
 	})
 	if cerr == nil {
 		t.Fatal("nil")
@@ -37,7 +41,11 @@ func TestRejectUnknownsNoHatchForTypos(t *testing.T) {
 
 func TestRejectUnknownsHatchNamesOnlyNovelFields(t *testing.T) {
 	cerr := rejectUnknowns([]input.Unknown{
-		{Desc: `unknown field "replica" at the top level (did you mean "replicas"?)`, Path: "replica", Hint: "replicas"},
+		{
+			Desc: `unknown field "replica" at the top level (did you mean "replicas"?)`,
+			Path: "replica",
+			Hint: "replicas",
+		},
 		{Desc: `unknown field "gpu_sharing" in "container"`, Path: "container.gpu_sharing"},
 	})
 	if cerr == nil {
@@ -125,7 +133,9 @@ func TestRejectUnknownsHedgesSchemaFacts(t *testing.T) {
 		{"restart_policy", "not in this CLI's update schema (create accepts it)", "cannot be changed by update"},
 		{"readme", "response-only in this CLI's API model", "is a response-only field and"},
 	} {
-		cerr := rejectUnknowns([]input.Unknown{{Desc: `unknown field "` + tt.path + `" at the top level`, Path: tt.path}})
+		cerr := rejectUnknowns(
+			[]input.Unknown{{Desc: `unknown field "` + tt.path + `" at the top level`, Path: tt.path}},
+		)
 		if cerr == nil || !strings.Contains(errText(cerr), tt.want) {
 			t.Errorf("%s: message %v lacks %q", tt.path, cerr, tt.want)
 		}
@@ -138,10 +148,15 @@ func TestRejectUnknownsHedgesSchemaFacts(t *testing.T) {
 func TestWarnUnknownsLenientTypo(t *testing.T) {
 	var buf bytes.Buffer
 	warnUnknowns(&buf, []input.Unknown{
-		{Desc: `unknown field "replica" at the top level (did you mean "replicas"?)`, Path: "replica", Hint: "replicas"},
+		{
+			Desc: `unknown field "replica" at the top level (did you mean "replicas"?)`,
+			Path: "replica",
+			Hint: "replicas",
+		},
 	}, false)
 	out := buf.String()
-	if !strings.Contains(out, `did you mean "replicas"?`) || !strings.Contains(out, "sent to the API anyway (--allow-unknown-fields)") {
+	if !strings.Contains(out, `did you mean "replicas"?`) ||
+		!strings.Contains(out, "sent to the API anyway (--allow-unknown-fields)") {
 		t.Errorf("lenient warning for a typo should carry the hint and the plain sent-anyway text: %s", out)
 	}
 	if strings.Contains(out, "looks like a typo") || strings.Contains(out, "ignore") {
@@ -172,13 +187,18 @@ func TestRejectUnknownsExplainsQueueConnection(t *testing.T) {
 // response given as its patch gets the exact command to start from.
 func TestUpdateNamesTheGroupToStartFrom(t *testing.T) {
 	doc := filepath.Join(t.TempDir(), "g.json")
-	if err := os.WriteFile(doc, []byte(`{"id":"x","create_time":"t","update_time":"t","version":1,"current_state":{}}`), 0o600); err != nil {
+	if err := os.WriteFile(
+		doc,
+		[]byte(`{"id":"x","create_time":"t","update_time":"t","version":1,"current_state":{}}`),
+		0o600,
+	); err != nil {
 		t.Fatal(err)
 	}
 	stubAPI(t, map[string]string{})
 	_, err := runRoot(t, "cg", "update", "my-app", "-f", doc)
 	cerr, ok := err.(*clierr.Error)
-	if !ok || cerr.Kind != clierr.KindUnknownField || !strings.Contains(cerr.HintText(), "run saladcloud container-groups get my-app --writable") {
+	if !ok || cerr.Kind != clierr.KindUnknownField ||
+		!strings.Contains(cerr.HintText(), "run saladcloud container-groups get my-app --writable") {
 		t.Errorf("update -f <get response> = %v, want the --writable command for my-app", err)
 	}
 }

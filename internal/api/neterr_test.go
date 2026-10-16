@@ -90,7 +90,9 @@ func TestNetworkErrNotYetValidCert(t *testing.T) {
 	start := time.Now().Add(48 * time.Hour).Truncate(time.Second)
 	err := tlsGetWithCert(t, start, start.Add(90*24*time.Hour))
 	got := networkErr("network error", err)
-	want := "TLS certificate for gw.example.test is not valid until " + start.UTC().Format(time.RFC3339) + "; check this machine's clock"
+	want := "TLS certificate for gw.example.test is not valid until " + start.UTC().
+		Format(time.RFC3339) +
+		"; check this machine's clock"
 	if !strings.Contains(got.Message, want) {
 		t.Errorf("message %q missing %q", got.Message, want)
 	}

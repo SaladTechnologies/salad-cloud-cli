@@ -353,7 +353,15 @@ func TestGroupLifecycle(t *testing.T) {
 	if err := os.WriteFile(wdoc, []byte(wr.Stdout), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if rt := run(t, "container-groups", "update", g, "-f", wdoc); rt.Code != 0 || strings.Contains(rt.Stderr, "warning:") {
+	if rt := run(
+		t,
+		"container-groups",
+		"update",
+		g,
+		"-f",
+		wdoc,
+	); rt.Code != 0 ||
+		strings.Contains(rt.Stderr, "warning:") {
 		t.Errorf("get --writable | update -f round trip: exit %d, stderr %q", rt.Code, rt.Stderr)
 	}
 
@@ -363,7 +371,11 @@ func TestGroupLifecycle(t *testing.T) {
 	// on hold, and scale — the replicas verb — must say so (as a note, not a
 	// warning: it is a documented platform rule).
 	sched := filepath.Join(t.TempDir(), "sched.json")
-	if err := os.WriteFile(sched, []byte(`{"scheduled-scaling-enabled":true,"scaling-actions":[{"replicas":1,"schedule":"0 9 * * 1-5"}]}`), 0o600); err != nil {
+	if err := os.WriteFile(
+		sched,
+		[]byte(`{"scheduled-scaling-enabled":true,"scaling-actions":[{"replicas":1,"schedule":"0 9 * * 1-5"}]}`),
+		0o600,
+	); err != nil {
 		t.Fatal(err)
 	}
 	if r := run(t, "container-groups", "update", g, "-f", sched); r.Code != 0 {
@@ -379,7 +391,10 @@ func TestGroupLifecycle(t *testing.T) {
 	if strings.Contains(r.Stderr, "warning:") {
 		t.Errorf("the hold rule must be a note, not a warning; stderr %q", r.Stderr)
 	}
-	if held := oneDoc(t, run(t, "container-groups", "get", g, "-o", "json")); held["scheduled-scaling-enabled"] != false {
+	if held := oneDoc(
+		t,
+		run(t, "container-groups", "get", g, "-o", "json"),
+	); held["scheduled-scaling-enabled"] != false {
 		t.Errorf("scheduled-scaling-enabled after scale = %v, want false (on hold)", held["scheduled-scaling-enabled"])
 	}
 	// --keep-schedule: re-enable, scale again with the flag, and the schedule
@@ -392,8 +407,16 @@ func TestGroupLifecycle(t *testing.T) {
 	} else if !strings.Contains(r.Stderr, "re-enabled") {
 		t.Errorf("scale --keep-schedule did not report the re-enable; stderr %q", r.Stderr)
 	}
-	if kept := oneDoc(t, run(t, "container-groups", "get", g, "-o", "json")); kept["scheduled-scaling-enabled"] != true || kept["replicas"] != float64(2) {
-		t.Errorf("after scale --keep-schedule: enabled=%v replicas=%v, want true and 2", kept["scheduled-scaling-enabled"], kept["replicas"])
+	if kept := oneDoc(
+		t,
+		run(t, "container-groups", "get", g, "-o", "json"),
+	); kept["scheduled-scaling-enabled"] != true ||
+		kept["replicas"] != float64(2) {
+		t.Errorf(
+			"after scale --keep-schedule: enabled=%v replicas=%v, want true and 2",
+			kept["scheduled-scaling-enabled"],
+			kept["replicas"],
+		)
 	}
 	act := oneDoc(t, r)
 	if act["action"] != "scaled" {
@@ -416,7 +439,15 @@ func TestGroupLifecycle(t *testing.T) {
 // the rule itself has changed and the naming convention can be relaxed.
 func TestDeletedNameStaysTaken(t *testing.T) {
 	g := name("resv")
-	if r := run(t, "container-groups", "create", g, "--image", "docker.io/library/busybox:1.36", "--no-autostart"); r.Code != 0 {
+	if r := run(
+		t,
+		"container-groups",
+		"create",
+		g,
+		"--image",
+		"docker.io/library/busybox:1.36",
+		"--no-autostart",
+	); r.Code != 0 {
 		t.Fatalf("create exit %d: %s", r.Code, r.Stderr)
 	}
 	if r := run(t, "container-groups", "delete", g); r.Code != 0 {
@@ -452,10 +483,38 @@ func TestErrorContract(t *testing.T) {
 		// CLI never reached json mode, so it correctly reports in table form.
 		jsonError bool
 	}{
-		{"not found is 4", []string{"container-groups", "get", prefix + "-nope", "-o", "json"}, 4, "not_found", "404", true},
-		{"bad name is client-side 6", []string{"container-groups", "create", "Bad_Name", "--image", "x", "--no-autostart", "-o", "json"}, 6, "invalid_input", "null", true},
-		{"missing --image is 2", []string{"container-groups", "create", name("x"), "-o", "json"}, 2, "usage", "null", true},
-		{"an invalid -o cannot itself report in json", []string{"container-groups", "list", "-o", "xml"}, 2, "", "", false},
+		{
+			"not found is 4",
+			[]string{"container-groups", "get", prefix + "-nope", "-o", "json"},
+			4,
+			"not_found",
+			"404",
+			true,
+		},
+		{
+			"bad name is client-side 6",
+			[]string{"container-groups", "create", "Bad_Name", "--image", "x", "--no-autostart", "-o", "json"},
+			6,
+			"invalid_input",
+			"null",
+			true,
+		},
+		{
+			"missing --image is 2",
+			[]string{"container-groups", "create", name("x"), "-o", "json"},
+			2,
+			"usage",
+			"null",
+			true,
+		},
+		{
+			"an invalid -o cannot itself report in json",
+			[]string{"container-groups", "list", "-o", "xml"},
+			2,
+			"",
+			"",
+			false,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -670,7 +729,12 @@ func TestCreateFrom(t *testing.T) {
 		t.Errorf("name/display_name = %q/%q, want both %q", got.Name, got.DisplayName, cp)
 	}
 	if got.RestartPolicy != "never" || got.Priority != "high" || got.Replicas != 2 {
-		t.Errorf("restart_policy/priority/replicas = %q/%q/%d, want never/high/2", got.RestartPolicy, got.Priority, got.Replicas)
+		t.Errorf(
+			"restart_policy/priority/replicas = %q/%q/%d, want never/high/2",
+			got.RestartPolicy,
+			got.Priority,
+			got.Replicas,
+		)
 	}
 	if got.Networking.Port != 8080 || got.Networking.Auth {
 		t.Errorf("networking = %+v, want port 8080 with auth off", got.Networking)
@@ -826,18 +890,32 @@ func testSSH(t *testing.T, g string) {
 		if os.Getenv("SALAD_CLI_TEST_REQUIRE_SSH") == "1" {
 			skip = t.Fatalf
 		}
-		skip("ssh denied on publickey after 3 attempts. Three causes cover nearly every case: the key on this machine is not "+
-			"registered on the account that owns the API key (keys are per user); this shell has a different ~/.ssh (WSL/container); "+
-			"or the key is passphrase-protected and not in ssh-add (one-shot ssh runs in BatchMode). "+
-			"`saladcloud ssh-key get` reports which key this build offers. stderr: %s",
-			strings.TrimSpace(r.Stderr))
+		skip(
+			"ssh denied on publickey after 3 attempts. Three causes cover nearly every case: the key on this machine is not "+
+				"registered on the account that owns the API key (keys are per user); this shell has a different ~/.ssh (WSL/container); "+
+				"or the key is passphrase-protected and not in ssh-add (one-shot ssh runs in BatchMode). "+
+				"`saladcloud ssh-key get` reports which key this build offers. stderr: %s",
+			strings.TrimSpace(r.Stderr),
+		)
 	}
 	if !strings.Contains(r.Stdout, "hello-from-instance") {
 		t.Errorf("ssh one-shot did not echo through the relay; stdout %q, stderr %q", r.Stdout, r.Stderr)
 	}
 	// The sh -c wrapping is what makes shell syntax work at all through a
 	// relay that execs raw argv.
-	if sh := run(t, "container-groups", "ssh", g, "--", "echo", "a", "&&", "echo", "b"); !strings.Contains(sh.Stdout, "a") || !strings.Contains(sh.Stdout, "b") {
+	if sh := run(
+		t,
+		"container-groups",
+		"ssh",
+		g,
+		"--",
+		"echo",
+		"a",
+		"&&",
+		"echo",
+		"b",
+	); !strings.Contains(sh.Stdout, "a") ||
+		!strings.Contains(sh.Stdout, "b") {
 		t.Errorf("shell operators did not survive the sh -c wrapping; stdout %q, stderr %q", sh.Stdout, sh.Stderr)
 	}
 
@@ -855,7 +933,20 @@ func testSSH(t *testing.T, g string) {
 	if up := run(t, "container-groups", "cp", local, g+"/"+inst+":/tmp/up.txt"); up.Code != 0 {
 		t.Errorf("cp up exit %d: %s", up.Code, up.Stderr)
 	}
-	if back := run(t, "container-groups", "ssh", g, "--instance", inst, "--", "cat", "/tmp/up.txt"); !strings.Contains(back.Stdout, payload) {
+	if back := run(
+		t,
+		"container-groups",
+		"ssh",
+		g,
+		"--instance",
+		inst,
+		"--",
+		"cat",
+		"/tmp/up.txt",
+	); !strings.Contains(
+		back.Stdout,
+		payload,
+	) {
 		t.Errorf("uploaded file did not read back; stdout %q, stderr %q", back.Stdout, back.Stderr)
 	}
 	down := filepath.Join(t.TempDir(), "down.txt")
@@ -1074,7 +1165,14 @@ func TestGateway(t *testing.T) {
 	// A wrong key is an auth failure with empty stdout. The model list is
 	// public and accepts any key, so the check is test's completion, which
 	// the gateway rejects before it runs (not billed).
-	bad := runEnv(t, map[string]string{"SALAD_AI_GATEWAY_API_KEY": "not-a-real-key"}, "ai-gateway", "test", "-o", "json")
+	bad := runEnv(
+		t,
+		map[string]string{"SALAD_AI_GATEWAY_API_KEY": "not-a-real-key"},
+		"ai-gateway",
+		"test",
+		"-o",
+		"json",
+	)
 	if bad.Code != 3 || strings.TrimSpace(bad.Stdout) != "" {
 		t.Errorf("wrong gateway key: exit %d stdout %q, want 3 and empty", bad.Code, bad.Stdout)
 	}
@@ -1101,7 +1199,13 @@ func TestGrammar(t *testing.T) {
 	for _, noun := range []string{"gpus", "orgs", "quotas", "queues", "inference"} {
 		r := run(t, noun, "-o", "json")
 		if r.Code != 2 || strings.TrimSpace(r.Stdout) != "" || !strings.Contains(r.Stderr, "needs a verb") {
-			t.Errorf("bare %s: exit %d stdout %q stderr %q, want 2, empty, needs a verb", noun, r.Code, r.Stdout, r.Stderr)
+			t.Errorf(
+				"bare %s: exit %d stdout %q stderr %q, want 2, empty, needs a verb",
+				noun,
+				r.Code,
+				r.Stdout,
+				r.Stderr,
+			)
 		}
 	}
 	for _, args := range [][]string{{"gpus", "list"}, {"orgs", "list"}, {"queues", "list"}, {"inference", "list"}} {
@@ -1133,7 +1237,11 @@ func TestGrammar(t *testing.T) {
 	if r := run(t, "inference", "jobs", "list", "--endpoint", "transcribe", "--limit", "1", "-o", "json"); r.Code != 0 {
 		t.Errorf("inference jobs list --endpoint exit %d: %s", r.Code, r.Stderr)
 	}
-	if r := run(t, "create"); r.Code != 2 || !strings.Contains(r.Stderr, "did you mean saladcloud container-groups create") {
+	if r := run(
+		t,
+		"create",
+	); r.Code != 2 ||
+		!strings.Contains(r.Stderr, "did you mean saladcloud container-groups create") {
 		t.Errorf("bare create: exit %d stderr %q, want 2 with did-you-mean", r.Code, r.Stderr)
 	}
 }
@@ -1186,7 +1294,17 @@ func TestQueues(t *testing.T) {
 	if g := run(t, "queues", "get", q, "-o", "json"); g.Code != 0 {
 		t.Errorf("queues get exit %d: %s", g.Code, g.Stderr)
 	}
-	if u := run(t, "queues", "update", q, "--description", "updated", "-o", "json"); u.Code != 0 || oneDoc(t, u)["description"] != "updated" {
+	if u := run(
+		t,
+		"queues",
+		"update",
+		q,
+		"--description",
+		"updated",
+		"-o",
+		"json",
+	); u.Code != 0 ||
+		oneDoc(t, u)["description"] != "updated" {
 		t.Errorf("queues update exit %d: %s %s", u.Code, u.Stdout, u.Stderr)
 	}
 
@@ -1201,7 +1319,17 @@ func TestQueues(t *testing.T) {
 	if g := run(t, "queues", "jobs", "get", id, "--queue", q, "-o", "json"); g.Code != 0 {
 		t.Errorf("queues jobs get exit %d: %s", g.Code, g.Stderr)
 	}
-	if l := run(t, "queues", "jobs", "list", "--queue", q, "-o", "json"); l.Code != 0 || !strings.Contains(l.Stdout, id) {
+	if l := run(
+		t,
+		"queues",
+		"jobs",
+		"list",
+		"--queue",
+		q,
+		"-o",
+		"json",
+	); l.Code != 0 ||
+		!strings.Contains(l.Stdout, id) {
 		t.Errorf("queues jobs list exit %d does not list %s: %s", l.Code, id, l.Stdout)
 	}
 	if d := run(t, "queues", "jobs", "cancel", id, "--queue", q, "-o", "json"); d.Code != 0 {
@@ -1217,7 +1345,11 @@ func TestQueues(t *testing.T) {
 	time.Sleep(createSpacing)
 	g := name("qcg")
 	auto := filepath.Join(t.TempDir(), "auto.json")
-	if err := os.WriteFile(auto, []byte(`{"queue_autoscaler":{"min_replicas":0,"max_replicas":1,"desired_queue_length":1}}`), 0o600); err != nil {
+	if err := os.WriteFile(
+		auto,
+		[]byte(`{"queue_autoscaler":{"min_replicas":0,"max_replicas":1,"desired_queue_length":1}}`),
+		0o600,
+	); err != nil {
 		t.Fatal(err)
 	}
 	cg := run(t, "container-groups", "create", g, "--image", "docker.io/library/busybox:1.36", "--no-autostart",

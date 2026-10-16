@@ -49,7 +49,14 @@ type uploadResponse struct {
 // set). remoteName may contain "/" as folder separators; each segment is
 // path-escaped individually. The reader is streamed to the wire — the file
 // is never buffered in memory.
-func (c *Client) UploadFile(ctx context.Context, remoteName string, r io.Reader, mimeType string, sign bool, signatureExpSeconds int64) (string, *clierr.Error) {
+func (c *Client) UploadFile(
+	ctx context.Context,
+	remoteName string,
+	r io.Reader,
+	mimeType string,
+	sign bool,
+	signatureExpSeconds int64,
+) (string, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return "", err
 	}
@@ -131,7 +138,14 @@ func (c *Client) DeleteFile(ctx context.Context, remoteName string) *clierr.Erro
 
 // writeUploadForm writes S4's multipart fields. Field parts go first so the
 // server sees the metadata before the (potentially large) file part.
-func writeUploadForm(mw *multipart.Writer, remoteName string, r io.Reader, mimeType string, sign bool, signatureExpSeconds int64) error {
+func writeUploadForm(
+	mw *multipart.Writer,
+	remoteName string,
+	r io.Reader,
+	mimeType string,
+	sign bool,
+	signatureExpSeconds int64,
+) error {
 	if err := mw.WriteField("mimeType", mimeType); err != nil {
 		return err
 	}

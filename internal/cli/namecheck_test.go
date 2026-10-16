@@ -18,38 +18,66 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 	long := strings.Repeat("a", 64)
 	runBranches(t, []branchCase{
 		{
-			id: "the API key in SALAD_ORGANIZATION", s: session{args: []string{"quotas", "get"}, saved: saved, env: map[string]string{"SALAD_ORGANIZATION": K}},
-			code: 6, kind: "invalid_input",
-			stderr: errLines("SALAD_ORGANIZATION looks like an API key, not an organization name",
-				"set it to the organization's name from the portal URL, the part after /organizations/; the key goes in SALAD_API_KEY"),
+			id: "the API key in SALAD_ORGANIZATION",
+			s: session{
+				args:  []string{"quotas", "get"},
+				saved: saved,
+				env:   map[string]string{"SALAD_ORGANIZATION": K},
+			},
+			code: 6,
+			kind: "invalid_input",
+			stderr: errLines(
+				"SALAD_ORGANIZATION looks like an API key, not an organization name",
+				"set it to the organization's name from the portal URL, the part after /organizations/; the key goes in SALAD_API_KEY",
+			),
 		},
 		{
-			id: "a value longer than a name in --org", s: session{args: []string{"quotas", "get", "--org", long}, saved: saved},
-			code: 6, kind: "invalid_input",
-			stderr: errLines("--org looks like an API key, not an organization name", "pass the organization's name from the portal URL, the part after /organizations/"),
+			id:   "a value longer than a name in --org",
+			s:    session{args: []string{"quotas", "get", "--org", long}, saved: saved},
+			code: 6,
+			kind: "invalid_input",
+			stderr: errLines(
+				"--org looks like an API key, not an organization name",
+				"pass the organization's name from the portal URL, the part after /organizations/",
+			),
 		},
 		{
-			id: "the API key in SALAD_PROJECT", s: session{args: []string{"cg", "list"}, saved: saved, env: map[string]string{"SALAD_PROJECT": K}},
-			code: 6, kind: "invalid_input",
-			stderr: errLines("SALAD_PROJECT looks like an API key, not a project name",
-				"set it to the project's name from the portal URL, the part after /projects/; the key goes in SALAD_API_KEY"),
+			id:   "the API key in SALAD_PROJECT",
+			s:    session{args: []string{"cg", "list"}, saved: saved, env: map[string]string{"SALAD_PROJECT": K}},
+			code: 6,
+			kind: "invalid_input",
+			stderr: errLines(
+				"SALAD_PROJECT looks like an API key, not a project name",
+				"set it to the project's name from the portal URL, the part after /projects/; the key goes in SALAD_API_KEY",
+			),
 		},
 		{
-			id: "the API key saved as the organization", s: session{args: []string{"cg", "list"}, saved: &config.File{APIKey: K, Organization: K}},
-			code: 6, kind: "invalid_input",
-			stderr: errLines("the saved organization looks like an API key, not an organization name", "to switch, run saladcloud use <org>"),
+			id:   "the API key saved as the organization",
+			s:    session{args: []string{"cg", "list"}, saved: &config.File{APIKey: K, Organization: K}},
+			code: 6,
+			kind: "invalid_input",
+			stderr: errLines(
+				"the saved organization looks like an API key, not an organization name",
+				"to switch, run saladcloud use <org>",
+			),
 		},
 		{
-			id: "the API key as use's argument", s: session{args: []string{"use", K}, saved: saved},
-			code: 6, kind: "invalid_input",
-			stderr: errLines("that looks like an API key, not an organization name", "the target is <org> or <org>/<project>, for example saladcloud use acme-prod/staging"),
+			id:   "the API key as use's argument",
+			s:    session{args: []string{"use", K}, saved: saved},
+			code: 6,
+			kind: "invalid_input",
+			stderr: errLines(
+				"that looks like an API key, not an organization name",
+				"the target is <org> or <org>/<project>, for example saladcloud use acme-prod/staging",
+			),
 		},
 	})
 
 	// whoami and doctor report it without the value or a request for it.
 	env := map[string]string{"SALAD_ORGANIZATION": K}
 	o := session{args: []string{"whoami"}, saved: saved, env: env}.run(t)
-	if o.code != 0 || !strings.Contains(o.stdout, "hidden, looks like an API key (from SALAD_ORGANIZATION; saved: my-org)") {
+	if o.code != 0 ||
+		!strings.Contains(o.stdout, "hidden, looks like an API key (from SALAD_ORGANIZATION; saved: my-org)") {
 		t.Errorf("whoami: exit %d\n%s", o.code, o.stdout)
 	}
 	j := session{args: []string{"whoami", "-o", "json"}, saved: saved, env: env}.run(t)
@@ -61,7 +89,8 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 	shown := false
 	for _, it := range items {
 		if row, _ := it.(map[string]any); row["name"] == "organization" {
-			shown = row["status"] == "fail" && row["detail"] == "(from SALAD_ORGANIZATION) looks like an API key, not an organization name"
+			shown = row["status"] == "fail" &&
+				row["detail"] == "(from SALAD_ORGANIZATION) looks like an API key, not an organization name"
 		}
 	}
 	if !shown {
@@ -91,7 +120,8 @@ func TestInvalidOrganizationName(t *testing.T) {
 	saved := &config.File{APIKey: testAPIKey}
 	env := map[string]string{"SALAD_ORGANIZATION": "Acme Prod"}
 	o := session{args: []string{"whoami"}, saved: saved, env: env}.run(t)
-	if o.code != 0 || !strings.Contains(o.stdout, `"Acme Prod" (from SALAD_ORGANIZATION), not a valid organization name`) {
+	if o.code != 0 ||
+		!strings.Contains(o.stdout, `"Acme Prod" (from SALAD_ORGANIZATION), not a valid organization name`) {
 		t.Errorf("whoami: exit %d\n%s%s", o.code, o.stdout, o.stderr)
 	}
 	for _, req := range o.api.Requests() {
@@ -99,7 +129,8 @@ func TestInvalidOrganizationName(t *testing.T) {
 			t.Errorf("whoami sent the name: %s", req)
 		}
 	}
-	if doc := (session{args: []string{"whoami", "-o", "json"}, saved: saved, env: env}).run(t).document(t); doc["organization_found"] != false {
+	if doc := (session{args: []string{"whoami", "-o", "json"}, saved: saved, env: env}).run(t).
+		document(t); doc["organization_found"] != false {
 		t.Errorf("organization_found = %v, want false", doc["organization_found"])
 	}
 	if l := (session{args: []string{"orgs", "list"}, saved: saved, env: env}).run(t); l.code != 0 {
@@ -111,11 +142,23 @@ func TestInvalidOrganizationName(t *testing.T) {
 // sourced in WSL or Git Bash) neither breaks a name nor reads as another key.
 func TestTrimmedValues(t *testing.T) {
 	saved := &config.File{APIKey: testAPIKey, Organization: "my-org", Project: "default"}
-	o := session{args: []string{"quotas", "get"}, saved: saved, env: map[string]string{"SALAD_ORGANIZATION": "my-org\r"}}.run(t)
+	o := session{
+		args:  []string{"quotas", "get"},
+		saved: saved,
+		env:   map[string]string{"SALAD_ORGANIZATION": "my-org\r"},
+	}.run(
+		t,
+	)
 	if o.code != 0 || len(o.api.Requests()) == 0 || o.api.Requests()[0] != "GET /organizations/my-org/quotas" {
 		t.Errorf("exit %d, requests %v\n%s", o.code, o.api.Requests(), o.stderr)
 	}
-	d := session{args: []string{"doctor"}, saved: saved, env: map[string]string{"SALAD_API_KEY": testAPIKey + "\r"}}.run(t)
+	d := session{
+		args:  []string{"doctor"},
+		saved: saved,
+		env:   map[string]string{"SALAD_API_KEY": testAPIKey + "\r"},
+	}.run(
+		t,
+	)
 	if strings.Contains(d.stderr, "warning: commands use SALAD_API_KEY") {
 		t.Errorf("the same key with a carriage return read as another:\n%s", d.stderr)
 	}

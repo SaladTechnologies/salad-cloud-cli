@@ -23,7 +23,10 @@ func jobWithStatus(id string, status inferenceendpoints.Status) *inferenceendpoi
 
 // scriptedJobWaitDeps returns deps whose get walks the given status sequence
 // (sticking on the last entry) against a fake clock that sleep advances.
-func scriptedJobWaitDeps(statuses []inferenceendpoints.Status, progress *bytes.Buffer) jobWaitDeps[inferenceendpoints.InferenceEndpointJob] {
+func scriptedJobWaitDeps(
+	statuses []inferenceendpoints.Status,
+	progress *bytes.Buffer,
+) jobWaitDeps[inferenceendpoints.InferenceEndpointJob] {
 	clock := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
 	i := 0
 	return jobWaitDeps[inferenceendpoints.InferenceEndpointJob]{
@@ -202,7 +205,15 @@ func TestJobsLimitNote(t *testing.T) {
 		var buf bytes.Buffer
 		jobsLimitNote(&buf, tc.shown, tc.limit, 10000, tc.more)
 		if buf.String() != tc.want {
-			t.Errorf("%s, shown %d, limit %d, more %v: note %q, want %q", tc.mode, tc.shown, tc.limit, tc.more, buf.String(), tc.want)
+			t.Errorf(
+				"%s, shown %d, limit %d, more %v: note %q, want %q",
+				tc.mode,
+				tc.shown,
+				tc.limit,
+				tc.more,
+				buf.String(),
+				tc.want,
+			)
 		}
 	}
 	_ = output.SetMode("table")

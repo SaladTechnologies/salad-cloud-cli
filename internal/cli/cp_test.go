@@ -81,7 +81,12 @@ func TestParseRemoteSpecGitBashRewrite(t *testing.T) {
 		}
 		if err.Code != clierr.CodeUsage || !strings.Contains(err.Message, "rewritten by Git Bash") ||
 			!strings.Contains(err.HintText(), "MSYS_NO_PATHCONV=1") {
-			t.Errorf("parseRemoteSpec(%q) = (%d, %q), want a usage error naming MSYS_NO_PATHCONV=1", in, err.Code, err.Message)
+			t.Errorf(
+				"parseRemoteSpec(%q) = (%d, %q), want a usage error naming MSYS_NO_PATHCONV=1",
+				in,
+				err.Code,
+				err.Message,
+			)
 		}
 	}
 }
@@ -166,7 +171,9 @@ func TestCpFailureInJSON(t *testing.T) {
 	if stderr != "" {
 		t.Errorf("stderr = %q, want nothing before the error document", stderr)
 	}
-	if !strings.HasSuffix(cerr.Message, `exited with status 1; remote open("/etc/hostname"): Permission denied`) || cerr.Kind != clierr.KindChildExit || cerr.Code != 1 {
+	if !strings.HasSuffix(cerr.Message, `exited with status 1; remote open("/etc/hostname"): Permission denied`) ||
+		cerr.Kind != clierr.KindChildExit ||
+		cerr.Code != 1 {
 		t.Errorf("error = %+v, want child_exit 1 ending with sftp's last line", cerr)
 	}
 }
@@ -211,7 +218,19 @@ func TestBuildSFTPBatchQuoting(t *testing.T) {
 func TestBuildSFTPArgs(t *testing.T) {
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
 	got := buildSFTPArgs(target, "root", "", "/tmp/batch")
-	want := []string{"-P", "30123", "-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=/cfg/known_hosts", "-o", "HostKeyAlias=saladcloud-aaaa1111", "-b", "/tmp/batch", "root@203.0.113.7"}
+	want := []string{
+		"-P",
+		"30123",
+		"-o",
+		"StrictHostKeyChecking=accept-new",
+		"-o",
+		"UserKnownHostsFile=/cfg/known_hosts",
+		"-o",
+		"HostKeyAlias=saladcloud-aaaa1111",
+		"-b",
+		"/tmp/batch",
+		"root@203.0.113.7",
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("args = %v, want %v", got, want)
 	}
@@ -221,7 +240,17 @@ func TestBuildSFTPArgsInteractive(t *testing.T) {
 	// Empty batchPath = interactive 'saladcloud container-groups sftp' session: no -b flag.
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
 	got := buildSFTPArgs(target, "root", "", "")
-	want := []string{"-P", "30123", "-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=/cfg/known_hosts", "-o", "HostKeyAlias=saladcloud-aaaa1111", "root@203.0.113.7"}
+	want := []string{
+		"-P",
+		"30123",
+		"-o",
+		"StrictHostKeyChecking=accept-new",
+		"-o",
+		"UserKnownHostsFile=/cfg/known_hosts",
+		"-o",
+		"HostKeyAlias=saladcloud-aaaa1111",
+		"root@203.0.113.7",
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("args = %v, want %v", got, want)
 	}

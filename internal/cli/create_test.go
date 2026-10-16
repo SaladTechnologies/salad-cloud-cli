@@ -467,8 +467,14 @@ func TestBuildCreateRequestValidationFailures(t *testing.T) {
 			wantMsg:  "--env",
 		},
 		{
-			name:     "queue path Git Bash rewrote",
-			opts:     createFlags{Image: "x", Queue: "q", QueuePort: 8000, QueuePortSet: true, QueuePath: "C:/Program Files/Git/"},
+			name: "queue path Git Bash rewrote",
+			opts: createFlags{
+				Image:        "x",
+				Queue:        "q",
+				QueuePort:    8000,
+				QueuePortSet: true,
+				QueuePath:    "C:/Program Files/Git/",
+			},
 			wantCode: clierr.CodeUsage,
 			wantMsg:  "rewritten by Git Bash",
 		},
@@ -771,7 +777,8 @@ func TestRejectUnknownsListsEveryField(t *testing.T) {
 		{Desc: `unknown field "create_time" at the top level`, Path: "create_time"},
 		{Desc: `unknown field "version" at the top level`, Path: "version"},
 	})
-	if !strings.HasPrefix(tell.Message, "this document is a get response, not a patch") || strings.Contains(tell.Message, "unknown fields:") {
+	if !strings.HasPrefix(tell.Message, "this document is a get response, not a patch") ||
+		strings.Contains(tell.Message, "unknown fields:") {
 		t.Errorf("get-round-trip message = %q", tell.Message)
 	}
 	if rejectUnknowns(nil) != nil {
@@ -804,12 +811,14 @@ func TestWarnUnknowns(t *testing.T) {
 	}
 	var createBuf strings.Builder
 	warnUnknowns(&createBuf, unknowns, true)
-	if got := createBuf.String(); !strings.Contains(got, "sent to the API anyway") || !strings.Contains(got, "; dropped, because") {
+	if got := createBuf.String(); !strings.Contains(got, "sent to the API anyway") ||
+		!strings.Contains(got, "; dropped, because") {
 		t.Errorf("create-mode warnings wrong:\n%s", got)
 	}
 	var updateBuf strings.Builder
 	warnUnknowns(&updateBuf, unknowns, false)
-	if got := updateBuf.String(); strings.Contains(got, "dropped") || strings.Count(got, "sent to the API anyway") != 2 {
+	if got := updateBuf.String(); strings.Contains(got, "dropped") ||
+		strings.Count(got, "sent to the API anyway") != 2 {
 		t.Errorf("update-mode warnings wrong:\n%s", got)
 	}
 }

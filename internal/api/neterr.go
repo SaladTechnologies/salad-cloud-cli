@@ -62,8 +62,13 @@ func certWindowMessage(err error) (string, bool) {
 	t := now().UTC()
 	switch {
 	case t.After(leaf.NotAfter):
-		return fmt.Sprintf("%sTLS certificate for %s expired %s (%s ago); the server must renew it",
-			where, host, leaf.NotAfter.UTC().Format(time.RFC3339), strings.TrimSuffix(t.Sub(leaf.NotAfter).Round(time.Minute).String(), "0s")), true
+		return fmt.Sprintf(
+			"%sTLS certificate for %s expired %s (%s ago); the server must renew it",
+			where,
+			host,
+			leaf.NotAfter.UTC().Format(time.RFC3339),
+			strings.TrimSuffix(t.Sub(leaf.NotAfter).Round(time.Minute).String(), "0s"),
+		), true
 	case t.Before(leaf.NotBefore):
 		return fmt.Sprintf("%sTLS certificate for %s is not valid until %s; check this machine's clock",
 			where, host, leaf.NotBefore.UTC().Format(time.RFC3339)), true

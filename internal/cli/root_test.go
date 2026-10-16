@@ -115,7 +115,8 @@ func TestCommandLineErrorsInTableMode(t *testing.T) {
 			}
 			// One error line, and at most one hint line under it.
 			first, rest, _ := strings.Cut(strings.TrimRight(stderr, "\n"), "\n")
-			if !strings.HasPrefix(first, "saladcloud: error: ") || rest != "" && (!strings.HasPrefix(rest, "hint: ") || strings.Contains(rest, "\n")) {
+			if !strings.HasPrefix(first, "saladcloud: error: ") ||
+				rest != "" && (!strings.HasPrefix(rest, "hint: ") || strings.Contains(rest, "\n")) {
 				t.Errorf("stderr = %q, want one table-mode error line and at most one hint", stderr)
 			}
 		})
@@ -130,7 +131,11 @@ func TestErrorsAreJSONUnderYAML(t *testing.T) {
 		t.Fatalf("exit %d stdout %q", code, stdout)
 	}
 	var doc map[string]map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(stderr)), &doc); err != nil || doc["error"]["kind"] != string(clierr.KindUsage) {
+	if err := json.Unmarshal(
+		[]byte(strings.TrimSpace(stderr)),
+		&doc,
+	); err != nil ||
+		doc["error"]["kind"] != string(clierr.KindUsage) {
 		t.Errorf("stderr = %q, want the JSON error document", stderr)
 	}
 }

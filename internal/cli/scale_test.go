@@ -7,9 +7,8 @@ import (
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 
-	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
-
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 // TestValidateScaleReplicas pins the bounds and, importantly, that 0 is

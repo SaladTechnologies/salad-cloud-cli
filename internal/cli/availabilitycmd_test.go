@@ -48,7 +48,11 @@ func TestApplyAvailabilityFlagsOverFrom(t *testing.T) {
 		CountryCodes: []shared.CountryCode{"de"},
 	}
 	base := requirementsOf(g)
-	got := applyAvailabilityFlags(base, availabilityFlags{CPU: 8, CPUSet: true, Storage: 5, StorageOK: true, Countries: []string{"US"}}, []string{"b"})
+	got := applyAvailabilityFlags(
+		base,
+		availabilityFlags{CPU: 8, CPUSet: true, Storage: 5, StorageOK: true, Countries: []string{"US"}},
+		[]string{"b"},
+	)
 	want := api.AvailabilityRequest{
 		GpuClasses: []string{"b"}, Cpu: ptr.To(int64(8)), Memory: ptr.To(int64(8192)),
 		StorageAmount: ptr.To(5 * bytesPerGB), CountryCodes: []string{"us"},
@@ -64,7 +68,11 @@ func TestApplyAvailabilityFlagsOverFrom(t *testing.T) {
 }
 
 func TestOverloadWarning(t *testing.T) {
-	if w := overloadWarning("RTX 4090", true); !strings.HasPrefix(w, "warning:") || !strings.Contains(w, "RTX 4090") || !strings.Contains(w, "overloaded") {
+	if w := overloadWarning(
+		"RTX 4090",
+		true,
+	); !strings.HasPrefix(w, "warning:") || !strings.Contains(w, "RTX 4090") ||
+		!strings.Contains(w, "overloaded") {
 		t.Errorf("warning = %q", w)
 	}
 	if w := overloadWarning("x", false); w != "" {
@@ -89,7 +97,8 @@ func TestAskTwiceIfZero(t *testing.T) {
 	if _, _ = askTwiceIfZero(ask, allZeroGpu); calls != 2 {
 		t.Errorf("a real answer was asked again (calls = %d)", calls)
 	}
-	if !allZeroGpu(&organizations.GpuAvailability{}) || allZeroGpu(&organizations.GpuAvailability{AvailableGpuLow: ptr.To(int64(1))}) {
+	if !allZeroGpu(&organizations.GpuAvailability{}) ||
+		allZeroGpu(&organizations.GpuAvailability{AvailableGpuLow: ptr.To(int64(1))}) {
 		t.Error("allZeroGpu misjudged")
 	}
 	if !allZeroGpu(&organizations.GpuAvailability{OnCallGpu: ptr.To(int64(9))}) {

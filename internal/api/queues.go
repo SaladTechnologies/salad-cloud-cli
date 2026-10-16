@@ -84,7 +84,11 @@ const QueueJobsBudget = 40 * queueJobsPageSize
 // request allowance; partial then reports that the queue holds more than
 // was read, so the newest are the newest of those read only. more reports
 // jobs read but left out by the limit or the cap.
-func (c *Client) ListQueueJobs(ctx context.Context, queue string, limit int) (jobs []queues.QueueJob, more, partial bool, cerr *clierr.Error) {
+func (c *Client) ListQueueJobs(
+	ctx context.Context,
+	queue string,
+	limit int,
+) (jobs []queues.QueueJob, more, partial bool, cerr *clierr.Error) {
 	if err := c.requireOrgProject(); err != nil {
 		return nil, false, false, err
 	}
@@ -122,7 +126,11 @@ func (c *Client) ListQueueJobs(ctx context.Context, queue string, limit int) (jo
 }
 
 // CreateQueueJob submits a job to a queue.
-func (c *Client) CreateQueueJob(ctx context.Context, queue string, proto queues.QueueJobPrototype) (*queues.QueueJob, *clierr.Error) {
+func (c *Client) CreateQueueJob(
+	ctx context.Context,
+	queue string,
+	proto queues.QueueJobPrototype,
+) (*queues.QueueJob, *clierr.Error) {
 	if err := c.requireOrgProject(); err != nil {
 		return nil, err
 	}

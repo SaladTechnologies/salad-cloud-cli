@@ -88,7 +88,8 @@ func TestEveryCommandIsDocumented(t *testing.T) {
 				continue
 			}
 			first := spans[0][1]
-			if parent != "" && !strings.HasPrefix(first, parent+" ") || parent == "" && !strings.HasPrefix(first+" ", c.Name()+" ") {
+			if parent != "" && !strings.HasPrefix(first, parent+" ") ||
+				parent == "" && !strings.HasPrefix(first+" ", c.Name()+" ") {
 				continue
 			}
 			if rowWords(cell)[c.Name()] {
@@ -128,7 +129,11 @@ func TestEveryDocumentedCommandExists(t *testing.T) {
 			path := append(append([]string{}, words[:len(words)-1]...), alt)
 			c, rest, err := rootCmd.Find(path)
 			if err != nil || len(rest) > 0 || c.Name() != alt {
-				t.Errorf("docs/commands.md row %q names %q, which is not a command", strings.TrimSpace(cell), strings.Join(path, " "))
+				t.Errorf(
+					"docs/commands.md row %q names %q, which is not a command",
+					strings.TrimSpace(cell),
+					strings.Join(path, " "),
+				)
 			}
 		}
 	}

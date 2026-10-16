@@ -5,9 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/organizationdata"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -46,7 +45,12 @@ func addUpdateFlags(cmd *cobra.Command) {
 	f.StringArray("country", nil, "country code the group may run in, repeatable; replaces the group's countries")
 	f.StringArray("gpu", nil, "GPU class UUID or name, repeatable; replaces the group's GPU classes")
 	f.Int64("replicas", 0, "container instance count (0-500); puts scheduled scaling on hold, like scale")
-	f.StringArrayP("env", "e", nil, "environment variable KEY=VALUE, repeatable; merged into the group's current variables")
+	f.StringArrayP(
+		"env",
+		"e",
+		nil,
+		"environment variable KEY=VALUE, repeatable; merged into the group's current variables",
+	)
 	f.String("priority", "", "scheduling priority: high|medium|low|batch (ignored on CPU-only groups)")
 	f.Int64("port", 0, "container gateway port")
 	f.String("display-name", "", "human-readable display name")
@@ -80,13 +84,28 @@ func validateUpdateFlags(u updateFlags) *clierr.Error {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--image cannot be empty")
 	}
 	if u.CPUSet && u.CPU < 1 {
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid --cpu %d: must be at least 1", u.CPU)
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"invalid --cpu %d: must be at least 1",
+			u.CPU,
+		)
 	}
 	if u.MemorySet && u.Memory < 1 {
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid --memory %d: must be at least 1 (MB)", u.Memory)
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"invalid --memory %d: must be at least 1 (MB)",
+			u.Memory,
+		)
 	}
 	if u.StorageSet && u.Storage < 1 {
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid --storage %d: must be at least 1 (GB)", u.Storage)
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"invalid --storage %d: must be at least 1 (GB)",
+			u.Storage,
+		)
 	}
 	if _, cerr := normalizeCountries(u.Countries); cerr != nil {
 		return cerr
@@ -105,11 +124,17 @@ func validateUpdateFlags(u updateFlags) *clierr.Error {
 		}
 	}
 	if u.PortSet && (u.Port < 1 || u.Port > 65535) {
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid --port %d: must be between 1 and 65535", u.Port)
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"invalid --port %d: must be between 1 and 65535",
+			u.Port,
+		)
 	}
 	for _, kv := range u.Env {
 		if k, _, ok := strings.Cut(kv, "="); !ok || k == "" {
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --env "%s"`, kv).WithHint("write it as KEY=VALUE")
+			return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --env "%s"`, kv).
+				WithHint("write it as KEY=VALUE")
 		}
 	}
 	return nil
@@ -126,13 +151,22 @@ func validateUpdateFlags(u updateFlags) *clierr.Error {
 // patch plus an explicit null for each variable the file removed. The wire
 // map must omit a removed variable rather than null it, but the checks need
 // to know the removal was requested, or they report it as a side effect.
-func buildUpdatePatch(fileRaw []byte, u updateFlags, currentEnv map[string]*string) (wire, intent json.RawMessage, cerr *clierr.Error) {
+func buildUpdatePatch(
+	fileRaw []byte,
+	u updateFlags,
+	currentEnv map[string]*string,
+) (wire, intent json.RawMessage, cerr *clierr.Error) {
 	doc := map[string]any{}
 	if len(fileRaw) > 0 {
 		dec := json.NewDecoder(bytes.NewReader(fileRaw))
 		dec.UseNumber() // keep the file's numbers exactly as written
 		if err := dec.Decode(&doc); err != nil {
-			return nil, nil, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "patch file is not a JSON object: %v", err)
+			return nil, nil, clierr.New(
+				clierr.CodeInvalidInput,
+				clierr.KindInvalidInput,
+				"patch file is not a JSON object: %v",
+				err,
+			)
 		}
 	}
 	if u.ImageSet {

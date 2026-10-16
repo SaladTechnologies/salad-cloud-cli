@@ -97,7 +97,8 @@ func parseRemoteSpec(arg string) (*remoteSpec, *clierr.Error) {
 
 // badRemotePath is the error for a remote argument of the wrong shape.
 func badRemotePath(arg string) *clierr.Error {
-	return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid remote path "%s"`, arg).WithHint("write it as %s", remoteSpecSyntax)
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid remote path "%s"`, arg).
+		WithHint("write it as %s", remoteSpecSyntax)
 }
 
 func isASCIILetter(b byte) bool {
@@ -259,13 +260,21 @@ set it up, run saladcloud ssh-key setup.`,
 			if runErr != nil {
 				return runErr
 			}
-			v := cpResult{Group: spec.Group, Instance: target.InstanceID, Action: "copied", OK: true, Src: args[0], Dst: args[1]}
+			v := cpResult{
+				Group:    spec.Group,
+				Instance: target.InstanceID,
+				Action:   "copied",
+				OK:       true,
+				Src:      args[0],
+				Dst:      args[1],
+			}
 			return wrapErr(output.Emit(v, func(w io.Writer) {
 				fmt.Fprintf(w, "Copied %s to %s (instance %s)\n", v.Src, v.Dst, v.Instance)
 			}))
 		},
 	}
-	cpCmd.Flags().StringVar(&user, "user", "root", "SSH username; selects the container user, which the image must define (root always exists)")
+	cpCmd.Flags().
+		StringVar(&user, "user", "root", "SSH username; selects the container user, which the image must define (root always exists)")
 	cpCmd.Flags().StringVarP(&identity, "identity", "i", "", "identity (private key) file, passed through to sftp -i")
 	cpCmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "copy directories recursively")
 	addHiddenGroupFlag(cpCmd)

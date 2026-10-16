@@ -97,7 +97,9 @@ func TestNameCheck(t *testing.T) {
 				}
 				return
 			}
-			if err == nil || err.Code != clierr.CodeInvalidInput || err.Kind != clierr.KindInvalidInput || err.Message != tc.msg || err.HintText() != tc.hint {
+			if err == nil || err.Code != clierr.CodeInvalidInput || err.Kind != clierr.KindInvalidInput ||
+				err.Message != tc.msg ||
+				err.HintText() != tc.hint {
 				t.Errorf("got %+v hint %q\nwant %q / %q", err, err.HintText(), tc.msg, tc.hint)
 			}
 			if tc.retry != "" {
@@ -113,14 +115,26 @@ func TestNameCheck(t *testing.T) {
 // or too long to be a name, is not quoted back.
 func TestNameRetryNeverQuotesAKey(t *testing.T) {
 	key := "salad_cloud_user_SecretKeyValue000H13m"
-	if got := nameRetry("organization", key, key); got != "That looks like the API key you just pasted, not an organization name." {
+	if got := nameRetry(
+		"organization",
+		key,
+		key,
+	); got != "That looks like the API key you just pasted, not an organization name." {
 		t.Errorf("key: %q", got)
 	}
-	if got := nameRetry("project", key, key); got != "That looks like the API key you just pasted, not a project name." {
+	if got := nameRetry(
+		"project",
+		key,
+		key,
+	); got != "That looks like the API key you just pasted, not a project name." {
 		t.Errorf("key, project: %q", got)
 	}
 	long := strings.Repeat("a", 64)
-	if got := nameRetry("organization", long, key); got != "That is not a valid organization name: names are at most 63 characters." {
+	if got := nameRetry(
+		"organization",
+		long,
+		key,
+	); got != "That is not a valid organization name: names are at most 63 characters." {
 		t.Errorf("long: %q", got)
 	}
 }
@@ -162,10 +176,16 @@ func TestMalformedKey(t *testing.T) {
 		err.HintText() != "check for quotes or stray characters in it" {
 		t.Errorf("got %+v hint %q", err, err.HintText())
 	}
-	if got := malformedKeyRetry(labelAPIKey); got != "That API key contains characters an API key cannot have. Check for quotes or stray characters in it." {
+	if got := malformedKeyRetry(
+		labelAPIKey,
+	); got != "That API key contains characters an API key cannot have. Check for quotes or stray characters in it." {
 		t.Errorf("retry: %q", got)
 	}
-	if got := malformedKey(labelGatewayKey, "sk-é-0000000EFGH", "stdin").Message; got != "AI Gateway key ****...EFGH (from stdin) contains characters an AI Gateway key cannot have" {
+	if got := malformedKey(
+		labelGatewayKey,
+		"sk-é-0000000EFGH",
+		"stdin",
+	).Message; got != "AI Gateway key ****...EFGH (from stdin) contains characters an AI Gateway key cannot have" {
 		t.Errorf("gateway: %q", got)
 	}
 }
@@ -201,7 +221,10 @@ func TestOrgsClause(t *testing.T) {
 			}
 		}
 	}
-	if got := hintClauses(orgsClause([]string{"my-org"}), "fix or remove SALAD_ORGANIZATION"); got != "to list yours, run saladcloud orgs list; fix or remove SALAD_ORGANIZATION" {
+	if got := hintClauses(
+		orgsClause([]string{"my-org"}),
+		"fix or remove SALAD_ORGANIZATION",
+	); got != "to list yours, run saladcloud orgs list; fix or remove SALAD_ORGANIZATION" {
 		t.Errorf("hintClauses: %q", got)
 	}
 }
@@ -226,7 +249,10 @@ func TestConfigReady(t *testing.T) {
 	} {
 		err := configReady(tc.command)
 		if err == nil || err.Code != clierr.CodeGeneric || err.Kind != clierr.KindAPIError ||
-			!strings.HasPrefix(err.Message, "cannot read the config file "+path+": invalid character") || err.HintText() != tc.hint {
+			!strings.HasPrefix(
+				err.Message,
+				"cannot read the config file "+path+": invalid character",
+			) || err.HintText() != tc.hint {
 			t.Errorf("corrupt, %s: %+v hint %q", tc.command, err, err.HintText())
 		}
 	}
@@ -401,7 +427,11 @@ func TestAskUntil(t *testing.T) {
 	}
 	for _, end := range []string{keyCtrlC, keyEOF} {
 		con = &fakeConsole{terminal: true, answers: []string{end}}
-		if _, err := askUntil("Paste it here, hidden:", true, func(string) (bool, string, *clierr.Error) { return true, "", nil }); err == nil {
+		if _, err := askUntil(
+			"Paste it here, hidden:",
+			true,
+			func(string) (bool, string, *clierr.Error) { return true, "", nil },
+		); err == nil {
 			t.Errorf("%q ended nothing", end)
 		}
 	}

@@ -20,10 +20,13 @@ func TestNoMatchNote(t *testing.T) {
 			want: `no log entries matched (group "my-cg", since 15m)`,
 		},
 		{
-			name:  "all filters",
-			scope: logScope{kind: scopeGroup, name: "my-cg"}, since: "2h",
-			instance: "8a2f13ba", severity: "warning", filter: "timeout",
-			want: `no log entries matched (group "my-cg", since 2h, instance "8a2f13ba", severity "warning", filter "timeout")`,
+			name:     "all filters",
+			scope:    logScope{kind: scopeGroup, name: "my-cg"},
+			since:    "2h",
+			instance: "8a2f13ba",
+			severity: "warning",
+			filter:   "timeout",
+			want:     `no log entries matched (group "my-cg", since 2h, instance "8a2f13ba", severity "warning", filter "timeout")`,
 		},
 		{
 			name:  "filter only",
@@ -71,7 +74,10 @@ func TestFormatLogLineNamesItsSource(t *testing.T) {
 	}
 	// A system event has no instance; the missing parts render as "-".
 	sys := logsq.Entry{Time: "2026-10-01T12:00:00Z", Severity: "info", Text: "Instance Running", Project: "prod"}
-	if got, want := formatLogLine(sys, scopeOrg), "2026-10-01 12:00:00Z  INFO     [prod/-/-] Instance Running"; got != want {
+	if got, want := formatLogLine(
+		sys,
+		scopeOrg,
+	), "2026-10-01 12:00:00Z  INFO     [prod/-/-] Instance Running"; got != want {
 		t.Errorf("system event line = %q, want %q", got, want)
 	}
 }
@@ -94,10 +100,15 @@ func TestFormatLogLineReadsSystemEvents(t *testing.T) {
 		Time: "2026-10-03T23:06:26.8559213+00:00", Severity: "info", InstanceID: "bd0f69f5-0000",
 		JSON: map[string]any{"gpu_class_name": "", "message": "Instance Allocated"},
 	}
-	if got, want := formatLogLine(e, scopeGroup), "2026-10-03 23:06:26Z  INFO     [bd0f69f5] Instance Allocated"; got != want {
+	if got, want := formatLogLine(
+		e,
+		scopeGroup,
+	), "2026-10-03 23:06:26Z  INFO     [bd0f69f5] Instance Allocated"; got != want {
 		t.Errorf("line = %q, want %q", got, want)
 	}
-	if got, want := jsonLogText(map[string]any{"message": "done", "code": 3.0, "who": "w"}), "done code=3 who=w"; got != want {
+	if got, want := jsonLogText(
+		map[string]any{"message": "done", "code": 3.0, "who": "w"},
+	), "done code=3 who=w"; got != want {
 		t.Errorf("jsonLogText = %q, want %q", got, want)
 	}
 	if got, want := jsonLogText(map[string]any{"status": 500.0}), `{"status":500}`; got != want {

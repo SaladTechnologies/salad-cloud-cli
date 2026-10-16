@@ -26,9 +26,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
@@ -89,7 +88,10 @@ type sshTarget struct {
 // resolveSSHInstance picks the transfer/session target from a group's
 // instance listing. With a prefix, it must match exactly one instance ID;
 // without one, the first instance in state "running" wins.
-func resolveSSHInstance(instances []containergroups.ContainerGroupInstance, group, prefix string) (*containergroups.ContainerGroupInstance, *clierr.Error) {
+func resolveSSHInstance(
+	instances []containergroups.ContainerGroupInstance,
+	group, prefix string,
+) (*containergroups.ContainerGroupInstance, *clierr.Error) {
 	if prefix != "" {
 		var matches []*containergroups.ContainerGroupInstance
 		for i := range instances {
@@ -115,7 +117,8 @@ func resolveSSHInstance(instances []containergroups.ContainerGroupInstance, grou
 		}
 	}
 	for i := range instances {
-		if instances[i].State != nil && *instances[i].State == containergroups.THE_CONTAINER_GROUP_INSTANCE_STATE_RUNNING {
+		if instances[i].State != nil &&
+			*instances[i].State == containergroups.THE_CONTAINER_GROUP_INSTANCE_STATE_RUNNING {
 			return &instances[i], nil
 		}
 	}
@@ -128,7 +131,11 @@ func resolveSSHInstance(instances []containergroups.ContainerGroupInstance, grou
 // instance was named and one is chosen for the caller, it says which on w
 // (stderr), so the choice is never silent. A named instance, even by
 // prefix, prints nothing.
-func pickInstance(w io.Writer, instances []containergroups.ContainerGroupInstance, group, prefix string) (*containergroups.ContainerGroupInstance, *clierr.Error) {
+func pickInstance(
+	w io.Writer,
+	instances []containergroups.ContainerGroupInstance,
+	group, prefix string,
+) (*containergroups.ContainerGroupInstance, *clierr.Error) {
 	inst, cerr := resolveSSHInstance(instances, group, prefix)
 	if cerr == nil && prefix == "" {
 		fmt.Fprintf(w, "note: using instance %s\n", ptr.Deref(inst.Id))
@@ -238,7 +245,11 @@ func renderSSHConfig(group string, instances []containergroups.ContainerGroupIns
 // renderSSHConfigIdentity is renderSSHConfig with an IdentityFile line in
 // every block when identity is non-empty, so a config written for the
 // CLI's dedicated key works from plain ssh and VS Code too.
-func renderSSHConfigIdentity(group string, instances []containergroups.ContainerGroupInstance, user, identity string) (string, int) {
+func renderSSHConfigIdentity(
+	group string,
+	instances []containergroups.ContainerGroupInstance,
+	user, identity string,
+) (string, int) {
 	var b strings.Builder
 	b.WriteString("# add to ~/.ssh/config; VS Code Remote-SSH can then attach\n")
 	n := 0
@@ -409,7 +420,11 @@ Host alias.`,
 			}
 			group := pos[0]
 			if useConfig && len(command) > 0 {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--config prints Host blocks and cannot be combined with a -- command")
+				return clierr.New(
+					clierr.CodeUsage,
+					clierr.KindUsage,
+					"--config prints Host blocks and cannot be combined with a -- command",
+				)
 			}
 
 			client, _, cerr := NewClient(cmd)
@@ -462,10 +477,14 @@ Host alias.`,
 			return nil
 		},
 	}
-	sshCmd.Flags().StringVar(&instance, "instance", "", "the instance to connect to: its ID or a unique prefix (default: the first running instance)")
-	sshCmd.Flags().StringVar(&user, "user", "root", "SSH username; selects the container user, which the image must define (root always exists)")
-	sshCmd.Flags().StringVarP(&identity, "identity", "i", "", "identity (private key) file for ssh -i (default: ~/.ssh/saladcloud_ed25519 when present)")
-	sshCmd.Flags().BoolVar(&useConfig, "config", false, "print ssh_config Host blocks for the group's running instances (or only --instance) instead of connecting")
+	sshCmd.Flags().
+		StringVar(&instance, "instance", "", "the instance to connect to: its ID or a unique prefix (default: the first running instance)")
+	sshCmd.Flags().
+		StringVar(&user, "user", "root", "SSH username; selects the container user, which the image must define (root always exists)")
+	sshCmd.Flags().
+		StringVarP(&identity, "identity", "i", "", "identity (private key) file for ssh -i (default: ~/.ssh/saladcloud_ed25519 when present)")
+	sshCmd.Flags().
+		BoolVar(&useConfig, "config", false, "print ssh_config Host blocks for the group's running instances (or only --instance) instead of connecting")
 	addHiddenGroupFlag(sshCmd)
 	annotate(sshCmd, annotationFlagForArg, "instance")
 	RegisterContainerGroups(sshCmd)

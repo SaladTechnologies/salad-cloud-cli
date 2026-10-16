@@ -4,9 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
-
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 func TestDescribeNotFound(t *testing.T) {
@@ -17,32 +16,62 @@ func TestDescribeNotFound(t *testing.T) {
 	}{
 		{
 			name: "bare Not Found is replaced",
-			in:   &clierr.Error{Code: clierr.CodeNotFound, Kind: clierr.KindNotFound, Message: "Not Found", HTTPStatus: ptr.To(404)},
+			in: &clierr.Error{
+				Code:       clierr.CodeNotFound,
+				Kind:       clierr.KindNotFound,
+				Message:    "Not Found",
+				HTTPStatus: ptr.To(404),
+			},
 			want: `container group "demo" not found in acme/prod`,
 		},
 		{
 			name: "empty message is replaced",
-			in:   &clierr.Error{Code: clierr.CodeNotFound, Kind: clierr.KindNotFound, Message: "", HTTPStatus: ptr.To(404)},
+			in: &clierr.Error{
+				Code:       clierr.CodeNotFound,
+				Kind:       clierr.KindNotFound,
+				Message:    "",
+				HTTPStatus: ptr.To(404),
+			},
 			want: `container group "demo" not found in acme/prod`,
 		},
 		{
 			name: "bare HTTP 404 fallback is replaced",
-			in:   &clierr.Error{Code: clierr.CodeNotFound, Kind: clierr.KindNotFound, Message: "HTTP 404", HTTPStatus: ptr.To(404)},
+			in: &clierr.Error{
+				Code:       clierr.CodeNotFound,
+				Kind:       clierr.KindNotFound,
+				Message:    "HTTP 404",
+				HTTPStatus: ptr.To(404),
+			},
 			want: `container group "demo" not found in acme/prod`,
 		},
 		{
 			name: "HTML fallback is replaced",
-			in:   &clierr.Error{Code: clierr.CodeNotFound, Kind: clierr.KindNotFound, Message: "HTTP 404 (non-JSON error response)", HTTPStatus: ptr.To(404)},
+			in: &clierr.Error{
+				Code:       clierr.CodeNotFound,
+				Kind:       clierr.KindNotFound,
+				Message:    "HTTP 404 (non-JSON error response)",
+				HTTPStatus: ptr.To(404),
+			},
 			want: `container group "demo" not found in acme/prod`,
 		},
 		{
 			name: "Not Found with only its problem type is replaced",
-			in:   &clierr.Error{Code: clierr.CodeNotFound, Kind: clierr.KindNotFound, Message: "Not Found (type: project_not_found_exception)", HTTPStatus: ptr.To(404)},
+			in: &clierr.Error{
+				Code:       clierr.CodeNotFound,
+				Kind:       clierr.KindNotFound,
+				Message:    "Not Found (type: project_not_found_exception)",
+				HTTPStatus: ptr.To(404),
+			},
 			want: `container group "demo" not found in acme/prod`,
 		},
 		{
 			name: "richer API message gets the context appended",
-			in:   &clierr.Error{Code: clierr.CodeNotFound, Kind: clierr.KindNotFound, Message: "The container group was deleted on 2026-01-01", HTTPStatus: ptr.To(404)},
+			in: &clierr.Error{
+				Code:       clierr.CodeNotFound,
+				Kind:       clierr.KindNotFound,
+				Message:    "The container group was deleted on 2026-01-01",
+				HTTPStatus: ptr.To(404),
+			},
 			want: `The container group was deleted on 2026-01-01 (container group "demo" not found in acme/prod)`,
 		},
 	}
@@ -104,7 +133,12 @@ func TestDescribeNotFoundNil(t *testing.T) {
 }
 
 func TestDescribeNotFoundDoesNotMutateInput(t *testing.T) {
-	in := &clierr.Error{Code: clierr.CodeNotFound, Kind: clierr.KindNotFound, Message: "Not Found", HTTPStatus: ptr.To(404)}
+	in := &clierr.Error{
+		Code:       clierr.CodeNotFound,
+		Kind:       clierr.KindNotFound,
+		Message:    "Not Found",
+		HTTPStatus: ptr.To(404),
+	}
 	_ = describeNotFound(in, "", `container group "%s" not found in %s/%s`, "demo", "acme", "prod")
 	if in.Message != "Not Found" {
 		t.Errorf("input error was mutated to %q", in.Message)

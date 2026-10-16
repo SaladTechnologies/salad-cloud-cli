@@ -59,7 +59,9 @@ func staticValues(values ...string) func(*cobra.Command, []string, string) ([]st
 }
 
 // firstArgOnly limits a positional completer to the first argument.
-func firstArgOnly(f func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective)) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+func firstArgOnly(
+	f func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective),
+) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) > 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp

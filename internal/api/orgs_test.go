@@ -31,7 +31,10 @@ func TestOrganizationsListingPages(t *testing.T) {
 		asked = append(asked, r.URL.RawQuery)
 		switch r.URL.Query().Get("page_token") {
 		case "":
-			fmt.Fprint(w, `{"items":[{"organization_name":"a"},{"organization_name":"b"}],"total_count":3,"next_page_token":"t2"}`)
+			fmt.Fprint(
+				w,
+				`{"items":[{"organization_name":"a"},{"organization_name":"b"}],"total_count":3,"next_page_token":"t2"}`,
+			)
 		case "t2":
 			fmt.Fprint(w, `{"items":[{"organization_name":"c"}],"next_page_token":""}`)
 		default:
@@ -111,7 +114,10 @@ func TestOrganizationListingByStatus(t *testing.T) {
 	t.Run("network", func(t *testing.T) {
 		t.Setenv("SALAD_CLI_API_BASE_URL", "http://127.0.0.1:1")
 		c, _ := New(config.Resolved{APIKey: "k"})
-		if list, err := c.OrganizationListing(t.Context()); list != nil || err == nil || err.Code != clierr.CodeNetwork {
+		if list, err := c.OrganizationListing(
+			t.Context(),
+		); list != nil || err == nil ||
+			err.Code != clierr.CodeNetwork {
 			t.Errorf("list %v, err %v; want a network error", list, err)
 		}
 	})

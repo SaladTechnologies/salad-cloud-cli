@@ -55,7 +55,14 @@ func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	resp, err := d.base.RoundTrip(req)
 	took := time.Since(start).Round(time.Millisecond)
 	if err != nil {
-		fmt.Fprintf(debugOut, "debug: %s %s -> error after %s: %v\n", req.Method, redactText(req.URL.String()), took, err)
+		fmt.Fprintf(
+			debugOut,
+			"debug: %s %s -> error after %s: %v\n",
+			req.Method,
+			redactText(req.URL.String()),
+			took,
+			err,
+		)
 		return nil, err
 	}
 	fmt.Fprintf(debugOut, "debug: %s %s -> %d (%s)\n", req.Method, redactText(req.URL.String()), resp.StatusCode, took)
@@ -121,7 +128,9 @@ func sortedHeaderKeys(h http.Header) []string {
 // credentialField matches a JSON string field that holds a credential: the
 // webhook secret, API keys, and the registry and log-sink credentials a
 // container group definition can carry.
-var credentialField = regexp.MustCompile(`"(secret_key|api_key|password|personal_access_token|secret_access_key|access_key_id|service_key|api_token|ingestion_key|token)"\s*:\s*"(?:[^"\\]|\\.)*"`)
+var credentialField = regexp.MustCompile(
+	`"(secret_key|api_key|password|personal_access_token|secret_access_key|access_key_id|service_key|api_token|ingestion_key|token)"\s*:\s*"(?:[^"\\]|\\.)*"`,
+)
 
 // signedURL matches an S4 URL's query string, which holds its signing token.
 var signedURL = regexp.MustCompile(`(https?://storage-api\.salad\.com/[^"\s?]*)\?[^"\s]*`)

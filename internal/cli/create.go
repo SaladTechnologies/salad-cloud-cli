@@ -11,12 +11,11 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/organizationdata"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/util"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -108,7 +107,10 @@ func validateResourceName(noun, name string) *clierr.Error {
 // buildCreateRequest applies create's flags on top of a base request
 // (from -f or empty), then fills defaults into fields that are
 // still unset. It is pure: GPU name resolution goes through opts.ResolveGpu.
-func buildCreateRequest(base containergroups.ContainerGroupCreationRequest, opts createFlags) (containergroups.ContainerGroupCreationRequest, *clierr.Error) {
+func buildCreateRequest(
+	base containergroups.ContainerGroupCreationRequest,
+	opts createFlags,
+) (containergroups.ContainerGroupCreationRequest, *clierr.Error) {
 	req := base
 
 	if !opts.HasBase && opts.Image == "" {
@@ -151,7 +153,12 @@ func buildCreateRequest(base containergroups.ContainerGroupCreationRequest, opts
 	}
 	if opts.StorageSet {
 		if opts.Storage < 1 {
-			return req, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid --storage %d: must be at least 1 (GB)", opts.Storage)
+			return req, clierr.New(
+				clierr.CodeInvalidInput,
+				clierr.KindInvalidInput,
+				"invalid --storage %d: must be at least 1 (GB)",
+				opts.Storage,
+			)
 		}
 		resources().StorageAmount = ptr.To(opts.Storage * bytesPerGB)
 	}
@@ -167,8 +174,11 @@ func buildCreateRequest(base containergroups.ContainerGroupCreationRequest, opts
 	}
 	if opts.Queue != "" || opts.QueuePortSet || opts.QueuePath != "" {
 		if opts.Queue == "" || !opts.QueuePortSet || opts.QueuePath == "" {
-			return req, clierr.New(clierr.CodeUsage, clierr.KindUsage,
-				"--queue, --queue-port and --queue-path go together: the queue, and the port and path its jobs are delivered to")
+			return req, clierr.New(
+				clierr.CodeUsage,
+				clierr.KindUsage,
+				"--queue, --queue-port and --queue-path go together: the queue, and the port and path its jobs are delivered to",
+			)
 		}
 		if opts.QueuePort < 1 || opts.QueuePort > 65535 {
 			return req, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
@@ -177,8 +187,12 @@ func buildCreateRequest(base containergroups.ContainerGroupCreationRequest, opts
 		// The API takes any string as the path, so a rewritten one would be
 		// stored and every job posted to it.
 		if underGitBash() && msysDrivePath.MatchString(opts.QueuePath) {
-			return req, clierr.New(clierr.CodeUsage, clierr.KindUsage,
-				`--queue-path "%s" was rewritten by Git Bash, which turns a leading / into a Windows path`, opts.QueuePath).
+			return req, clierr.New(
+				clierr.CodeUsage,
+				clierr.KindUsage,
+				`--queue-path "%s" was rewritten by Git Bash, which turns a leading / into a Windows path`,
+				opts.QueuePath,
+			).
 				WithHint("run the command again with MSYS_NO_PATHCONV=1 in front of it, or from PowerShell or cmd")
 		}
 		req.QueueConnection = &shared.ContainerGroupQueueConnection{
@@ -223,7 +237,8 @@ func buildCreateRequest(base containergroups.ContainerGroupCreationRequest, opts
 		for _, kv := range opts.Env {
 			k, v, ok := strings.Cut(kv, "=")
 			if !ok || k == "" {
-				return req, clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --env "%s"`, kv).WithHint("write it as KEY=VALUE")
+				return req, clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --env "%s"`, kv).
+					WithHint("write it as KEY=VALUE")
 			}
 			c.EnvironmentVariables[k] = ptr.To(v) // flag wins over the base, per key
 		}
@@ -366,8 +381,13 @@ var msysDrivePath = regexp.MustCompile(`^[A-Za-z]:[/\\]`)
 // a queue: jobs reach it only through the job queue worker in its image, and
 // a missing worker is silent (the group runs, the jobs stay pending).
 func noteQueueWorker(w io.Writer, queue string) {
-	fmt.Fprintf(w, "note: jobs from queue %s reach this group only if its image runs the job queue worker beside your HTTP server; "+
-		"without it the jobs stay pending and nothing reports why; to add the worker, see %s\n", queue, queueWorkerDocs)
+	fmt.Fprintf(
+		w,
+		"note: jobs from queue %s reach this group only if its image runs the job queue worker beside your HTTP server; "+
+			"without it the jobs stay pending and nothing reports why; to add the worker, see %s\n",
+		queue,
+		queueWorkerDocs,
+	)
 }
 
 // queueWorkerDocs is the platform's page on building the worker into an image.
@@ -443,7 +463,15 @@ func collectCreateFlags(cmd *cobra.Command, name string, hasBase bool) createFla
 // struct cannot carry. Those fields are grafted back by deep-merging the
 // built request (flags + defaults, which always win) over baseRaw and
 // sending the merged document raw.
-func runCreate(cmd *cobra.Command, base containergroups.ContainerGroupCreationRequest, hasBase bool, name string, command []string, baseRaw []byte, unknowns []input.Unknown) error {
+func runCreate(
+	cmd *cobra.Command,
+	base containergroups.ContainerGroupCreationRequest,
+	hasBase bool,
+	name string,
+	command []string,
+	baseRaw []byte,
+	unknowns []input.Unknown,
+) error {
 	var client *api.Client
 	getClient := func() (*api.Client, *clierr.Error) {
 		if client != nil {

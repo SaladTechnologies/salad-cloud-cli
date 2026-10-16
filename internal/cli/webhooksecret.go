@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/webhooksecretkey"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"

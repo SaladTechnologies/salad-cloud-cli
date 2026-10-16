@@ -65,7 +65,19 @@ func TestCreateSendsEmptyListsFromFile(t *testing.T) {
 	if err := os.WriteFile(file, []byte(def), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runRoot(t, "container-groups", "create", "new", "--image", "busybox:1.36", "-f", file, "--no-autostart", "-o", "json"); err != nil {
+	if _, err := runRoot(
+		t,
+		"container-groups",
+		"create",
+		"new",
+		"--image",
+		"busybox:1.36",
+		"-f",
+		file,
+		"--no-autostart",
+		"-o",
+		"json",
+	); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if got, ok := postedPath(t, *posted, "readiness_probe.http.headers"); !ok || !jsonEqual(got, []any{}) {
@@ -80,7 +92,17 @@ func TestCreateSendsEmptyListsFromFile(t *testing.T) {
 // --from sends back the empty lists the API returned for the source.
 func TestCreateFromKeepsSourceEmptyLists(t *testing.T) {
 	posted := stubCreate(t)
-	if _, err := runRoot(t, "container-groups", "create", "new", "--from", "src", "--no-autostart", "-o", "json"); err != nil {
+	if _, err := runRoot(
+		t,
+		"container-groups",
+		"create",
+		"new",
+		"--from",
+		"src",
+		"--no-autostart",
+		"-o",
+		"json",
+	); err != nil {
 		t.Fatalf("create --from: %v", err)
 	}
 	for _, path := range []string{"readiness_probe.http.headers", "country_codes"} {
@@ -110,7 +132,17 @@ func TestCreateQueueNotesTheWorker(t *testing.T) {
 	resetFlags() // the first run's --queue would otherwise carry over
 	stubCreate(t)
 	errOut = captureStderr(t, func() {
-		_, err = runRoot(t, "container-groups", "create", "new", "--image", "busybox:1.36", "--no-autostart", "-o", "json")
+		_, err = runRoot(
+			t,
+			"container-groups",
+			"create",
+			"new",
+			"--image",
+			"busybox:1.36",
+			"--no-autostart",
+			"-o",
+			"json",
+		)
 	})
 	if err != nil || strings.Contains(errOut, "job queue worker") {
 		t.Errorf("create without a queue: err %v, stderr %q", err, errOut)

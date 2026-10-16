@@ -14,11 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/queues"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/util"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -58,7 +57,12 @@ func queueJobNotFound(cerr *clierr.Error, queue, id string) *clierr.Error {
 // happened: the job has already finished. It reads the job for its status;
 // only the message changes, so the exit code, kind and HTTP status stay the
 // 409's.
-func queueJobNotCancellable(ctx context.Context, client *api.Client, cerr *clierr.Error, queue, id string) *clierr.Error {
+func queueJobNotCancellable(
+	ctx context.Context,
+	client *api.Client,
+	cerr *clierr.Error,
+	queue, id string,
+) *clierr.Error {
 	why := "it has already finished"
 	if j, gerr := client.GetQueueJob(ctx, queue, id); gerr == nil && j.Status != nil {
 		why = fmt.Sprintf("its status is already %s", *j.Status)
@@ -234,7 +238,12 @@ is whatever your container returns.`,
 				return err
 			}
 			if len(payload.Items) == 0 && output.Mode() == "table" {
-				fmt.Fprintf(os.Stderr, "no queues in %s/%s\nhint: to create one, run saladcloud queues create <name>\n", client.Org(), client.Project())
+				fmt.Fprintf(
+					os.Stderr,
+					"no queues in %s/%s\nhint: to create one, run saladcloud queues create <name>\n",
+					client.Org(),
+					client.Project(),
+				)
 			}
 			return nil
 		},
@@ -264,7 +273,11 @@ is whatever your container returns.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			displayName, description, set := queueFields(cmd)
 			if !set {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "nothing to update: pass --display-name and/or --description")
+				return clierr.New(
+					clierr.CodeUsage,
+					clierr.KindUsage,
+					"nothing to update: pass --display-name and/or --description",
+				)
 			}
 			var patch queues.QueuePatch
 			if displayName != nil {
@@ -339,7 +352,12 @@ every job, up to 10,000.`,
 			queue := queueFlag(cmd)
 			limit, _ := cmd.Flags().GetInt("limit")
 			if limit < 0 {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--limit must be 0 (all) or positive (got %d)", limit)
+				return clierr.New(
+					clierr.CodeUsage,
+					clierr.KindUsage,
+					"--limit must be 0 (all) or positive (got %d)",
+					limit,
+				)
 			}
 			client, _, cerr := NewClient(cmd)
 			if cerr != nil {
@@ -356,7 +374,14 @@ every job, up to 10,000.`,
 				fmt.Fprintln(w, "ID\tSTATUS\tCREATED\tUPDATED")
 				for i := range jobs {
 					j := &jobs[i]
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", ptr.Deref(j.Id), queueJobStatus(j), timeCell(j.CreateTime), timeCell(j.UpdateTime))
+					fmt.Fprintf(
+						w,
+						"%s\t%s\t%s\t%s\n",
+						ptr.Deref(j.Id),
+						queueJobStatus(j),
+						timeCell(j.CreateTime),
+						timeCell(j.UpdateTime),
+					)
 				}
 			})); err != nil {
 				return err
@@ -366,14 +391,19 @@ every job, up to 10,000.`,
 			}
 			jobsLimitNote(os.Stderr, len(jobs), limit, api.QueueJobsCap, more)
 			if partial {
-				fmt.Fprintf(os.Stderr, "note: read the first %d jobs only; the queue may hold more, and the API lists jobs in no time order, so these are the newest of those read; --limit 0 reads all (up to %d)\n",
-					max(limit, api.QueueJobsBudget), api.QueueJobsCap)
+				fmt.Fprintf(
+					os.Stderr,
+					"note: read the first %d jobs only; the queue may hold more, and the API lists jobs in no time order, so these are the newest of those read; --limit 0 reads all (up to %d)\n",
+					max(limit, api.QueueJobsBudget),
+					api.QueueJobsCap,
+				)
 			}
 			return nil
 		},
 	}
 	addQueueFlag(listCmd)
-	listCmd.Flags().Int("limit", 100, fmt.Sprintf("how many of the newest jobs to list; a limit reads at most %d jobs (or the limit), 0 reads all, up to %d", api.QueueJobsBudget, api.QueueJobsCap))
+	listCmd.Flags().
+		Int("limit", 100, fmt.Sprintf("how many of the newest jobs to list; a limit reads at most %d jobs (or the limit), 0 reads all, up to %d", api.QueueJobsBudget, api.QueueJobsCap))
 	jobsCmd.AddCommand(listCmd)
 
 	getCmd := &cobra.Command{
@@ -427,7 +457,8 @@ cancelled exits 1 with the job's status and last event. --timeout (default
 		RunE: runQueueJobCreate,
 	}
 	addQueueFlag(createCmd)
-	createCmd.Flags().StringP("file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
+	createCmd.Flags().
+		StringP("file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
 	createCmd.Flags().String("input", "", "the job input as inline JSON (wrapped into the prototype)")
 	createCmd.Flags().String("webhook", "", "URL notified when the job finishes (overrides the file's webhook)")
 	addJobWaitFlags(createCmd)
@@ -483,7 +514,11 @@ func runQueueJobCreate(cmd *cobra.Command, args []string) error {
 	file, _ := cmd.Flags().GetString("file")
 	inputJSON, _ := cmd.Flags().GetString("input")
 	if (file == "") == (inputJSON == "") {
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "exactly one of -f <file> or --input '<json>' is required")
+		return clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			"exactly one of -f <file> or --input '<json>' is required",
+		)
 	}
 	wait, timeout, cerr := waitFlagValues(cmd)
 	if cerr != nil {
@@ -495,7 +530,11 @@ func runQueueJobCreate(cmd *cobra.Command, args []string) error {
 			return cerr
 		}
 		if proto.Input == nil {
-			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid job prototype: input is required")
+			return clierr.New(
+				clierr.CodeInvalidInput,
+				clierr.KindInvalidInput,
+				"invalid job prototype: input is required",
+			)
 		}
 	} else {
 		if !json.Valid([]byte(inputJSON)) {

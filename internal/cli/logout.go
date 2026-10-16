@@ -38,7 +38,12 @@ SALAD_API_KEY is set, commands still use it, and logout says so.`,
 func runLogout(cmd *cobra.Command, args []string) error {
 	path, err := config.Path()
 	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err))
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot find a folder for the config file: %s",
+			config.Reason(err),
+		)
 	}
 	f, err := config.Load()
 	if err != nil {

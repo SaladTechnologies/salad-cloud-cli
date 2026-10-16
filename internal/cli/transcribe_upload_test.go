@@ -83,7 +83,11 @@ func TestTranscribeFailedJobIsTranscriptionFailed(t *testing.T) {
 			w.WriteHeader(http.StatusCreated)
 			w.Write([]byte(`{"id":"` + id + `","status":"pending","events":[]}`))
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/jobs/"+id):
-			w.Write([]byte(`{"id":"` + id + `","status":"failed","events":[{"action":"failed","time":"2026-10-03T00:00:00Z"}]}`))
+			w.Write(
+				[]byte(
+					`{"id":"` + id + `","status":"failed","events":[{"action":"failed","time":"2026-10-03T00:00:00Z"}]}`,
+				),
+			)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}

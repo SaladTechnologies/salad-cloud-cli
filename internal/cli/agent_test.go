@@ -54,7 +54,8 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
 		t.Fatalf("first run output is not JSON: %v\n%s", err, out)
 	}
-	if res.Action != "created" || res.Reason != "default" || res.File == nil || filepath.Base(*res.File) != agentdoc.FileAgents {
+	if res.Action != "created" || res.Reason != "default" || res.File == nil ||
+		filepath.Base(*res.File) != agentdoc.FileAgents {
 		t.Errorf("first run = %+v", res)
 	}
 	content, err := os.ReadFile(filepath.Join(dir, agentdoc.FileAgents))
@@ -203,7 +204,15 @@ func TestAgentInitFileOverrideCreatesParentDir(t *testing.T) {
 }
 
 func TestAgentInitBadDir(t *testing.T) {
-	_, err := runAgentInitCmd(t, "--dir", filepath.Join(t.TempDir(), "missing"), "--print=false", "--file=", "-o", "json")
+	_, err := runAgentInitCmd(
+		t,
+		"--dir",
+		filepath.Join(t.TempDir(), "missing"),
+		"--print=false",
+		"--file=",
+		"-o",
+		"json",
+	)
 	var ce *clierr.Error
 	if err == nil || !asClierr(err, &ce) || ce.Code != clierr.CodeInvalidInput {
 		t.Fatalf("err = %v, want invalid_input exit 6", err)

@@ -171,7 +171,13 @@ func TestUpdateGroupRawRejectsEmptyPatch(t *testing.T) {
 			t.Fatalf("UpdateGroupRaw(%q) = nil error, want invalid_input", patch)
 		}
 		if cerr.Code != clierr.CodeInvalidInput || cerr.Kind != clierr.KindInvalidInput {
-			t.Errorf("UpdateGroupRaw(%q) = (%d, %s), want (%d, invalid_input)", patch, cerr.Code, cerr.Kind, clierr.CodeInvalidInput)
+			t.Errorf(
+				"UpdateGroupRaw(%q) = (%d, %s), want (%d, invalid_input)",
+				patch,
+				cerr.Code,
+				cerr.Kind,
+				clierr.CodeInvalidInput,
+			)
 		}
 	}
 }
@@ -308,7 +314,11 @@ func TestCreateGroupPreservesExplicitFalseOnTheWire(t *testing.T) {
 		t.Fatalf("no container on the wire: %s", gotBody)
 	}
 	if got, ok := container["image_caching"]; !ok || got != false {
-		t.Errorf("container.image_caching on the wire = %v (present=%t), want false — an explicit false must not be dropped", got, ok)
+		t.Errorf(
+			"container.image_caching on the wire = %v (present=%t), want false — an explicit false must not be dropped",
+			got,
+			ok,
+		)
 	}
 }
 
@@ -317,7 +327,9 @@ func TestCreateGroupPreservesExplicitFalseOnTheWire(t *testing.T) {
 // result. Those bytes must go out untouched, or a tolerated unknown field
 // would be silently dropped after the CLI promised to send it.
 func TestCreateGroupRawSendsBodyVerbatim(t *testing.T) {
-	doc := json.RawMessage(`{"name":"my-app","replicas":1,"future_field":{"nested":[1,2]},"container":{"image":"x","image_caching":false}}`)
+	doc := json.RawMessage(
+		`{"name":"my-app","replicas":1,"future_field":{"nested":[1,2]},"container":{"image":"x","image_caching":false}}`,
+	)
 	var gotBody []byte
 	var gotMethod string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

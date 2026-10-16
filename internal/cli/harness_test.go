@@ -143,7 +143,11 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case len(parts) == 3 && parts[2] == "gpu-classes":
 			_, _ = w.Write([]byte(`{"items":[]}`))
 		case len(parts) == 7 && parts[2] == "projects" && parts[4] == "containers" && parts[6] == "instances":
-			_, _ = w.Write([]byte(`{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","state":"running","ssh_ip":"203.0.113.7","ssh_port":30123}]}`))
+			_, _ = w.Write(
+				[]byte(
+					`{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","state":"running","ssh_ip":"203.0.113.7","ssh_port":30123}]}`,
+				),
+			)
 		case len(parts) == 5 && parts[2] == "projects" && parts[4] == "containers" && r.Method == http.MethodGet:
 			if !slices.Contains(projects, parts[3]) {
 				w.WriteHeader(http.StatusNotFound)
@@ -169,7 +173,9 @@ func (f *fakeAPI) serveGateway(w http.ResponseWriter, r *http.Request, path stri
 		}
 		switch code {
 		case http.StatusOK:
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"total_tokens":2}}`))
+			_, _ = w.Write(
+				[]byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"total_tokens":2}}`),
+			)
 		case http.StatusPaymentRequired:
 			w.WriteHeader(code)
 			_, _ = w.Write([]byte(`{"error":{"code":"credits_exhausted","message":"out of credits"}}`))
@@ -319,7 +325,11 @@ func (s session) run(t *testing.T) outcome {
 		if name == "" {
 			name = "id_ed25519.pub"
 		}
-		if err := os.WriteFile(filepath.Join(home, ".ssh", name), []byte("ssh-ed25519 AAAA test@host\n"), 0o600); err != nil {
+		if err := os.WriteFile(
+			filepath.Join(home, ".ssh", name),
+			[]byte("ssh-ed25519 AAAA test@host\n"),
+			0o600,
+		); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -366,7 +376,10 @@ func (s session) run(t *testing.T) outcome {
 
 	oldIn, oldErr, oldErrOut, oldOut, oldCon, oldOpen, oldTee := os.Stdin, os.Stderr, errOut, output.Stdout, con, openPage, stderrTee
 	tee := io.MultiWriter(stderr, &transcript)
-	os.Stdin, os.Stderr, errOut, output.Stdout, con, stderrTee = stdin, stderr, tee, io.MultiWriter(&stdout, &transcript), fc, tee
+	os.Stdin, os.Stderr, errOut, output.Stdout, con, stderrTee = stdin, stderr, tee, io.MultiWriter(
+		&stdout,
+		&transcript,
+	), fc, tee
 	openPage = func(url string) error { opened = append(opened, url); return nil }
 	oldBase := baseContext
 	baseContext = func() context.Context { return ctx }

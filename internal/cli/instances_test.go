@@ -121,7 +121,8 @@ func TestInstanceNotFound(t *testing.T) {
 				t.Errorf("Message = %q, want %q", got.Message, tt.wantMsg)
 			}
 			// The rewrite keeps the status of the response it replaces.
-			if (got.HTTPStatus == nil) != (tt.in.HTTPStatus == nil) || got.HTTPStatus != nil && *got.HTTPStatus != *tt.in.HTTPStatus {
+			if (got.HTTPStatus == nil) != (tt.in.HTTPStatus == nil) ||
+				got.HTTPStatus != nil && *got.HTTPStatus != *tt.in.HTTPStatus {
 				t.Errorf("HTTPStatus = %v, want %v", got.HTTPStatus, tt.in.HTTPStatus)
 			}
 		})

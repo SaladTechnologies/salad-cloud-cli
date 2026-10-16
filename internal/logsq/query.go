@@ -60,7 +60,11 @@ func Compile(f Filters) (string, *clierr.Error) {
 		b.WriteString("resource.labels.organization_name = ")
 		b.WriteString(quoteValue(f.Org))
 	default:
-		return "", clierr.New(clierr.CodeUsage, clierr.KindUsage, "an organization, project, or container group is required to query logs")
+		return "", clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			"an organization, project, or container group is required to query logs",
+		)
 	}
 	if f.Instance != "" {
 		b.WriteString(" and resource.labels.instance_id = ")

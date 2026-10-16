@@ -98,11 +98,13 @@ func TestKeyHasPassphrase(t *testing.T) {
 	}
 	dir := t.TempDir()
 	plain := filepath.Join(dir, "plain")
-	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", plain).CombinedOutput(); err != nil {
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", plain).
+		CombinedOutput(); err != nil {
 		t.Fatalf("ssh-keygen: %v %s", err, out)
 	}
 	locked := filepath.Join(dir, "locked")
-	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "correct horse", "-f", locked).CombinedOutput(); err != nil {
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "correct horse", "-f", locked).
+		CombinedOutput(); err != nil {
 		t.Fatalf("ssh-keygen: %v %s", err, out)
 	}
 	if enc, known := keyHasPassphrase(plain); !known || enc {

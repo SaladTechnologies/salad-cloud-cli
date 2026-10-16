@@ -25,10 +25,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -164,7 +163,10 @@ func rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
 		switch kind {
 		case unknownCreateOnly:
 			if reason := createOnlyReason(u.Path); reason != "" {
-				explained = append(explained, fmt.Sprintf(`"%s" is not in this CLI's update schema; %s`, u.Path, reason))
+				explained = append(
+					explained,
+					fmt.Sprintf(`"%s" is not in this CLI's update schema; %s`, u.Path, reason),
+				)
 				continue
 			}
 			createOnly = append(createOnly, u.Path)
@@ -184,17 +186,22 @@ func rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
 	if len(createOnly) > 0 {
 		if len(createOnly) == 1 {
 			clauses = append(clauses, fmt.Sprintf(
-				`"%s" is not in this CLI's update schema (create accepts it); recreate the group to change it`, createOnly[0],
+				`"%s" is not in this CLI's update schema (create accepts it); recreate the group to change it`,
+				createOnly[0],
 			))
 		} else {
 			clauses = append(clauses, fmt.Sprintf(
-				"not in this CLI's update schema, though create accepts them (%s); recreate the group to change them", joinPaths(createOnly),
+				"not in this CLI's update schema, though create accepts them (%s); recreate the group to change them",
+				joinPaths(createOnly),
 			))
 		}
 	}
 	if len(responseOnly) > 0 {
 		if len(responseOnly) == 1 {
-			clauses = append(clauses, fmt.Sprintf(`"%s" is response-only in this CLI's API model and cannot be sent`, responseOnly[0]))
+			clauses = append(
+				clauses,
+				fmt.Sprintf(`"%s" is response-only in this CLI's API model and cannot be sent`, responseOnly[0]),
+			)
 		} else {
 			clauses = append(clauses, fmt.Sprintf(
 				"response-only in this CLI's API model and cannot be sent (%s)", joinPaths(responseOnly),
@@ -276,11 +283,20 @@ func adviseUnknownShort(path string) string {
 func warnUnknowns(w io.Writer, unknowns []input.Unknown, createMode bool) {
 	for _, u := range unknowns {
 		if createMode && u.InArray {
-			fmt.Fprintf(w, "warning: %s; dropped, because create rebuilds array fields from its API model; set it with update -f instead\n", u.Desc)
+			fmt.Fprintf(
+				w,
+				"warning: %s; dropped, because create rebuilds array fields from its API model; set it with update -f instead\n",
+				u.Desc,
+			)
 			continue
 		}
 		if advice := adviseUnknownShort(u.Path); advice != "" {
-			fmt.Fprintf(w, "warning: %s; sent to the API anyway (--allow-unknown-fields), but expect it to be ignored: %s\n", u.Desc, advice)
+			fmt.Fprintf(
+				w,
+				"warning: %s; sent to the API anyway (--allow-unknown-fields), but expect it to be ignored: %s\n",
+				u.Desc,
+				advice,
+			)
 			continue
 		}
 		fmt.Fprintf(w, "warning: %s; sent to the API anyway (--allow-unknown-fields)\n", u.Desc)

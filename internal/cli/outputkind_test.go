@@ -96,7 +96,8 @@ func TestEveryLeafDeclaresItsOutputKind(t *testing.T) {
 	seen := map[string]bool{}
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {
-		if !c.HasSubCommands() && c.Runnable() && !c.Hidden && c.Name() != "help" && c.Parent() != nil && c.Parent().Name() != "completion" {
+		if !c.HasSubCommands() && c.Runnable() && !c.Hidden && c.Name() != "help" && c.Parent() != nil &&
+			c.Parent().Name() != "completion" {
 			path := c.CommandPath()
 			seen[path] = true
 			if _, ok := outputKinds[path]; !ok {

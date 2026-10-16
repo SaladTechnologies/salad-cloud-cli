@@ -39,7 +39,10 @@ func TestCpErrorDocument(t *testing.T) {
 				}
 				doc, err := o.errorDocument()
 				if err != nil || o.code != 1 || doc["kind"] != "child_exit" ||
-					!strings.HasSuffix(doc["message"].(string), `exited with status 1; remote open("/etc/hostname"): Permission denied`) {
+					!strings.HasSuffix(
+						doc["message"].(string),
+						`exited with status 1; remote open("/etc/hostname"): Permission denied`,
+					) {
 					t.Errorf("%s %s: exit %d, document %v (%v)", src, mode, o.code, doc, err)
 				}
 			}
@@ -61,8 +64,10 @@ func TestShadowedFlagSaysWhy(t *testing.T) {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			_, err := runRoot(t, tc.args...)
 			var cerr *clierr.Error
-			if !errors.As(err, &cerr) || cerr.Code != clierr.CodeUsage || cerr.Message != "unknown flag: "+tc.args[len(tc.args)-2] ||
-				!strings.HasPrefix(cerr.HintText(), tc.want) || !strings.Contains(cerr.HintText(), "to list its flags") {
+			if !errors.As(err, &cerr) || cerr.Code != clierr.CodeUsage ||
+				cerr.Message != "unknown flag: "+tc.args[len(tc.args)-2] ||
+				!strings.HasPrefix(cerr.HintText(), tc.want) ||
+				!strings.Contains(cerr.HintText(), "to list its flags") {
 				t.Errorf("%v: %v (hint %q)", tc.args, err, cerr.HintText())
 			}
 		})
@@ -89,7 +94,10 @@ func TestEveryCommandIsClassified(t *testing.T) {
 		}
 		class, ok := classes[top.Name()]
 		if !ok {
-			t.Errorf("%s is not classified: add it to this table and, if it reads no organization or project, to contextFreeCommands or orgScoped", top.Name())
+			t.Errorf(
+				"%s is not classified: add it to this table and, if it reads no organization or project, to contextFreeCommands or orgScoped",
+				top.Name(),
+			)
 			continue
 		}
 		walkTree(top, func(c *cobra.Command) {
@@ -110,7 +118,8 @@ func TestEveryCommandIsClassified(t *testing.T) {
 func TestKeyLikeSavedNames(t *testing.T) {
 	K := testAPIKey
 	o := session{args: []string{"config", "set", "organization", K}, saved: savedLogin()}.run(t)
-	if o.code != 6 || !strings.Contains(o.stderr, "that looks like an API key, not an organization name") || o.config.Organization == K {
+	if o.code != 6 || !strings.Contains(o.stderr, "that looks like an API key, not an organization name") ||
+		o.config.Organization == K {
 		t.Errorf("config set: exit %d, saved %q\n%s", o.code, o.config.Organization, o.stderr)
 	}
 	saved := &config.File{APIKey: K, Organization: K, Project: "staging"}
@@ -129,13 +138,19 @@ func TestKeyLikeSavedNames(t *testing.T) {
 			t.Errorf("%v printed the key:\n%s", args, o.all())
 		}
 	}
-	if !strings.Contains(outs[0].stdout, "hidden, looks like an API key") || !strings.Contains(outs[1].stdout, "****...H13m") {
+	if !strings.Contains(outs[0].stdout, "hidden, looks like an API key") ||
+		!strings.Contains(outs[1].stdout, "****...H13m") {
 		t.Errorf("config list:\n%s\n%s", outs[0].stdout, outs[1].stdout)
 	}
 	if !strings.Contains(outs[4].stderr, `the saved project "staging" is for "hidden, looks like an API key"`) {
 		t.Errorf("cg list warning:\n%s", outs[4].stderr)
 	}
-	if g := (session{args: []string{"config", "get", "organization"}, saved: saved}).run(t); !strings.Contains(g.stdout, K) {
+	if g := (session{args: []string{"config", "get", "organization"}, saved: saved}).run(
+		t,
+	); !strings.Contains(
+		g.stdout,
+		K,
+	) {
 		t.Errorf("config get does not return the saved value: %q", g.stdout)
 	}
 }
@@ -143,7 +158,13 @@ func TestKeyLikeSavedNames(t *testing.T) {
 // TestHiddenKeyReadWithCI: with CI set, a key piped to --api-key - at a real
 // terminal is still read hidden, never echoed.
 func TestHiddenKeyReadWithCI(t *testing.T) {
-	o := session{args: []string{"config", "set", "api-key", "-"}, tty: []string{testAPIKey}, env: map[string]string{"CI": "true"}}.run(t)
+	o := session{
+		args: []string{"config", "set", "api-key", "-"},
+		tty:  []string{testAPIKey},
+		env:  map[string]string{"CI": "true"},
+	}.run(
+		t,
+	)
 	if o.code != 0 || o.config.APIKey != testAPIKey || strings.Contains(o.device, testAPIKey) {
 		t.Errorf("exit %d, saved %q, terminal %q", o.code, o.config.APIKey, o.device)
 	}
@@ -169,7 +190,8 @@ func TestOrgsListingWithoutItems(t *testing.T) {
 	for _, args := range [][]string{{"orgs", "list"}, {"orgs", "get", "my-org"}} {
 		_, err := runRoot(t, args...)
 		var cerr *clierr.Error
-		if !errors.As(err, &cerr) || cerr.Kind != clierr.KindAPIError || !strings.Contains(cerr.Message, "cannot read") {
+		if !errors.As(err, &cerr) || cerr.Kind != clierr.KindAPIError ||
+			!strings.Contains(cerr.Message, "cannot read") {
 			t.Errorf("%v: %v, want an api_error", args, err)
 		}
 	}

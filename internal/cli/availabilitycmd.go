@@ -11,11 +11,10 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/organizationdata"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/organizations"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -78,13 +77,28 @@ type availabilityFlags struct {
 // validateAvailabilityFlags checks the values before any API work.
 func validateAvailabilityFlags(f availabilityFlags) *clierr.Error {
 	if f.CPUSet && f.CPU < 1 {
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid --cpu %d: must be at least 1", f.CPU)
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"invalid --cpu %d: must be at least 1",
+			f.CPU,
+		)
 	}
 	if f.MemorySet && f.Memory < 1 {
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid --memory %d: must be at least 1 (MB)", f.Memory)
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"invalid --memory %d: must be at least 1 (MB)",
+			f.Memory,
+		)
 	}
 	if f.StorageOK && f.Storage < 1 {
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid --storage %d: must be at least 1 (GB)", f.Storage)
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"invalid --storage %d: must be at least 1 (GB)",
+			f.Storage,
+		)
 	}
 	_, cerr := normalizeCountries(f.Countries)
 	return cerr
@@ -119,7 +133,11 @@ func requirementsOf(g *shared.ContainerGroup) (req api.AvailabilityRequest) {
 
 // applyAvailabilityFlags lays explicit flags over base (the --from group's
 // requirements, or empty). gpuIDs replaces base's classes when non-empty.
-func applyAvailabilityFlags(base api.AvailabilityRequest, f availabilityFlags, gpuIDs []string) api.AvailabilityRequest {
+func applyAvailabilityFlags(
+	base api.AvailabilityRequest,
+	f availabilityFlags,
+	gpuIDs []string,
+) api.AvailabilityRequest {
 	req := base
 	if len(gpuIDs) > 0 {
 		req.GpuClasses = gpuIDs
@@ -182,7 +200,10 @@ func overloadWarning(label string, zero bool) string {
 	if !zero {
 		return ""
 	}
-	return fmt.Sprintf("warning: %s reports 0 nodes in every priority tier, which could mean the availability API is overloaded; treat this row as unknown and run the command again", label)
+	return fmt.Sprintf(
+		"warning: %s reports 0 nodes in every priority tier, which could mean the availability API is overloaded; treat this row as unknown and run the command again",
+		label,
+	)
 }
 
 // countCell renders one count, "-" when absent.
@@ -262,7 +283,8 @@ class can be all zeros while others answer).`,
 	f.Int64("storage", 0, "storage per replica in GB")
 	f.StringArray("country", nil, "country code the replica may run in, repeatable (for example us)")
 	f.String("from", "", "take the requirements of an existing group: <group> or <project>/<group>")
-	cmd.Flags().String("project", "", "the project --from <group> looks in (overrides SALAD_PROJECT and the config file; --from <project>/<group> also names it)")
+	cmd.Flags().
+		String("project", "", "the project --from <group> looks in (overrides SALAD_PROJECT and the config file; --from <project>/<group> also names it)")
 	Register(cmd)
 }
 
@@ -407,7 +429,13 @@ func runAvailability(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Fprintln(w, header)
 		line := func(name string, a *organizations.GpuAvailability) {
-			cells := []string{name, countCell(a.AvailableGpuBatch), countCell(a.AvailableGpuLow), countCell(a.AvailableGpuMedium), countCell(a.AvailableGpuHigh)}
+			cells := []string{
+				name,
+				countCell(a.AvailableGpuBatch),
+				countCell(a.AvailableGpuLow),
+				countCell(a.AvailableGpuMedium),
+				countCell(a.AvailableGpuHigh),
+			}
 			if showOnCall {
 				cells = append(cells, countCell(a.OnCallGpu))
 			}

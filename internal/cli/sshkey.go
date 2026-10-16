@@ -93,7 +93,8 @@ const sshKeysPage = "https://portal.salad.com/ssh-keys"
 // generateKey runs ssh-keygen for a key without a passphrase at keyPath.
 // Tests replace it.
 var generateKey = func(keyPath string) error {
-	out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "", "-C", "saladcloud-cli").CombinedOutput()
+	out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "", "-C", "saladcloud-cli").
+		CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%v; %s", err, strings.TrimSpace(string(out)))
 	}
@@ -148,7 +149,13 @@ func passphraseOf(encrypted, known bool) *bool {
 func readPublicKey(path string) (string, *clierr.Error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the public key %s: %s", path, config.Reason(err))
+		return "", clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot read the public key %s: %s",
+			path,
+			config.Reason(err),
+		)
 	}
 	return strings.TrimSpace(string(data)), nil
 }
@@ -162,7 +169,12 @@ func runSSHKeySetup(cmd *cobra.Command, args []string) error {
 	generate, _ := cmd.Flags().GetBool("generate")
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find the home folder: %s", config.Reason(err))
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot find the home folder: %s",
+			config.Reason(err),
+		)
 	}
 	k := sshKeySetup{home: home, keyPath: filepath.Join(home, ".ssh", sshDedicatedKeyName)}
 	path, found := findLocalPublicKey(home)
@@ -176,7 +188,13 @@ func runSSHKeySetup(cmd *cobra.Command, args []string) error {
 				case generate:
 					return k.generate()
 				case atTerminal():
-					answer, err := ask(fmt.Sprintf("Generate a key without a passphrase at %s? The CLI will use it instead, and registering it replaces your account's current key. [y/N]:", k.keyPath), false)
+					answer, err := ask(
+						fmt.Sprintf(
+							"Generate a key without a passphrase at %s? The CLI will use it instead, and registering it replaces your account's current key. [y/N]:",
+							k.keyPath,
+						),
+						false,
+					)
 					if err != nil {
 						return setupCancelled()
 					}
@@ -219,10 +237,17 @@ func (k sshKeySetup) generate() error {
 			WithHint("register %s.pub, or remove it to generate a new one", k.keyPath)
 	}
 	if _, err := lookPath("ssh-keygen"); err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "ssh-keygen not found").WithHint("%s", sshMissingHint("ssh-keygen"))
+		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "ssh-keygen not found").
+			WithHint("%s", sshMissingHint("ssh-keygen"))
 	}
 	if err := os.MkdirAll(filepath.Dir(k.keyPath), 0o700); err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot create %s: %s", filepath.Dir(k.keyPath), config.Reason(err))
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot create %s: %s",
+			filepath.Dir(k.keyPath),
+			config.Reason(err),
+		)
 	}
 	if err := generateKey(k.keyPath); err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "ssh-keygen failed: %v", err)
@@ -240,7 +265,14 @@ func (k sshKeySetup) show(path string, generated bool, passphrase *bool) error {
 	if generated {
 		action = "generated"
 	}
-	v := sshKeySetupResult{Path: path, PublicKey: key, Generated: generated, HasPassphrase: passphrase, Action: action, OK: true}
+	v := sshKeySetupResult{
+		Path:          path,
+		PublicKey:     key,
+		Generated:     generated,
+		HasPassphrase: passphrase,
+		Action:        action,
+		OK:            true,
+	}
 	if err := output.Emit(v, func(w io.Writer) {
 		if generated {
 			fmt.Fprintf(w, "Generated %s\n\n", strings.TrimSuffix(path, ".pub"))
@@ -252,7 +284,11 @@ func (k sshKeySetup) show(path string, generated bool, passphrase *bool) error {
 		return wrapErr(err)
 	}
 	if output.Machine() {
-		fmt.Fprintf(errw(), "note: register the public key at %s; your account holds one SSH key, so registering this one replaces any other\n", sshKeysPage)
+		fmt.Fprintf(
+			errw(),
+			"note: register the public key at %s; your account holds one SSH key, so registering this one replaces any other\n",
+			sshKeysPage,
+		)
 	}
 	hintLine("to connect to a running instance, run saladcloud container-groups ssh <group> [--instance <id>]")
 	return nil
@@ -261,7 +297,12 @@ func (k sshKeySetup) show(path string, generated bool, passphrase *bool) error {
 func runSSHKeyGet(cmd *cobra.Command, args []string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find the home folder: %s", config.Reason(err))
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot find the home folder: %s",
+			config.Reason(err),
+		)
 	}
 	path, found := findLocalPublicKey(home)
 	if !found {
@@ -316,7 +357,8 @@ behave as if there is no terminal.`,
 		Args: cobra.NoArgs,
 		RunE: runSSHKeySetup,
 	}
-	setupCmd.Flags().Bool("generate", false, "generate ~/.ssh/saladcloud_ed25519 without asking when no usable key is found")
+	setupCmd.Flags().
+		Bool("generate", false, "generate ~/.ssh/saladcloud_ed25519 without asking when no usable key is found")
 	sshKeyCmd.AddCommand(setupCmd)
 
 	sshKeyCmd.AddCommand(&cobra.Command{

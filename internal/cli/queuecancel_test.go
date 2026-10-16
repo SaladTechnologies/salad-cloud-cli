@@ -38,8 +38,10 @@ func TestQueueJobCancelFinishedSaysWhy(t *testing.T) {
 	if !ok {
 		t.Fatalf("err = %v, want a *clierr.Error", err)
 	}
-	if !strings.Contains(cerr.Message, `cannot be cancelled: its status is already succeeded`) || cerr.Code != clierr.CodeGeneric ||
-		cerr.HTTPStatus == nil || *cerr.HTTPStatus != http.StatusConflict {
+	if !strings.Contains(cerr.Message, `cannot be cancelled: its status is already succeeded`) ||
+		cerr.Code != clierr.CodeGeneric ||
+		cerr.HTTPStatus == nil ||
+		*cerr.HTTPStatus != http.StatusConflict {
 		t.Errorf("err = %+v (code %d), want the finished-job message with the 409's exit 1", cerr.Message, cerr.Code)
 	}
 }

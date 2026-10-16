@@ -61,30 +61,72 @@ func errDocCases() []errDocCase {
 		{name: "missing positional", s: session{args: []string{"cg", "get"}}},
 		{name: "bare noun", s: session{args: []string{"gpus"}}},
 		{name: "invalid value", s: session{args: []string{"cg", "create", "Bad_Name", "--image", "x"}, env: keyEnv}},
-		{name: "no API key", s: session{args: []string{"cg", "list"}, env: map[string]string{"SALAD_ORGANIZATION": "my-org"}}},
-		{name: "no organization", s: session{args: []string{"quotas", "get"}, env: map[string]string{"SALAD_API_KEY": testAPIKey}}},
+		{
+			name: "no API key",
+			s:    session{args: []string{"cg", "list"}, env: map[string]string{"SALAD_ORGANIZATION": "my-org"}},
+		},
+		{
+			name: "no organization",
+			s:    session{args: []string{"quotas", "get"}, env: map[string]string{"SALAD_API_KEY": testAPIKey}},
+		},
 		{name: "not found", s: session{args: []string{"cg", "get", "missing"}, env: keyEnv}},
-		{name: "rejected key", s: session{args: []string{"cg", "list"}, env: with(keyEnv, "SALAD_API_KEY", testOtherAPIKey)}},
+		{
+			name: "rejected key",
+			s:    session{args: []string{"cg", "list"}, env: with(keyEnv, "SALAD_API_KEY", testOtherAPIKey)},
+		},
 		{name: "forbidden", s: session{args: []string{"gpus", "list"}, env: keyEnv, api: forbidden}},
 		{name: "server error", s: session{args: []string{"quotas", "get"}, env: keyEnv, api: serverError}},
-		{name: "network error", s: session{args: []string{"quotas", "get"}, env: with(keyEnv, "SALAD_CLI_API_BASE_URL", "http://127.0.0.1:1")}},
-		{name: "assumed project missing", s: session{args: []string{"cg", "list"}, env: with(keyEnv, "SALAD_PROJECT", ""), api: noDefault}},
-		{name: "assumed project warning", s: session{args: []string{"cg", "list"}, env: with(keyEnv, "SALAD_PROJECT", "")}},
+		{
+			name: "network error",
+			s: session{
+				args: []string{"quotas", "get"},
+				env:  with(keyEnv, "SALAD_CLI_API_BASE_URL", "http://127.0.0.1:1"),
+			},
+		},
+		{
+			name: "assumed project missing",
+			s:    session{args: []string{"cg", "list"}, env: with(keyEnv, "SALAD_PROJECT", ""), api: noDefault},
+		},
+		{
+			name: "assumed project warning",
+			s:    session{args: []string{"cg", "list"}, env: with(keyEnv, "SALAD_PROJECT", "")},
+		},
 		{name: "login, no key", s: session{args: []string{"login", "--org", "my-org"}}},
-		{name: "login, rejected flag key", s: session{args: []string{"login", "--api-key", testOtherAPIKey, "--org", "my-org"}}},
-		{name: "login at a terminal", s: session{args: []string{"login", "--org", "my-org"}, tty: []string{testAPIKey, ""}}},
+		{
+			name: "login, rejected flag key",
+			s:    session{args: []string{"login", "--api-key", testOtherAPIKey, "--org", "my-org"}},
+		},
+		{
+			name: "login at a terminal",
+			s:    session{args: []string{"login", "--org", "my-org"}, tty: []string{testAPIKey, ""}},
+		},
 		{name: "ai-gateway login, no key", s: session{args: []string{"ai-gateway", "login"}}},
-		{name: "ai-gateway login at a terminal", s: session{args: []string{"ai-gateway", "login"}, tty: []string{testGatewayKey}}},
-		{name: "use, organization not found", s: session{args: []string{"use", "nope"}, env: map[string]string{"SALAD_API_KEY": testAPIKey}}},
-		{name: "use", s: session{args: []string{"use", "my-org/staging"}, env: map[string]string{"SALAD_API_KEY": testAPIKey}}},
-		{name: "config set", s: session{args: []string{"config", "set", "organization", "acme-prod"}, saved: savedLogin()}},
+		{
+			name: "ai-gateway login at a terminal",
+			s:    session{args: []string{"ai-gateway", "login"}, tty: []string{testGatewayKey}},
+		},
+		{
+			name: "use, organization not found",
+			s:    session{args: []string{"use", "nope"}, env: map[string]string{"SALAD_API_KEY": testAPIKey}},
+		},
+		{
+			name: "use",
+			s:    session{args: []string{"use", "my-org/staging"}, env: map[string]string{"SALAD_API_KEY": testAPIKey}},
+		},
+		{
+			name: "config set",
+			s:    session{args: []string{"config", "set", "organization", "acme-prod"}, saved: savedLogin()},
+		},
 		{name: "config set, unknown key", s: session{args: []string{"config", "set", "color", "blue"}}},
 		{name: "config unset", s: session{args: []string{"config", "unset", "organization"}, saved: savedLogin()}},
 		{name: "logout", s: session{args: []string{"logout"}, saved: savedLogin()}},
 		{name: "whoami", s: session{args: []string{"whoami"}, saved: savedLogin()}},
 		{name: "doctor, failing", s: session{args: []string{"doctor"}}},
 		{name: "ssh-key setup, no terminal", s: session{args: []string{"ssh-key", "setup"}}},
-		{name: "ssh-key setup at a terminal", s: session{args: []string{"ssh-key", "setup"}, tty: []string{}, sshKey: true}},
+		{
+			name: "ssh-key setup at a terminal",
+			s:    session{args: []string{"ssh-key", "setup"}, tty: []string{}, sshKey: true},
+		},
 	}
 }
 
@@ -228,40 +270,104 @@ type credentialCase struct {
 }
 
 func credentialCases() []credentialCase {
-	other := &config.File{APIKey: testOtherAPIKey, Organization: "my-org", Project: "default", GatewayAPIKey: testOtherGatewayKey}
+	other := &config.File{
+		APIKey:        testOtherAPIKey,
+		Organization:  "my-org",
+		Project:       "default",
+		GatewayAPIKey: testOtherGatewayKey,
+	}
 	var cases []credentialCase
 	for _, key := range []string{testAPIKey, testOtherAPIKey} { // accepted, rejected
-		cases = append(cases,
-			credentialCase{name: "login, flag", s: session{args: []string{"login", "--api-key", key, "--org", "my-org"}}},
-			credentialCase{name: "login, stdin", s: session{args: []string{"login", "--api-key", "-", "--org", "my-org"}, stdin: key + "\n"}},
-			credentialCase{name: "login, variable", s: session{args: []string{"login", "--org", "my-org"}, env: map[string]string{"SALAD_API_KEY": key}}},
-			credentialCase{name: "login, pasted", s: session{args: []string{"login", "--org", "my-org"}, tty: []string{key, ""}}},
-			credentialCase{name: "login, variable over a saved key", s: session{args: []string{"login", "--api-key", "-", "--org", "my-org"}, stdin: key + "\n", saved: other, env: map[string]string{"SALAD_API_KEY": testOtherAPIKey}}},
+		cases = append(
+			cases,
+			credentialCase{
+				name: "login, flag",
+				s:    session{args: []string{"login", "--api-key", key, "--org", "my-org"}},
+			},
+			credentialCase{
+				name: "login, stdin",
+				s:    session{args: []string{"login", "--api-key", "-", "--org", "my-org"}, stdin: key + "\n"},
+			},
+			credentialCase{
+				name: "login, variable",
+				s:    session{args: []string{"login", "--org", "my-org"}, env: map[string]string{"SALAD_API_KEY": key}},
+			},
+			credentialCase{
+				name: "login, pasted",
+				s:    session{args: []string{"login", "--org", "my-org"}, tty: []string{key, ""}},
+			},
+			credentialCase{
+				name: "login, variable over a saved key",
+				s: session{
+					args:  []string{"login", "--api-key", "-", "--org", "my-org"},
+					stdin: key + "\n",
+					saved: other,
+					env:   map[string]string{"SALAD_API_KEY": testOtherAPIKey},
+				},
+			},
 		)
 	}
 	for _, key := range []string{testGatewayKey, testOtherGatewayKey} {
-		cases = append(cases,
-			credentialCase{name: "ai-gateway login, flag", s: session{args: []string{"ai-gateway", "login", "--api-key", key}}},
-			credentialCase{name: "ai-gateway login, stdin", s: session{args: []string{"ai-gateway", "login", "--api-key", "-"}, stdin: key + "\n"}},
-			credentialCase{name: "ai-gateway login, variable", s: session{args: []string{"ai-gateway", "login"}, env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": key}}},
-			credentialCase{name: "ai-gateway login, pasted", s: session{args: []string{"ai-gateway", "login"}, tty: []string{key}}},
+		cases = append(
+			cases,
+			credentialCase{
+				name: "ai-gateway login, flag",
+				s:    session{args: []string{"ai-gateway", "login", "--api-key", key}},
+			},
+			credentialCase{
+				name: "ai-gateway login, stdin",
+				s:    session{args: []string{"ai-gateway", "login", "--api-key", "-"}, stdin: key + "\n"},
+			},
+			credentialCase{
+				name: "ai-gateway login, variable",
+				s: session{
+					args: []string{"ai-gateway", "login"},
+					env:  map[string]string{"SALAD_AI_GATEWAY_API_KEY": key},
+				},
+			},
+			credentialCase{
+				name: "ai-gateway login, pasted",
+				s:    session{args: []string{"ai-gateway", "login"}, tty: []string{key}},
+			},
 		)
 	}
 	varKeys := map[string]string{"SALAD_API_KEY": testAPIKey, "SALAD_AI_GATEWAY_API_KEY": testGatewayKey}
-	cases = append(cases,
+	cases = append(
+		cases,
 		credentialCase{name: "use", s: session{args: []string{"use", "my-org"}, env: varKeys, saved: other}},
 		credentialCase{name: "whoami", s: session{args: []string{"whoami"}, env: varKeys, saved: other}},
 		credentialCase{name: "doctor", s: session{args: []string{"doctor"}, env: varKeys, saved: other}},
 		credentialCase{name: "logout", s: session{args: []string{"logout"}, env: varKeys, saved: other}},
-		credentialCase{name: "ai-gateway logout", s: session{args: []string{"ai-gateway", "logout"}, env: varKeys, saved: other}},
-		credentialCase{name: "config set, argument", s: session{args: []string{"config", "set", "api-key", testAPIKey}}},
-		credentialCase{name: "config set, stdin", s: session{args: []string{"config", "set", "ai-gateway-api-key", "-"}, stdin: testGatewayKey + "\n"}},
+		credentialCase{
+			name: "ai-gateway logout",
+			s:    session{args: []string{"ai-gateway", "logout"}, env: varKeys, saved: other},
+		},
+		credentialCase{
+			name: "config set, argument",
+			s:    session{args: []string{"config", "set", "api-key", testAPIKey}},
+		},
+		credentialCase{
+			name: "config set, stdin",
+			s:    session{args: []string{"config", "set", "ai-gateway-api-key", "-"}, stdin: testGatewayKey + "\n"},
+		},
 		credentialCase{name: "config get", s: session{args: []string{"config", "get", "api-key"}, saved: other}},
 		credentialCase{name: "config list", s: session{args: []string{"config", "list"}, saved: other}},
-		credentialCase{name: "config unset", s: session{args: []string{"config", "unset", "api-key"}, saved: other, env: varKeys}},
-		credentialCase{name: "a rejected key at run time", s: session{args: []string{"cg", "list"}, env: with(keyEnv, "SALAD_API_KEY", testOtherAPIKey)}},
+		credentialCase{
+			name: "config unset",
+			s:    session{args: []string{"config", "unset", "api-key"}, saved: other, env: varKeys},
+		},
+		credentialCase{
+			name: "a rejected key at run time",
+			s:    session{args: []string{"cg", "list"}, env: with(keyEnv, "SALAD_API_KEY", testOtherAPIKey)},
+		},
 		credentialCase{name: "ai-gateway test", s: session{args: []string{"ai-gateway", "test"}, env: varKeys}},
-		credentialCase{name: "ai-gateway test, rejected key", s: session{args: []string{"ai-gateway", "test"}, env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": testOtherGatewayKey}}},
+		credentialCase{
+			name: "ai-gateway test, rejected key",
+			s: session{
+				args: []string{"ai-gateway", "test"},
+				env:  map[string]string{"SALAD_AI_GATEWAY_API_KEY": testOtherGatewayKey},
+			},
+		},
 	)
 	return cases
 }
@@ -343,7 +449,10 @@ func overrideCases() []overrideCase {
 	saved := &config.File{APIKey: testAPIKey, Organization: "my-org", Project: "default", GatewayAPIKey: testGatewayKey}
 	key := map[string]string{"SALAD_API_KEY": testAPIKey}
 	return []overrideCase{
-		{name: "login", s: session{args: []string{"login", "--api-key", "-", "--org", "my-org"}, stdin: testAPIKey + "\n"}},
+		{
+			name: "login",
+			s:    session{args: []string{"login", "--api-key", "-", "--org", "my-org"}, stdin: testAPIKey + "\n"},
+		},
 		{name: "login, one variable", s: session{
 			args: []string{"login", "--api-key", "-", "--org", "my-org"}, stdin: testAPIKey + "\n",
 			env: map[string]string{"SALAD_API_KEY": testOtherAPIKey},
@@ -352,14 +461,18 @@ func overrideCases() []overrideCase {
 			args: []string{"login", "--api-key", "-", "--org", "my-org"}, stdin: testAPIKey + "\n",
 			env: map[string]string{"SALAD_API_KEY": testOtherAPIKey, "SALAD_ORGANIZATION": "acme-prod"},
 		}, overrides: []string{"SALAD_API_KEY", "SALAD_ORGANIZATION"}},
-		{name: "ai-gateway login", s: session{args: []string{"ai-gateway", "login", "--api-key", "-"}, stdin: testGatewayKey + "\n"}},
+		{
+			name: "ai-gateway login",
+			s:    session{args: []string{"ai-gateway", "login", "--api-key", "-"}, stdin: testGatewayKey + "\n"},
+		},
 		{name: "ai-gateway login, one variable", s: session{
 			args: []string{"ai-gateway", "login", "--api-key", "-"}, stdin: testGatewayKey + "\n",
 			env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": testOtherGatewayKey},
 		}, overrides: []string{"SALAD_AI_GATEWAY_API_KEY"}},
 		{name: "use", s: session{args: []string{"use", "acme-prod"}, env: key}},
 		{
-			name: "use, one variable", s: session{args: []string{"use", "acme-prod"}, env: with(key, "SALAD_ORGANIZATION", "my-org")},
+			name:      "use, one variable",
+			s:         session{args: []string{"use", "acme-prod"}, env: with(key, "SALAD_ORGANIZATION", "my-org")},
 			overrides: []string{"SALAD_ORGANIZATION"},
 		},
 		{name: "config set", s: session{args: []string{"config", "set", "organization", "acme-prod"}, saved: saved}},
@@ -373,7 +486,11 @@ func overrideCases() []overrideCase {
 			env: map[string]string{"SALAD_ORGANIZATION": "my-org"},
 		}, overrides: []string{"SALAD_ORGANIZATION"}},
 		{name: "logout", s: session{args: []string{"logout"}, saved: saved}},
-		{name: "logout, one variable", s: session{args: []string{"logout"}, saved: saved, env: key}, overrides: []string{"SALAD_API_KEY"}},
+		{
+			name:      "logout, one variable",
+			s:         session{args: []string{"logout"}, saved: saved, env: key},
+			overrides: []string{"SALAD_API_KEY"},
+		},
 		{name: "ai-gateway logout", s: session{args: []string{"ai-gateway", "logout"}, saved: saved}},
 		{name: "ai-gateway logout, one variable", s: session{
 			args: []string{"ai-gateway", "logout"}, saved: saved,

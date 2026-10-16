@@ -12,11 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/util"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -37,7 +36,12 @@ type groupActionResult struct {
 // file fails fast with a friendly message instead of an HTTP 400.
 func validateCreateRequest(req *containergroups.ContainerGroupCreationRequest) *clierr.Error {
 	missing := func(field string) *clierr.Error {
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid container group definition: %s is required", field)
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"invalid container group definition: %s is required",
+			field,
+		)
 	}
 	switch {
 	case req.Name == nil || *req.Name == "":
@@ -113,7 +117,8 @@ func groupReason(g *shared.ContainerGroup) string {
 // runningCell renders the RUNNING column: running instances out of the
 // replicas asked for ("1/2"), "-" for an unknown count.
 func runningCell(g *shared.ContainerGroup) string {
-	if g.CurrentState == nil || g.CurrentState.InstanceStatusCounts == nil || g.CurrentState.InstanceStatusCounts.RunningCount == nil {
+	if g.CurrentState == nil || g.CurrentState.InstanceStatusCounts == nil ||
+		g.CurrentState.InstanceStatusCounts.RunningCount == nil {
 		return fmt.Sprintf("-/%d", ptr.Deref(g.Replicas))
 	}
 	return fmt.Sprintf("%d/%d", *g.CurrentState.InstanceStatusCounts.RunningCount, ptr.Deref(g.Replicas))
@@ -193,7 +198,10 @@ func groupAction(name, pastTense string, call func() *clierr.Error) error {
 // then — when --wait is set — hold the stdout confirmation until the group
 // reaches the target status, so a timed-out wait exits nonzero with stdout
 // still empty (the JSON contract) and the confirmation is never a lie.
-func startStopRunE(pastTense, target string, verb func(*api.Client, context.Context, string) *clierr.Error) func(*cobra.Command, []string) error {
+func startStopRunE(
+	pastTense, target string,
+	verb func(*api.Client, context.Context, string) *clierr.Error,
+) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		wait, timeout, cerr := waitFlagValues(cmd)
 		if cerr != nil {
@@ -203,7 +211,12 @@ func startStopRunE(pastTense, target string, verb func(*api.Client, context.Cont
 		if cerr != nil {
 			return cerr
 		}
-		if err := groupNotFound(verb(client, cmd.Context(), args[0]), args[0], client.Org(), client.Project()); err != nil {
+		if err := groupNotFound(
+			verb(client, cmd.Context(), args[0]),
+			args[0],
+			client.Org(),
+			client.Project(),
+		); err != nil {
 			return err
 		}
 		if wait {
@@ -238,8 +251,12 @@ the projects you want listed.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			statusFilter, _ := cmd.Flags().GetString("status")
 			if statusFilter != "" && !validGroupStatuses[statusFilter] {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage,
-					`invalid --status "%s"`, statusFilter).WithHint("use pending, running, stopped, succeeded, failed or deploying")
+				return clierr.New(
+					clierr.CodeUsage,
+					clierr.KindUsage,
+					`invalid --status "%s"`,
+					statusFilter,
+				).WithHint("use pending, running, stopped, succeeded, failed or deploying")
 			}
 			projects, _ := cmd.Flags().GetStringArray("projects")
 			client, res, cerr := NewClient(cmd)
@@ -316,7 +333,13 @@ the projects you want listed.`,
 					case multi:
 						fmt.Fprintln(os.Stderr, "no container groups in the listed projects")
 					case statusFilter != "":
-						fmt.Fprintf(os.Stderr, "no container groups in %s/%s matching --status %s\n", res.Organization, res.Project, statusFilter)
+						fmt.Fprintf(
+							os.Stderr,
+							"no container groups in %s/%s matching --status %s\n",
+							res.Organization,
+							res.Project,
+							statusFilter,
+						)
 					default:
 						fmt.Fprintf(os.Stderr, "no container groups in %s/%s\n", res.Organization, res.Project)
 					}
@@ -326,7 +349,8 @@ the projects you want listed.`,
 		},
 	}
 	listCmd.Flags().String("status", "", "filter by status: pending|running|stopped|succeeded|failed|deploying")
-	listCmd.Flags().StringArray("projects", nil, "list this project instead of the current one, repeatable (--projects a --projects b); adds a PROJECT column")
+	listCmd.Flags().
+		StringArray("projects", nil, "list this project instead of the current one, repeatable (--projects a --projects b); adds a PROJECT column")
 	addWatchFlags(listCmd)
 	RegisterContainerGroups(listCmd)
 
@@ -373,12 +397,20 @@ group has scheduled scaling enabled.`,
 				if m, ok := doc.(map[string]any); ok {
 					if enabled, _ := m["scheduled-scaling-enabled"].(bool); enabled {
 						if _, has := m["replicas"]; has {
-							fmt.Fprintln(os.Stderr, "note: replicas is included; writing it puts scheduled scaling on hold, so drop it unless you mean to change it")
+							fmt.Fprintln(
+								os.Stderr,
+								"note: replicas is included; writing it puts scheduled scaling on hold, so drop it unless you mean to change it",
+							)
 						}
 					}
 				}
 				if len(dropped) > 0 {
-					fmt.Fprintf(os.Stderr, "note: %d field(s) update cannot write were omitted: %s\n", len(dropped), joinPaths(dropped))
+					fmt.Fprintf(
+						os.Stderr,
+						"note: %d field(s) update cannot write were omitted: %s\n",
+						len(dropped),
+						joinPaths(dropped),
+					)
 				}
 				// Always JSON: a table rendering of a patch document has no use.
 				data, err := json.MarshalIndent(doc, "", "  ")
@@ -400,7 +432,8 @@ group has scheduled scaling enabled.`,
 			})
 		},
 	}
-	getCmd.Flags().Bool("writable", false, "emit a JSON patch document for update -f (response-only and create-only fields removed)")
+	getCmd.Flags().
+		Bool("writable", false, "emit a JSON patch document for update -f (response-only and create-only fields removed)")
 	addWatchFlags(getCmd)
 	RegisterContainerGroups(getCmd)
 
@@ -566,7 +599,12 @@ name_conflict. Pick a new name for the replacement.`,
 				return cerr
 			}
 			return groupAction(args[0], "deleted", func() *clierr.Error {
-				return groupNotFound(client.DeleteGroup(cmd.Context(), args[0]), args[0], client.Org(), client.Project())
+				return groupNotFound(
+					client.DeleteGroup(cmd.Context(), args[0]),
+					args[0],
+					client.Org(),
+					client.Project(),
+				)
 			})
 		},
 	})
@@ -587,7 +625,15 @@ name_conflict. Pick a new name for the replacement.`,
 // intent, when non-nil, is what the caller asked for and is what the diffs
 // compare against; it differs from raw only when the wire patch must express
 // a request indirectly (update -e removing a variable by omission).
-func applyPatch(cmd *cobra.Command, client *api.Client, name string, raw, intent []byte, wait bool, timeout time.Duration, doneMsg string) (*shared.ContainerGroup, error) {
+func applyPatch(
+	cmd *cobra.Command,
+	client *api.Client,
+	name string,
+	raw, intent []byte,
+	wait bool,
+	timeout time.Duration,
+	doneMsg string,
+) (*shared.ContainerGroup, error) {
 	if intent == nil {
 		intent = raw
 	}
@@ -607,7 +653,11 @@ func applyPatch(cmd *cobra.Command, client *api.Client, name string, raw, intent
 		}
 		group = final
 	} else if ptr.Deref(group.PendingChange) {
-		fmt.Fprintf(os.Stderr, "note: change accepted, still pending, not verified (--no-wait); to check it, run saladcloud container-groups get %s\n", name)
+		fmt.Fprintf(
+			os.Stderr,
+			"note: change accepted, still pending, not verified (--no-wait); to check it, run saladcloud container-groups get %s\n",
+			name,
+		)
 	}
 	// "Did what I asked for happen?" and "did anything else happen?".
 	warnIgnoredFields(os.Stderr, findIgnoredFields(intent, before, group))

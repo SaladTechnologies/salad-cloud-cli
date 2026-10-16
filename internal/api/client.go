@@ -100,7 +100,8 @@ func (c *Client) quotasPath() string { return fmt.Sprintf("/organizations/%s/quo
 // organization's own: the request that failed was the organization check,
 // or the check, made once, also answers 404. It returns nil otherwise.
 func (c *Client) orgGone(ctx context.Context, path string) *clierr.Error {
-	if c.OnOrgGone == nil || c.org == "" || !strings.HasPrefix(path, "/organizations/"+seg(c.org)+"/") || !c.checkingOrg.CompareAndSwap(false, true) {
+	if c.OnOrgGone == nil || c.org == "" || !strings.HasPrefix(path, "/organizations/"+seg(c.org)+"/") ||
+		!c.checkingOrg.CompareAndSwap(false, true) {
 		return nil
 	}
 	defer c.checkingOrg.Store(false)
@@ -123,7 +124,8 @@ func (c *Client) projectPrefix() string {
 // checks the organization, so a missing group or a wrong organization keeps
 // its own error. It returns nil when the 404 is not the assumed project's.
 func (c *Client) assumedProjectMissing(ctx context.Context, method, path string) *clierr.Error {
-	if !c.projectAssumed || !strings.HasPrefix(path, c.projectPrefix()) || !c.checkingProject.CompareAndSwap(false, true) {
+	if !c.projectAssumed || !strings.HasPrefix(path, c.projectPrefix()) ||
+		!c.checkingProject.CompareAndSwap(false, true) {
 		return nil
 	}
 	defer c.checkingProject.Store(false)
@@ -200,7 +202,10 @@ func (c *Client) GetGroup(ctx context.Context, name string) (*shared.ContainerGr
 }
 
 // CreateGroup creates a container group.
-func (c *Client) CreateGroup(ctx context.Context, req containergroups.ContainerGroupCreationRequest) (*shared.ContainerGroup, *clierr.Error) {
+func (c *Client) CreateGroup(
+	ctx context.Context,
+	req containergroups.ContainerGroupCreationRequest,
+) (*shared.ContainerGroup, *clierr.Error) {
 	if err := c.requireOrgProject(); err != nil {
 		return nil, err
 	}
@@ -218,7 +223,11 @@ func (c *Client) CreateGroupRaw(ctx context.Context, req json.RawMessage) (*shar
 }
 
 // UpdateGroup patches a container group.
-func (c *Client) UpdateGroup(ctx context.Context, name string, patch containergroups.ContainerGroupPatch) (*shared.ContainerGroup, *clierr.Error) {
+func (c *Client) UpdateGroup(
+	ctx context.Context,
+	name string,
+	patch containergroups.ContainerGroupPatch,
+) (*shared.ContainerGroup, *clierr.Error) {
 	if err := c.requireOrgProject(); err != nil {
 		return nil, err
 	}
@@ -231,7 +240,11 @@ func (c *Client) UpdateGroup(ctx context.Context, name string, patch containergr
 // which drops explicit empty values ([], "", 0) — in merge-patch semantics
 // those mean "clear this field", so file-driven updates must use this
 // instead and keep the typed struct for validation only.
-func (c *Client) UpdateGroupRaw(ctx context.Context, name string, patch json.RawMessage) (*shared.ContainerGroup, *clierr.Error) {
+func (c *Client) UpdateGroupRaw(
+	ctx context.Context,
+	name string,
+	patch json.RawMessage,
+) (*shared.ContainerGroup, *clierr.Error) {
 	if err := c.requireOrgProject(); err != nil {
 		return nil, err
 	}
@@ -275,15 +288,28 @@ func (c *Client) StopGroup(ctx context.Context, name string) *clierr.Error {
 }
 
 // ListInstances lists the instances of a container group.
-func (c *Client) ListInstances(ctx context.Context, group string) (*containergroups.ContainerGroupInstanceCollection, *clierr.Error) {
+func (c *Client) ListInstances(
+	ctx context.Context,
+	group string,
+) (*containergroups.ContainerGroupInstanceCollection, *clierr.Error) {
 	if err := c.requireOrgProject(); err != nil {
 		return nil, err
 	}
-	return restJSON[containergroups.ContainerGroupInstanceCollection](ctx, c, "GET", c.groupPath(group, "instances"), "", nil)
+	return restJSON[containergroups.ContainerGroupInstanceCollection](
+		ctx,
+		c,
+		"GET",
+		c.groupPath(group, "instances"),
+		"",
+		nil,
+	)
 }
 
 // GetInstance fetches one container group instance by id.
-func (c *Client) GetInstance(ctx context.Context, group, id string) (*containergroups.ContainerGroupInstance, *clierr.Error) {
+func (c *Client) GetInstance(
+	ctx context.Context,
+	group, id string,
+) (*containergroups.ContainerGroupInstance, *clierr.Error) {
 	if err := c.requireOrgProject(); err != nil {
 		return nil, err
 	}
@@ -292,11 +318,22 @@ func (c *Client) GetInstance(ctx context.Context, group, id string) (*containerg
 
 // UpdateInstance merge-patches one container group instance; deletion_cost
 // is the only writable field.
-func (c *Client) UpdateInstance(ctx context.Context, group, id string, patch containergroups.ContainerGroupInstancePatch) (*containergroups.ContainerGroupInstance, *clierr.Error) {
+func (c *Client) UpdateInstance(
+	ctx context.Context,
+	group, id string,
+	patch containergroups.ContainerGroupInstancePatch,
+) (*containergroups.ContainerGroupInstance, *clierr.Error) {
 	if err := c.requireOrgProject(); err != nil {
 		return nil, err
 	}
-	return restJSON[containergroups.ContainerGroupInstance](ctx, c, "PATCH", c.groupPath(group, "instances", id), "application/merge-patch+json", patch)
+	return restJSON[containergroups.ContainerGroupInstance](
+		ctx,
+		c,
+		"PATCH",
+		c.groupPath(group, "instances", id),
+		"application/merge-patch+json",
+		patch,
+	)
 }
 
 // RestartInstance restarts a container group instance.
@@ -328,7 +365,14 @@ func (c *Client) QueryLogs(ctx context.Context, q logs.LogEntryQuery) (*logs.Log
 	if err := c.RequireOrg(); err != nil {
 		return nil, err
 	}
-	return restJSON[logs.LogEntryCollection](ctx, c, "POST", fmt.Sprintf("/organizations/%s/log-entries", seg(c.org)), "", q)
+	return restJSON[logs.LogEntryCollection](
+		ctx,
+		c,
+		"POST",
+		fmt.Sprintf("/organizations/%s/log-entries", seg(c.org)),
+		"",
+		q,
+	)
 }
 
 // webhookSecretPath is the organization's webhook secret key resource.
@@ -384,5 +428,12 @@ func (c *Client) ListGpuClasses(ctx context.Context) (*organizationdata.GpuClass
 	if err := c.RequireOrg(); err != nil {
 		return nil, err
 	}
-	return restJSON[organizationdata.GpuClassesList](ctx, c, "GET", fmt.Sprintf("/organizations/%s/gpu-classes", seg(c.org)), "", nil)
+	return restJSON[organizationdata.GpuClassesList](
+		ctx,
+		c,
+		"GET",
+		fmt.Sprintf("/organizations/%s/gpu-classes", seg(c.org)),
+		"",
+		nil,
+	)
 }

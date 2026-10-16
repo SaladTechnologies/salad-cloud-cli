@@ -56,8 +56,12 @@ func validateCommand(words []string, given bool) *clierr.Error {
 	if underGitBash() {
 		for _, w := range words {
 			if !strings.ContainsAny(w, " \t\n") && msysCommandWord.MatchString(w) {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage,
-					`command word "%s" was rewritten by Git Bash, which turns a leading / into a Windows path (also after =)`, w).
+				return clierr.New(
+					clierr.CodeUsage,
+					clierr.KindUsage,
+					`command word "%s" was rewritten by Git Bash, which turns a leading / into a Windows path (also after =)`,
+					w,
+				).
 					WithHint("run the command again with MSYS_NO_PATHCONV=1 in front of it, or from PowerShell or cmd")
 			}
 		}
@@ -69,8 +73,12 @@ func validateCommand(words []string, given bool) *clierr.Error {
 	}
 	for i, w := range words {
 		if w == "" {
-			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-				"invalid command: word %d is empty; the platform drops empty command words, which would shift the ones after it", i+1)
+			return clierr.New(
+				clierr.CodeInvalidInput,
+				clierr.KindInvalidInput,
+				"invalid command: word %d is empty; the platform drops empty command words, which would shift the ones after it",
+				i+1,
+			)
 		}
 	}
 	if strings.HasPrefix(words[0], "-") {
@@ -93,7 +101,11 @@ func warnCommand(w io.Writer, cmd *cobra.Command, words []string) {
 		return
 	}
 	if first := words[0]; strings.ContainsAny(first, " \t\n") {
-		fmt.Fprintf(w, "warning: the command's first word \"%s\" contains a space, so it runs as one program name; give the program and its arguments as separate words (-- sleep 2147483647, not -- \"sleep 2147483647\"); unlike cg ssh, there is no shell\n", first)
+		fmt.Fprintf(
+			w,
+			"warning: the command's first word \"%s\" contains a space, so it runs as one program name; give the program and its arguments as separate words (-- sleep 2147483647, not -- \"sleep 2147483647\"); unlike cg ssh, there is no shell\n",
+			first,
+		)
 	}
 	own := commandFlagNames(cmd)
 	var hits []string
@@ -104,7 +116,11 @@ func warnCommand(w io.Writer, cmd *cobra.Command, words []string) {
 		}
 	}
 	if len(hits) > 0 {
-		fmt.Fprintf(w, "warning: %s after -- went into the container command, not to saladcloud; put saladcloud's own flags before --\n", quoteList(hits))
+		fmt.Fprintf(
+			w,
+			"warning: %s after -- went into the container command, not to saladcloud; put saladcloud's own flags before --\n",
+			quoteList(hits),
+		)
 	}
 }
 

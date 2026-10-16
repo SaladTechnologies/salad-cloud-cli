@@ -15,10 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -63,7 +62,8 @@ func addWaitFlags(cmd *cobra.Command, goal string) {
 // failure that quietly teaches people to ignore it. See Settled decisions in AGENTS.md.
 func addSettleFlags(cmd *cobra.Command) {
 	cmd.Flags().Bool("no-wait", false, "return once the API accepts the patch: no settle wait, no verification")
-	cmd.Flags().Duration("timeout", settleDefaultTimeout, "give up verifying the change after this long (exit 1; the patch was already accepted)")
+	cmd.Flags().
+		Duration("timeout", settleDefaultTimeout, "give up verifying the change after this long (exit 1; the patch was already accepted)")
 }
 
 // settleFlagValues reads --no-wait/--timeout for a settle-by-default verb.
@@ -73,7 +73,12 @@ func settleFlagValues(cmd *cobra.Command) (bool, time.Duration, *clierr.Error) {
 	noWait, _ := cmd.Flags().GetBool("no-wait")
 	timeout, _ := cmd.Flags().GetDuration("timeout")
 	if !noWait && timeout <= 0 {
-		return false, 0, clierr.New(clierr.CodeUsage, clierr.KindUsage, "--timeout must be greater than zero (got %s)", timeout)
+		return false, 0, clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			"--timeout must be greater than zero (got %s)",
+			timeout,
+		)
 	}
 	return !noWait, timeout, nil
 }
@@ -84,7 +89,12 @@ func waitFlagValues(cmd *cobra.Command) (bool, time.Duration, *clierr.Error) {
 	wait, _ := cmd.Flags().GetBool("wait")
 	timeout, _ := cmd.Flags().GetDuration("timeout")
 	if wait && timeout <= 0 {
-		return false, 0, clierr.New(clierr.CodeUsage, clierr.KindUsage, "--timeout must be greater than zero (got %s)", timeout)
+		return false, 0, clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			"--timeout must be greater than zero (got %s)",
+			timeout,
+		)
 	}
 	return wait, timeout, nil
 }
@@ -116,7 +126,14 @@ const progressRepeat = time.Minute
 // cannot fix them. In table mode a progress line is written whenever the
 // observed status or instance counts change, and repeated every
 // progressRepeat while they do not; json mode prints no progress.
-func waitForGroup(ctx context.Context, d waitDeps, group, goal string, done func(*shared.ContainerGroup) bool, abort func(*shared.ContainerGroup) *clierr.Error, timeout, poll time.Duration) (*shared.ContainerGroup, *clierr.Error) {
+func waitForGroup(
+	ctx context.Context,
+	d waitDeps,
+	group, goal string,
+	done func(*shared.ContainerGroup) bool,
+	abort func(*shared.ContainerGroup) *clierr.Error,
+	timeout, poll time.Duration,
+) (*shared.ContainerGroup, *clierr.Error) {
 	stderr := d.progress
 	if stderr == nil {
 		stderr = os.Stderr
@@ -181,7 +198,13 @@ func waitForGroup(ctx context.Context, d waitDeps, group, goal string, done func
 
 // waitForGroupStatus is waitForGroup with the goal "status == target",
 // aborting early per abortUnreachable.
-func waitForGroupStatus(ctx context.Context, d waitDeps, group, target string, fromActive bool, timeout, poll time.Duration) (*shared.ContainerGroup, *clierr.Error) {
+func waitForGroupStatus(
+	ctx context.Context,
+	d waitDeps,
+	group, target string,
+	fromActive bool,
+	timeout, poll time.Duration,
+) (*shared.ContainerGroup, *clierr.Error) {
 	return waitForGroup(ctx, d, group, "be "+target,
 		func(g *shared.ContainerGroup) bool { return groupStatus(g) == target },
 		abortUnreachable(group, target, fromActive), timeout, poll)
@@ -291,7 +314,14 @@ func liveWaitDeps(client *api.Client, group string) waitDeps {
 // stdout line says it); abort (may be nil) ends the wait early.
 // The caller emits its stdout payload only after this returns nil error —
 // see the package comment for why.
-func runGroupWait(cmd *cobra.Command, client *api.Client, group, goal, doneMsg string, done func(*shared.ContainerGroup) bool, abort func(*shared.ContainerGroup) *clierr.Error, timeout time.Duration) (*shared.ContainerGroup, error) {
+func runGroupWait(
+	cmd *cobra.Command,
+	client *api.Client,
+	group, goal, doneMsg string,
+	done func(*shared.ContainerGroup) bool,
+	abort func(*shared.ContainerGroup) *clierr.Error,
+	timeout time.Duration,
+) (*shared.ContainerGroup, error) {
 	ctx := cmd.Context() // cancelled by the one signal handler in Execute
 	start := time.Now()
 	final, cerr := waitForGroup(ctx, liveWaitDeps(client, group), group, goal, done, abort, timeout, waitPoll)
@@ -306,7 +336,13 @@ func runGroupWait(cmd *cobra.Command, client *api.Client, group, goal, doneMsg s
 
 // runStatusWait is runGroupWait for the common "status == target" goal,
 // aborting early per abortUnreachable.
-func runStatusWait(cmd *cobra.Command, client *api.Client, group, target string, fromActive bool, timeout time.Duration) (*shared.ContainerGroup, error) {
+func runStatusWait(
+	cmd *cobra.Command,
+	client *api.Client,
+	group, target string,
+	fromActive bool,
+	timeout time.Duration,
+) (*shared.ContainerGroup, error) {
 	final, err := runGroupWait(cmd, client, group, "be "+target, "is "+target,
 		func(g *shared.ContainerGroup) bool { return groupStatus(g) == target },
 		abortUnreachable(group, target, fromActive), timeout)
@@ -346,5 +382,10 @@ func readinessNote(group string, instances []containergroups.ContainerGroupInsta
 	if ready == running {
 		return ""
 	}
-	return fmt.Sprintf("note: %d of %d running instances ready (the readiness probe is not passing yet); to list them, run saladcloud container-groups instances list -c %s", ready, running, group)
+	return fmt.Sprintf(
+		"note: %d of %d running instances ready (the readiness probe is not passing yet); to list them, run saladcloud container-groups instances list -c %s",
+		ready,
+		running,
+		group,
+	)
 }

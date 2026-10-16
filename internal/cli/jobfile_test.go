@@ -46,7 +46,13 @@ func TestLoadJobFileShapeHint(t *testing.T) {
 				return
 			}
 			if cerr.Code != clierr.CodeInvalidInput || cerr.Kind != clierr.KindUnknownField {
-				t.Errorf("code/kind = %d/%s, want %d/%s", cerr.Code, cerr.Kind, clierr.CodeInvalidInput, clierr.KindUnknownField)
+				t.Errorf(
+					"code/kind = %d/%s, want %d/%s",
+					cerr.Code,
+					cerr.Kind,
+					clierr.CodeInvalidInput,
+					clierr.KindUnknownField,
+				)
 			}
 			if !strings.HasPrefix(cerr.Message, "cannot use ") || !strings.Contains(cerr.Message, "unknown field") {
 				t.Errorf("message start changed: %q", cerr.Message)
@@ -67,11 +73,16 @@ func TestLoadJobFileShapeHint(t *testing.T) {
 
 	// inference jobs create loads its prototype the same way.
 	var inf inferenceendpoints.InferenceEndpointJobPrototype
-	if cerr := loadJobFile(write("inf-ok.json", `{"input": {"url": "https://example.com/a.wav"}}`), &inf); cerr != nil || inf.Input == nil {
+	if cerr := loadJobFile(
+		write("inf-ok.json", `{"input": {"url": "https://example.com/a.wav"}}`),
+		&inf,
+	); cerr != nil ||
+		inf.Input == nil {
 		t.Errorf("valid inference job: err %v, input %v", cerr, inf.Input)
 	}
 	cerr := loadJobFile(write("inf-bare.json", `{"url": "https://example.com/a.wav"}`), &inf)
-	if cerr == nil || cerr.Kind != clierr.KindUnknownField || !strings.Contains(cerr.HintText(), `put your fields under "input"`) {
+	if cerr == nil || cerr.Kind != clierr.KindUnknownField ||
+		!strings.Contains(cerr.HintText(), `put your fields under "input"`) {
 		t.Errorf("bare inference input: %v", cerr)
 	}
 }

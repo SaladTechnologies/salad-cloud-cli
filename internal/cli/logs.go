@@ -7,10 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/logs"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -106,20 +105,23 @@ project-wide forms and how --since, --until and --follow behave.`,
 func addLogsFlags(c *cobra.Command) {
 	c.Flags().String("since", "15m", "start of the time range: duration (15m, 2h, 3d), RFC3339 timestamp, or date")
 	c.Flags().String("until", "", "end of the time range (same forms as --since; default now; conflicts with --follow)")
-	c.Flags().String("instance", "", "only logs from this instance (full ID; a unique prefix also works when a container group is given)")
+	c.Flags().
+		String("instance", "", "only logs from this instance (full ID; a unique prefix also works when a container group is given)")
 	c.Flags().String("severity", "", "minimum severity: "+strings.Join(logsq.Severities, "|"))
 	c.Flags().String("filter", "", "only logs containing this substring (text or JSON)")
 	c.Flags().String("query", "", "raw log query-language expression, ANDed onto the generated query")
 	c.Flags().BoolP("follow", "f", false, "stream new log entries until interrupted")
 	c.Flags().Duration("poll-interval", logsq.DefaultPoll, "how often to poll for new entries with --follow (min 2s)")
-	c.Flags().Duration("lookback", logsq.DefaultLookback, "with --follow, how far behind the newest seen log time each poll re-scans for late-arriving entries")
+	c.Flags().
+		Duration("lookback", logsq.DefaultLookback, "with --follow, how far behind the newest seen log time each poll re-scans for late-arriving entries")
 	c.Flags().Int("page-size", 100, "entries per API request (1-100)")
 }
 
 func init() {
 	addLogsFlags(logsCmd)
 	logsCmd.Flags().StringP("container-group", "c", "", "only this container group's logs (in the current project)")
-	logsCmd.Flags().String("project", "", "only this project's logs; unlike other commands, the saved project and SALAD_PROJECT do not narrow logs")
+	logsCmd.Flags().
+		String("project", "", "only this project's logs; unlike other commands, the saved project and SALAD_PROJECT do not narrow logs")
 	annotate(logsCmd, annotationFlagForArg, "container-group")
 	addLogsFlags(containerGroupLogsCmd)
 	addHiddenGroupFlag(containerGroupLogsCmd)
@@ -155,7 +157,13 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--until cannot be combined with --follow")
 	}
 	if pollInterval < logsq.MinPoll {
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--poll-interval must be at least %s (got %s)", logsq.MinPoll, pollInterval)
+		return clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			"--poll-interval must be at least %s (got %s)",
+			logsq.MinPoll,
+			pollInterval,
+		)
 	}
 	if cmd.Flags().Changed("lookback") && !follow {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--lookback only applies with --follow")
@@ -164,7 +172,12 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--lookback must be positive (got %s)", lookback)
 	}
 	if pageSize < 1 || pageSize > 100 {
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--page-size must be between 1 and 100 (got %d)", pageSize)
+		return clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			"--page-size must be between 1 and 100 (got %d)",
+			pageSize,
+		)
 	}
 	if instance != "" && !isUUID(instance) && group == "" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage,

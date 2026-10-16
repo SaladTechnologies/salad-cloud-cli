@@ -48,7 +48,13 @@ func init() {
 				if err := output.Emit(orgs, func(w io.Writer) {
 					fmt.Fprintln(w, "NAME\tDISPLAY NAME\tCREATED")
 					for _, o := range orgs.Items {
-						fmt.Fprintf(w, "%s\t%s\t%s\n", ptr.Deref(o.OrganizationName), ptr.Deref(o.DisplayName), timeCell(o.CreateTime))
+						fmt.Fprintf(
+							w,
+							"%s\t%s\t%s\n",
+							ptr.Deref(o.OrganizationName),
+							ptr.Deref(o.DisplayName),
+							timeCell(o.CreateTime),
+						)
 					}
 				}); err != nil {
 					return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)

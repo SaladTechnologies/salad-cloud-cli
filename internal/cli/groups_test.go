@@ -48,8 +48,14 @@ func TestValidateCreateRequestMissingFields(t *testing.T) {
 		{"container.image", func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Image = nil }},
 		{"container.image", func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Image = ptr.To("") }},
 		{"container.resources", func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Resources = nil }},
-		{"container.resources.cpu", func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Resources.Cpu = nil }},
-		{"container.resources.memory", func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Resources.Memory = nil }},
+		{
+			"container.resources.cpu",
+			func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Resources.Cpu = nil },
+		},
+		{
+			"container.resources.memory",
+			func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Resources.Memory = nil },
+		},
 		{"replicas", func(r *containergroups.ContainerGroupCreationRequest) { r.Replicas = nil }},
 		{"restart_policy", func(r *containergroups.ContainerGroupCreationRequest) { r.RestartPolicy = nil }},
 		{"autostart_policy", func(r *containergroups.ContainerGroupCreationRequest) { r.AutostartPolicy = nil }},
@@ -98,7 +104,8 @@ func TestScheduledScalingString(t *testing.T) {
 			`enabled (1 action: 5 replicas @ "0 0 * * *")`,
 		},
 		{
-			"enabled with four actions caps at three", ptr.To(true),
+			"enabled with four actions caps at three",
+			ptr.To(true),
 			[]shared.ContainerGroupScalingAction{
 				scalingAction(1, "0 1 * * *"), scalingAction(2, "0 2 * * *"),
 				scalingAction(3, "0 3 * * *"), scalingAction(4, "0 4 * * *"),
@@ -211,7 +218,13 @@ func TestScheduledScalingResetStillWarns(t *testing.T) {
 		wantWarn bool
 	}{
 		{"unrelated patch flips the flag off", group(true), group(false), `{"replicas": 3}`, true},
-		{"patch that names the field is deliberate", group(true), group(false), `{"scheduled-scaling-enabled": false}`, false},
+		{
+			"patch that names the field is deliberate",
+			group(true),
+			group(false),
+			`{"scheduled-scaling-enabled": false}`,
+			false,
+		},
 		{"flag stayed on", group(true), group(true), `{"replicas": 3}`, false},
 		{"was already off", group(false), group(false), `{"replicas": 3}`, false},
 		{"pre-state unknown", nil, group(false), `{"replicas": 3}`, false},

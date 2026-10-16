@@ -91,7 +91,8 @@ func TestKindCallSites(t *testing.T) {
 			// Hidden directories hold other checkouts (.claude/worktrees)
 			// and tooling, not this module's code; go ./... skips them too.
 			name := d.Name()
-			if path != moduleRoot && (strings.HasPrefix(name, ".") || name == "dist" || name == "vendor" || name == "node_modules") {
+			if path != moduleRoot &&
+				(strings.HasPrefix(name, ".") || name == "dist" || name == "vendor" || name == "node_modules") {
 				return filepath.SkipDir
 			}
 			return nil

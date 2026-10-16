@@ -178,7 +178,11 @@ config set says so.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			key, value := args[0], args[1]
 			if isSecretKey(key) && value != "-" {
-				fmt.Fprintf(errw(), "warning: a key passed as an argument is exposed on the command line; pipe it to saladcloud config set %s - instead\n", key)
+				fmt.Fprintf(
+					errw(),
+					"warning: a key passed as an argument is exposed on the command line; pipe it to saladcloud config set %s - instead\n",
+					key,
+				)
 			}
 			if value == "-" && isSecretKey(key) {
 				// Hidden whenever stdin is a terminal, as the logins read
@@ -188,13 +192,18 @@ config set says so.`,
 				var err error
 				if con.Terminal() {
 					if line, err = con.ReadHidden(); err != nil {
-						return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "config set cancelled, nothing changed")
+						return clierr.New(
+							clierr.CodeGeneric,
+							clierr.KindInterrupted,
+							"config set cancelled, nothing changed",
+						)
 					}
 				} else {
 					line, err = readLine(bufio.NewReader(os.Stdin))
 				}
 				if err != nil || line == "" {
-					return clierr.New(clierr.CodeUsage, clierr.KindUsage, "no %s value on stdin", key).WithHint("pipe the key in")
+					return clierr.New(clierr.CodeUsage, clierr.KindUsage, "no %s value on stdin", key).
+						WithHint("pipe the key in")
 				}
 				value = line
 			}
@@ -232,7 +241,13 @@ config set says so.`,
 				return wrapErr(err)
 			}
 			if carried {
-				fmt.Fprintf(errw(), "warning: the saved project \"%s\" was saved with %s and now applies to %s\n", shownName(f.Project), shownName(oldOrg), value)
+				fmt.Fprintf(
+					errw(),
+					"warning: the saved project \"%s\" was saved with %s and now applies to %s\n",
+					shownName(f.Project),
+					shownName(oldOrg),
+					value,
+				)
 				hintLine("to switch both, run saladcloud use %s/<project>", value)
 			}
 			warnOverrides(errw(), afterSave, ovs)

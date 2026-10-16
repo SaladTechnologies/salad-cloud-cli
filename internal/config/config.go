@@ -233,7 +233,13 @@ func ResolveFrom(f File, orgFlag, projectFlag string) Resolved {
 	// Names are trimmed: a variable sourced from a Windows-saved file can
 	// end in a carriage return. Keys are trimmed where they are used.
 	name := func(flagVal, envName, fileVal string) (string, string) {
-		flagVal, envVal, fileVal := strings.TrimSpace(flagVal), strings.TrimSpace(os.Getenv(envName)), strings.TrimSpace(fileVal)
+		flagVal, envVal, fileVal := strings.TrimSpace(
+			flagVal,
+		), strings.TrimSpace(
+			os.Getenv(envName),
+		), strings.TrimSpace(
+			fileVal,
+		)
 		switch {
 		case flagVal != "":
 			return flagVal, "flag"

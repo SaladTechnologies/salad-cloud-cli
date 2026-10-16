@@ -19,7 +19,13 @@ func TestValidateCommand(t *testing.T) {
 	}{
 		{"no --", nil, false, 0, ""},
 		{"a plain command", []string{"sleep", "infinity"}, true, 0, ""},
-		{"a shell script with nested quotes", []string{"bash", "-c", `echo "hi there"; exec python app.py --port "$PORT"`}, true, 0, ""},
+		{
+			"a shell script with nested quotes",
+			[]string{"bash", "-c", `echo "hi there"; exec python app.py --port "$PORT"`},
+			true,
+			0,
+			"",
+		},
 		{"padded words pass (the node trims them)", []string{"bash", "-c", " echo hi\n"}, true, 0, ""},
 		{"nothing after --", []string{}, true, clierr.CodeUsage, "nothing after --"},
 		{"an empty word", []string{"python", "app.py", "--name", ""}, true, clierr.CodeInvalidInput, "word 4 is empty"},
@@ -52,7 +58,11 @@ func TestValidateCommandGitBash(t *testing.T) {
 	}
 	t.Setenv("MSYSTEM", "MINGW64")
 	for _, words := range [][]string{rewritten, {"configure", "--prefix=C:/Program-Files/Git/usr"}} {
-		if cerr := validateCommand(words, true); cerr == nil || cerr.Code != clierr.CodeUsage || !strings.Contains(cerr.Message, "rewritten by Git Bash") {
+		if cerr := validateCommand(
+			words,
+			true,
+		); cerr == nil || cerr.Code != clierr.CodeUsage ||
+			!strings.Contains(cerr.Message, "rewritten by Git Bash") {
 			t.Errorf("%q under Git Bash: %v", words, cerr)
 		}
 	}

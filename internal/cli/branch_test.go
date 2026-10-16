@@ -79,7 +79,8 @@ func runBranches(t *testing.T, cases []branchCase) {
 				if tc.jsonHint != "" {
 					hint = tc.jsonHint
 				}
-				if doc["kind"] != tc.kind || atJ(fmt.Sprint(doc["message"])) != msg || atJ(fmt.Sprint(doc["hint"])) != hint {
+				if doc["kind"] != tc.kind || atJ(fmt.Sprint(doc["message"])) != msg ||
+					atJ(fmt.Sprint(doc["hint"])) != hint {
 					t.Errorf("json error %v; want kind %s, message %q, hint %q", doc, tc.kind, msg, hint)
 				}
 				var status any

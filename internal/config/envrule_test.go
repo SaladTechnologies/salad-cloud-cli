@@ -78,7 +78,8 @@ func ruleFiles(t *testing.T, root string) []string {
 		}
 		name := d.Name()
 		if d.IsDir() {
-			if path != root && (strings.HasPrefix(name, ".") && name != ".github" || name == "dist" || name == "vendor" || name == "completions") {
+			if path != root &&
+				(strings.HasPrefix(name, ".") && name != ".github" || name == "dist" || name == "vendor" || name == "completions") {
 				return filepath.SkipDir
 			}
 			return nil

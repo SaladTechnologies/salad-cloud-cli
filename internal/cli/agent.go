@@ -97,7 +97,13 @@ func runAgentInit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		if errors.Is(err, agentdoc.ErrMalformed) {
 			reason := strings.TrimPrefix(err.Error(), agentdoc.ErrMalformed.Error()+": ")
-			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "%s: malformed SaladCloud block: %s", target.Path, reason)
+			return clierr.New(
+				clierr.CodeInvalidInput,
+				clierr.KindInvalidInput,
+				"%s: malformed SaladCloud block: %s",
+				target.Path,
+				reason,
+			)
 		}
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%s: %v", target.Path, err)
 	}
@@ -110,7 +116,13 @@ func runAgentInit(cmd *cobra.Command, args []string) error {
 	}
 	if created || changed {
 		if err := os.MkdirAll(filepath.Dir(target.Path), 0o755); err != nil {
-			return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot create the folder for %s: %v", target.Path, err)
+			return clierr.New(
+				clierr.CodeGeneric,
+				clierr.KindAPIError,
+				"cannot create the folder for %s: %v",
+				target.Path,
+				err,
+			)
 		}
 		if err := os.WriteFile(target.Path, []byte(out), 0o644); err != nil {
 			return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write %s: %v", target.Path, err)

@@ -109,7 +109,12 @@ func TestWritableDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if unknowns := input.UnknownFieldList(b, reflect.TypeOf(containergroups.ContainerGroupPatch{})); len(unknowns) != 0 {
+	if unknowns := input.UnknownFieldList(
+		b,
+		reflect.TypeOf(containergroups.ContainerGroupPatch{}),
+	); len(
+		unknowns,
+	) != 0 {
 		t.Errorf("writable document is not a clean patch: %+v", unknowns)
 	}
 }

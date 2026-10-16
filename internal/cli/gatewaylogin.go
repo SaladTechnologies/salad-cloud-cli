@@ -57,7 +57,8 @@ behave as if there is no terminal.`,
 		Args: cobra.NoArgs,
 		RunE: runGatewayLogin,
 	}
-	cmd.Flags().String("api-key", "", "the AI Gateway key; - reads it from the first line of stdin (a key typed here is exposed on the command line)")
+	cmd.Flags().
+		String("api-key", "", "the AI Gateway key; - reads it from the first line of stdin (a key typed here is exposed on the command line)")
 	return cmd
 }
 
@@ -157,7 +158,12 @@ func runGatewayLogin(cmd *cobra.Command, args []string) error {
 // Ctrl-C during the check.
 func (g *gatewayLogin) cancelled() *clierr.Error {
 	if g.saved.GatewayAPIKey != "" {
-		return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "ai-gateway login cancelled, your saved AI Gateway key (%s) is unchanged", maskAPIKey(g.saved.GatewayAPIKey))
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindInterrupted,
+			"ai-gateway login cancelled, your saved AI Gateway key (%s) is unchanged",
+			maskAPIKey(g.saved.GatewayAPIKey),
+		)
 	}
 	return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "ai-gateway login cancelled, nothing changed")
 }
@@ -171,7 +177,8 @@ func (g *gatewayLogin) failed(cerr *clierr.Error) *clierr.Error {
 		return g.cancelled()
 	case cerr.HTTPStatus != nil && *cerr.HTTPStatus == http.StatusForbidden:
 		return clierr.New(clierr.CodeAuth, clierr.KindAuth, "AI Gateway key %s%s has no AI Gateway access", maskAPIKey(g.key), fromTag(g.keyFrom)).
-			WithStatus(http.StatusForbidden).WithHint("check that you are still a member of its organization; if you are, contact support")
+			WithStatus(http.StatusForbidden).
+			WithHint("check that you are still a member of its organization; if you are, contact support")
 	case cerr.Code == clierr.CodeRateLimited:
 		return cerr.WithHint("nothing was saved; run saladcloud ai-gateway login again in a minute")
 	}
@@ -200,14 +207,18 @@ func (g *gatewayLogin) check() *clierr.Error {
 // keyInvalid is the error for a named key the gateway rejected, with the
 // fix for where it came from.
 func (g *gatewayLogin) keyInvalid() *clierr.Error {
-	e := clierr.New(clierr.CodeAuth, clierr.KindAuth, "AI Gateway key %s%s is invalid", maskAPIKey(g.key), fromTag(g.keyFrom)).WithStatus(http.StatusUnauthorized)
+	e := clierr.New(clierr.CodeAuth, clierr.KindAuth, "AI Gateway key %s%s is invalid", maskAPIKey(g.key), fromTag(g.keyFrom)).
+		WithStatus(http.StatusUnauthorized)
 	switch {
 	case quotedKey(g.key):
 		return e.WithHint("remove the quotes around it")
 	case g.keyFrom != envGatewayKey:
 		return e.WithHint("get one at %s", gatewayKeyPage)
 	case g.saved.GatewayAPIKey != "" && g.saved.GatewayAPIKey != g.key:
-		return e.WithHint("remove SALAD_AI_GATEWAY_API_KEY to use the saved AI Gateway key (%s), or set it to a working key", maskAPIKey(g.saved.GatewayAPIKey))
+		return e.WithHint(
+			"remove SALAD_AI_GATEWAY_API_KEY to use the saved AI Gateway key (%s), or set it to a working key",
+			maskAPIKey(g.saved.GatewayAPIKey),
+		)
 	}
 	return e.WithHint("set SALAD_AI_GATEWAY_API_KEY to a working key, or remove it and run saladcloud ai-gateway login")
 }
@@ -264,15 +275,25 @@ func (g *gatewayLogin) result(saved bool, path string, ovs []override) gatewayLo
 		source = "env"
 	}
 	return gatewayLoginResult{
-		Models: g.models, GatewayKey: maskAPIKey(g.key), KeySource: source, KeySaved: saved, CreditsAvailable: g.credits,
-		EnvOverrides: overrideNames(ovs), ConfigPath: path, Action: "logged_in", OK: true,
+		Models:           g.models,
+		GatewayKey:       maskAPIKey(g.key),
+		KeySource:        source,
+		KeySaved:         saved,
+		CreditsAvailable: g.credits,
+		EnvOverrides:     overrideNames(ovs),
+		ConfigPath:       path,
+		Action:           "logged_in",
+		OK:               true,
 	}
 }
 
 // warnNoCredits is the warning and hint for a working key whose
 // organization is out of credits; it replaces the try-it hint.
 func (g *gatewayLogin) warnNoCredits() {
-	fmt.Fprintln(errw(), "warning: the key's organization is out of credits, so AI Gateway requests are rejected until you add some")
+	fmt.Fprintln(
+		errw(),
+		"warning: the key's organization is out of credits, so AI Gateway requests are rejected until you add some",
+	)
 	hintLine("add credits from the organization's AI Gateway page: %s", gatewayKeyPage)
 }
 
@@ -311,7 +332,10 @@ func (g *gatewayLogin) reportUnsaved() error {
 	path, _ := config.Path()
 	say("No AI Gateway key provided, using SALAD_AI_GATEWAY_API_KEY (%s).", maskAPIKey(g.key))
 	if err := output.Emit(g.result(false, path, nil), func(w io.Writer) {
-		fmt.Fprintln(w, "The AI Gateway key works. It is not saved, so it works only where SALAD_AI_GATEWAY_API_KEY is set.")
+		fmt.Fprintln(
+			w,
+			"The AI Gateway key works. It is not saved, so it works only where SALAD_AI_GATEWAY_API_KEY is set.",
+		)
 	}); err != nil {
 		return wrapErr(err)
 	}
@@ -345,7 +369,12 @@ type gatewayLogoutResult struct {
 func runGatewayLogout(cmd *cobra.Command, args []string) error {
 	path, err := config.Path()
 	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err))
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot find a folder for the config file: %s",
+			config.Reason(err),
+		)
 	}
 	f, err := config.Load()
 	if err != nil {

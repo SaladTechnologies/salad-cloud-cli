@@ -30,7 +30,8 @@ func SetMode(m string) error {
 		mode = m
 		return nil
 	default:
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --output "%s"`, m).WithHint("use table, json or yaml")
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --output "%s"`, m).
+			WithHint("use table, json or yaml")
 	}
 }
 

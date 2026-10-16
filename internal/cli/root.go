@@ -77,7 +77,8 @@ stderr as a single-line JSON document: {"error": {...}}, in yaml mode too.
 		case "body":
 			api.SetDebug(api.DebugBodies)
 		default:
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --debug "%s"`, d).WithHint("use --debug or --debug=body")
+			return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --debug "%s"`, d).
+				WithHint("use --debug or --debug=body")
 		}
 		return rejectShadowed(cmd)
 	},
@@ -86,10 +87,13 @@ stderr as a single-line JSON document: {"error": {...}}, in yaml mode too.
 func init() {
 	rootCmd.AddCommand(containerGroupsCmd)
 	rootCmd.PersistentFlags().StringP("output", "o", "table", "output format: table|json|yaml")
-	rootCmd.PersistentFlags().String("org", "", "organization name as in the portal URL, not the display name (overrides SALAD_ORGANIZATION and the config file)")
-	rootCmd.PersistentFlags().String("debug", "", "print each API request (method, URL, status, duration) on stderr; --debug=body adds headers and bodies, credentials redacted")
+	rootCmd.PersistentFlags().
+		String("org", "", "organization name as in the portal URL, not the display name (overrides SALAD_ORGANIZATION and the config file)")
+	rootCmd.PersistentFlags().
+		String("debug", "", "print each API request (method, URL, status, duration) on stderr; --debug=body adds headers and bodies, credentials redacted")
 	rootCmd.PersistentFlags().Lookup("debug").NoOptDefVal = "requests"
-	rootCmd.PersistentFlags().String("project", "", "project name as in the portal URL, not the display name (overrides SALAD_PROJECT and the config file; with none set, \"default\" is used with a warning)")
+	rootCmd.PersistentFlags().
+		String("project", "", "project name as in the portal URL, not the display name (overrides SALAD_PROJECT and the config file; with none set, \"default\" is used with a warning)")
 	rootCmd.SetFlagErrorFunc(flagError)
 	// cobra's multi-line "Did you mean this?" block; withSuggestions gives
 	// the one-line form instead.
@@ -408,14 +412,18 @@ func readsOrg(cmd *cobra.Command) bool {
 // keyRejected is the run-time error for an API key the API rejected (401),
 // with the fix for where it came from.
 func keyRejected(key, from, saved string) *clierr.Error {
-	e := clierr.New(clierr.CodeAuth, clierr.KindAuth, "API key %s%s was rejected", maskAPIKey(key), fromTag(from)).WithStatus(http.StatusUnauthorized)
+	e := clierr.New(clierr.CodeAuth, clierr.KindAuth, "API key %s%s was rejected", maskAPIKey(key), fromTag(from)).
+		WithStatus(http.StatusUnauthorized)
 	switch {
 	case quotedKey(key):
 		return e.WithHint("remove the quotes around it")
 	case from != envAPIKey:
 		return e.WithHint("run saladcloud login to save a new key")
 	case saved != "" && saved != key:
-		return e.WithHint("remove SALAD_API_KEY to use the saved API key (%s), or set it to a working key", maskAPIKey(saved))
+		return e.WithHint(
+			"remove SALAD_API_KEY to use the saved API key (%s), or set it to a working key",
+			maskAPIKey(saved),
+		)
 	}
 	return e.WithHint("set SALAD_API_KEY to a working key, or remove it and run saladcloud login")
 }
@@ -426,7 +434,8 @@ func keyRejected(key, from, saved string) *clierr.Error {
 // lists your organizations.
 func organizationGone(ctx context.Context, res config.Resolved) *clierr.Error {
 	from := originOf(res.OrganizationSource, "--org", envOrganization)
-	e := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `organization "%s"%s not found`, res.Organization, fromTag(from)).WithStatus(http.StatusNotFound)
+	e := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `organization "%s"%s not found`, res.Organization, fromTag(from)).
+		WithStatus(http.StatusNotFound)
 	var names []string
 	if atTerminal() {
 		if c, cerr := api.New(config.Resolved{APIKey: res.APIKey}); cerr == nil {
@@ -466,8 +475,16 @@ func warnOnAssumedProject(c *api.Client, res config.Resolved) {
 // when its project is the "default" fallback rather than one that was set.
 func assumedProjectWarning(res config.Resolved) string {
 	if res.SkippedProject != "" {
-		return fmt.Sprintf(`warning: using project "%s": none was set for organization "%s" (the saved project "%s" is for "%s"); pass --project or set SALAD_PROJECT`,
-			res.Project, res.Organization, shownName(res.SkippedProject), shownName(res.SkippedProjectOrg))
+		return fmt.Sprintf(
+			`warning: using project "%s": none was set for organization "%s" (the saved project "%s" is for "%s"); pass --project or set SALAD_PROJECT`,
+			res.Project,
+			res.Organization,
+			shownName(res.SkippedProject),
+			shownName(res.SkippedProjectOrg),
+		)
 	}
-	return fmt.Sprintf(`warning: using project "%s" because none was set; pass --project or set SALAD_PROJECT to choose one`, res.Project)
+	return fmt.Sprintf(
+		`warning: using project "%s" because none was set; pass --project or set SALAD_PROJECT to choose one`,
+		res.Project,
+	)
 }

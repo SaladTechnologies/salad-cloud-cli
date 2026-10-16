@@ -34,9 +34,22 @@ func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
 		{"nothing set", nil, "", map[string]any{"url": "u"}},
 		{
 			"set flags, including an explicit false",
-			[]string{"--language-code", "de", "--diarization", "--sentence-level-timestamps=false", "--summarize", "100"},
+			[]string{
+				"--language-code",
+				"de",
+				"--diarization",
+				"--sentence-level-timestamps=false",
+				"--summarize",
+				"100",
+			},
 			"",
-			map[string]any{"url": "u", "language_code": "de", "diarization": true, "sentence_level_timestamps": false, "summarize": int64(100)},
+			map[string]any{
+				"url":                       "u",
+				"language_code":             "de",
+				"diarization":               true,
+				"sentence_level_timestamps": false,
+				"summarize":                 int64(100),
+			},
 		},
 		{
 			"input-extra wins over the flags",
@@ -53,7 +66,12 @@ func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
 				"--custom-vocabulary", "Salad", "--classification-labels", "a,b",
 			},
 			"",
-			map[string]any{"url": "u", "llm_translation": "german,french", "custom_vocabulary": "Salad", "classification_labels": "a,b"},
+			map[string]any{
+				"url":                   "u",
+				"llm_translation":       "german,french",
+				"custom_vocabulary":     "Salad",
+				"classification_labels": "a,b",
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -180,10 +198,20 @@ func TestTranscriptText(t *testing.T) {
 		t.Errorf("srt-missing error %q does not name srt_content", cerr.Message)
 	}
 	// Neither field: compact JSON of the whole output.
-	if got, cerr := transcriptText(map[string]any{"words": []any{"a"}}, false, false); cerr != nil || got != `{"words":["a"]}` {
+	if got, cerr := transcriptText(
+		map[string]any{"words": []any{"a"}},
+		false,
+		false,
+	); cerr != nil ||
+		got != `{"words":["a"]}` {
 		t.Errorf("transcriptText(no text) = %q, %v; want compact JSON", got, cerr)
 	} // --return-as-file prints the result URL; none is an error, not the text.
-	if got, cerr := transcriptText(map[string]any{"text": "t", "url": "https://r/x.json"}, false, true); cerr != nil || got != "https://r/x.json" {
+	if got, cerr := transcriptText(
+		map[string]any{"text": "t", "url": "https://r/x.json"},
+		false,
+		true,
+	); cerr != nil ||
+		got != "https://r/x.json" {
 		t.Errorf("transcriptText(file) = %q, %v; want the url", got, cerr)
 	}
 	if _, cerr := transcriptText(map[string]any{"text": "t"}, false, true); cerr == nil {

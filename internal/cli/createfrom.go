@@ -10,10 +10,9 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -29,18 +28,32 @@ func parseFromRef(ref string) (project, group string, cerr *clierr.Error) {
 	parts := strings.Split(ref, "/")
 	switch {
 	case len(parts) > 2:
-		return "", "", clierr.New(clierr.CodeUsage, clierr.KindUsage,
-			`invalid --from "%s"`, ref).WithHint("give <group> or <project>/<group>; --from stays within the organization")
+		return "", "", clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			`invalid --from "%s"`,
+			ref,
+		).WithHint("give <group> or <project>/<group>; --from stays within the organization")
 	case len(parts) == 2:
 		project, group = parts[0], parts[1]
 		if project == "" {
-			return "", "", clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --from "%s": the project before the / is empty`, ref)
+			return "", "", clierr.New(
+				clierr.CodeUsage,
+				clierr.KindUsage,
+				`invalid --from "%s": the project before the / is empty`,
+				ref,
+			)
 		}
 	default:
 		group = parts[0]
 	}
 	if group == "" {
-		return "", "", clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --from "%s": no container group named`, ref)
+		return "", "", clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			`invalid --from "%s": no container group named`,
+			ref,
+		)
 	}
 	return project, group, nil
 }
@@ -133,8 +146,11 @@ func noteRegistryCredentials(w io.Writer, fileRaw json.RawMessage, image string)
 			}
 		}
 	}
-	fmt.Fprintln(w, "note: registry credentials are never returned by the API, so they are not copied; for a private image, "+
-		"pass them with -f <file> holding container.registry_authentication")
+	fmt.Fprintln(
+		w,
+		"note: registry credentials are never returned by the API, so they are not copied; for a private image, "+
+			"pass them with -f <file> holding container.registry_authentication",
+	)
 }
 
 // loadFromBase builds create's base request for --from: the source group,

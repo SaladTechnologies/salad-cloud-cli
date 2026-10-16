@@ -198,7 +198,9 @@ func TestMarshalRequestKeepsSetEmpties(t *testing.T) {
 		Probe *nullable[fillInner] `json:"probe,omitempty"`
 		Null  *nullable[fillInner] `json:"null,omitempty"`
 	}
-	got := enc(probe{Probe: &nullable[fillInner]{Value: fillInner{Tags: []int{}}}, Null: &nullable[fillInner]{IsNull: true}})
+	got := enc(
+		probe{Probe: &nullable[fillInner]{Value: fillInner{Tags: []int{}}}, Null: &nullable[fillInner]{IsNull: true}},
+	)
 	if want := `{"probe":{"tags":[]},"null":null}`; got != want {
 		t.Errorf("through Nullable = %s, want %s", got, want)
 	}

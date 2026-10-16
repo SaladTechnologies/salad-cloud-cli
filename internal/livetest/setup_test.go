@@ -28,7 +28,13 @@ import (
 
 // setupVars are never inherited by a setup case; each case sets the ones
 // it is about.
-var setupVars = []string{"SALAD_API_KEY", "SALAD_ORGANIZATION", "SALAD_PROJECT", "SALAD_AI_GATEWAY_API_KEY", "SALAD_CLI_CONFIG_DIR"}
+var setupVars = []string{
+	"SALAD_API_KEY",
+	"SALAD_ORGANIZATION",
+	"SALAD_PROJECT",
+	"SALAD_AI_GATEWAY_API_KEY",
+	"SALAD_CLI_CONFIG_DIR",
+}
 
 // apiKey is the real API key this run holds, from SALAD_API_KEY.
 func apiKey() string { return os.Getenv("SALAD_API_KEY") }
@@ -202,7 +208,17 @@ func TestSetupLogin(t *testing.T) {
 			t.Fatalf("exit %d: %s", r.Code, r.Stderr)
 		}
 		same(t, "stdout", r.Stdout, fmt.Sprintf("Logged in: %s/%s\nConfig at: %s\n", org, project, d.path()))
-		same(t, "stderr", r.Stderr, fmt.Sprintf("API key: %s\nOrganization: %s (from --org)\nProject: %s (from --project)\n", mask(k), org, project))
+		same(
+			t,
+			"stderr",
+			r.Stderr,
+			fmt.Sprintf(
+				"API key: %s\nOrganization: %s (from --org)\nProject: %s (from --project)\n",
+				mask(k),
+				org,
+				project,
+			),
+		)
 		expect(t, "whoami after login", d.whoami(t, nil), map[string]any{
 			"saved_api_key": mask(k), "saved_organization": org, "saved_project": project,
 			"api_key_source": "config", "authenticated": true, "organization_found": true,
@@ -237,8 +253,17 @@ func TestSetupLogin(t *testing.T) {
 			t.Fatalf("exit %d: %s", r.Code, r.Stderr)
 		}
 		same(t, "stdout", r.Stdout, fmt.Sprintf("Logged in: %s/%s\nConfig at: %s\n", org, project, d.path()))
-		same(t, "stderr", r.Stderr, fmt.Sprintf("No API key provided, using SALAD_API_KEY (%s).\nOrganization: %s (from SALAD_ORGANIZATION)\n", mask(k), org)+
-			projectLine+"The API key is not saved, so it works only where SALAD_API_KEY is set.\nhint: to save it, pipe it to saladcloud login --api-key -\n")
+		same(
+			t,
+			"stderr",
+			r.Stderr,
+			fmt.Sprintf(
+				"No API key provided, using SALAD_API_KEY (%s).\nOrganization: %s (from SALAD_ORGANIZATION)\n",
+				mask(k),
+				org,
+			)+
+				projectLine+"The API key is not saved, so it works only where SALAD_API_KEY is set.\nhint: to save it, pipe it to saladcloud login --api-key -\n",
+		)
 		expect(t, "whoami after login", d.whoami(t, nil), map[string]any{
 			"saved_api_key": nil, "saved_organization": org, "saved_project": project,
 		})
@@ -297,7 +322,12 @@ func TestSetupLogin(t *testing.T) {
 			}
 			tc.want["kind"], tc.want["http_status"] = "not_found", float64(404)
 			expect(t, "error", errorDoc(t, r), tc.want)
-			expect(t, "whoami after a failed login", d.whoami(t, nil), map[string]any{"saved_api_key": nil, "saved_organization": nil})
+			expect(
+				t,
+				"whoami after a failed login",
+				d.whoami(t, nil),
+				map[string]any{"saved_api_key": nil, "saved_organization": nil},
+			)
 		})
 	}
 }
@@ -316,10 +346,23 @@ func TestSetupUse(t *testing.T) {
 	}
 	hasDefault := r.Stdout == fmt.Sprintf("Switched to %s/default\n", org)
 	if hasDefault {
-		same(t, "use <org> stderr", r.Stderr, fmt.Sprintf("hint: no project named, so \"default\" is used; for another, run saladcloud use %s/<project>\n", org))
+		same(
+			t,
+			"use <org> stderr",
+			r.Stderr,
+			fmt.Sprintf(
+				"hint: no project named, so \"default\" is used; for another, run saladcloud use %s/<project>\n",
+				org,
+			),
+		)
 	} else {
 		same(t, "use <org> stdout", r.Stdout, fmt.Sprintf("Switched to %s, no project set\n", org))
-		same(t, "use <org> stderr", r.Stderr, fmt.Sprintf("Project \"default\" not found in %s. Create one later if needed.\n", org))
+		same(
+			t,
+			"use <org> stderr",
+			r.Stderr,
+			fmt.Sprintf("Project \"default\" not found in %s. Create one later if needed.\n", org),
+		)
 	}
 	r = d.run(t, nil, "", "use", org, "-o", "json")
 	if r.Code != 0 {
@@ -348,8 +391,16 @@ func TestSetupUse(t *testing.T) {
 	if r.Code != 0 {
 		t.Fatalf("use with SALAD_PROJECT set exit %d: %s", r.Code, r.Stderr)
 	}
-	same(t, "use with SALAD_PROJECT set, stderr", r.Stderr,
-		fmt.Sprintf("warning: commands will use SALAD_PROJECT (%s) instead of the project you just saved (%s)\n", other, project))
+	same(
+		t,
+		"use with SALAD_PROJECT set, stderr",
+		r.Stderr,
+		fmt.Sprintf(
+			"warning: commands will use SALAD_PROJECT (%s) instead of the project you just saved (%s)\n",
+			other,
+			project,
+		),
+	)
 	expect(t, "use with SALAD_PROJECT set", oneDoc(t, r), map[string]any{
 		"organization": org, "project": project, "env_overrides": []any{"SALAD_PROJECT"},
 	})
@@ -369,9 +420,21 @@ func TestSetupUse(t *testing.T) {
 	if r.Code != 4 {
 		t.Errorf("use of a missing organization exit %d, want 4: %s", r.Code, r.Stderr)
 	}
-	same(t, "use of a missing organization, stderr", r.Stderr,
-		fmt.Sprintf("saladcloud: error: organization \"%s\" not found\nhint: to list yours, run saladcloud orgs list\n", missing))
-	expect(t, "whoami after the misses", d.whoami(t, nil), map[string]any{"saved_organization": org, "saved_project": project})
+	same(
+		t,
+		"use of a missing organization, stderr",
+		r.Stderr,
+		fmt.Sprintf(
+			"saladcloud: error: organization \"%s\" not found\nhint: to list yours, run saladcloud orgs list\n",
+			missing,
+		),
+	)
+	expect(
+		t,
+		"whoami after the misses",
+		d.whoami(t, nil),
+		map[string]any{"saved_organization": org, "saved_project": project},
+	)
 }
 
 // TestSetupWhoami reports the saved context, and a rejected key without
@@ -402,7 +465,14 @@ func TestSetupWhoami(t *testing.T) {
 	if r.Code != 0 {
 		t.Fatalf("whoami table exit %d: %s", r.Code, r.Stderr)
 	}
-	if want := fmt.Sprintf("%s (from SALAD_API_KEY; saved: %s)", mask(badKey), mask(k)); !strings.Contains(r.Stdout, want) {
+	if want := fmt.Sprintf(
+		"%s (from SALAD_API_KEY; saved: %s)",
+		mask(badKey),
+		mask(k),
+	); !strings.Contains(
+		r.Stdout,
+		want,
+	) {
 		t.Errorf("whoami does not show %q:\n%s", want, r.Stdout)
 	}
 }
@@ -428,7 +498,12 @@ func TestSetupDoctor(t *testing.T) {
 			t.Errorf("doctor row %v passes with a hint: %v", row["name"], row["hint"])
 		}
 	}
-	same(t, "doctor rows", strings.Join(names, " "), "config api-reachable api-key organization project ai-gateway-api-key-present local-ssh-key-present")
+	same(
+		t,
+		"doctor rows",
+		strings.Join(names, " "),
+		"config api-reachable api-key organization project ai-gateway-api-key-present local-ssh-key-present",
+	)
 	pass := []string{"config", "api-key", "organization", "project"}
 	if os.Getenv("SALAD_CLI_API_BASE_URL") == "" {
 		pass = append(pass, "api-reachable")
@@ -443,7 +518,13 @@ func TestSetupDoctor(t *testing.T) {
 	if table.Code != 0 {
 		t.Fatalf("doctor table exit %d: %s", table.Code, table.Stderr)
 	}
-	if first, _, _ := strings.Cut(table.Stdout, "\n"); strings.Join(strings.Fields(first), " ") != "CHECK STATUS DETAIL" {
+	if first, _, _ := strings.Cut(
+		table.Stdout,
+		"\n",
+	); strings.Join(
+		strings.Fields(first),
+		" ",
+	) != "CHECK STATUS DETAIL" {
 		t.Errorf("doctor table header = %q", first)
 	}
 
@@ -457,8 +538,12 @@ func TestSetupDoctor(t *testing.T) {
 		switch row["name"] {
 		case "api-key":
 			expect(t, "doctor api-key row", row, map[string]any{
-				"status": "fail", "detail": fmt.Sprintf("%s (from SALAD_API_KEY) rejected", mask(badKey)),
-				"hint": fmt.Sprintf("remove SALAD_API_KEY to use the saved API key (%s), or set it to a working key", mask(k)),
+				"status": "fail",
+				"detail": fmt.Sprintf("%s (from SALAD_API_KEY) rejected", mask(badKey)),
+				"hint": fmt.Sprintf(
+					"remove SALAD_API_KEY to use the saved API key (%s), or set it to a working key",
+					mask(k),
+				),
 			})
 		case "organization", "project":
 			if row["status"] != "skip" {
@@ -470,7 +555,14 @@ func TestSetupDoctor(t *testing.T) {
 	expect(t, "doctor's error", errorDoc(t, r), map[string]any{
 		"kind": "api_error", "message": "1 check failed: api-key", "hint": "each failing row's hint says how to fix it",
 	})
-	if !strings.Contains(r.Stderr, fmt.Sprintf("warning: commands use SALAD_API_KEY (%s) instead of the saved API key (%s)", mask(badKey), mask(k))) {
+	if !strings.Contains(
+		r.Stderr,
+		fmt.Sprintf(
+			"warning: commands use SALAD_API_KEY (%s) instead of the saved API key (%s)",
+			mask(badKey),
+			mask(k),
+		),
+	) {
 		t.Errorf("doctor does not warn about the variable hiding the saved key:\n%s", r.Stderr)
 	}
 }
@@ -497,7 +589,17 @@ func TestSetupLogout(t *testing.T) {
 	if r.Code != 0 {
 		t.Fatalf("logout exit %d: %s", r.Code, r.Stderr)
 	}
-	same(t, "logout stdout", r.Stdout, fmt.Sprintf("Logged out: removed the saved API key (%s)\nOrganization and project stay saved: %s/%s\n", mask(k), org, project))
+	same(
+		t,
+		"logout stdout",
+		r.Stdout,
+		fmt.Sprintf(
+			"Logged out: removed the saved API key (%s)\nOrganization and project stay saved: %s/%s\n",
+			mask(k),
+			org,
+			project,
+		),
+	)
 	same(t, "logout stderr", r.Stderr, "")
 	expect(t, "whoami after logout", d.whoami(t, nil), map[string]any{
 		"saved_api_key": nil, "saved_organization": org, "saved_project": project,
@@ -507,7 +609,12 @@ func TestSetupLogout(t *testing.T) {
 		t.Fatalf("second logout exit %d: %s", r.Code, r.Stderr)
 	}
 	expect(t, "second logout", oneDoc(t, r), map[string]any{
-		"removed": false, "organization": org, "project": project, "env_overrides": []any{}, "action": "logged_out", "ok": true,
+		"removed":       false,
+		"organization":  org,
+		"project":       project,
+		"env_overrides": []any{},
+		"action":        "logged_out",
+		"ok":            true,
 	})
 
 	d = loggedIn(t)
@@ -516,7 +623,12 @@ func TestSetupLogout(t *testing.T) {
 	if r.Code != 0 {
 		t.Fatalf("logout with SALAD_API_KEY set exit %d: %s", r.Code, r.Stderr)
 	}
-	same(t, "logout with SALAD_API_KEY set, stderr", r.Stderr, fmt.Sprintf("warning: commands still use SALAD_API_KEY (%s)\n", mask(k)))
+	same(
+		t,
+		"logout with SALAD_API_KEY set, stderr",
+		r.Stderr,
+		fmt.Sprintf("warning: commands still use SALAD_API_KEY (%s)\n", mask(k)),
+	)
 	expect(t, "logout with SALAD_API_KEY set", oneDoc(t, r), map[string]any{
 		"removed": true, "organization": org, "project": project, "env_overrides": []any{"SALAD_API_KEY"},
 	})
@@ -530,7 +642,15 @@ func TestRunTimeRejectedKey(t *testing.T) {
 	rejected := fmt.Sprintf("API key %s (from %%s) was rejected", mask(badKey))
 
 	d := newCfg(t)
-	r := d.run(t, map[string]string{"SALAD_API_KEY": badKey, "SALAD_ORGANIZATION": org}, "", "quotas", "get", "-o", "json")
+	r := d.run(
+		t,
+		map[string]string{"SALAD_API_KEY": badKey, "SALAD_ORGANIZATION": org},
+		"",
+		"quotas",
+		"get",
+		"-o",
+		"json",
+	)
 	if r.Code != 3 {
 		t.Errorf("SALAD_API_KEY, none saved: exit %d, want 3", r.Code)
 	}
@@ -545,8 +665,16 @@ func TestRunTimeRejectedKey(t *testing.T) {
 	if r.Code != 3 {
 		t.Errorf("SALAD_API_KEY, another key saved: exit %d, want 3", r.Code)
 	}
-	same(t, "SALAD_API_KEY, another key saved, stderr", r.Stderr, "saladcloud: error: "+fmt.Sprintf(rejected, "SALAD_API_KEY")+"\n"+
-		fmt.Sprintf("hint: remove SALAD_API_KEY to use the saved API key (%s), or set it to a working key\n", mask(k)))
+	same(
+		t,
+		"SALAD_API_KEY, another key saved, stderr",
+		r.Stderr,
+		"saladcloud: error: "+fmt.Sprintf(rejected, "SALAD_API_KEY")+"\n"+
+			fmt.Sprintf(
+				"hint: remove SALAD_API_KEY to use the saved API key (%s), or set it to a working key\n",
+				mask(k),
+			),
+	)
 
 	d = newCfg(t)
 	if r := d.run(t, nil, badKey+"\n", "config", "set", "api-key", "-"); r.Code != 0 {
@@ -566,7 +694,10 @@ func TestRunTimeRejectedKey(t *testing.T) {
 func TestRunTimeMissingOrganization(t *testing.T) {
 	d := loggedIn(t)
 	missing := prefix + "-nope"
-	want := fmt.Sprintf("saladcloud: error: organization \"%s\" (from --org) not found\nhint: to list yours, run saladcloud orgs list\n", missing)
+	want := fmt.Sprintf(
+		"saladcloud: error: organization \"%s\" (from --org) not found\nhint: to list yours, run saladcloud orgs list\n",
+		missing,
+	)
 	for _, tc := range []struct {
 		args     []string
 		requests int
@@ -594,8 +725,14 @@ func TestRunTimeMissingOrganization(t *testing.T) {
 	}
 	r := d.run(t, nil, "", "container-groups", "list", "--org", missing, "--project", "default", "-o", "json")
 	expect(t, "-o json", errorDoc(t, r), map[string]any{
-		"exit_code": float64(4), "kind": "not_found", "http_status": float64(404),
-		"message": fmt.Sprintf("organization \"%s\" (from --org) not found", missing), "hint": "to list yours, run saladcloud orgs list",
+		"exit_code":   float64(4),
+		"kind":        "not_found",
+		"http_status": float64(404),
+		"message": fmt.Sprintf(
+			"organization \"%s\" (from --org) not found",
+			missing,
+		),
+		"hint": "to list yours, run saladcloud orgs list",
 	})
 }
 

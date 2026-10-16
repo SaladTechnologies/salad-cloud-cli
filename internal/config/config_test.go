@@ -57,7 +57,8 @@ func TestLoadCorruptFile(t *testing.T) {
 	// (every command loads the config, so a corrupt file blocks even
 	// `config set`).
 	var re *ReadError
-	if !errors.As(err, &re) || !re.Corrupt || !strings.Contains(err.Error(), "cannot read the config file "+filepath.Join(dir, "config.json")) {
+	if !errors.As(err, &re) || !re.Corrupt ||
+		!strings.Contains(err.Error(), "cannot read the config file "+filepath.Join(dir, "config.json")) {
 		t.Errorf("corrupt-file error %q, want a corrupt ReadError naming the file", err)
 	}
 }
@@ -84,7 +85,14 @@ func TestResolvePrecedence(t *testing.T) {
 		flagOrg             string
 		wantOrg, wantOrgSrc string
 	}{
-		{name: "flag beats env and config", fileOrg: "file-org", envOrg: "env-org", flagOrg: "flag-org", wantOrg: "flag-org", wantOrgSrc: "flag"},
+		{
+			name:       "flag beats env and config",
+			fileOrg:    "file-org",
+			envOrg:     "env-org",
+			flagOrg:    "flag-org",
+			wantOrg:    "flag-org",
+			wantOrgSrc: "flag",
+		},
 		{name: "env beats config", fileOrg: "file-org", envOrg: "env-org", wantOrg: "env-org", wantOrgSrc: "env"},
 		{name: "config used when flag and env unset", fileOrg: "file-org", wantOrg: "file-org", wantOrgSrc: "config"},
 		{name: "nothing set", wantOrg: "", wantOrgSrc: ""},
@@ -223,7 +231,11 @@ func TestSaveReplacesAtomically(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SALAD_CLI_CONFIG_DIR", dir)
 	p := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(p, []byte(`{"api_key":"old-key","organization":"old-org","project":"a-much-longer-old-project-name"}`), 0o600); err != nil {
+	if err := os.WriteFile(
+		p,
+		[]byte(`{"api_key":"old-key","organization":"old-org","project":"a-much-longer-old-project-name"}`),
+		0o600,
+	); err != nil {
 		t.Fatal(err)
 	}
 	before, err := os.Stat(p)

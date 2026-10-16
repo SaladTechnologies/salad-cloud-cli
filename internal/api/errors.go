@@ -160,9 +160,18 @@ var typeHints = map[string]struct{ msg, hint string }{
 		"the organization is out of credits",
 		"add credits at https://portal.salad.com; creating, starting or scaling workloads, inference and transcription all need them",
 	},
-	"created_replicas_quota_exceeded": {"the requested replica count exceeds the organization's replica quota", "to see the quota, run saladcloud quotas get"},
-	"replicas_quota_exceeded":         {"cannot start the group: its replica count exceeds the organization's replica quota", "to see the quota, run saladcloud quotas get"},
-	"updated_replicas_quota_exceeded": {"the new replica count exceeds the organization's replica quota", "to see the quota, run saladcloud quotas get"},
+	"created_replicas_quota_exceeded": {
+		"the requested replica count exceeds the organization's replica quota",
+		"to see the quota, run saladcloud quotas get",
+	},
+	"replicas_quota_exceeded": {
+		"cannot start the group: its replica count exceeds the organization's replica quota",
+		"to see the quota, run saladcloud quotas get",
+	},
+	"updated_replicas_quota_exceeded": {
+		"the new replica count exceeds the organization's replica quota",
+		"to see the quota, run saladcloud quotas get",
+	},
 	"name_conflict": {
 		"a container group with this name already exists in this project, or existed and was deleted",
 		"pick a different name; names are unique within the organization and project, and deleting a group does not release its name",

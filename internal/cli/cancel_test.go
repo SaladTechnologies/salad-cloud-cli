@@ -40,7 +40,8 @@ func TestCtrlCDuringARequest(t *testing.T) {
 				if err != nil {
 					t.Fatalf("%v:\n%s", err, o.stderr)
 				}
-				if doc["kind"] != "interrupted" || doc["message"] != tc.want || doc["hint"] != nil || doc["http_status"] != nil {
+				if doc["kind"] != "interrupted" || doc["message"] != tc.want || doc["hint"] != nil ||
+					doc["http_status"] != nil {
 					t.Errorf("error document = %v", doc)
 				}
 			})

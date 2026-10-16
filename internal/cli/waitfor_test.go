@@ -6,11 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/util"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
@@ -79,7 +78,13 @@ func runWait(t *testing.T, steps []waitStep, allowedSleeps int, timeout time.Dur
 
 // runWaitFrom is runWait with fromActive set by the caller (true is
 // create --wait: the create response was already pending).
-func runWaitFrom(t *testing.T, steps []waitStep, fromActive bool, allowedSleeps int, timeout time.Duration) (*clierr.Error, *waitHarness) {
+func runWaitFrom(
+	t *testing.T,
+	steps []waitStep,
+	fromActive bool,
+	allowedSleeps int,
+	timeout time.Duration,
+) (*clierr.Error, *waitHarness) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -224,7 +229,10 @@ func TestWaitProgressDedupsUnchangedLines(t *testing.T) {
 		t.Errorf("printed %d progress lines, want 2 (dedup on unchanged state):\n%s", n, got)
 	}
 	// Nonzero counts only, and the elapsed suffix present.
-	if !strings.Contains(got, `waiting for demo to be running: pending (instances: allocating 2, creating 1) (0s elapsed)`) {
+	if !strings.Contains(
+		got,
+		`waiting for demo to be running: pending (instances: allocating 2, creating 1) (0s elapsed)`,
+	) {
 		t.Errorf("first progress line missing or malformed:\n%s", got)
 	}
 	if strings.Contains(got, "running 0") || strings.Contains(got, "stopping 0") {
@@ -267,9 +275,21 @@ func TestReadinessNote(t *testing.T) {
 	}{
 		{"all ready", []containergroups.ContainerGroupInstance{inst(running, true), inst(running, true)}, ""},
 		{"none", nil, ""},
-		{"not running ignored", []containergroups.ContainerGroupInstance{inst(running, true), inst(creating, false)}, ""},
-		{"one not ready", []containergroups.ContainerGroupInstance{inst(running, true), inst(running, false)}, "note: 1 of 2 running instances ready"},
-		{"ready unknown", []containergroups.ContainerGroupInstance{{State: &running}}, "note: 0 of 1 running instances ready"},
+		{
+			"not running ignored",
+			[]containergroups.ContainerGroupInstance{inst(running, true), inst(creating, false)},
+			"",
+		},
+		{
+			"one not ready",
+			[]containergroups.ContainerGroupInstance{inst(running, true), inst(running, false)},
+			"note: 1 of 2 running instances ready",
+		},
+		{
+			"ready unknown",
+			[]containergroups.ContainerGroupInstance{{State: &running}},
+			"note: 0 of 1 running instances ready",
+		},
 	}
 	for _, c := range cases {
 		got := readinessNote("demo", c.in)
@@ -291,7 +311,9 @@ func TestHasReadinessProbe(t *testing.T) {
 	if hasReadinessProbe(g) {
 		t.Error("readiness_probe null reported as having one")
 	}
-	g.SetReadinessProbe(util.Nullable[shared.ContainerGroupReadinessProbe]{Value: shared.ContainerGroupReadinessProbe{}})
+	g.SetReadinessProbe(
+		util.Nullable[shared.ContainerGroupReadinessProbe]{Value: shared.ContainerGroupReadinessProbe{}},
+	)
 	if !hasReadinessProbe(g) {
 		t.Error("a readiness_probe was not detected")
 	}
@@ -415,7 +437,13 @@ func TestSettleFlags(t *testing.T) {
 	}
 	wait, timeout, cerr := settleFlagValues(cmd)
 	if cerr != nil || !wait || timeout != settleDefaultTimeout {
-		t.Errorf("defaults = wait %v timeout %s err %v, want wait true, %s, nil", wait, timeout, cerr, settleDefaultTimeout)
+		t.Errorf(
+			"defaults = wait %v timeout %s err %v, want wait true, %s, nil",
+			wait,
+			timeout,
+			cerr,
+			settleDefaultTimeout,
+		)
 	}
 	if err := cmd.Flags().Set("timeout", "0"); err != nil {
 		t.Fatal(err)

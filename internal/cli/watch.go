@@ -19,7 +19,8 @@ const watchMinInterval = 2 * time.Second
 
 // addWatchFlags registers -w/--watch and --interval on a read command.
 func addWatchFlags(cmd *cobra.Command) {
-	cmd.Flags().BoolP("watch", "w", false, "poll and re-render the table until interrupted (Windows-friendly watch(1); table mode only)")
+	cmd.Flags().
+		BoolP("watch", "w", false, "poll and re-render the table until interrupted (Windows-friendly watch(1); table mode only)")
 	cmd.Flags().Duration("interval", 5*time.Second, "poll interval for --watch (minimum 2s)")
 	// Check the watch flags before the command builds its client, so a bad
 	// combination is a usage error even with no API key set.

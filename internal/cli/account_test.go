@@ -48,7 +48,14 @@ func TestOrgsListAndGet(t *testing.T) {
 	if _, present := list.Items[0]["update_time"]; !present {
 		t.Errorf("update_time missing; every key is present: %v", list.Items[0])
 	}
-	if out, err = runRoot(t, "orgs", "list", "-o", "table"); err != nil || !strings.Contains(out, "NAME") || !strings.Contains(out, "My Org") {
+	if out, err = runRoot(
+		t,
+		"orgs",
+		"list",
+		"-o",
+		"table",
+	); err != nil || !strings.Contains(out, "NAME") ||
+		!strings.Contains(out, "My Org") {
 		t.Errorf("orgs list table = %q (%v)", out, err)
 	}
 	if out, err = runRoot(t, "orgs", "get", "my-org", "-o", "table"); err != nil || !strings.Contains(out, "o-1") {
@@ -60,7 +67,12 @@ func TestOrgsListAndGet(t *testing.T) {
 }
 
 func TestQuotasGet(t *testing.T) {
-	stubAPI(t, map[string]string{"/quotas": `{"container_groups_quotas":{"container_replicas_quota":10,"container_replicas_used":3}}`})
+	stubAPI(
+		t,
+		map[string]string{
+			"/quotas": `{"container_groups_quotas":{"container_replicas_quota":10,"container_replicas_used":3}}`,
+		},
+	)
 
 	out, err := runRoot(t, "quotas", "get", "-o", "json")
 	if err != nil {
@@ -77,7 +89,14 @@ func TestQuotasGet(t *testing.T) {
 	if _, present := q["max_container_group_restarts_per_minute"]; !present {
 		t.Errorf("an absent quota renders null, not missing: %v", q)
 	}
-	if out, err = runRoot(t, "quotas", "get", "-o", "table"); err != nil || !strings.Contains(out, "replicas") || !strings.Contains(out, "3 / 10") {
+	if out, err = runRoot(
+		t,
+		"quotas",
+		"get",
+		"-o",
+		"table",
+	); err != nil || !strings.Contains(out, "replicas") ||
+		!strings.Contains(out, "3 / 10") {
 		t.Errorf("quotas get table = %q (%v)", out, err)
 	}
 }
@@ -103,14 +122,17 @@ func TestWhoamiNamelessOrgRowsAreUnknown(t *testing.T) {
 func TestLogoutKeepsContext(t *testing.T) {
 	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
 	t.Setenv("SALAD_API_KEY", "")
-	if err := config.Save(config.File{APIKey: "k", Organization: "my-org", Project: "p", GatewayAPIKey: "g"}); err != nil {
+	if err := config.Save(
+		config.File{APIKey: "k", Organization: "my-org", Project: "p", GatewayAPIKey: "g"},
+	); err != nil {
 		t.Fatal(err)
 	}
 	out, err := runRoot(t, "logout", "-o", "json")
 	if err != nil {
 		t.Fatalf("logout: %v", err)
 	}
-	if !strings.Contains(out, `"removed": true,`) || !strings.Contains(out, `"organization": "my-org",`) || !strings.Contains(out, `"action": "logged_out",`) {
+	if !strings.Contains(out, `"removed": true,`) || !strings.Contains(out, `"organization": "my-org",`) ||
+		!strings.Contains(out, `"action": "logged_out",`) {
 		t.Errorf("logout -o json = %s", out)
 	}
 	f, _ := config.Load()

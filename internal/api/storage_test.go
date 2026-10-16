@@ -9,9 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
-
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 // TestUploadFile pins the S4 upload wire contract: PUT to the org files path
@@ -55,7 +54,11 @@ func TestUploadFile(t *testing.T) {
 			t.Errorf("file part = %q, want %q", got, fileBytes)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"url": "https://storage-api.salad.com/organizations/my-org/files/saladcloud-cli/transcribe/meeting-123.mp3?token=abc"}`))
+		w.Write(
+			[]byte(
+				`{"url": "https://storage-api.salad.com/organizations/my-org/files/saladcloud-cli/transcribe/meeting-123.mp3?token=abc"}`,
+			),
+		)
 	}))
 	defer srv.Close()
 
@@ -91,7 +94,14 @@ func TestUploadFileUnsigned(t *testing.T) {
 
 	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newRestTestClient(t, srv.URL)
-	if _, cerr := c.UploadFile(context.Background(), "a.bin", strings.NewReader("x"), "application/octet-stream", false, 0); cerr != nil {
+	if _, cerr := c.UploadFile(
+		context.Background(),
+		"a.bin",
+		strings.NewReader("x"),
+		"application/octet-stream",
+		false,
+		0,
+	); cerr != nil {
 		t.Fatalf("UploadFile: %v", cerr)
 	}
 }

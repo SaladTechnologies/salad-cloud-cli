@@ -71,7 +71,14 @@ func DedupKey(e Entry) string {
 // receive_time (ingestion) on the page, which runs a second or more behind
 // emission. Resuming from it skipped every entry emitted between a page's
 // last entry and that entry's ingestion.
-func FetchWindow(ctx context.Context, fetch Fetcher, query string, start, end time.Time, pageSize int, emit func(Entry) error) *clierr.Error {
+func FetchWindow(
+	ctx context.Context,
+	fetch Fetcher,
+	query string,
+	start, end time.Time,
+	pageSize int,
+	emit func(Entry) error,
+) *clierr.Error {
 	cur := start.UTC().Truncate(time.Millisecond)
 	endStr := CeilRequestTime(end)
 	boundary := map[string]time.Time{} // already-emitted entries with parsed Time >= cur
@@ -124,9 +131,12 @@ func FetchWindow(ctx context.Context, fetch Fetcher, query string, start, end ti
 				// Pathological: more than pageSize entries share one
 				// millisecond, so the boundary cannot advance. Skip 1ms
 				// rather than loop forever, and say so.
-				fmt.Fprintf(os.Stderr,
+				fmt.Fprintf(
+					os.Stderr,
 					"warning: more than %d log entries share the millisecond at %s; skipping ahead 1ms (some entries in that millisecond may be missed)\n",
-					pageSize, FormatRequestTime(cur))
+					pageSize,
+					FormatRequestTime(cur),
+				)
 				next = cur.Add(time.Millisecond)
 				for k, t := range newBoundary {
 					if t.Before(next) {

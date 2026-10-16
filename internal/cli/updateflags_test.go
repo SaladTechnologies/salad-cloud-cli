@@ -40,15 +40,31 @@ func TestBuildUpdatePatch(t *testing.T) {
 			want:  `{"container":{"image":"ghcr.io/me/app:v2"},"replicas":4}`,
 		},
 		{
-			name:  "flags win over the file; the rest of the file survives",
-			file:  `{"container":{"image":"old","resources":{"cpu":2}},"replicas":3}`,
-			flags: updateFlags{Image: "new", ImageSet: true, Replicas: 5, ReplicasSet: true, Memory: 2048, MemorySet: true},
-			want:  `{"container":{"image":"new","resources":{"cpu":2,"memory":2048}},"replicas":5}`,
+			name: "flags win over the file; the rest of the file survives",
+			file: `{"container":{"image":"old","resources":{"cpu":2}},"replicas":3}`,
+			flags: updateFlags{
+				Image:       "new",
+				ImageSet:    true,
+				Replicas:    5,
+				ReplicasSet: true,
+				Memory:      2048,
+				MemorySet:   true,
+			},
+			want: `{"container":{"image":"new","resources":{"cpu":2,"memory":2048}},"replicas":5}`,
 		},
 		{
-			name:  "every flag lands on its patch field",
-			flags: updateFlags{CPU: 4, CPUSet: true, Priority: "low", PrioritySet: true, Port: 8080, PortSet: true, DisplayName: "App", DisplayNameSet: true},
-			want:  `{"container":{"resources":{"cpu":4},"priority":"low"},"networking":{"port":8080},"display_name":"App"}`,
+			name: "every flag lands on its patch field",
+			flags: updateFlags{
+				CPU:            4,
+				CPUSet:         true,
+				Priority:       "low",
+				PrioritySet:    true,
+				Port:           8080,
+				PortSet:        true,
+				DisplayName:    "App",
+				DisplayNameSet: true,
+			},
+			want: `{"container":{"resources":{"cpu":4},"priority":"low"},"networking":{"port":8080},"display_name":"App"}`,
 		},
 		{
 			name:    "-e merges into the current variables and the file's changes",
@@ -147,10 +163,16 @@ func TestUpdateEnvRemovalIsNotReportedAsASideEffect(t *testing.T) {
 	samePatch(t, intent, `{"container":{"environment_variables":{"C":"3","A":null}}}`)
 
 	var before, after shared.ContainerGroup
-	if err := json.Unmarshal([]byte(`{"name":"g","pending_change":false,"container":{"image":"i","environment_variables":{"A":"1"}}}`), &before); err != nil {
+	if err := json.Unmarshal(
+		[]byte(`{"name":"g","pending_change":false,"container":{"image":"i","environment_variables":{"A":"1"}}}`),
+		&before,
+	); err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal([]byte(`{"name":"g","pending_change":false,"container":{"image":"i","environment_variables":{"C":"3"}}}`), &after); err != nil {
+	if err := json.Unmarshal(
+		[]byte(`{"name":"g","pending_change":false,"container":{"image":"i","environment_variables":{"C":"3"}}}`),
+		&after,
+	); err != nil {
 		t.Fatal(err)
 	}
 	if got := findUnrequestedChanges(intent, &before, &after); len(got) != 0 {

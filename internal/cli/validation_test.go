@@ -213,7 +213,8 @@ func f() {
 	if len(sites) != 2 {
 		t.Fatalf("found %d sites, want 2: %+v", len(sites), sites)
 	}
-	if s := sites[0]; s.format != "no organization set" || s.hint != "pass --org" || s.text("hint") != "pass --org" || s.text("message") != s.format {
+	if s := sites[0]; s.format != "no organization set" || s.hint != "pass --org" || s.text("hint") != "pass --org" ||
+		s.text("message") != s.format {
 		t.Errorf("site with a hint = %+v", s)
 	}
 	if s := sites[1]; s.hint != "" || s.text("hint") != "" {

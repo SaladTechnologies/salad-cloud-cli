@@ -70,7 +70,12 @@ func runWhoami(cmd *cobra.Command, args []string) error {
 	projectFlag, _ := cmd.Flags().GetString("project")
 	path, err := config.Path()
 	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err))
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot find a folder for the config file: %s",
+			config.Reason(err),
+		)
 	}
 	res, err := config.Resolve(orgFlag, projectFlag)
 	if err != nil {
@@ -123,34 +128,92 @@ func runWhoami(cmd *cobra.Command, args []string) error {
 	}
 
 	r := whoamiResult{
-		APIKey: maskedOrNil(res.APIKey), APIKeySource: strOrNil(res.APIKeySource), SavedAPIKey: maskedOrNil(saved.APIKey),
-		Organization: nameOrNil(res.Organization), OrganizationSource: strOrNil(res.OrganizationSource),
-		SavedOrganization: nameOrNil(saved.Organization), OrganizationFound: found,
-		Project: nameOrNil(res.Project), ProjectSource: strOrNil(res.ProjectSource), SavedProject: nameOrNil(saved.Project),
-		GatewayAPIKey: maskedOrNil(res.GatewayAPIKey), GatewayAPIKeySource: strOrNil(res.GatewayAPIKeySource),
-		SavedGatewayAPIKey: maskedOrNil(saved.GatewayAPIKey),
-		Authenticated:      authenticated, Organizations: orgs, ConfigPath: path,
+		APIKey: maskedOrNil(
+			res.APIKey,
+		),
+		APIKeySource:       strOrNil(res.APIKeySource),
+		SavedAPIKey:        maskedOrNil(saved.APIKey),
+		Organization:       nameOrNil(res.Organization),
+		OrganizationSource: strOrNil(res.OrganizationSource),
+		SavedOrganization:  nameOrNil(saved.Organization),
+		OrganizationFound:  found,
+		Project: nameOrNil(
+			res.Project,
+		),
+		ProjectSource:       strOrNil(res.ProjectSource),
+		SavedProject:        nameOrNil(saved.Project),
+		GatewayAPIKey:       maskedOrNil(res.GatewayAPIKey),
+		GatewayAPIKeySource: strOrNil(res.GatewayAPIKeySource),
+		SavedGatewayAPIKey:  maskedOrNil(saved.GatewayAPIKey),
+		Authenticated:       authenticated,
+		Organizations:       orgs,
+		ConfigPath:          path,
 	}
 	return wrapErr(output.Emit(r, func(w io.Writer) {
-		fmt.Fprintf(w, "api-key\t%s\n", whoamiRow(maskAPIKey(res.APIKey), res.APIKeySource, "", envAPIKey, maskAPIKey(saved.APIKey), saved.APIKey != "" && !sameKey(saved.APIKey, res.APIKey), ""))
+		fmt.Fprintf(
+			w,
+			"api-key\t%s\n",
+			whoamiRow(
+				maskAPIKey(res.APIKey),
+				res.APIKeySource,
+				"",
+				envAPIKey,
+				maskAPIKey(saved.APIKey),
+				saved.APIKey != "" && !sameKey(saved.APIKey, res.APIKey),
+				"",
+			),
+		)
 		var organization string
 		if res.Organization != "" && !looksLikeKey(res.Organization) && !validName(res.Organization) {
-			organization = fmt.Sprintf(`"%s"%s, not a valid organization name`, res.Organization, fromTag(originOf(res.OrganizationSource, "--org", envOrganization)))
+			organization = fmt.Sprintf(
+				`"%s"%s, not a valid organization name`,
+				res.Organization,
+				fromTag(originOf(res.OrganizationSource, "--org", envOrganization)),
+			)
 		} else {
 			notFound := ""
 			if orgChecks && found != nil && !*found {
 				notFound = "not found"
 			}
-			organization = whoamiRow(shownName(res.Organization), res.OrganizationSource, "--org", envOrganization, shownName(saved.Organization), saved.Organization != res.Organization, notFound)
+			organization = whoamiRow(
+				shownName(res.Organization),
+				res.OrganizationSource,
+				"--org",
+				envOrganization,
+				shownName(saved.Organization),
+				saved.Organization != res.Organization,
+				notFound,
+			)
 		}
 		fmt.Fprintf(w, "organization\t%s\n", organization)
-		project := whoamiRow(shownName(res.Project), res.ProjectSource, "--project", envProject, shownName(saved.Project), saved.Project != res.Project, "")
+		project := whoamiRow(
+			shownName(res.Project),
+			res.ProjectSource,
+			"--project",
+			envProject,
+			shownName(saved.Project),
+			saved.Project != res.Project,
+			"",
+		)
 		if res.ProjectSource == config.SourceDefault {
 			project = `none set, using "default"`
 		}
 		fmt.Fprintf(w, "project\t%s\n", project)
-		fmt.Fprintf(w, "ai-gateway-api-key\t%s\n", whoamiRow(maskAPIKey(res.GatewayAPIKey), res.GatewayAPIKeySource, "", envGatewayKey,
-			maskAPIKey(saved.GatewayAPIKey), saved.GatewayAPIKey != "" && !sameKey(saved.GatewayAPIKey, res.GatewayAPIKey), ""))
+		fmt.Fprintf(
+			w,
+			"ai-gateway-api-key\t%s\n",
+			whoamiRow(
+				maskAPIKey(res.GatewayAPIKey),
+				res.GatewayAPIKeySource,
+				"",
+				envGatewayKey,
+				maskAPIKey(
+					saved.GatewayAPIKey,
+				),
+				saved.GatewayAPIKey != "" && !sameKey(saved.GatewayAPIKey, res.GatewayAPIKey),
+				"",
+			),
+		)
 		auth := "unknown"
 		switch {
 		case malformed:

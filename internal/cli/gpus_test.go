@@ -20,7 +20,8 @@ func TestGpusGetNamesTheClass(t *testing.T) {
 		`{"id":"22222222-2222-4222-8222-222222222222","name":"RTX 3060 Ti (8 GB)"}]}`})
 	_, err := runRoot(t, "gpus", "get", "3060")
 	cerr, ok := err.(*clierr.Error)
-	if !ok || cerr.Code != clierr.CodeInvalidInput || !strings.HasPrefix(cerr.Message, `ambiguous GPU class "3060": matches`) ||
+	if !ok || cerr.Code != clierr.CodeInvalidInput ||
+		!strings.HasPrefix(cerr.Message, `ambiguous GPU class "3060": matches`) ||
 		strings.Contains(cerr.Message, "--gpu") {
 		t.Errorf("gpus get 3060 = %v, want an invalid-input error naming the class", err)
 	}

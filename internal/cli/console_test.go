@@ -34,7 +34,14 @@ func TestAtTerminal(t *testing.T) {
 		t.Setenv("CI", tc.ci)
 		con = &fakeConsole{terminal: tc.terminal}
 		if got := atTerminal(); got != tc.want {
-			t.Errorf("terminal=%t SALAD_CLI_NO_PROMPT=%q CI=%q: atTerminal() = %t, want %t", tc.terminal, tc.noPrompt, tc.ci, got, tc.want)
+			t.Errorf(
+				"terminal=%t SALAD_CLI_NO_PROMPT=%q CI=%q: atTerminal() = %t, want %t",
+				tc.terminal,
+				tc.noPrompt,
+				tc.ci,
+				got,
+				tc.want,
+			)
 		}
 	}
 }
@@ -46,7 +53,8 @@ func TestErrorHint(t *testing.T) {
 	old := errOut
 	errOut = &buf
 	t.Cleanup(func() { errOut = old; _ = output.SetMode("table") })
-	e := clierr.New(clierr.CodeUsage, clierr.KindUsage, "invalid organization name %q", "Café").WithHint("did you mean %q?", "cafe")
+	e := clierr.New(clierr.CodeUsage, clierr.KindUsage, "invalid organization name %q", "Café").
+		WithHint("did you mean %q?", "cafe")
 	printError(e)
 	if got, want := buf.String(), "saladcloud: error: invalid organization name \"Café\"\nhint: did you mean \"cafe\"?\n"; got != want {
 		t.Errorf("table mode:\n%q\nwant\n%q", got, want)

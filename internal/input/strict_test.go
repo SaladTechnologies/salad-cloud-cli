@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/inferenceendpoints"
+
+	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 )
 
 // TestCheckUnknownFields drives the reflection walker against the real SDK
@@ -33,20 +33,50 @@ func TestCheckUnknownFields(t *testing.T) {
 		{"clean create", `{"name":"a","replicas":1,"container":{"image":"b"}}`, createT, ""},
 		{"unknown top-level", `{"name":"a","bogus_field":1}`, createT, `unknown field "bogus_field" at the top level`},
 		{"unknown nested", `{"container":{"image":"b","bogus":1}}`, createT, `unknown field "bogus" in "container"`},
-		{"unknown two deep", `{"container":{"resources":{"cpu":1,"vram":8}}}`, createT, `unknown field "vram" in "container.resources"`},
-		{"unknown inside array element", `{"scaling-actions":[{"replicas":1,"schedule":"* * * * *","when":"noon"}]}`, createT, `unknown field "when" in "scaling-actions[0]"`},
+		{
+			"unknown two deep",
+			`{"container":{"resources":{"cpu":1,"vram":8}}}`,
+			createT,
+			`unknown field "vram" in "container.resources"`,
+		},
+		{
+			"unknown inside array element",
+			`{"scaling-actions":[{"replicas":1,"schedule":"* * * * *","when":"noon"}]}`,
+			createT,
+			`unknown field "when" in "scaling-actions[0]"`,
+		},
 		{"kebab-case gotcha gets a hint", `{"scaling_actions":[]}`, createT, `did you mean "scaling-actions"?`},
 		{"reverse hint", `{"restart-policy":"always"}`, createT, `did you mean "restart_policy"?`},
 		{"dropped letter gets a hint", `{"replica":1}`, createT, `did you mean "replicas"?`},
-		{"misspelling deep in the tree gets a hint", `{"container":{"enviroment_variables":{"A":"1"}}}`, createT, `did you mean "environment_variables"?`},
+		{
+			"misspelling deep in the tree gets a hint",
+			`{"container":{"enviroment_variables":{"A":"1"}}}`,
+			createT,
+			`did you mean "environment_variables"?`,
+		},
 		{"transposition gets a hint", `{"container":{"resources":{"memroy":1024}}}`, createT, `did you mean "memory"?`},
 		{"short key has a tight budget", `{"nam":"x"}`, createT, `did you mean "name"?`},
 		{"far-off key gets no hint", `{"bogus_field":1}`, createT, `unknown field "bogus_field" at the top level`},
-		{"env map keys are free-form", `{"container":{"environment_variables":{"ANY_KEY":"v","OTHER":null}}}`, createT, ""},
-		{"nullable probe recurses", `{"startup_probe":{"tcp":{"port":1},"bogus":1}}`, createT, `unknown field "bogus" in "startup_probe"`},
+		{
+			"env map keys are free-form",
+			`{"container":{"environment_variables":{"ANY_KEY":"v","OTHER":null}}}`,
+			createT,
+			"",
+		},
+		{
+			"nullable probe recurses",
+			`{"startup_probe":{"tcp":{"port":1},"bogus":1}}`,
+			createT,
+			`unknown field "bogus" in "startup_probe"`,
+		},
 		{"null values are fine", `{"display_name":null,"startup_probe":null}`, patchT, ""},
 		{"patch unknown", `{"bogus":1}`, patchT, `unknown field "bogus" at the top level`},
-		{"patch nested via nullable container", `{"container":{"image":"x","bogus":1}}`, patchT, `unknown field "bogus" in "container"`},
+		{
+			"patch nested via nullable container",
+			`{"container":{"image":"x","bogus":1}}`,
+			patchT,
+			`unknown field "bogus" in "container"`,
+		},
 		{"empty patch is not this check's problem", `{}`, patchT, ""},
 		{"any-typed input stays free-form", `{"input":{"url":"x","anything_goes":true,"nested":{"deep":1}}}`, jobT, ""},
 		{"but the prototype itself is checked", `{"inputs":{}}`, jobT, `unknown field "inputs"`},
@@ -197,7 +227,17 @@ func TestFilterTree(t *testing.T) {
 	var dropped []string
 	out := FilterTree(doc, patchT, "", &dropped).(map[string]any)
 	sort.Strings(dropped)
-	if want := []string{"container.hash", "id", "scaling-actions[0].when"}; strings.Join(dropped, ",") != strings.Join(want, ",") {
+	if want := []string{
+		"container.hash",
+		"id",
+		"scaling-actions[0].when",
+	}; strings.Join(
+		dropped,
+		",",
+	) != strings.Join(
+		want,
+		",",
+	) {
 		t.Errorf("dropped = %v, want %v", dropped, want)
 	}
 	if out["replicas"] != float64(2) {

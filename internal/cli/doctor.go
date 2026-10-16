@@ -138,7 +138,8 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	if output.Machine() {
 		hint = "each failing row's hint says how to fix it"
 	}
-	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%d %s failed: %s", len(failed), checks, strings.Join(failed, ", ")).WithHint("%s", hint)
+	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%d %s failed: %s", len(failed), checks, strings.Join(failed, ", ")).
+		WithHint("%s", hint)
 }
 
 func row(name, status, detail, hint string) checkResult {
@@ -161,12 +162,22 @@ func (d *doctorRun) configRow() checkResult {
 	f, err := config.Load()
 	if err != nil {
 		d.res = config.ResolveFrom(config.File{}, d.orgFlag, d.projectFlag)
-		return row("config", checkFail, fmt.Sprintf("%s cannot be read: %s", path, readReason(err)), "fix or delete it, then run saladcloud login again")
+		return row(
+			"config",
+			checkFail,
+			fmt.Sprintf("%s cannot be read: %s", path, readReason(err)),
+			"fix or delete it, then run saladcloud login again",
+		)
 	}
 	d.saved = f
 	d.res = config.ResolveFrom(f, d.orgFlag, d.projectFlag)
 	if err := config.Writable(); err != nil {
-		return row("config", checkWarn, path+" is read-only; login and use cannot save", "set SALAD_CLI_CONFIG_DIR to a writable folder")
+		return row(
+			"config",
+			checkWarn,
+			path+" is read-only; login and use cannot save",
+			"set SALAD_CLI_CONFIG_DIR to a writable folder",
+		)
 	}
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return row("config", checkPass, "none yet at "+path+"; using flags and environment", "")
@@ -184,11 +195,21 @@ func (d *doctorRun) reachableRow() checkResult {
 	defer cancel()
 	if _, err := api.Probe(ctx, base+"/organizations/doctor-probe/gpu-classes"); err != nil {
 		var verr *tls.CertificateVerificationError
-		if errors.As(err, &verr) && len(verr.UnverifiedCertificates) > 0 && time.Now().Before(verr.UnverifiedCertificates[0].NotBefore) {
-			return row("api-reachable", checkFail, fmt.Sprintf("%s: its TLS certificate is not valid until %s", shown,
-				verr.UnverifiedCertificates[0].NotBefore.UTC().Format(time.RFC3339)), "check this machine's date and time")
+		if errors.As(err, &verr) && len(verr.UnverifiedCertificates) > 0 &&
+			time.Now().Before(verr.UnverifiedCertificates[0].NotBefore) {
+			return row("api-reachable", checkFail, fmt.Sprintf(
+				"%s: its TLS certificate is not valid until %s",
+				shown,
+				verr.UnverifiedCertificates[0].NotBefore.UTC().
+					Format(time.RFC3339),
+			), "check this machine's date and time")
 		}
-		return row("api-reachable", checkFail, fmt.Sprintf("%s: %v", shown, errors.Unwrap(err)), "check your network or proxy settings")
+		return row(
+			"api-reachable",
+			checkFail,
+			fmt.Sprintf("%s: %v", shown, errors.Unwrap(err)),
+			"check your network or proxy settings",
+		)
 	}
 	d.reachable = true
 	if override != "" {
@@ -219,15 +240,30 @@ func (d *doctorRun) apiKeyRow() checkResult {
 	if res.APIKey == "" {
 		if res.GatewayAPIKey != "" {
 			d.gatewayOnly = true
-			return row(name, checkWarn, "not set; only the AI Gateway is set up", "to use SaladCloud beyond the AI Gateway, run saladcloud login")
+			return row(
+				name,
+				checkWarn,
+				"not set; only the AI Gateway is set up",
+				"to use SaladCloud beyond the AI Gateway, run saladcloud login",
+			)
 		}
-		return row(name, checkFail, "not set", "run saladcloud login, or set SALAD_API_KEY; for the AI Gateway only, run saladcloud ai-gateway login")
+		return row(
+			name,
+			checkFail,
+			"not set",
+			"run saladcloud login, or set SALAD_API_KEY; for the AI Gateway only, run saladcloud ai-gateway login",
+		)
 	}
 	if !d.reachable {
 		return row(name, checkSkip, d.keyShown()+"; checking it needs the API", "")
 	}
 	if _, ok := normalizeKey(res.APIKey); !ok {
-		return row(name, checkFail, d.keyShown()+" contains characters an API key cannot have", "check for quotes or stray characters in it")
+		return row(
+			name,
+			checkFail,
+			d.keyShown()+" contains characters an API key cannot have",
+			"check for quotes or stray characters in it",
+		)
 	}
 	key, _ := normalizeKey(res.APIKey)
 	client, cerr := api.New(config.Resolved{APIKey: key, Organization: res.Organization})
@@ -252,7 +288,12 @@ func (d *doctorRun) apiKeyRow() checkResult {
 	case cerr != nil:
 		return row(name, checkWarn, d.keyShown()+"; "+unchecked(cerr), "try again in a minute")
 	case list == nil:
-		return row(name, checkWarn, d.keyShown()+"; cannot be checked without an organization", "to set one, run saladcloud use <org>")
+		return row(
+			name,
+			checkWarn,
+			d.keyShown()+"; cannot be checked without an organization",
+			"to set one, run saladcloud use <org>",
+		)
 	}
 	d.keyOK, d.orgs = true, list.OrgNames()
 	return row(name, checkPass, d.keyShown(), "")
@@ -266,7 +307,10 @@ func (d *doctorRun) keyFix(key string) string {
 	case d.res.APIKeySource != "env":
 		return "run saladcloud login to save a new key"
 	case d.saved.APIKey != "" && d.saved.APIKey != d.res.APIKey:
-		return fmt.Sprintf("remove SALAD_API_KEY to use the saved API key (%s), or set it to a working key", maskAPIKey(d.saved.APIKey))
+		return fmt.Sprintf(
+			"remove SALAD_API_KEY to use the saved API key (%s), or set it to a working key",
+			maskAPIKey(d.saved.APIKey),
+		)
 	}
 	return "set SALAD_API_KEY to a working key, or remove it and run saladcloud login"
 }
@@ -292,7 +336,12 @@ func (d *doctorRun) organizationRow() checkResult {
 	case org != "" && looksLikeKey(org):
 		return row(name, checkFail, keyLikeDetail("organization", from), keyLikeName("organization", from).HintText())
 	case org != "" && !validName(org):
-		return row(name, checkFail, fmt.Sprintf(`"%s"%s is not a valid organization name`, org, fromTag(from)), nameGuess("organization", org, "use"))
+		return row(
+			name,
+			checkFail,
+			fmt.Sprintf(`"%s"%s is not a valid organization name`, org, fromTag(from)),
+			nameGuess("organization", org, "use"),
+		)
 	}
 	if !d.keyOK {
 		if org == "" {
@@ -316,7 +365,12 @@ func (d *doctorRun) organizationRow() checkResult {
 		case "config":
 			fix = "to switch, run saladcloud use <org>"
 		}
-		return row(name, checkFail, fmt.Sprintf(`"%s"%s not found`, org, fromTag(from)), hintClauses(orgsClause(d.orgs), fix))
+		return row(
+			name,
+			checkFail,
+			fmt.Sprintf(`"%s"%s not found`, org, fromTag(from)),
+			hintClauses(orgsClause(d.orgs), fix),
+		)
 	}
 	return row(name, checkWarn, org+fromTag(from)+"; "+unchecked(cerr), "try again in a minute")
 }
@@ -337,7 +391,12 @@ func (d *doctorRun) projectRow() checkResult {
 		return row(name, checkSkip, project+fromTag(from)+"; checking it needs a working organization", "")
 	}
 	if !fallback && !validName(project) {
-		return row(name, checkFail, fmt.Sprintf(`"%s"%s is not a valid project name`, project, fromTag(from)), nameGuess("project", project, "use"))
+		return row(
+			name,
+			checkFail,
+			fmt.Sprintf(`"%s"%s is not a valid project name`, project, fromTag(from)),
+			nameGuess("project", project, "use"),
+		)
 	}
 	key, _ := normalizeKey(res.APIKey)
 	client, cerr := api.New(config.Resolved{APIKey: key, Organization: org, Project: project})
@@ -354,14 +413,38 @@ func (d *doctorRun) projectRow() checkResult {
 	}
 	switch {
 	case fallback && res.SkippedProject != "":
-		return row(name, checkWarn, fmt.Sprintf(`none set for %s, using "default"; the saved project "%s" is for %s`, org, shownName(res.SkippedProject), shownName(res.SkippedProjectOrg)),
-			fmt.Sprintf("to choose one for %s, run saladcloud use %s/<project>", org, org))
+		return row(
+			name,
+			checkWarn,
+			fmt.Sprintf(
+				`none set for %s, using "default"; the saved project "%s" is for %s`,
+				org,
+				shownName(res.SkippedProject),
+				shownName(res.SkippedProjectOrg),
+			),
+			fmt.Sprintf("to choose one for %s, run saladcloud use %s/<project>", org, org),
+		)
 	case fallback && found:
-		return row(name, checkWarn, `none set, using "default"`,
-			fmt.Sprintf("container group and queue commands warn each time; to choose one, set SALAD_PROJECT or run saladcloud use %s/<project>", org))
+		return row(
+			name,
+			checkWarn,
+			`none set, using "default"`,
+			fmt.Sprintf(
+				"container group and queue commands warn each time; to choose one, set SALAD_PROJECT or run saladcloud use %s/<project>",
+				org,
+			),
+		)
 	case fallback:
-		return row(name, checkWarn, fmt.Sprintf(`none set; %s has no "default" project`, org),
-			fmt.Sprintf("container groups and queues need one; create one at %s, then run saladcloud use %s/<project>", projectCreateURL(org), org))
+		return row(
+			name,
+			checkWarn,
+			fmt.Sprintf(`none set; %s has no "default" project`, org),
+			fmt.Sprintf(
+				"container groups and queues need one; create one at %s, then run saladcloud use %s/<project>",
+				projectCreateURL(org),
+				org,
+			),
+		)
 	case found:
 		return row(name, checkPass, project+fromTag(from), "")
 	}
@@ -392,14 +475,22 @@ func (d *doctorRun) sshRow() checkResult {
 	}
 	pub, ok := findLocalPublicKey(home)
 	if !ok {
-		return row(name, checkSkip, "none (optional)", "to use container-groups ssh, cp or sftp, run saladcloud ssh-key setup")
+		return row(
+			name,
+			checkSkip,
+			"none (optional)",
+			"to use container-groups ssh, cp or sftp, run saladcloud ssh-key setup",
+		)
 	}
 	if _, err := lookPath("ssh"); err != nil {
 		return row(name, checkWarn, "key found, but ssh is not installed", sshMissingHint("ssh"))
 	}
 	priv := strings.TrimSuffix(pub, ".pub")
 	if enc, known := hasPassphrase(priv); known && enc {
-		hint := fmt.Sprintf("run ssh-add %s first; to generate a key without one, run saladcloud ssh-key setup --generate", priv)
+		hint := fmt.Sprintf(
+			"run ssh-add %s first; to generate a key without one, run saladcloud ssh-key setup --generate",
+			priv,
+		)
 		if isDedicatedKey(priv) {
 			hint = fmt.Sprintf("run ssh-add %s first", priv)
 		}

@@ -13,7 +13,9 @@ import (
 )
 
 func TestNormalizeNumericEnums(t *testing.T) {
-	raw := []byte(`{"items":[{"name":"legacy","restart_policy":1},{"name":"ok","restart_policy":"never"},{"nested":{"restart_policy":3}}]}`)
+	raw := []byte(
+		`{"items":[{"name":"legacy","restart_policy":1},{"name":"ok","restart_policy":"never"},{"nested":{"restart_policy":3}}]}`,
+	)
 	fixed, changed := normalizeNumericEnums(raw)
 	if !changed {
 		t.Fatal("expected a change")

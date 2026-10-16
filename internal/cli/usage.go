@@ -269,7 +269,8 @@ func argsError(cmd *cobra.Command, args []string, err error) *clierr.Error {
 		if names := positionalPlaceholders(cmd); len(pos) < len(names) {
 			ph = names[len(pos)]
 		}
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing argument: %s", ph).WithHint("run %s", usageLine(cmd))
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing argument: %s", ph).
+			WithHint("run %s", usageLine(cmd))
 	}
 	if name := cmd.Annotations[annotationFlagForArg]; name != "" && len(pos) == max+1 && !cmd.Flags().Changed(name) {
 		if f := cmd.Flags().Lookup(name); f != nil {
@@ -279,15 +280,24 @@ func argsError(cmd *cobra.Command, args []string, err error) *clierr.Error {
 			if name == "instance" {
 				value, rest = pos[max], pos[:max]
 			}
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s takes the %s as %s, not as an argument",
-				commandName(cmd), flagNoun(name), flagSpelling(f)).WithHint("run %s", correctedLine(cmd, rest, f, value, dash))
+			return clierr.New(
+				clierr.CodeUsage,
+				clierr.KindUsage,
+				"%s takes the %s as %s, not as an argument",
+				commandName(
+					cmd,
+				),
+				flagNoun(name),
+				flagSpelling(f),
+			).WithHint("run %s", correctedLine(cmd, rest, f, value, dash))
 		}
 	}
 	extra := ""
 	if len(pos) > max {
 		extra = pos[max]
 	}
-	return clierr.New(clierr.CodeUsage, clierr.KindUsage, `unexpected argument "%s"`, extra).WithHint("run %s", usageLine(cmd))
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage, `unexpected argument "%s"`, extra).
+		WithHint("run %s", usageLine(cmd))
 }
 
 // flagNoun is what a parent flag names, for "takes the group as -c".

@@ -400,10 +400,12 @@ func TestHoldRuleIsANote(t *testing.T) {
 	var buf bytes.Buffer
 	warnUnrequestedChanges(&buf, changes)
 	out := buf.String()
-	if !strings.Contains(out, "warning: this update also changed 1 field") || !strings.Contains(out, "warning:   country_codes") {
+	if !strings.Contains(out, "warning: this update also changed 1 field") ||
+		!strings.Contains(out, "warning:   country_codes") {
 		t.Errorf("country_codes not reported as a warning:\n%s", out)
 	}
-	if !strings.Contains(out, "note: scheduled-scaling-enabled: true -> false") || !strings.Contains(out, "on hold") || !strings.Contains(out, "to re-enable it") {
+	if !strings.Contains(out, "note: scheduled-scaling-enabled: true -> false") || !strings.Contains(out, "on hold") ||
+		!strings.Contains(out, "to re-enable it") {
 		t.Errorf("hold rule not reported as a note with the re-enable hint:\n%s", out)
 	}
 	if strings.Contains(out, "warning:   scheduled-scaling-enabled") || strings.Contains(out, "known API bug") {
@@ -490,12 +492,25 @@ func TestFindUnrequestedChangesProbeSwitchIsSameShapeAsEnvLoss(t *testing.T) {
 // the change is described instead. The sentinel must not appear.
 func TestDriftWarningsNeverPrintSecrets(t *testing.T) {
 	const sentinel = "sentinel-s3cret-value"
-	before := grp(t, `{"name":"g","replicas":1,"container":{"image":"x","environment_variables":{"KEEP":"`+sentinel+`","DROP":"`+sentinel+`","SWAP":"`+sentinel+`"}}}`)
-	after := grp(t, `{"name":"g","replicas":1,"container":{"image":"x","environment_variables":{"KEEP":"`+sentinel+`","SWAP":"other-`+sentinel+`","NEW":"`+sentinel+`"}}}`)
+	before := grp(
+		t,
+		`{"name":"g","replicas":1,"container":{"image":"x","environment_variables":{"KEEP":"`+sentinel+`","DROP":"`+sentinel+`","SWAP":"`+sentinel+`"}}}`,
+	)
+	after := grp(
+		t,
+		`{"name":"g","replicas":1,"container":{"image":"x","environment_variables":{"KEEP":"`+sentinel+`","SWAP":"other-`+sentinel+`","NEW":"`+sentinel+`"}}}`,
+	)
 
 	var out bytes.Buffer
 	warnUnrequestedChanges(&out, findUnrequestedChanges([]byte(`{"replicas":1}`), before, after))
-	warnIgnoredFields(&out, findIgnoredFields([]byte(`{"container":{"environment_variables":{"KEEP":"requested-`+sentinel+`"}}}`), before, after))
+	warnIgnoredFields(
+		&out,
+		findIgnoredFields(
+			[]byte(`{"container":{"environment_variables":{"KEEP":"requested-`+sentinel+`"}}}`),
+			before,
+			after,
+		),
+	)
 	got := out.String()
 	if strings.Contains(got, sentinel) {
 		t.Fatalf("a warning printed a secret value:\n%s", got)
@@ -520,7 +535,8 @@ func TestDriftWarningsNeverPrintSecrets(t *testing.T) {
 		}},
 	}
 	shown := shownValue("container.logging", nested)
-	if strings.Contains(shown, sentinel) || !strings.Contains(shown, `"host":"h"`) || !strings.Contains(shown, `"Authorization"`) {
+	if strings.Contains(shown, sentinel) || !strings.Contains(shown, `"host":"h"`) ||
+		!strings.Contains(shown, `"Authorization"`) {
 		t.Errorf("shownValue = %s, want credentials redacted and the rest kept", shown)
 	}
 }

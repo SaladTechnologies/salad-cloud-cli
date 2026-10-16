@@ -162,7 +162,12 @@ func TestFetchWindowBoundaryDuplicates(t *testing.T) {
 		{page: &Page{
 			Items: []Entry{
 				c1, // duplicate from the boundary
-				ent("2026-03-01T00:00:03Z", "2026-03-01T00:00:03.6Z", "i2", "d"), // same time, different entry: NOT a duplicate
+				ent(
+					"2026-03-01T00:00:03Z",
+					"2026-03-01T00:00:03.6Z",
+					"i2",
+					"d",
+				), // same time, different entry: NOT a duplicate
 				ent("2026-03-01T00:00:04Z", "2026-03-01T00:00:04Z", "i1", "e"),
 			},
 			PageMinTime: "2026-03-01T00:00:03Z",
@@ -298,7 +303,11 @@ func TestDedupKeyDistinguishesEntries(t *testing.T) {
 			t.Errorf("variant %d collides with base: %+v", i, v)
 		}
 	}
-	if DedupKey(base) != DedupKey(base) { //nolint:staticcheck // two calls on purpose: the key must not vary between calls
+	if DedupKey(
+		base,
+	) != DedupKey(
+		base,
+	) { //nolint:staticcheck // two calls on purpose: the key must not vary between calls
 		t.Error("DedupKey is not stable")
 	}
 	j1 := Entry{JSON: map[string]any{"a": 1, "b": 2}}
@@ -356,11 +365,27 @@ func TestFetchWindowResumesFromEmissionTimeNotPageMaxTime(t *testing.T) {
 	for i := 0; i < 47; i++ {
 		emitted := winStart.Add(time.Duration(i) * 400 * time.Millisecond)
 		received := emitted.Add(1500 * time.Millisecond)
-		all = append(all, ent(emitted.Format(time.RFC3339Nano), received.Format(time.RFC3339Nano), "i", emitted.Format("15:04:05.000")))
+		all = append(
+			all,
+			ent(
+				emitted.Format(time.RFC3339Nano),
+				received.Format(time.RFC3339Nano),
+				"i",
+				emitted.Format("15:04:05.000"),
+			),
+		)
 	}
 	for _, size := range []int{1, 3, 10, 46, 47, 100} {
 		var got []Entry
-		if cerr := FetchWindow(context.Background(), realisticFetcher(all), "q", winStart, winEnd, size, collectEmit(&got)); cerr != nil {
+		if cerr := FetchWindow(
+			context.Background(),
+			realisticFetcher(all),
+			"q",
+			winStart,
+			winEnd,
+			size,
+			collectEmit(&got),
+		); cerr != nil {
 			t.Fatalf("page size %d: %v", size, cerr)
 		}
 		if len(got) != len(all) {

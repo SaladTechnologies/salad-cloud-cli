@@ -13,9 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/inferenceendpoints"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -141,7 +140,8 @@ const jobWaitDefaultTimeout = 10 * time.Minute
 // addJobWaitFlags registers --wait/--timeout on jobs create. The values are
 // read via the shared waitFlagValues (waitfor.go).
 func addJobWaitFlags(cmd *cobra.Command) {
-	cmd.Flags().Bool("wait", false, "block until the job reaches a terminal status (succeeded exits 0; failed/cancelled exit 1)")
+	cmd.Flags().
+		Bool("wait", false, "block until the job reaches a terminal status (succeeded exits 0; failed/cancelled exit 1)")
 	cmd.Flags().Duration("timeout", jobWaitDefaultTimeout, "give up on --wait after this long")
 }
 
@@ -179,7 +179,12 @@ func inferenceJobView(j *inferenceendpoints.InferenceEndpointJob) (string, strin
 // as waitForGroupStatus); in table mode a progress line is written whenever
 // the observed status changes, and repeated every progressRepeat while it
 // does not.
-func waitForJobTerminal[J any](ctx context.Context, d jobWaitDeps[J], id string, timeout, poll time.Duration) (*J, *clierr.Error) {
+func waitForJobTerminal[J any](
+	ctx context.Context,
+	d jobWaitDeps[J],
+	id string,
+	timeout, poll time.Duration,
+) (*J, *clierr.Error) {
 	stderr := d.progress
 	if stderr == nil {
 		stderr = os.Stderr
@@ -264,7 +269,10 @@ func ctxSleep(ctx context.Context, d time.Duration) error {
 }
 
 // liveJobWaitDeps builds the production jobWaitDeps for one inference job.
-func liveJobWaitDeps(client *api.Client, endpoint, id, label string) jobWaitDeps[inferenceendpoints.InferenceEndpointJob] {
+func liveJobWaitDeps(
+	client *api.Client,
+	endpoint, id, label string,
+) jobWaitDeps[inferenceendpoints.InferenceEndpointJob] {
 	return jobWaitDeps[inferenceendpoints.InferenceEndpointJob]{
 		get: func(ctx context.Context) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
 			job, cerr := client.GetInferenceJob(ctx, endpoint, id)
@@ -427,7 +435,12 @@ older jobs were left out.`,
 			endpoint := endpointFlag(cmd)
 			limit, _ := cmd.Flags().GetInt("limit")
 			if limit < 0 {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--limit must be 0 (all) or positive (got %d)", limit)
+				return clierr.New(
+					clierr.CodeUsage,
+					clierr.KindUsage,
+					"--limit must be 0 (all) or positive (got %d)",
+					limit,
+				)
 			}
 			client, _, cerr := NewClient(cmd)
 			if cerr != nil {
@@ -459,7 +472,8 @@ older jobs were left out.`,
 		},
 	}
 	addEndpointFlag(jobsListCmd)
-	jobsListCmd.Flags().Int("limit", 100, fmt.Sprintf("how many of the newest jobs to list (0 = all, up to %d)", api.InferenceJobsCap))
+	jobsListCmd.Flags().
+		Int("limit", 100, fmt.Sprintf("how many of the newest jobs to list (0 = all, up to %d)", api.InferenceJobsCap))
 	jobsCmd.AddCommand(jobsListCmd)
 
 	jobsGetCmd := &cobra.Command{
@@ -560,7 +574,8 @@ cancelled exits 1 with the job's status and last event. --timeout (default
 		},
 	}
 	addEndpointFlag(jobsCreateCmd)
-	jobsCreateCmd.Flags().StringP("file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
+	jobsCreateCmd.Flags().
+		StringP("file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
 	jobsCreateCmd.Flags().String("input", "", "the job input object as inline JSON (wrapped into the prototype)")
 	addJobWaitFlags(jobsCreateCmd)
 	jobsCmd.AddCommand(jobsCreateCmd)
@@ -606,8 +621,17 @@ func jobsLimitNote(w io.Writer, shown, limit, cap int, more bool) {
 	switch {
 	case !more:
 	case (limit == 0 || limit > cap) && shown >= cap:
-		fmt.Fprintf(w, "note: showing the newest %d jobs, the most one listing returns; older jobs are not shown\n", cap)
+		fmt.Fprintf(
+			w,
+			"note: showing the newest %d jobs, the most one listing returns; older jobs are not shown\n",
+			cap,
+		)
 	case output.Mode() == "table":
-		fmt.Fprintf(w, "note: showing the newest %d jobs; older ones exist\nhint: for more, raise --limit; 0 means all, up to %d\n", shown, cap)
+		fmt.Fprintf(
+			w,
+			"note: showing the newest %d jobs; older ones exist\nhint: for more, raise --limit; 0 means all, up to %d\n",
+			shown,
+			cap,
+		)
 	}
 }

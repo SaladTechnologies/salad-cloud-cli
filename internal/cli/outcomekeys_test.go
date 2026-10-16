@@ -39,7 +39,12 @@ func TestOutcomeFactsInJSON(t *testing.T) {
 	// A login from SALAD_API_KEY names the saved key commands use where
 	// the variable is not set.
 	o := session{
-		args: []string{"login", "-o", "json"}, env: map[string]string{"SALAD_API_KEY": K, "SALAD_ORGANIZATION": "my-org"},
+		args: []string{
+			"login",
+			"-o",
+			"json",
+		},
+		env:   map[string]string{"SALAD_API_KEY": K, "SALAD_ORGANIZATION": "my-org"},
 		saved: &config.File{APIKey: O},
 	}.run(t)
 	if doc := o.document(t); doc["saved_api_key"] != "****...ABCD" || doc["api_key_saved"] != false {
@@ -54,7 +59,12 @@ func TestOutcomeFactsInJSON(t *testing.T) {
 	if got := fmt.Sprint(d.document(t)["env_overrides"]); got != "[SALAD_API_KEY]" {
 		t.Errorf("doctor env_overrides = %s, want [SALAD_API_KEY]", got)
 	}
-	d = session{args: []string{"doctor", "-o", "json"}, saved: &config.File{APIKey: K, Organization: "my-org", Project: "default"}}.run(t)
+	d = session{
+		args:  []string{"doctor", "-o", "json"},
+		saved: &config.File{APIKey: K, Organization: "my-org", Project: "default"},
+	}.run(
+		t,
+	)
 	if got := fmt.Sprint(d.document(t)["env_overrides"]); got != "[]" {
 		t.Errorf("doctor env_overrides with no variable = %s, want []", got)
 	}

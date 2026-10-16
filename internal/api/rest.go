@@ -81,7 +81,12 @@ func doRestJSON[T any](ctx context.Context, c *Client, method, path, contentType
 			var err error
 			payload, err = json.Marshal(body)
 			if err != nil {
-				return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot encode the request body: %v", err)
+				return nil, clierr.New(
+					clierr.CodeGeneric,
+					clierr.KindAPIError,
+					"cannot encode the request body: %v",
+					err,
+				)
 			}
 		}
 	}

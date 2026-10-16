@@ -130,7 +130,8 @@ func TestDebugBodiesRedactAuthorizationHeader(t *testing.T) {
 	if _, cerr := newTestGateway(t, srv.URL).ListModels(context.Background()); cerr != nil {
 		t.Fatal(cerr)
 	}
-	if out := buf.String(); !strings.Contains(out, "debug: > Authorization: REDACTED") || strings.Contains(out, "gw-key") {
+	if out := buf.String(); !strings.Contains(out, "debug: > Authorization: REDACTED") ||
+		strings.Contains(out, "gw-key") {
 		t.Errorf("gateway debug log:\n%s", out)
 	}
 }
@@ -145,7 +146,14 @@ func TestDebugBodiesHideUploads(t *testing.T) {
 	buf := debugCapture(t, DebugBodies)
 	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newTestClient(t, srv.URL)
-	if _, cerr := c.UploadFile(context.Background(), "f.wav", strings.NewReader("audio-bytes"), "audio/wav", false, 0); cerr != nil {
+	if _, cerr := c.UploadFile(
+		context.Background(),
+		"f.wav",
+		strings.NewReader("audio-bytes"),
+		"audio/wav",
+		false,
+		0,
+	); cerr != nil {
 		t.Fatal(cerr)
 	}
 	if out := buf.String(); !strings.Contains(out, "(file upload, not shown)") || strings.Contains(out, "audio-bytes") {

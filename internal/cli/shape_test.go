@@ -18,7 +18,6 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/quotas"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/webhooksecretkey"
-
 	"sigs.k8s.io/yaml"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
@@ -114,7 +113,8 @@ func assertShape(t *testing.T, path string, typ reflect.Type, doc any) {
 				}
 				switch val {
 				case nil:
-					if f.Type.Kind() == reflect.Slice && f.Type.Elem().Kind() != reflect.Uint8 && strings.Contains(tag, "omitempty") {
+					if f.Type.Kind() == reflect.Slice && f.Type.Elem().Kind() != reflect.Uint8 &&
+						strings.Contains(tag, "omitempty") {
 						t.Errorf("%s.%s: absent array rendered null, want []", path, name)
 					}
 					if f.Type.Kind() == reflect.Map && strings.Contains(tag, "omitempty") {
@@ -163,7 +163,11 @@ func TestSDKBackedJSONShape(t *testing.T) {
 		}{[]organizationdata.GpuClass{{}}}, false},
 		{"gpus get", organizationdata.GpuClass{}, false},
 		{"availability gpu", gpuAvailabilityResult{Items: []gpuAvailabilityRow{{}}}, false},
-		{"availability gpu combined", gpuAvailabilityResult{Items: []gpuAvailabilityRow{{}, {}}, Combined: &gpuCombinedRow{}}, false},
+		{
+			"availability gpu combined",
+			gpuAvailabilityResult{Items: []gpuAvailabilityRow{{}, {}}, Combined: &gpuCombinedRow{}},
+			false,
+		},
 		{"availability cpu", cpuAvailabilityResult{Items: []organizations.CpuAvailability{{}}}, false},
 		{"inference endpoints list", inferenceendpoints.InferenceEndpointCollection{
 			Items: []inferenceendpoints.InferenceEndpoint{{}},
@@ -183,7 +187,11 @@ func TestSDKBackedJSONShape(t *testing.T) {
 			Items []queues.Queue `json:"items"`
 		}{[]queues.Queue{{ContainerGroups: []shared.ContainerGroup{{}}}}}, false},
 		{"queues get", queues.Queue{}, false},
-		{"queues jobs list", queues.QueueJobCollection{Items: []queues.QueueJob{{Events: []queues.QueueJobEvent{{}}}}}, false},
+		{
+			"queues jobs list",
+			queues.QueueJobCollection{Items: []queues.QueueJob{{Events: []queues.QueueJobEvent{{}}}}},
+			false,
+		},
 		{"queues jobs get", queues.QueueJob{}, false},
 		{"webhook-secret get", webhooksecretkey.WebhookSecretKey{}, false},
 	}

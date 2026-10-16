@@ -134,8 +134,12 @@ func runGpusGet(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if class == nil {
-		return clierr.New(clierr.CodeNotFound, clierr.KindNotFound,
-			`GPU class "%s" not found in this organization's catalog`, args[0]).WithHint("to list them, run saladcloud gpus list")
+		return clierr.New(
+			clierr.CodeNotFound,
+			clierr.KindNotFound,
+			`GPU class "%s" not found in this organization's catalog`,
+			args[0],
+		).WithHint("to list them, run saladcloud gpus list")
 	}
 	return wrapErr(output.Emit(class, func(w io.Writer) {
 		row := func(k, v string) { fmt.Fprintf(w, "%s\t%s\n", k, v) }

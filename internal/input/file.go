@@ -57,7 +57,13 @@ func load(path string, out any, strict bool) (json.RawMessage, []Unknown, *clier
 		unknowns = UnknownFieldList(raw, t.Elem())
 	}
 	if strict && len(unknowns) > 0 {
-		return nil, nil, clierr.New(clierr.CodeInvalidInput, clierr.KindUnknownField, "cannot use %s: unknown field %s", name, unknowns[0].Detail())
+		return nil, nil, clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindUnknownField,
+			"cannot use %s: unknown field %s",
+			name,
+			unknowns[0].Detail(),
+		)
 	}
 	return raw, unknowns, nil
 }

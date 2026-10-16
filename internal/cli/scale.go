@@ -5,9 +5,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
@@ -114,7 +113,16 @@ write (the API does not honor the flag in the same patch as replicas), for
 			if keep {
 				switch {
 				case shouldReenableSchedule(keep, before, group):
-					if _, err := applyPatch(cmd, client, args[0], reenableSchedulePatch, nil, wait, timeout, "scheduled scaling re-enabled"); err != nil {
+					if _, err := applyPatch(
+						cmd,
+						client,
+						args[0],
+						reenableSchedulePatch,
+						nil,
+						wait,
+						timeout,
+						"scheduled scaling re-enabled",
+					); err != nil {
 						return err
 					}
 					fmt.Fprintln(os.Stderr, "note: scheduled scaling re-enabled (--keep-schedule)")
@@ -129,7 +137,8 @@ write (the API does not honor the flag in the same patch as replicas), for
 		},
 	}
 	scaleCmd.Flags().Int64("replicas", 0, "desired replica count (0-500)")
-	scaleCmd.Flags().Bool("keep-schedule", false, "re-enable scheduled scaling after the write (setting replicas puts it on hold)")
+	scaleCmd.Flags().
+		Bool("keep-schedule", false, "re-enable scheduled scaling after the write (setting replicas puts it on hold)")
 	addSettleFlags(scaleCmd)
 	RegisterContainerGroups(scaleCmd)
 }

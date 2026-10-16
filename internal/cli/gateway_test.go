@@ -16,7 +16,11 @@ func TestPickModel(t *testing.T) {
 	if m, cerr := pickModel("b", ids); cerr != nil || m != "b" {
 		t.Errorf("explicit listed model = %q %v", m, cerr)
 	}
-	if _, cerr := pickModel("zzz", ids); cerr == nil || cerr.Code != clierr.CodeInvalidInput || !strings.Contains(cerr.HintText(), "a, b") {
+	if _, cerr := pickModel(
+		"zzz",
+		ids,
+	); cerr == nil || cerr.Code != clierr.CodeInvalidInput ||
+		!strings.Contains(cerr.HintText(), "a, b") {
 		t.Errorf("unknown model = %v, want invalid_input listing the available ids", cerr)
 	}
 	// Listing unavailable: trust the flag, refuse to guess otherwise.
@@ -29,7 +33,15 @@ func TestPickModel(t *testing.T) {
 }
 
 func TestGatewayTestResultShape(t *testing.T) {
-	b, err := json.Marshal(gatewayTestResult{Model: "m", Prompt: "p", Reply: "r", Usage: map[string]any{"completion_tokens": 3.0}, OK: true})
+	b, err := json.Marshal(
+		gatewayTestResult{
+			Model:  "m",
+			Prompt: "p",
+			Reply:  "r",
+			Usage:  map[string]any{"completion_tokens": 3.0},
+			OK:     true,
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +68,8 @@ func TestUsageSummary(t *testing.T) {
 // says where the key in effect is shown.
 func TestAIGatewayHelpPointsAtWhoami(t *testing.T) {
 	c, _, err := rootCmd.Find([]string{"ai-gateway"})
-	if err != nil || !strings.Contains(c.Long, "To see which key is in effect and where it came from, run saladcloud whoami.") {
+	if err != nil ||
+		!strings.Contains(c.Long, "To see which key is in effect and where it came from, run saladcloud whoami.") {
 		t.Errorf("ai-gateway --help lacks the whoami line: %q", c.Long)
 	}
 }

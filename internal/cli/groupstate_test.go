@@ -32,7 +32,10 @@ func failedGroup(status shared.ContainerGroupStatus, reason *util.Nullable[strin
 // TestGetShowsTheReason: a failed group's reason is in the get table, not
 // only in -o json's current_state.description.
 func TestGetShowsTheReason(t *testing.T) {
-	g := failedGroup(shared.CONTAINER_GROUP_STATUS_FAILED, &util.Nullable[string]{Value: "Access Denied, Check Permissions"})
+	g := failedGroup(
+		shared.CONTAINER_GROUP_STATUS_FAILED,
+		&util.Nullable[string]{Value: "Access Denied, Check Permissions"},
+	)
 	var b bytes.Buffer
 	writeGroupDetail(&b, g)
 	if !strings.Contains(b.String(), "Status\tfailed\nReason\tAccess Denied, Check Permissions\n") {
@@ -86,12 +89,19 @@ func TestListColumns(t *testing.T) {
 // TestFollowSilentGroupNote: following a failed or stopped group says it
 // will stay silent, and why when the platform says.
 func TestFollowSilentGroupNote(t *testing.T) {
-	failed := failedGroup(shared.CONTAINER_GROUP_STATUS_FAILED, &util.Nullable[string]{Value: "Access Denied, Check Permissions"})
-	if got, want := groupSilentNote(failed), `note: group my-app is failed: Access Denied, Check Permissions; nothing will be logged until it runs`; got != want {
+	failed := failedGroup(
+		shared.CONTAINER_GROUP_STATUS_FAILED,
+		&util.Nullable[string]{Value: "Access Denied, Check Permissions"},
+	)
+	if got, want := groupSilentNote(
+		failed,
+	), `note: group my-app is failed: Access Denied, Check Permissions; nothing will be logged until it runs`; got != want {
 		t.Errorf("note = %q, want %q", got, want)
 	}
 	stopped := failedGroup(shared.CONTAINER_GROUP_STATUS_STOPPED, nil)
-	if got, want := groupSilentNote(stopped), `note: group my-app is stopped; nothing will be logged until it runs`; got != want {
+	if got, want := groupSilentNote(
+		stopped,
+	), `note: group my-app is stopped; nothing will be logged until it runs`; got != want {
 		t.Errorf("note = %q, want %q", got, want)
 	}
 	if got := groupSilentNote(failedGroup(shared.CONTAINER_GROUP_STATUS_RUNNING, nil)); got != "" {

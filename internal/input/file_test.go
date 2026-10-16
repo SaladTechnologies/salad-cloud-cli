@@ -230,7 +230,10 @@ func TestLoadExampleRoundTrip(t *testing.T) {
 	// then crash-loops with "unterminated quoted string". The example shipped
 	// that way once; pin the full text so a YAML edit cannot reintroduce it.
 	if !strings.Contains(c.Command.Value[2], "#$i") || !strings.HasSuffix(c.Command.Value[2], "sleep 5; done") {
-		t.Errorf("container.command[2] = %q, want the full loop through \"sleep 5; done\" (a YAML comment truncated it before)", c.Command.Value[2])
+		t.Errorf(
+			"container.command[2] = %q, want the full loop through \"sleep 5; done\" (a YAML comment truncated it before)",
+			c.Command.Value[2],
+		)
 	}
 }
 

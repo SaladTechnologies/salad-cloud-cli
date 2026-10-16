@@ -33,7 +33,11 @@ func TestCreateStorageAndCountry(t *testing.T) {
 		{Name: "web", Image: "busybox", Storage: 0, StorageSet: true},
 		{Name: "web", Image: "busybox", Countries: []string{"usa"}},
 	} {
-		if _, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, bad); cerr == nil || cerr.Code != clierr.CodeInvalidInput {
+		if _, cerr := buildCreateRequest(
+			containergroups.ContainerGroupCreationRequest{},
+			bad,
+		); cerr == nil ||
+			cerr.Code != clierr.CodeInvalidInput {
 			t.Errorf("%+v: error %v, want exit 6", bad, cerr)
 		}
 	}
