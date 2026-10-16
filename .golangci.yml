@@ -1,6 +1,8 @@
 version: "2"
 
 run:
+  build-tags:
+    - live # the live suite builds only under this tag; lint it with the rest
   modules-download-mode: readonly # a go.mod or go.sum that needs changes fails instead of being rewritten
   relative-path-mode: gomod
   tests: true
@@ -185,6 +187,8 @@ linters:
 
     misspell:
       locale: US
+      ignore-rules:
+        - enviroment # the did-you-mean example in internal/input; cspell:ignore enviroment
 
     nakedret:
       max-func-lines: 0
