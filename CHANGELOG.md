@@ -6,6 +6,10 @@ may change, and every such change is listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- Building from source with `go install` now needs Go 1.25 or later (was 1.24).
+
 ## [0.1.0-beta.1] - 2026-10-08
 
 The first public beta of the SaladCloud CLI: a thin, non-interactive-first command-line wrapper over the SaladCloud

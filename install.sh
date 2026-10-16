@@ -52,7 +52,7 @@ esac
 target="${os}_${arch}"
 case "$target" in
   linux_amd64 | linux_arm64 | darwin_amd64 | darwin_arm64) ;;
-  *) die "no prebuilt binary for $os/$arch; with Go 1.24 or later, run: go install github.com/saladtechnologies/salad-cloud-cli/cmd/saladcloud@latest" ;;
+  *) die "no prebuilt binary for $os/$arch; with Go 1.25 or later, run: go install github.com/saladtechnologies/salad-cloud-cli/cmd/saladcloud@latest" ;;
 esac
 
 tmp=$(mktemp -d 2>/dev/null || mktemp -d -t saladcloud)

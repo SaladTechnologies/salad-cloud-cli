@@ -1,6 +1,6 @@
 module github.com/saladtechnologies/salad-cloud-cli
 
-go 1.24
+go 1.25
 
 toolchain go1.27.2
 
