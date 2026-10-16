@@ -20,8 +20,12 @@ func runComplete(t *testing.T, args ...string) (stdout, stderr string) {
 	t.Cleanup(func() {
 		rootCmd.SetOut(nil)
 		rootCmd.SetErr(nil)
-		rootCmd.SetArgs(nil)
-		resetFlags()
+		// cobra adds __complete to the tree for the run that calls it and
+		// leaves it there; a real process exits after one run.
+		if c, _, err := rootCmd.Find([]string{"__complete"}); err == nil && c != rootCmd {
+			rootCmd.RemoveCommand(c)
+		}
+		resetRun()
 	})
 	r, w, err := os.Pipe()
 	if err != nil {

@@ -227,21 +227,13 @@ func TestWhoamiOrganizationsUnavailableVsEmpty(t *testing.T) {
 			t.Setenv("SALAD_ORGANIZATION", "my-org")
 			t.Setenv("SALAD_PROJECT", "")
 
-			var buf bytes.Buffer
-			old := output.Stdout
-			output.Stdout = &buf
-			t.Cleanup(func() {
-				output.Stdout = old
-				_ = output.SetMode("table")
-				rootCmd.SetArgs(nil)
-			})
-			rootCmd.SetArgs([]string{"whoami", "-o", "json", "--org", "", "--project", ""})
-			if err := rootCmd.Execute(); err != nil {
+			out, err := runRoot(t, "whoami", "-o", "json", "--org", "", "--project", "")
+			if err != nil {
 				t.Fatalf("whoami: %v", err)
 			}
 			var m map[string]json.RawMessage
-			if err := json.Unmarshal(buf.Bytes(), &m); err != nil {
-				t.Fatalf("not JSON: %v\n%s", err, buf.String())
+			if err := json.Unmarshal([]byte(out), &m); err != nil {
+				t.Fatalf("not JSON: %v\n%s", err, out)
 			}
 			var got bytes.Buffer
 			if err := json.Compact(&got, m["organizations"]); err != nil || got.String() != tc.want {

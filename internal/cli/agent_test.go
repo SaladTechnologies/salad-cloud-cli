@@ -10,24 +10,13 @@ import (
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/agentdoc"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
 // runAgentInitCmd executes `saladcloud agent init <args>` through the real
-// command tree with stdout captured. Flags are passed explicitly on every
-// call because cobra keeps flag values between executions in one process.
+// command tree with stdout captured.
 func runAgentInitCmd(t *testing.T, args ...string) (stdout string, err error) {
 	t.Helper()
-	var buf bytes.Buffer
-	old := output.Stdout
-	output.Stdout = &buf
-	t.Cleanup(func() {
-		output.Stdout = old
-		_ = output.SetMode("table")
-	})
-	rootCmd.SetArgs(append([]string{"agent", "init"}, args...))
-	err = rootCmd.Execute()
-	return buf.String(), err
+	return runRoot(t, append([]string{"agent", "init"}, args...)...)
 }
 
 func TestAgentInitResultStableJSONShape(t *testing.T) {

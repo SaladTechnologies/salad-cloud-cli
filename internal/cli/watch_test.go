@@ -78,6 +78,4 @@ func TestWatchIsTableModeOnly(t *testing.T) {
 	if !ok || cerr.Code != clierr.CodeUsage || !strings.Contains(cerr.Message, "--wait") {
 		t.Errorf("list -w -o json = %v, want a usage error pointing at --wait", err)
 	}
-	listCmd, _, _ := rootCmd.Find([]string{"container-groups", "list"})
-	_ = listCmd.Flags().Set("watch", "false")
 }

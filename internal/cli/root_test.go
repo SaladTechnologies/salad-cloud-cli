@@ -11,8 +11,8 @@ import (
 )
 
 // runExecute runs Execute with args through the real command tree, capturing
-// stdout and stderr. It resets --output afterward because cobra keeps flag
-// values between executions in one process.
+// stdout and stderr. It resets the run's state afterward because cobra keeps
+// flag values between executions in one process.
 func runExecute(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	var out, errBuf bytes.Buffer
@@ -20,10 +20,7 @@ func runExecute(t *testing.T, args ...string) (code int, stdout, stderr string) 
 	output.Stdout, errOut = &out, &errBuf
 	t.Cleanup(func() {
 		output.Stdout, errOut = oldOut, oldErr
-		_ = output.SetMode("table")
-		rootCmd.SetArgs(nil)
-		commandLine = nil
-		resetFlags()
+		resetRun()
 	})
 	commandLine = args
 	code = Execute()

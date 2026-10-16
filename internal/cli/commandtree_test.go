@@ -172,9 +172,7 @@ func runRoot(t *testing.T, args ...string) (string, error) {
 	output.Stdout = &buf
 	t.Cleanup(func() {
 		output.Stdout = old
-		_ = output.SetMode("table")
-		rootCmd.SetArgs(nil)
-		resetFlags()
+		resetRun()
 	})
 	rootCmd.SetArgs(args)
 	err := rootCmd.Execute()
@@ -183,12 +181,11 @@ func runRoot(t *testing.T, args ...string) (string, error) {
 
 // resetFlags puts every flag in the tree back to its default, --output
 // included: cobra keeps flag values between in-process runs, so a later test
-// would inherit them, and a repeatable flag would keep appending.
+// would inherit them, and a repeatable flag would keep appending. It resets
+// flags that are not marked changed too: a value that fails to parse
+// (--timeout soon) is stored before the error, without marking the flag.
 func resetFlags() {
 	reset := func(f *pflag.Flag) {
-		if !f.Changed {
-			return
-		}
 		if sv, ok := f.Value.(pflag.SliceValue); ok {
 			_ = sv.Replace(nil)
 		} else {
