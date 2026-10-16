@@ -267,7 +267,7 @@ func TestConfigReady(t *testing.T) {
 	if err := os.Mkdir(ro, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(ro, 0o700) })
+	t.Cleanup(func() { _ = os.Chmod(ro, 0o700) }) //nolint:gosec // a directory: TempDir cleanup needs its x bit back
 	t.Setenv("SALAD_CLI_CONFIG_DIR", ro)
 	for _, tc := range []struct{ command, hint string }{
 		{"login", "set SALAD_CLI_CONFIG_DIR to a writable folder, or set SALAD_API_KEY, SALAD_ORGANIZATION and SALAD_PROJECT instead of logging in"},

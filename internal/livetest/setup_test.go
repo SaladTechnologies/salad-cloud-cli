@@ -66,7 +66,10 @@ func mask(k string) string {
 // cfgDir is a setup case's config folder.
 type cfgDir string
 
-func newCfg(t *testing.T) cfgDir { return cfgDir(t.TempDir()) }
+func newCfg(t *testing.T) cfgDir {
+	t.Helper()
+	return cfgDir(t.TempDir())
+}
 
 // path is the config file the CLI reports for this folder.
 func (d cfgDir) path() string { return filepath.Join(string(d), "config.json") }

@@ -118,7 +118,10 @@ func runEnv(t *testing.T, extraEnv map[string]string, args ...string) result {
 }
 
 // run executes the CLI under test with the inherited environment.
-func run(t *testing.T, args ...string) result { return runEnv(t, nil, args...) }
+func run(t *testing.T, args ...string) result {
+	t.Helper()
+	return runEnv(t, nil, args...)
+}
 
 // oneDoc parses stdout as exactly one JSON document.
 func oneDoc(t *testing.T, r result) map[string]any {
@@ -848,7 +851,7 @@ func TestRunningLifecycle(t *testing.T) {
 // publickey denial skips rather than fails. Everything else — the relay
 // endpoint resolving, the sh -c argv wrapping, --config rendering, and the
 // documented exit-code caveat — is asserted.
-func testSSH(t *testing.T, g string) {
+func testSSH(t *testing.T, g string) { //nolint:thelper // a subtest body, not a helper: failures point into it
 	// --config opens no session, so it works even without a usable key and
 	// proves the relay endpoint was resolved.
 	cfg := run(t, "container-groups", "ssh", g, "--config")

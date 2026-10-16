@@ -153,10 +153,10 @@ func TestJSONKeySnapshot(t *testing.T) {
 	got := b.String()
 	golden := filepath.Join("testdata", "json-keys.golden")
 	if *updateKeys {
-		if err := os.MkdirAll("testdata", 0o755); err != nil {
+		if err := os.MkdirAll("testdata", 0o750); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+		if err := os.WriteFile(golden, []byte(got), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		return

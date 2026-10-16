@@ -192,7 +192,7 @@ func TestLoadLenient(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "def.json")
 	doc := `{"name":"demo","future_field":1,"container":{"image":"busybox"}}`
-	if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var req containergroups.ContainerGroupCreationRequest

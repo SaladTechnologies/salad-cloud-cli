@@ -21,7 +21,10 @@ const (
 )
 
 // unsetProject clears the project stubAPI sets, so the fallback applies.
-func unsetProject(t *testing.T) { t.Setenv("SALAD_PROJECT", "") }
+func unsetProject(t *testing.T) {
+	t.Helper()
+	t.Setenv("SALAD_PROJECT", "")
+}
 
 // TestAssumedProjectWarnsOnce: a project-scoped command on the fallback
 // prints one warning, and none when the project was set.

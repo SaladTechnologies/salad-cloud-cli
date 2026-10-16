@@ -225,7 +225,7 @@ func TestPickFile(t *testing.T) {
 	})
 	t.Run("a directory named CLAUDE.md does not count", func(t *testing.T) {
 		dir := t.TempDir()
-		if err := os.Mkdir(filepath.Join(dir, FileClaude), 0o755); err != nil {
+		if err := os.Mkdir(filepath.Join(dir, FileClaude), 0o750); err != nil {
 			t.Fatal(err)
 		}
 		got := PickFile(dir, "", noEnv)
@@ -237,7 +237,7 @@ func TestPickFile(t *testing.T) {
 
 func touch(t *testing.T, p string) {
 	t.Helper()
-	if err := os.WriteFile(p, []byte("x\n"), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte("x\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

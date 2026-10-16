@@ -88,7 +88,7 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 	stale := "# Project\n\nUser intro.\n\n" +
 		agentdoc.StartMarker("0.0.1") + "\nstale\n<!-- SALADCLOUD END -->\n" +
 		"\n## Testing\nUser outro.\n"
-	if err := os.WriteFile(filepath.Join(dir, agentdoc.FileAgents), []byte(stale), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, agentdoc.FileAgents), []byte(stale), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	out, err = runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
@@ -171,7 +171,7 @@ func TestAgentInitMalformedIsInvalidInput(t *testing.T) {
 	dir := t.TempDir()
 	broken := "# Repo\n<!-- SALADCLOUD START (saladcloud agent init 1.0.0) -->\nno end marker\n"
 	p := filepath.Join(dir, agentdoc.FileAgents)
-	if err := os.WriteFile(p, []byte(broken), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte(broken), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	_, err := runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
