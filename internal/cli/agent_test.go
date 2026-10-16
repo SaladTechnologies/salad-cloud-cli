@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -220,7 +221,8 @@ func TestAgentInitBadDir(t *testing.T) {
 }
 
 func asClierr(err error, target **clierr.Error) bool {
-	ce, ok := err.(*clierr.Error)
+	var ce *clierr.Error
+	ok := errors.As(err, &ce)
 	if ok {
 		*target = ce
 	}

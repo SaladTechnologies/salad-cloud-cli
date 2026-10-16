@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -130,13 +131,14 @@ func TestCreateSendsCommand(t *testing.T) {
 // TestCreateCommandArgs: one positional before --, any number after.
 func TestCreateCommandArgs(t *testing.T) {
 	_, err := runRoot(t, "container-groups", "create", "a", "b", "--image", "x", "--", "sleep", "1")
-	cerr, ok := err.(*clierr.Error)
+	var cerr *clierr.Error
+	ok := errors.As(err, &cerr)
 	if !ok || cerr.Code != clierr.CodeUsage || !strings.Contains(cerr.Message, `unexpected argument "b"`) {
 		t.Errorf("two positionals: %v", err)
 	}
 	resetFlags()
 	_, err = runRoot(t, "container-groups", "update", "a", "--")
-	if cerr, ok := err.(*clierr.Error); !ok || !strings.Contains(cerr.Message, "nothing after --") {
+	if !errors.As(err, &cerr) || !strings.Contains(cerr.Message, "nothing after --") {
 		t.Errorf("update with nothing after --: %v", err)
 	}
 }

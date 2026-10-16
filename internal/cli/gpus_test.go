@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -19,7 +20,8 @@ func TestGpusGetNamesTheClass(t *testing.T) {
 		`{"id":"11111111-1111-4111-8111-111111111111","name":"RTX 3060 (12 GB)"},` +
 		`{"id":"22222222-2222-4222-8222-222222222222","name":"RTX 3060 Ti (8 GB)"}]}`})
 	_, err := runRoot(t, "gpus", "get", "3060")
-	cerr, ok := err.(*clierr.Error)
+	var cerr *clierr.Error
+	ok := errors.As(err, &cerr)
 	if !ok || cerr.Code != clierr.CodeInvalidInput ||
 		!strings.HasPrefix(cerr.Message, `ambiguous GPU class "3060": matches`) ||
 		strings.Contains(cerr.Message, "--gpu") {

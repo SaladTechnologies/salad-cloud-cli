@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -106,7 +107,8 @@ func TestGroupNotFoundEverywhere(t *testing.T) {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			stubAPI(t, map[string]string{quotasRoute: `{}`}) // the organization exists
 			_, err := runRoot(t, args...)
-			cerr, ok := err.(*clierr.Error)
+			var cerr *clierr.Error
+			ok := errors.As(err, &cerr)
 			if !ok || cerr.Code != clierr.CodeNotFound || cerr.Message != want ||
 				cerr.HintText() != "to list the container groups, run saladcloud container-groups list" {
 				t.Errorf("%v (hint %q), want (4) %s", err, cerr.HintText(), want)

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -34,7 +35,8 @@ func TestQueueJobCancelFinishedSaysWhy(t *testing.T) {
 	t.Setenv("SALAD_PROJECT", "default")
 
 	_, err := runRoot(t, "queues", "jobs", "cancel", id, "--queue", "q", "-o", "json")
-	cerr, ok := err.(*clierr.Error)
+	var cerr *clierr.Error
+	ok := errors.As(err, &cerr)
 	if !ok {
 		t.Fatalf("err = %v, want a *clierr.Error", err)
 	}

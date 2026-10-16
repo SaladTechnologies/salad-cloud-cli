@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -52,7 +53,8 @@ func TestSetMode(t *testing.T) {
 	if err == nil {
 		t.Fatal(`SetMode("bogus"): want error, got nil`)
 	}
-	ce, ok := err.(*clierr.Error)
+	var ce *clierr.Error
+	ok := errors.As(err, &ce)
 	if !ok {
 		t.Fatalf(`SetMode("bogus") error type = %T, want *clierr.Error`, err)
 	}

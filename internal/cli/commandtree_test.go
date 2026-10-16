@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"regexp"
 	"strings"
 	"testing"
@@ -240,7 +241,8 @@ func TestBareNounIsUsageError(t *testing.T) {
 		path := strings.Fields(p.CommandPath())[1:]
 		t.Run(strings.Join(path, " "), func(t *testing.T) {
 			out, err := runRoot(t, append(path, "-o", "json")...)
-			cerr, ok := err.(*clierr.Error)
+			var cerr *clierr.Error
+			ok := errors.As(err, &cerr)
 			if !ok || cerr.Code != clierr.CodeUsage {
 				t.Fatalf("bare %v = %v, want a usage error", path, err)
 			}
@@ -446,7 +448,8 @@ func TestDidYouMean(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%v: no error", tc.args)
 		}
-		cerr, ok := err.(*clierr.Error)
+		var cerr *clierr.Error
+		ok := errors.As(err, &cerr)
 		if !ok {
 			cerr = suggestUnknownCommand(rootCmd, err.Error(), tc.args)
 		}

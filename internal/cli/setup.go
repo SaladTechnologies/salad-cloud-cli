@@ -6,6 +6,7 @@ package cli
 // organizations, and the config file check that runs before any prompt.
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -327,7 +328,8 @@ func configReady(command string) *clierr.Error {
 
 // readReason is why the config file could not be read, without its path.
 func readReason(err error) string {
-	if re, ok := err.(*config.ReadError); ok {
+	var re *config.ReadError
+	if errors.As(err, &re) {
 		return re.Reason()
 	}
 	return config.Reason(err)

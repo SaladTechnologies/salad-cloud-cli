@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -110,7 +111,8 @@ func TestAssumedProjectMissing(t *testing.T) {
 			stubAPI(t, tc.routes)
 			unsetProject(t)
 			_, err := runRoot(t, tc.args...)
-			ce, ok := err.(*clierr.Error)
+			var ce *clierr.Error
+			ok := errors.As(err, &ce)
 			if !ok || ce.Code != tc.wantCode || !strings.Contains(ce.Message, tc.want) {
 				t.Fatalf("err = %v, want code %d containing %q", err, tc.wantCode, tc.want)
 			}
@@ -177,7 +179,8 @@ func TestGroupLogsCheckTheAssumedProject(t *testing.T) {
 			stubAPI(t, map[string]string{quotasRoute: `{}`, "/log-entries": `{"items":[]}`})
 			unsetProject(t)
 			_, err := runRoot(t, args...)
-			if ce, ok := err.(*clierr.Error); !ok || ce.Code != clierr.CodeUsage ||
+			var ce *clierr.Error
+			if !errors.As(err, &ce) || ce.Code != clierr.CodeUsage ||
 				!strings.Contains(ce.Message, "no valid project set") {
 				t.Errorf("err = %v, want exit 2, no valid project set", err)
 			}

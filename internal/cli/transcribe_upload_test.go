@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -42,7 +43,8 @@ func TestTranscribeDeletesUploadWhenJobCreateFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := runRoot(t, "inference", "transcribe", audio, "-o", "json")
-	if cerr, ok := err.(*clierr.Error); !ok || cerr.Code == clierr.CodeOK {
+	var cerr *clierr.Error
+	if !errors.As(err, &cerr) || cerr.Code == clierr.CodeOK {
 		t.Fatalf("transcribe = %v, want the job-create error", err)
 	}
 	var put, del string
@@ -96,7 +98,8 @@ func TestTranscribeFailedJobIsTranscriptionFailed(t *testing.T) {
 	stubAPI(t, nil)
 	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
 	_, err := runRoot(t, "inference", "transcribe", "https://example.com/a.wav", "-o", "json")
-	cerr, ok := err.(*clierr.Error)
+	var cerr *clierr.Error
+	ok := errors.As(err, &cerr)
 	if !ok || cerr.Kind != clierr.KindTranscriptionFailed || cerr.Code != clierr.CodeGeneric {
 		t.Errorf("transcribe of a failed job = %v, want (1, transcription_failed)", err)
 	}

@@ -96,7 +96,7 @@ var generateKey = func(keyPath string) error {
 	out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "", "-C", "saladcloud-cli").
 		CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%v; %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("%w; %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

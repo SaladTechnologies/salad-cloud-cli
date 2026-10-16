@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -126,7 +127,8 @@ func TestUsageErrorsPrintWhatToType(t *testing.T) {
 		// A subtest each: runRoot resets the tree's flags when its test ends.
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			_, err := runRoot(t, tc.args...)
-			cerr, ok := err.(*clierr.Error)
+			var cerr *clierr.Error
+			ok := errors.As(err, &cerr)
 			if !ok {
 				t.Fatalf("%v (%T), want a *clierr.Error", err, err)
 			}

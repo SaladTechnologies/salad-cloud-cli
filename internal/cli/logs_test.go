@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -87,7 +88,8 @@ func TestFormatLogLineNamesItsSource(t *testing.T) {
 // error before any client or API work.
 func TestLogsInstancePrefixNeedsGroup(t *testing.T) {
 	_, err := runRoot(t, "logs", "--instance", "8a2f")
-	cerr, ok := err.(*clierr.Error)
+	var cerr *clierr.Error
+	ok := errors.As(err, &cerr)
 	if !ok || cerr.Code != clierr.CodeUsage {
 		t.Fatalf("logs --instance <prefix> without a group = %v, want a usage error", err)
 	}

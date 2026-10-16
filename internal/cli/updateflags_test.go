@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -143,7 +144,8 @@ func TestValidateUpdateFlags(t *testing.T) {
 // before any client or API work.
 func TestUpdateWithNothingToDoIsUsage(t *testing.T) {
 	_, err := runRoot(t, "container-groups", "update", "my-app")
-	cerr, ok := err.(*clierr.Error)
+	var cerr *clierr.Error
+	ok := errors.As(err, &cerr)
 	if !ok || cerr.Code != clierr.CodeUsage {
 		t.Fatalf("update with nothing to do = %v, want a usage error", err)
 	}

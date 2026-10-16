@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,7 +27,8 @@ func TestJobIDsMustBeFullUUIDs(t *testing.T) {
 			stubAPI(t, map[string]string{}) // any request would 404
 			_, err := runRoot(t, tc.args...)
 			want := `job IDs must be full UUIDs, not "c39e9f69"; to list them, run ` + tc.list
-			cerr, ok := err.(*clierr.Error)
+			var cerr *clierr.Error
+			ok := errors.As(err, &cerr)
 			if !ok || cerr.Code != clierr.CodeInvalidInput || cerr.Kind != clierr.KindInvalidInput ||
 				errText(cerr) != want {
 				t.Errorf("%v, want (6, invalid_input) %s", err, want)

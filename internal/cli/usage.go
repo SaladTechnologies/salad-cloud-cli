@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"regexp"
 	"strconv"
 	"strings"
@@ -57,7 +58,8 @@ func wrapArgs(root *cobra.Command) {
 				return cerr
 			}
 			if err := orig(cmd, args); err != nil {
-				if cerr, ok := err.(*clierr.Error); ok {
+				var cerr *clierr.Error
+				if errors.As(err, &cerr) {
 					return cerr
 				}
 				return argsError(cmd, args, err)

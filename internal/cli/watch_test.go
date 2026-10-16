@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -67,14 +68,16 @@ func TestWatchLoopEndsOnFatalError(t *testing.T) {
 	err := watchLoop(t.Context(), fakeWatchDeps(&out, false, nil), func(context.Context) *clierr.Error {
 		return clierr.New(clierr.CodeNotFound, clierr.KindNotFound, "gone")
 	})
-	if cerr, ok := err.(*clierr.Error); !ok || cerr.Code != clierr.CodeNotFound {
+	var cerr *clierr.Error
+	if !errors.As(err, &cerr) || cerr.Code != clierr.CodeNotFound {
 		t.Errorf("watchLoop = %v, want the not-found error", err)
 	}
 }
 
 func TestWatchIsTableModeOnly(t *testing.T) {
 	_, err := runRoot(t, "container-groups", "list", "-w", "-o", "json")
-	cerr, ok := err.(*clierr.Error)
+	var cerr *clierr.Error
+	ok := errors.As(err, &cerr)
 	if !ok || cerr.Code != clierr.CodeUsage || !strings.Contains(cerr.Message, "--wait") {
 		t.Errorf("list -w -o json = %v, want a usage error pointing at --wait", err)
 	}

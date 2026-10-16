@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -582,7 +583,8 @@ func (l *login) typeOrganization(def string) (string, *clierr.Error) {
 // endedAt turns what ended a prompt into login's error: an error from a
 // check is that error; Ctrl-C or end of input is the cancel.
 func (l *login) endedAt(err error) *clierr.Error {
-	if cerr, ok := err.(*clierr.Error); ok {
+	var cerr *clierr.Error
+	if errors.As(err, &cerr) {
 		return cerr
 	}
 	return l.cancelled()

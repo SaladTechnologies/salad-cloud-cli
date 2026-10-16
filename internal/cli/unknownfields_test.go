@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -196,7 +197,8 @@ func TestUpdateNamesTheGroupToStartFrom(t *testing.T) {
 	}
 	stubAPI(t, map[string]string{})
 	_, err := runRoot(t, "cg", "update", "my-app", "-f", doc)
-	cerr, ok := err.(*clierr.Error)
+	var cerr *clierr.Error
+	ok := errors.As(err, &cerr)
 	if !ok || cerr.Kind != clierr.KindUnknownField ||
 		!strings.Contains(cerr.HintText(), "run saladcloud container-groups get my-app --writable") {
 		t.Errorf("update -f <get response> = %v, want the --writable command for my-app", err)
