@@ -130,7 +130,7 @@ func TestActionResultJSONTags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tags := map[string]string{} // json name -> full tag
-			for i := 0; i < tt.typ.NumField(); i++ {
+			for i := range tt.typ.NumField() {
 				raw := tt.typ.Field(i).Tag.Get("json")
 				if raw == "" || raw == "-" {
 					continue

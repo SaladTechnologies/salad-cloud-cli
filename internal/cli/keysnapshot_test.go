@@ -102,7 +102,7 @@ func keyPaths(typ reflect.Type, prefix string, open map[reflect.Type]bool, out *
 		defer delete(open, typ)
 		var fields func(reflect.Type)
 		fields = func(st reflect.Type) {
-			for i := 0; i < st.NumField(); i++ {
+			for i := range st.NumField() {
 				f := st.Field(i)
 				tag := f.Tag.Get("json")
 				name, _, _ := strings.Cut(tag, ",")

@@ -23,7 +23,7 @@ Preamble that is not part of any release.
 
 ## [1.1.0] — 2026-09-15 the middle one
 
-- one one
+- one point one
 
 ## [1.0.0] - 2026-09-01
 

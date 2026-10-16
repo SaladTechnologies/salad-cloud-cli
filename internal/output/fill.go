@@ -225,7 +225,7 @@ func fillStruct(o *object, v reflect.Value, mode fillMode) {
 	var fields []field
 	var walk func(v reflect.Value, t reflect.Type, depth int)
 	walk = func(v reflect.Value, t reflect.Type, depth int) {
-		for i := 0; i < t.NumField(); i++ {
+		for i := range t.NumField() {
 			f := t.Field(i)
 			name, ok := jsonName(f)
 			if !ok {

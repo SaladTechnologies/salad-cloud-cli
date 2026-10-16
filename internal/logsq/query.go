@@ -103,7 +103,7 @@ func quoteValue(s string) string {
 	var b strings.Builder
 	b.Grow(len(s) + 2)
 	b.WriteByte('"')
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		switch s[i] {
 		case '\\':
 			b.WriteString(`\\`)

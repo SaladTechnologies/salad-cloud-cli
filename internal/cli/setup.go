@@ -239,7 +239,7 @@ func normalizeKey(raw string) (key string, ok bool) {
 	key = strings.ReplaceAll(key, "\x1b[201~", "")
 	key = strings.TrimSpace(key)
 	key = strings.TrimSpace(strings.TrimPrefix(key, "\xef\xbb\xbf"))
-	for i := 0; i < len(key); i++ {
+	for i := range len(key) {
 		if key[i] < 0x20 || key[i] > 0x7e {
 			return key, false
 		}

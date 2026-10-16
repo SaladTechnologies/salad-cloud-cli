@@ -276,7 +276,7 @@ func structFields(t reflect.Type) map[string]reflect.Type {
 }
 
 func collectFields(t reflect.Type, out map[string]reflect.Type) {
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		f := t.Field(i)
 		if f.Anonymous && f.Tag.Get("json") == "" {
 			if et := unwrapType(f.Type); et != nil && et.Kind() == reflect.Struct {
