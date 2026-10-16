@@ -76,7 +76,7 @@ func binPath(t *testing.T) string {
 	}
 	p := filepath.Join("..", "..", "dist", runtime.GOOS+"-"+runtime.GOARCH, name)
 	if _, err := os.Stat(p); err != nil {
-		t.Skipf("no CLI binary at %s (run `make build`, or set SALAD_CLI_TEST_BIN)", p)
+		t.Skipf("no CLI binary at %s (run `just build`, or set SALAD_CLI_TEST_BIN)", p)
 	}
 	abs, err := filepath.Abs(p)
 	if err != nil {

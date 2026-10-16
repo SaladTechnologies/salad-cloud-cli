@@ -41,8 +41,6 @@ INSTALL                  text
 ISSUE_TEMPLATE           text
 justfile                 text
 LICENSE                  text
-Makefile                 text
-makefile                 text
 NEWS                     text
 PULL_REQUEST_TEMPLATE    text
 README                   text

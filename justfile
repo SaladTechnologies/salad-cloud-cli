@@ -53,9 +53,28 @@ lint-go:
     govulncheck ./...
     go-licenses check ./... --include_tests --ignore "$(go list -m)" --allowed_licenses={{ go-allowed-licenses }}
 
-# Test Go files.
+# Vet Go files.
+vet:
+    go vet ./...
+
+# Test Go files, with the race detector where cgo is available (it needs a C compiler).
 test-go:
-    go test -race -shuffle=on -count=1 -timeout=2m ./...
+    race="$(if [ "$(go env CGO_ENABLED)" = 1 ]; then echo -race; fi)"; go test $race -shuffle=on -count=1 -timeout=2m ./...
+
+# Cross-compile into dist/ (windows-amd64, linux-amd64, darwin-arm64, darwin-amd64).
+build:
+    bash scripts/build.sh
+
+# The live suite needs SALAD_API_KEY and SALAD_ORGANIZATION (SALAD_PROJECT optional) and fails without them, so a pass
+# always means it ran. Optional: SALAD_CLI_TEST_REQUIRE_SSH=1 fails the ssh test instead of skipping it on a publickey
+# denial (set it for the pre-tag run); SALAD_AI_GATEWAY_API_KEY adds the AI Gateway test; SALAD_CLI_TEST_AUDIO=<short
+# wav> and SALAD_CLI_TEST_PHRASE=<words in it> add transcription; SALAD_CLI_TEST_AUDIO_FOREIGN=<short single-track
+# non-English clip> adds the language_code and audio_stream_index test; SALAD_CLI_TEST_BIN=<path> tests another binary
+# than dist/.
+
+# Run the live suite against the real API (spends money; see the notes above).
+test-live: build
+    go test -tags live ./internal/livetest/ -timeout 30m -v
 
 # Format PowerShell files.
 [extension('.ps1')]

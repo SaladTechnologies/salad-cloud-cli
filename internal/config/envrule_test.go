@@ -25,7 +25,7 @@ var sharedEnv = map[string]bool{
 var saladVar = regexp.MustCompile(`\bSALAD(CLOUD)?_[A-Z0-9_]+\b`)
 
 // TestEnvironmentVariableRule reads the module's Go sources, installers,
-// workflows, goreleaser config, Dockerfile, Makefile and docs: every SALAD
+// workflows, goreleaser config, Dockerfile, justfile and docs: every SALAD
 // variable is shared or SALAD_CLI_. Names the platform injects into
 // containers (SALAD_ORGANIZATION_NAME, ...) are not read by the CLI and
 // fail here: the rule has no tier for them.
@@ -35,7 +35,7 @@ func TestEnvironmentVariableRule(t *testing.T) {
 	for _, path := range ruleFiles(t, root) {
 		name := filepath.Base(path)
 		ext := filepath.Ext(name)
-		if name != "Makefile" && name != "Dockerfile" && ext != ".go" && ext != ".sh" && ext != ".ps1" &&
+		if name != "justfile" && name != "Dockerfile" && ext != ".go" && ext != ".sh" && ext != ".ps1" &&
 			ext != ".yml" && ext != ".yaml" && ext != ".md" {
 			continue
 		}

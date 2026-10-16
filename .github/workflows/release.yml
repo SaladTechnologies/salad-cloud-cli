@@ -5,7 +5,7 @@ name: Release
 # checksums and SBOMs, the container image, and — when their tokens are set —
 # the Homebrew cask, Scoop manifest and winget pull request, then attests the
 # build provenance of every archive. A tag with a "-" is a pre-release. The
-# live suite is not run here by decision (see test.yml); run `make test-live`
+# live suite is not run here by decision (see test.yml); run `just test-live`
 # before tagging.
 
 on:
