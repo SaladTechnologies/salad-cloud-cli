@@ -29,7 +29,7 @@ import (
 // changing. This test lists every key path each emitted type can carry and
 // compares the list with testdata/json-keys.golden: a difference fails CI
 // until the golden file is regenerated and the CHANGELOG says what
-// changed. Regenerate with: go test ./internal/cli -run TestJSONKeySnapshot -update-keys
+// changed. Regenerate it with `go test ./internal/cli -run TestJSONKeySnapshot -update-keys`.
 var updateKeys = flag.Bool("update-keys", false, "rewrite testdata/json-keys.golden")
 
 // keySnapshotRoots are the documents commands emit, by command.

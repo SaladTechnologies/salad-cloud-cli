@@ -139,7 +139,10 @@ linters:
           length: 116 # 120 columns minus the `// ` and one tab of indentation
 
     godot:
-      capital: true
+      # Off: a sentence may start with an identifier ("override wins", "total_count is"), and the fix capitalizes it.
+      capital: false
+      exclude:
+        - "^ -{3}" # section dividers: `// --- command tree ---`
       scope: toplevel
 
     gomoddirectives:
