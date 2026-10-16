@@ -175,7 +175,7 @@ A variable (SALAD_API_KEY, SALAD_ORGANIZATION, SALAD_PROJECT,
 SALAD_AI_GATEWAY_API_KEY) that is set is used instead of the saved value;
 config set says so.`,
 		Args: cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			key, value := args[0], args[1]
 			if isSecretKey(key) && value != "-" {
 				fmt.Fprintf(
@@ -263,7 +263,7 @@ file that saladcloud config path prints. A variable that still supplies the
 value (SALAD_API_KEY, SALAD_ORGANIZATION, SALAD_PROJECT,
 SALAD_AI_GATEWAY_API_KEY) is still used; config unset says so.`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			key := args[0]
 			f, path, cerr := loadConfigFor("config unset")
 			if cerr != nil {
@@ -297,7 +297,7 @@ SALAD_AI_GATEWAY_API_KEY) is still used; config unset says so.`,
 print masked to their last four characters (****...ABCD), never whole.
 Keys: ` + configKeys + `.`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			key := args[0]
 			f, _, cerr := loadConfigFor("config get")
 			if cerr != nil {
@@ -326,7 +326,7 @@ Keys: ` + configKeys + `.`,
 		Use:   "list",
 		Short: "Print all config values (both keys masked) and the config path",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			f, path, cerr := loadConfigFor("config list")
 			if cerr != nil {
 				return cerr
@@ -346,7 +346,7 @@ Keys: ` + configKeys + `.`,
 		Use:   "path",
 		Short: "Print the config file path",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			path, err := config.Path()
 			if err != nil {
 				return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err)).

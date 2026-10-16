@@ -39,7 +39,7 @@ func init() {
 	}
 }
 
-func runVersion(cmd *cobra.Command, args []string) error {
+func runVersion(_ *cobra.Command, _ []string) error {
 	v := versionInfo{
 		Version:   version.Version,
 		Commit:    version.Commit,

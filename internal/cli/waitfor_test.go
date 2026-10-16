@@ -47,7 +47,7 @@ type waitHarness struct {
 
 func (h *waitHarness) deps() waitDeps {
 	return waitDeps{
-		get: func(ctx context.Context) (*shared.ContainerGroup, *clierr.Error) {
+		get: func(_ context.Context) (*shared.ContainerGroup, *clierr.Error) {
 			if h.calls >= len(h.steps) {
 				h.t.Fatalf("get called %d times, only %d responses scripted", h.calls+1, len(h.steps))
 			}

@@ -106,7 +106,7 @@ func TestUploadFileUnsigned(t *testing.T) {
 }
 
 func TestUploadFileNon2xxMapsStatus(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		w.Write([]byte(`{"title": "Forbidden"}`))

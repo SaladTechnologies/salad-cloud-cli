@@ -353,7 +353,7 @@ func init() {
 		Use:   "list",
 		Short: "List the available inference endpoints",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, _, cerr := NewClient(cmd)
 			if cerr != nil {
 				return cerr
@@ -432,7 +432,7 @@ argument and the endpoint is --endpoint:
 the newest N (default 100; 0 for all, up to 10,000); a stderr note says when
 older jobs were left out.`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			endpoint := endpointFlag(cmd)
 			limit, _ := cmd.Flags().GetInt("limit")
 			if limit < 0 {
@@ -522,7 +522,7 @@ cancelled exits 1 with the job's status and last event. --timeout (default
   # Full prototype from a file (input + webhook)
   saladcloud inference jobs create --endpoint transcribe -f job.yaml`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			endpoint := endpointFlag(cmd)
 			file, _ := cmd.Flags().GetString("file")
 			inputJSON, _ := cmd.Flags().GetString("input")

@@ -153,7 +153,7 @@ func TestGatewayErrorMapping(t *testing.T) {
 		{500, `{"error":"boom"}`, clierr.CodeGeneric, "boom"},
 	}
 	for _, tt := range tests {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(tt.status)
 			w.Write([]byte(tt.body))
 		}))

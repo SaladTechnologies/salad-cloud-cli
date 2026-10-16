@@ -71,7 +71,7 @@ type stdConsole struct {
 	in     *bufio.Reader // for the rare terminal that cannot be put in raw mode
 }
 
-func (c *stdConsole) Terminal() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
+func (*stdConsole) Terminal() bool { return term.IsTerminal(int(os.Stdin.Fd())) }
 
 // Device opens the terminal device once (/dev/tty; CONOUT$ on Windows),
 // falling back to stderr when it cannot be opened.

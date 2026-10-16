@@ -29,7 +29,7 @@ func TestRedactText(t *testing.T) {
 // debugRun makes one API call at level and returns what --debug printed.
 func debugRun(t *testing.T, level DebugLevel) string {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`{"secret_key":"s3cr3t"}`))
 	}))
 	defer srv.Close()
@@ -121,7 +121,7 @@ func TestDebugBodiesRedactDefinitionSecrets(t *testing.T) {
 
 // The gateway's bearer token is a header, and is redacted like the API key.
 func TestDebugBodiesRedactAuthorizationHeader(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`{"object":"list","data":[]}`))
 	}))
 	defer srv.Close()

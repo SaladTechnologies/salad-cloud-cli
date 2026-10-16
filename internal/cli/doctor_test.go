@@ -714,7 +714,7 @@ func TestDoctorReachable(t *testing.T) {
 	t.Cleanup(func() { productionAPI = old })
 	t.Setenv("SALAD_CLI_API_BASE_URL", "")
 	srv := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusUnauthorized) }),
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) }),
 	)
 	defer srv.Close()
 	productionAPI = srv.URL

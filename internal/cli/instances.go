@@ -233,7 +233,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 		Use:   "list -c <group>",
 		Short: "List the instances of a container group",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			group := groupFlag(cmd)
 			client, _, cerr := NewClient(cmd)
 			if cerr != nil {

@@ -78,7 +78,7 @@ func sortedGpuClasses(cmd *cobra.Command) ([]organizationdata.GpuClass, *clierr.
 	return classes, nil
 }
 
-func runGpusList(cmd *cobra.Command, args []string) error {
+func runGpusList(cmd *cobra.Command, _ []string) error {
 	allPrices, _ := cmd.Flags().GetBool("all-prices")
 	classes, cerr := sortedGpuClasses(cmd)
 	if cerr != nil {

@@ -24,7 +24,7 @@ type scriptedResult struct {
 // returns empty pages. Every call is recorded in *calls.
 func scriptFetcher(results []scriptedResult, calls *[]fetchCall) Fetcher {
 	i := 0
-	return func(ctx context.Context, query, start, end string, pageSize int) (*Page, *clierr.Error) {
+	return func(_ context.Context, query, start, end string, pageSize int) (*Page, *clierr.Error) {
 		*calls = append(*calls, fetchCall{query: query, start: start, end: end, pageSize: pageSize})
 		if i >= len(results) {
 			return &Page{}, nil
@@ -328,7 +328,7 @@ func TestDedupKeyUsesRawTimestampStrings(t *testing.T) {
 // with PageMinTime/PageMaxTime set to the first and last entries'
 // RECEIVE time, which runs behind emission.
 func realisticFetcher(all []Entry) Fetcher {
-	return func(ctx context.Context, query, start, end string, pageSize int) (*Page, *clierr.Error) {
+	return func(_ context.Context, _, start, _ string, pageSize int) (*Page, *clierr.Error) {
 		from, err := time.Parse(time.RFC3339Nano, start)
 		if err != nil {
 			panic(err)

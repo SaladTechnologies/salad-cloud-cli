@@ -21,7 +21,7 @@ func init() {
 		Use:   "get",
 		Short: "Show the organization's container group quotas",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, _, cerr := NewClient(cmd)
 			if cerr != nil {
 				return cerr

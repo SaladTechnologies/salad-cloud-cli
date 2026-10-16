@@ -57,7 +57,7 @@ func TestOrganizationsListingPages(t *testing.T) {
 // the listing rather than looping.
 func TestOrganizationsListingStopsOnARepeatedToken(t *testing.T) {
 	calls := 0
-	c := orgsClient(t, func(w http.ResponseWriter, r *http.Request) {
+	c := orgsClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		fmt.Fprint(w, `{"items":[{"organization_name":"a"}],"next_page_token":"same"}`)
 	})
@@ -92,7 +92,7 @@ func TestOrganizationListingByStatus(t *testing.T) {
 		{"500", 500, ``, false, clierr.CodeGeneric},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			c := orgsClient(t, func(w http.ResponseWriter, r *http.Request) {
+			c := orgsClient(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tc.status)
 				fmt.Fprint(w, tc.body)
 			})

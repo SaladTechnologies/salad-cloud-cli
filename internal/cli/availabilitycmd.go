@@ -290,7 +290,7 @@ class can be all zeros while others answer).`,
 	Register(cmd)
 }
 
-func runAvailability(cmd *cobra.Command, args []string) error {
+func runAvailability(cmd *cobra.Command, _ []string) error {
 	fl := cmd.Flags()
 	var af availabilityFlags
 	af.Gpus, _ = fl.GetStringArray("gpu")

@@ -88,7 +88,7 @@ type gatewayLogin struct {
 	credits  bool // false after a 402
 }
 
-func runGatewayLogin(cmd *cobra.Command, args []string) error {
+func runGatewayLogin(cmd *cobra.Command, _ []string) error {
 	keyFlag, _ := cmd.Flags().GetString("api-key")
 	if cmd.Flags().Changed("api-key") && keyFlag == "" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s is empty", "--api-key").
@@ -289,7 +289,7 @@ func (g *gatewayLogin) result(saved bool, path string, ovs []override) gatewayLo
 
 // warnNoCredits is the warning and hint for a working key whose
 // organization is out of credits; it replaces the try-it hint.
-func (g *gatewayLogin) warnNoCredits() {
+func (*gatewayLogin) warnNoCredits() {
 	fmt.Fprintln(
 		errw(),
 		"warning: the key's organization is out of credits, so AI Gateway requests are rejected until you add some",
@@ -366,7 +366,7 @@ type gatewayLogoutResult struct {
 	OK           bool     `json:"ok"`
 }
 
-func runGatewayLogout(cmd *cobra.Command, args []string) error {
+func runGatewayLogout(_ *cobra.Command, _ []string) error {
 	path, err := config.Path()
 	if err != nil {
 		return clierr.New(

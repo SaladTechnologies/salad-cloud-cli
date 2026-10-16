@@ -24,7 +24,7 @@ func addWatchFlags(cmd *cobra.Command) {
 	cmd.Flags().Duration("interval", 5*time.Second, "poll interval for --watch (minimum 2s)")
 	// Check the watch flags before the command builds its client, so a bad
 	// combination is a usage error even with no API key set.
-	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
+	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
 		if cerr := validateWatchFlags(cmd); cerr != nil {
 			return cerr
 		}

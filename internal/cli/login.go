@@ -120,7 +120,7 @@ type login struct {
 // unavailable listing let it through: login asks for the key again.
 var errKeyRejected = clierr.New(clierr.CodeAuth, clierr.KindAuth, "the API key was rejected")
 
-func runLogin(cmd *cobra.Command, args []string) error {
+func runLogin(cmd *cobra.Command, _ []string) error {
 	keyFlag, _ := cmd.Flags().GetString("api-key")
 	orgFlag, _ := cmd.Flags().GetString("org")
 	projectFlag, _ := cmd.Flags().GetString("project")

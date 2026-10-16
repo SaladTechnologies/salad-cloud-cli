@@ -156,7 +156,7 @@ func TestUpdateGroupRawSendsBodyVerbatim(t *testing.T) {
 // document (a typed nil RawMessage marshals to "null"; an empty YAML file
 // converts to "null") must fail fast client-side, before any request.
 func TestUpdateGroupRawRejectsEmptyPatch(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("an empty patch must not reach the server")
 	}))
 	defer srv.Close()
@@ -203,7 +203,7 @@ func TestRetryOn429ThenSuccess(t *testing.T) {
 	defer func() { restBackoff = savedBackoff }()
 
 	var calls int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		if calls == 1 {
 			w.Header().Set("Content-Type", "application/json")
@@ -235,7 +235,7 @@ func TestRetriesExhaustedOn429(t *testing.T) {
 	defer func() { restBackoff = savedBackoff }()
 
 	var calls int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))

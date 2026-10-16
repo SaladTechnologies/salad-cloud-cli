@@ -60,7 +60,7 @@ stderr as a single-line JSON document: {"error": {...}}, in yaml mode too.
 --debug=body adds headers and bodies, with credentials redacted.`,
 	SilenceUsage:  true,
 	SilenceErrors: true,
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 		m, err := cmd.Flags().GetString("output")
 		if err != nil {
 			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)

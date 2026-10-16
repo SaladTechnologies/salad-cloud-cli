@@ -35,7 +35,7 @@ SALAD_API_KEY is set, commands still use it, and logout says so.`,
 	})
 }
 
-func runLogout(cmd *cobra.Command, args []string) error {
+func runLogout(_ *cobra.Command, _ []string) error {
 	path, err := config.Path()
 	if err != nil {
 		return clierr.New(

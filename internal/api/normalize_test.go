@@ -58,7 +58,7 @@ func TestNormalizeNumericEnums(t *testing.T) {
 // TestRestJSONNumericEnumRetry: a group list whose
 // legacy entry carries restart_policy as an integer must still decode.
 func TestRestJSONNumericEnumRetry(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"items":[{"name":"legacy","restart_policy":2}]}`))
 	}))

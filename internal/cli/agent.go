@@ -66,7 +66,7 @@ install (npx skills add https://docs.salad.com).`,
 	Register(agentCmd)
 }
 
-func runAgentInit(cmd *cobra.Command, args []string) error {
+func runAgentInit(cmd *cobra.Command, _ []string) error {
 	file, _ := cmd.Flags().GetString("file")
 	dir, _ := cmd.Flags().GetString("dir")
 	printOnly, _ := cmd.Flags().GetBool("print")

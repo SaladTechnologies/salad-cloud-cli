@@ -131,7 +131,7 @@ func TestGetAndCancelInferenceJobPaths(t *testing.T) {
 }
 
 func TestInferenceEndpoint404Maps(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusNotFound)
 		w.Write([]byte(`{"title": "Not Found"}`))

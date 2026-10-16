@@ -250,7 +250,7 @@ listing out across several named projects in the organization (repeat the
 flag for each: --projects a --projects b) and adds a PROJECT column. Name
 the projects you want listed.`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			statusFilter, _ := cmd.Flags().GetString("status")
 			if statusFilter != "" && !validGroupStatuses[statusFilter] {
 				return clierr.New(

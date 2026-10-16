@@ -40,7 +40,7 @@ In JSON mode the result is {"version","since","items":[{"version",
 "date","body","title"}]}, one item per release; items is an empty list,
 never null.`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			since, _ := cmd.Flags().GetString("since")
 			all := changelog.Parse(saladcloudcli.Changelog)
 			releases, err := changelog.Since(all, since)

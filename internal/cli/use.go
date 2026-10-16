@@ -180,7 +180,7 @@ type useRun struct {
 	saved   config.File
 }
 
-func (u *useRun) cancelled() *clierr.Error {
+func (*useRun) cancelled() *clierr.Error {
 	return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "use cancelled, nothing changed")
 }
 

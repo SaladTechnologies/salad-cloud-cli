@@ -73,7 +73,7 @@ func TestEmitJSON(t *testing.T) {
 	}
 
 	v := row{Name: "my-group", State: "running"}
-	if err := Emit(v, func(w io.Writer) { t.Error("table func must not be called in json mode") }); err != nil {
+	if err := Emit(v, func(_ io.Writer) { t.Error("table func must not be called in json mode") }); err != nil {
 		t.Fatalf("Emit error: %v", err)
 	}
 

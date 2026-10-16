@@ -175,7 +175,7 @@ To see which key is in effect and where it came from, run saladcloud whoami.`,
 		Long: `List the models the AI Gateway serves. The list is public and the same for
 every key, so no AI Gateway key is needed; with one set, it is sent.`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			g, _, cerr := newGateway()
 			if cerr != nil && cerr.Code == clierr.CodeAuth {
 				g, cerr = api.NewPublicGateway(), nil
@@ -234,7 +234,7 @@ budget then defaults to 1024).`,
   saladcloud ai-gateway test --prompt "say hello in one sentence"
   saladcloud ai-gateway test --model <model-id> -o json   # ids: saladcloud ai-gateway models list`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			g, key, cerr := newGateway()
 			if cerr != nil {
 				return cerr

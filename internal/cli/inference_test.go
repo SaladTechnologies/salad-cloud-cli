@@ -32,7 +32,7 @@ func scriptedJobWaitDeps(
 	return jobWaitDeps[inferenceendpoints.InferenceEndpointJob]{
 		view:  inferenceJobView,
 		where: `on endpoint "transcribe"`,
-		get: func(ctx context.Context) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
+		get: func(_ context.Context) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
 			s := statuses[i]
 			if i < len(statuses)-1 {
 				i++
@@ -40,7 +40,7 @@ func scriptedJobWaitDeps(
 			return jobWithStatus("job-1", s), nil
 		},
 		now: func() time.Time { return clock },
-		sleep: func(ctx context.Context, d time.Duration) error {
+		sleep: func(_ context.Context, d time.Duration) error {
 			clock = clock.Add(d)
 			return nil
 		},
@@ -122,7 +122,7 @@ func TestWaitForJobTransientErrorsKeepPolling(t *testing.T) {
 	calls := 0
 	d := jobWaitDeps[inferenceendpoints.InferenceEndpointJob]{
 		view: inferenceJobView,
-		get: func(ctx context.Context) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
+		get: func(_ context.Context) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
 			calls++
 			if calls == 1 {
 				return nil, clierr.New(clierr.CodeNetwork, clierr.KindNetwork, "connection reset")
@@ -130,7 +130,7 @@ func TestWaitForJobTransientErrorsKeepPolling(t *testing.T) {
 			return jobWithStatus("job-1", inferenceendpoints.STATUS_SUCCEEDED), nil
 		},
 		now: func() time.Time { return clock },
-		sleep: func(ctx context.Context, dur time.Duration) error {
+		sleep: func(_ context.Context, dur time.Duration) error {
 			clock = clock.Add(dur)
 			return nil
 		},
@@ -154,11 +154,11 @@ func TestWaitForJobTransientErrorsKeepPolling(t *testing.T) {
 func TestWaitForJobFatalErrorAborts(t *testing.T) {
 	d := jobWaitDeps[inferenceendpoints.InferenceEndpointJob]{
 		view: inferenceJobView,
-		get: func(ctx context.Context) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
+		get: func(_ context.Context) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
 			return nil, clierr.New(clierr.CodeNotFound, clierr.KindNotFound, "job not found")
 		},
 		now:   time.Now,
-		sleep: func(ctx context.Context, dur time.Duration) error { return nil },
+		sleep: func(_ context.Context, _ time.Duration) error { return nil },
 		label: "waiting",
 	}
 	_, cerr := waitForJobTerminal(t.Context(), d, "job-1", time.Minute, time.Second)

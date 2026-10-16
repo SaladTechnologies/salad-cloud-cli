@@ -166,7 +166,7 @@ type sshKeySetup struct {
 	keyPath string // the CLI's own key, without .pub
 }
 
-func runSSHKeySetup(cmd *cobra.Command, args []string) error {
+func runSSHKeySetup(cmd *cobra.Command, _ []string) error {
 	generate, _ := cmd.Flags().GetBool("generate")
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -257,7 +257,7 @@ func (k sshKeySetup) generate() error {
 }
 
 // show prints the public key and where to register it.
-func (k sshKeySetup) show(path string, generated bool, passphrase *bool) error {
+func (sshKeySetup) show(path string, generated bool, passphrase *bool) error {
 	key, cerr := readPublicKey(path)
 	if cerr != nil {
 		return cerr
@@ -295,7 +295,7 @@ func (k sshKeySetup) show(path string, generated bool, passphrase *bool) error {
 	return nil
 }
 
-func runSSHKeyGet(cmd *cobra.Command, args []string) error {
+func runSSHKeyGet(_ *cobra.Command, _ []string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return clierr.New(

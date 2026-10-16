@@ -32,7 +32,7 @@ func init() {
 		Short: "List your organizations",
 		Long:  "List the organizations the API key's account is a member of.\n\n" + orgsLong,
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, _, cerr := NewClient(cmd)
 			if cerr != nil {
 				return cerr

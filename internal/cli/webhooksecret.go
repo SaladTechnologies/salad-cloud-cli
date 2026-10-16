@@ -34,7 +34,7 @@ Both commands print the key itself; keep their output out of logs.`,
 		}))
 	}
 	run := func(call func(c *api.Client, cmd *cobra.Command) (*webhooksecretkey.WebhookSecretKey, *clierr.Error)) func(*cobra.Command, []string) error {
-		return func(cmd *cobra.Command, args []string) error {
+		return func(cmd *cobra.Command, _ []string) error {
 			client, _, cerr := NewClient(cmd)
 			if cerr != nil {
 				return cerr

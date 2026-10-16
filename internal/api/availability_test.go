@@ -100,7 +100,7 @@ func TestGetGpuAvailabilityRetries429(t *testing.T) {
 	restBackoff = []time.Duration{time.Millisecond}
 	t.Cleanup(func() { restBackoff = old })
 	calls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusTooManyRequests)
 		w.Write([]byte(`{"title":"slow down"}`))

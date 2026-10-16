@@ -213,7 +213,7 @@ is whatever your container returns.`,
 		Use:   "list",
 		Short: "List the current project's job queues",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			client, _, cerr := NewClient(cmd)
 			if cerr != nil {
 				return cerr
@@ -349,7 +349,7 @@ allowance, a listing with a limit reads at most 1,000 jobs (or the limit, if
 larger) and says so on stderr when the queue may hold more; --limit 0 reads
 every job, up to 10,000.`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			queue := queueFlag(cmd)
 			limit, _ := cmd.Flags().GetInt("limit")
 			if limit < 0 {
@@ -510,7 +510,7 @@ func queueGroupsCell(groups []shared.ContainerGroup) string {
 	return strconv.Itoa(len(groups))
 }
 
-func runQueueJobCreate(cmd *cobra.Command, args []string) error {
+func runQueueJobCreate(cmd *cobra.Command, _ []string) error {
 	queue := queueFlag(cmd)
 	file, _ := cmd.Flags().GetString("file")
 	inputJSON, _ := cmd.Flags().GetString("input")

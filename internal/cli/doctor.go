@@ -92,7 +92,7 @@ type doctorRun struct {
 	orgCheckMade, orgGood bool
 }
 
-func runDoctor(cmd *cobra.Command, args []string) error {
+func runDoctor(cmd *cobra.Command, _ []string) error {
 	orgFlag, _ := cmd.Flags().GetString("org")
 	projectFlag, _ := cmd.Flags().GetString("project")
 	d := &doctorRun{ctx: cmd.Context(), orgFlag: orgFlag, projectFlag: projectFlag}
@@ -466,7 +466,7 @@ func (d *doctorRun) gatewayRow() checkResult {
 	return row(name, checkPass, fmt.Sprintf("%s (from %s; not tested)", maskAPIKey(d.res.GatewayAPIKey), from), "")
 }
 
-func (d *doctorRun) sshRow() checkResult {
+func (*doctorRun) sshRow() checkResult {
 	const name = "local-ssh-key-present"
 	home, err := os.UserHomeDir()
 	if err != nil {
