@@ -6,7 +6,7 @@ cd "$(dirname "$0")/.."
 rm -rf completions
 mkdir -p completions
 for shell in bash zsh fish powershell; do
-  ext=$shell
-  [ "$shell" = powershell ] && ext=ps1
-  go run ./cmd/saladcloud completion "$shell" > "completions/saladcloud.$ext"
+  ext=${shell}
+  [ "${shell}" = powershell ] && ext=ps1
+  go run ./cmd/saladcloud completion "${shell}" >"completions/saladcloud.${ext}"
 done
