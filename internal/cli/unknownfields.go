@@ -23,7 +23,7 @@ import (
 	"io"
 	"os"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
@@ -130,7 +130,7 @@ func misplacedAt(createT reflect.Type, path string) string {
 
 // joinPaths renders a capped, comma-separated path list.
 func joinPaths(paths []string) string {
-	sort.Strings(paths)
+	slices.Sort(paths)
 	if len(paths) <= maxListedPaths {
 		return strings.Join(paths, ", ")
 	}

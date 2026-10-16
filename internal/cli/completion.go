@@ -12,7 +12,7 @@ package cli
 
 import (
 	"context"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -78,7 +78,7 @@ func filterPrefix(values []string, prefix string) []string {
 			out = append(out, v)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return out
 }
 

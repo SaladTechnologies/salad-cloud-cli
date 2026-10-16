@@ -14,7 +14,7 @@ package cli
 
 import (
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
@@ -51,7 +51,7 @@ func writableDocument(g *shared.ContainerGroup) (any, []string, error) {
 	}
 	var dropped []string
 	filtered := input.FilterTree(obj, reflect.TypeFor[containergroups.ContainerGroupPatch](), "", &dropped)
-	sort.Strings(dropped)
+	slices.Sort(dropped)
 	return filtered, dropped, nil
 }
 

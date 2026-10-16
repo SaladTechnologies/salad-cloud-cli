@@ -3,7 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -51,7 +51,7 @@ func jsonLogText(v any) string {
 		}
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	parts := []string{msg}
 	for _, k := range keys {
 		val := m[k]

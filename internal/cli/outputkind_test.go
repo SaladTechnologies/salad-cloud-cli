@@ -2,7 +2,7 @@ package cli
 
 import (
 	"encoding/json"
-	"sort"
+	"slices"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -116,7 +116,7 @@ func TestEveryLeafDeclaresItsOutputKind(t *testing.T) {
 			stale = append(stale, path)
 		}
 	}
-	sort.Strings(stale)
+	slices.Sort(stale)
 	for _, path := range stale {
 		t.Errorf("outputKinds lists %q, which is not a command", path)
 	}

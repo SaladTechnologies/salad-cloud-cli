@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -168,7 +168,7 @@ func searchFieldPath(t reflect.Type, leaf, path string, depth int) string {
 	for n := range fields {
 		names = append(names, n)
 	}
-	sort.Strings(names) // deterministic when several branches could match
+	slices.Sort(names) // deterministic when several branches could match
 	for _, n := range names {
 		if found := searchFieldPath(unwrapType(fields[n]), leaf, childPath(path, n), depth+1); found != "" {
 			return found
@@ -203,7 +203,7 @@ func collectUnknown(data json.RawMessage, t reflect.Type, path string, out *[]Un
 		for k := range obj {
 			keys = append(keys, k)
 		}
-		sort.Strings(keys) // deterministic ordering
+		slices.Sort(keys) // deterministic ordering
 		for _, k := range keys {
 			ft, ok := fields[k]
 			if !ok {

@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -331,7 +331,7 @@ func endpointInputFields(schema *string) []string {
 	for k := range doc.Properties {
 		names = append(names, k)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names
 }
 

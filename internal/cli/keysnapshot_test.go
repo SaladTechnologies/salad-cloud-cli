@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -144,7 +144,7 @@ func TestJSONKeySnapshot(t *testing.T) {
 	for _, root := range keySnapshotRoots {
 		var paths []string
 		keyPaths(reflect.TypeOf(root.v), "", make(map[reflect.Type]bool), &paths)
-		sort.Strings(paths)
+		slices.Sort(paths)
 		fmt.Fprintf(&b, "\n[%s]\n", root.name)
 		for _, p := range paths {
 			b.WriteString(p + "\n")
@@ -193,6 +193,6 @@ func lineDiff(want, got string) string {
 			out = append(out, "+ "+l)
 		}
 	}
-	sort.Strings(out)
+	slices.Sort(out)
 	return strings.Join(out, "\n")
 }

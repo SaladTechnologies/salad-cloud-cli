@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -147,7 +147,7 @@ func TestAliasTableMatchesTheTree(t *testing.T) {
 		for _, m := range backtickSpan.FindAllStringSubmatch(row[1], -1) {
 			aliases = append(aliases, m[1])
 		}
-		sort.Strings(aliases)
+		slices.Sort(aliases)
 		for _, m := range backtickSpan.FindAllStringSubmatch(row[0], -1) {
 			documented[m[1]] = aliases
 		}
@@ -158,7 +158,7 @@ func TestAliasTableMatchesTheTree(t *testing.T) {
 			return
 		}
 		aliases := append([]string{}, c.Aliases...)
-		sort.Strings(aliases)
+		slices.Sort(aliases)
 		actual[strings.TrimPrefix(c.CommandPath(), rootCmd.Name()+" ")] = aliases
 	})
 	for path, aliases := range actual {

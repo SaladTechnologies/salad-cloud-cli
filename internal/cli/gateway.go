@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"os"
 	"slices"
-	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -124,7 +123,7 @@ func (k *gatewayKey) failed(cerr *clierr.Error) *clierr.Error {
 // between calls, and a default that changes is not a default.
 func pickModel(flag string, ids []string) (string, *clierr.Error) {
 	ids = append([]string(nil), ids...)
-	sort.Strings(ids)
+	slices.Sort(ids)
 	if flag != "" {
 		if len(ids) == 0 {
 			return flag, nil
@@ -304,7 +303,7 @@ func usageSummary(u map[string]any) string {
 			keys = append(keys, k)
 		}
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	parts := make([]string, 0, len(keys))
 	for _, k := range keys {
 		parts = append(parts, fmt.Sprintf("%s %v", strings.ReplaceAll(k, "_", " "), u[k]))

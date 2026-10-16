@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
@@ -141,7 +141,7 @@ func findIgnoredFields(patch []byte, before, after *shared.ContainerGroup) []ign
 			Moved:     moved,
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	slices.SortStableFunc(out, func(a, b ignoredField) int { return strings.Compare(a.Path, b.Path) })
 	return out
 }
 
@@ -160,7 +160,7 @@ func collectLeaves(v any, path string, out *[]patchLeaf) {
 		for k := range obj {
 			keys = append(keys, k)
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		for _, k := range keys {
 			child := k
 			if path != "" {
@@ -440,7 +440,7 @@ func findUnrequestedChanges(patch []byte, before, after *shared.ContainerGroup) 
 
 	var out []unrequestedChange
 	collectChanges(beforeTree, afterTree, "", named, &out)
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	slices.SortStableFunc(out, func(a, b unrequestedChange) int { return strings.Compare(a.Path, b.Path) })
 	return out
 }
 
@@ -461,7 +461,7 @@ func collectChanges(beforeVal, afterVal any, path string, named map[string]bool,
 		for k := range keys {
 			names = append(names, k)
 		}
-		sort.Strings(names)
+		slices.Sort(names)
 		for _, k := range names {
 			child := k
 			if path != "" {
@@ -644,7 +644,7 @@ func findUnappliedCreateFields(request []byte, created *shared.ContainerGroup) [
 			Actual:    shownValue(leaf.Path, got),
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	slices.SortStableFunc(out, func(a, b ignoredField) int { return strings.Compare(a.Path, b.Path) })
 	return out
 }
 

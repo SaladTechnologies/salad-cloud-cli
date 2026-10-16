@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -176,7 +176,7 @@ func writeRedacted(buf *bytes.Buffer, v any, key, parent string) {
 		for k := range t {
 			keys = append(keys, k)
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		buf.WriteByte('{')
 		for i, k := range keys {
 			if i > 0 {

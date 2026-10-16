@@ -11,7 +11,7 @@ import (
 	"maps"
 	"net/http"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -218,7 +218,7 @@ func checkMachineStderr(t *testing.T, o outcome) {
 		for k := range doc {
 			keys = append(keys, k)
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		if got, want := strings.Join(keys, ","), "exit_code,hint,http_status,kind,message"; got != want {
 			t.Errorf("error document keys = %s, want %s", got, want)
 		}
@@ -514,7 +514,7 @@ func TestConfigWritesNameOverridingVariables(t *testing.T) {
 					t.Fatalf("exit %d:\n%s", o.code, o.stderr)
 				}
 				want := append([]string{}, tc.overrides...)
-				sort.Strings(want)
+				slices.Sort(want)
 				if mode == "json" {
 					raw, ok := o.document(t)["env_overrides"].([]any)
 					if !ok {
@@ -525,7 +525,7 @@ func TestConfigWritesNameOverridingVariables(t *testing.T) {
 						s, _ := v.(string)
 						got = append(got, s)
 					}
-					sort.Strings(got)
+					slices.Sort(got)
 					if strings.Join(got, ",") != strings.Join(want, ",") {
 						t.Errorf("env_overrides = %v, want %v", got, want)
 					}
@@ -546,7 +546,7 @@ func TestConfigWritesNameOverridingVariables(t *testing.T) {
 				for v := range named {
 					got = append(got, v)
 				}
-				sort.Strings(got)
+				slices.Sort(got)
 				if strings.Join(got, ",") != strings.Join(want, ",") {
 					t.Errorf("the warnings name %v, want %v:\n%s", got, want, o.stderr)
 				}

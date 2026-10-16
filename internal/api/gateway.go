@@ -21,7 +21,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -126,7 +126,7 @@ func DefaultModel(ids []string) (model string, ok bool) {
 		return "", false
 	}
 	sorted := append([]string(nil), ids...)
-	sort.Strings(sorted)
+	slices.Sort(sorted)
 	return sorted[0], true
 }
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -73,7 +73,7 @@ func jobServer(t *testing.T, total int, byID bool, requests *int32) *httptest.Se
 	}
 	id := func(i int) string { return fmt.Sprintf("%08d", (i*7919)%10007) }
 	if byID {
-		sort.Slice(order, func(a, b int) bool { return id(order[a]) < id(order[b]) })
+		slices.SortFunc(order, func(a, b int) int { return strings.Compare(id(a), id(b)) })
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(requests, 1)

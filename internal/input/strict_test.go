@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -226,7 +226,7 @@ func TestFilterTree(t *testing.T) {
 	}
 	var dropped []string
 	out := FilterTree(doc, patchT, "", &dropped).(map[string]any)
-	sort.Strings(dropped)
+	slices.Sort(dropped)
 	if want := []string{
 		"container.hash",
 		"id",

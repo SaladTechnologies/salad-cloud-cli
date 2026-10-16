@@ -2,7 +2,7 @@ package cli
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
@@ -732,7 +732,7 @@ func TestLoginBranches(t *testing.T) {
 			for _, v := range doc["env_overrides"].([]any) {
 				gotOverrides = append(gotOverrides, v.(string))
 			}
-			sort.Strings(gotOverrides)
+			slices.Sort(gotOverrides)
 			project := any(nil)
 			if want.Project != "" {
 				project = want.Project

@@ -3,7 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -58,7 +58,7 @@ func flattenFieldErrors(raw json.RawMessage) string {
 	for f := range errs {
 		fields = append(fields, f)
 	}
-	sort.Strings(fields)
+	slices.Sort(fields)
 	var parts []string
 	for _, f := range fields {
 		for _, m := range errs[f] {

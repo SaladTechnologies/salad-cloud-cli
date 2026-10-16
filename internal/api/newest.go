@@ -2,7 +2,6 @@ package api
 
 import (
 	"slices"
-	"sort"
 	"time"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -105,8 +104,8 @@ func lastPage[T any](get func(int) ([]T, *clierr.Error), pageSize int) (int, *cl
 // sortNewestFirst orders items by creation time, newest first; an item whose
 // time does not parse sorts last, and equal times keep their order.
 func sortNewestFirst[T any](items []T, created func(*T) *string) {
-	at := func(i int) time.Time {
-		s := created(&items[i])
+	at := func(item *T) time.Time {
+		s := created(item)
 		if s == nil {
 			return time.Time{}
 		}
@@ -116,5 +115,5 @@ func sortNewestFirst[T any](items []T, created func(*T) *string) {
 		}
 		return t
 	}
-	sort.SliceStable(items, func(i, j int) bool { return at(i).After(at(j)) })
+	slices.SortStableFunc(items, func(a, b T) int { return at(&b).Compare(at(&a)) })
 }

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/organizationdata"
@@ -72,8 +72,8 @@ func sortedGpuClasses(cmd *cobra.Command) ([]organizationdata.GpuClass, *clierr.
 		return nil, cerr
 	}
 	classes := list.Items
-	sort.Slice(classes, func(i, j int) bool {
-		return gpuNameCell(classes[i].Name) < gpuNameCell(classes[j].Name)
+	slices.SortStableFunc(classes, func(a, b organizationdata.GpuClass) int {
+		return strings.Compare(gpuNameCell(a.Name), gpuNameCell(b.Name))
 	})
 	return classes, nil
 }
