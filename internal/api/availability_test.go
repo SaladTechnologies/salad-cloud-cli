@@ -37,7 +37,7 @@ func TestGetGpuAvailabilityRequest(t *testing.T) {
 
 	c := newTestClient(t, srv.URL)
 	avail, cerr := c.GetGpuAvailability(t.Context(), AvailabilityRequest{
-		GpuClasses: []string{"gpu-class-1"}, Cpu: ptr.To(int64(4)), StorageAmount: ptr.To(int64(1 << 30)),
+		GpuClasses: []string{"gpu-class-1"}, CPU: ptr.To(int64(4)), StorageAmount: ptr.To(int64(1 << 30)),
 		CountryCodes: []string{"us"},
 	})
 	if cerr != nil {
@@ -64,7 +64,7 @@ func TestGetGpuAvailabilityRequest(t *testing.T) {
 	}
 }
 
-func TestGetCpuAvailabilityDropsGpuClasses(t *testing.T) {
+func TestGetCPUAvailabilityDropsGpuClasses(t *testing.T) {
 	var gotPath string
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +75,7 @@ func TestGetCpuAvailabilityDropsGpuClasses(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv.URL)
-	avail, cerr := c.GetCpuAvailability(
+	avail, cerr := c.GetCPUAvailability(
 		t.Context(),
 		AvailabilityRequest{GpuClasses: []string{"x"}, Memory: ptr.To(int64(2048))},
 	)

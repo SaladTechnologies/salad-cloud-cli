@@ -54,10 +54,10 @@ func TestApplyAvailabilityFlagsOverFrom(t *testing.T) {
 		[]string{"b"},
 	)
 	want := api.AvailabilityRequest{
-		GpuClasses: []string{"b"}, Cpu: ptr.To(int64(8)), Memory: ptr.To(int64(8192)),
+		GpuClasses: []string{"b"}, CPU: ptr.To(int64(8)), Memory: ptr.To(int64(8192)),
 		StorageAmount: ptr.To(5 * bytesPerGB), CountryCodes: []string{"us"},
 	}
-	if strings.Join(got.GpuClasses, ",") != "b" || *got.Cpu != *want.Cpu || *got.Memory != *want.Memory ||
+	if strings.Join(got.GpuClasses, ",") != "b" || *got.CPU != *want.CPU || *got.Memory != *want.Memory ||
 		*got.StorageAmount != *want.StorageAmount || strings.Join(got.CountryCodes, ",") != "us" {
 		t.Errorf("got %+v, want %+v", got, want)
 	}

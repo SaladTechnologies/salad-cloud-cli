@@ -71,10 +71,10 @@ func (c *Client) ListInferenceEndpoints(
 const InferenceJobsCap = inferenceMaxPages * inferencePageSize
 
 // jobsWanted is how many jobs a listing returns for a --limit: the limit, or
-// the cap for 0 (all) and for a limit above it.
-func jobsWanted(limit, cap int) int {
-	if limit <= 0 || limit > cap {
-		return cap
+// the ceiling for 0 (all) and for a limit above it.
+func jobsWanted(limit, ceiling int) int {
+	if limit <= 0 || limit > ceiling {
+		return ceiling
 	}
 	return limit
 }

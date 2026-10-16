@@ -307,7 +307,7 @@ func TestReadKeys(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var echo strings.Builder
 			got, err := (&keyReader{r: strings.NewReader(tc.keys)}).readLine(&echo)
-			if got != tc.want || !errors.Is(err, tc.err) && !(err == nil && tc.err == nil) || echo.String() != tc.echo {
+			if got != tc.want || !errors.Is(err, tc.err) && (err != nil || tc.err != nil) || echo.String() != tc.echo {
 				t.Errorf("got %q, %v, echo %q; want %q, %v, echo %q", got, err, echo.String(), tc.want, tc.err, tc.echo)
 			}
 		})

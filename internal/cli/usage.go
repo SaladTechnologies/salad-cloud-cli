@@ -237,7 +237,7 @@ var (
 
 // argBounds reads the positional bounds from a cobra Args error; ok is
 // false for any other error.
-func argBounds(err error) (min, max int, ok bool) {
+func argBounds(err error) (minArgs, maxArgs int, ok bool) {
 	msg := err.Error()
 	atoi := func(s string) int { n, _ := strconv.Atoi(s); return n }
 	switch {
@@ -261,12 +261,12 @@ func argBounds(err error) (min, max int, ok bool) {
 // placeholder; one argument too many, where a flag would have taken it,
 // prints the corrected command; anything else names the stray argument.
 func argsError(cmd *cobra.Command, args []string, err error) *clierr.Error {
-	min, max, ok := argBounds(err)
+	minArgs, maxArgs, ok := argBounds(err)
 	if !ok {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
 	}
 	pos, dash := splitDash(cmd, args)
-	if len(pos) < min {
+	if len(pos) < minArgs {
 		ph := "<argument>"
 		if names := positionalPlaceholders(cmd); len(pos) < len(names) {
 			ph = names[len(pos)]
@@ -274,13 +274,14 @@ func argsError(cmd *cobra.Command, args []string, err error) *clierr.Error {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing argument: %s", ph).
 			WithHint("run %s", usageLine(cmd))
 	}
-	if name := cmd.Annotations[annotationFlagForArg]; name != "" && len(pos) == max+1 && !cmd.Flags().Changed(name) {
+	if name := cmd.Annotations[annotationFlagForArg]; name != "" && len(pos) == maxArgs+1 &&
+		!cmd.Flags().Changed(name) {
 		if f := cmd.Flags().Lookup(name); f != nil {
 			// A parent comes first (the old <parent> <leaf> order); the
 			// instance comes after the group it belongs to.
 			value, rest := pos[0], pos[1:]
 			if name == "instance" {
-				value, rest = pos[max], pos[:max]
+				value, rest = pos[maxArgs], pos[:maxArgs]
 			}
 			return clierr.New(
 				clierr.CodeUsage,
@@ -295,8 +296,8 @@ func argsError(cmd *cobra.Command, args []string, err error) *clierr.Error {
 		}
 	}
 	extra := ""
-	if len(pos) > max {
-		extra = pos[max]
+	if len(pos) > maxArgs {
+		extra = pos[maxArgs]
 	}
 	return clierr.New(clierr.CodeUsage, clierr.KindUsage, `unexpected argument "%s"`, extra).
 		WithHint("run %s", usageLine(cmd))

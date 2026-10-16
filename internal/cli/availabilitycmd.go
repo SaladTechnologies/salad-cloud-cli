@@ -125,7 +125,7 @@ func requirementsOf(g *shared.ContainerGroup) (req api.AvailabilityRequest) {
 	if g.Container != nil && g.Container.Resources != nil {
 		r := g.Container.Resources
 		req.GpuClasses = append([]string(nil), r.GpuClasses...)
-		req.Cpu, req.Memory, req.StorageAmount = r.Cpu, r.Memory, r.StorageAmount
+		req.CPU, req.Memory, req.StorageAmount = r.Cpu, r.Memory, r.StorageAmount
 	}
 	for _, c := range g.CountryCodes {
 		req.CountryCodes = append(req.CountryCodes, string(c))
@@ -145,7 +145,7 @@ func applyAvailabilityFlags(
 		req.GpuClasses = gpuIDs
 	}
 	if f.CPUSet {
-		req.Cpu = ptr.To(f.CPU)
+		req.CPU = ptr.To(f.CPU)
 	}
 	if f.MemorySet {
 		req.Memory = ptr.To(f.Memory)
@@ -172,8 +172,8 @@ func allZeroGpu(a *organizations.GpuAvailability) bool {
 	return true
 }
 
-// allZeroCpu is allZeroGpu for a CPU answer.
-func allZeroCpu(a *organizations.CpuAvailability) bool {
+// allZeroCPU is allZeroGpu for a CPU answer.
+func allZeroCPU(a *organizations.CpuAvailability) bool {
 	for _, v := range []*int64{a.AvailableCpuBatch} {
 		if v != nil && *v != 0 {
 			return false
@@ -368,12 +368,12 @@ func runAvailability(cmd *cobra.Command, args []string) error {
 
 	if len(req.GpuClasses) == 0 {
 		avail, cerr := askTwiceIfZero(func() (*organizations.CpuAvailability, *clierr.Error) {
-			return client.GetCpuAvailability(cmd.Context(), req)
-		}, allZeroCpu)
+			return client.GetCPUAvailability(cmd.Context(), req)
+		}, allZeroCPU)
 		if cerr != nil {
 			return cerr
 		}
-		if w := overloadWarning("CPU", allZeroCpu(avail)); w != "" {
+		if w := overloadWarning("CPU", allZeroCPU(avail)); w != "" {
 			fmt.Fprintln(os.Stderr, w)
 		}
 		result := cpuAvailabilityResult{Items: []organizations.CpuAvailability{*avail}}

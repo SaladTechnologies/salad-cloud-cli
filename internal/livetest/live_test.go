@@ -632,11 +632,11 @@ func TestContainerCommand(t *testing.T) {
 
 	// The documented way back to the image's own command: an empty list in a
 	// patch file, with no drift warning on the read-back.
-	clear := filepath.Join(t.TempDir(), "clear.json")
-	if err := os.WriteFile(clear, []byte(`{"container":{"command":[]}}`), 0o600); err != nil {
+	clearDoc := filepath.Join(t.TempDir(), "clear.json")
+	if err := os.WriteFile(clearDoc, []byte(`{"container":{"command":[]}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	r = run(t, "container-groups", "update", g, "-f", clear, "-o", "json")
+	r = run(t, "container-groups", "update", g, "-f", clearDoc, "-o", "json")
 	if r.Code != 0 {
 		t.Fatalf("clear exit %d: %s", r.Code, r.Stderr)
 	}

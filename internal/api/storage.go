@@ -41,7 +41,7 @@ func storageBaseURL() string {
 
 // uploadResponse is S4's PUT response document.
 type uploadResponse struct {
-	Url string `json:"url"`
+	URL string `json:"url"`
 }
 
 // UploadFile PUTs one file into the organization's S4 storage as
@@ -98,10 +98,10 @@ func (c *Client) UploadFile(
 	if err := json.Unmarshal(respBody, &out); err != nil {
 		return "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot decode the storage response: %v", err)
 	}
-	if out.Url == "" {
+	if out.URL == "" {
 		return "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "storage upload succeeded but returned no url")
 	}
-	return out.Url, nil
+	return out.URL, nil
 }
 
 // storageFileURL is the S4 URL of one file; remoteName may contain "/"

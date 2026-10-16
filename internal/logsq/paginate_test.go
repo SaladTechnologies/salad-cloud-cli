@@ -303,11 +303,7 @@ func TestDedupKeyDistinguishesEntries(t *testing.T) {
 			t.Errorf("variant %d collides with base: %+v", i, v)
 		}
 	}
-	if DedupKey(
-		base,
-	) != DedupKey(
-		base,
-	) { //nolint:staticcheck // two calls on purpose: the key must not vary between calls
+	if first := DedupKey(base); first != DedupKey(base) { // two calls on purpose: the key must not vary between calls
 		t.Error("DedupKey is not stable")
 	}
 	j1 := Entry{JSON: map[string]any{"a": 1, "b": 2}}

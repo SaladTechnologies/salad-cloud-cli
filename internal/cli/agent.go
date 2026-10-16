@@ -69,9 +69,9 @@ install (npx skills add https://docs.salad.com).`,
 func runAgentInit(cmd *cobra.Command, args []string) error {
 	file, _ := cmd.Flags().GetString("file")
 	dir, _ := cmd.Flags().GetString("dir")
-	print, _ := cmd.Flags().GetBool("print")
+	printOnly, _ := cmd.Flags().GetBool("print")
 
-	if print {
+	if printOnly {
 		res := agentInitResult{Action: "printed", OK: true, Reason: "--print", Version: version.Version}
 		return wrapErr(output.Emit(res, func(w io.Writer) {
 			fmt.Fprint(w, agentdoc.Block(version.Version))

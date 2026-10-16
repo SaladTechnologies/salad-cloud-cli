@@ -15,7 +15,7 @@ import (
 // fields are left out of the request.
 type AvailabilityRequest struct {
 	GpuClasses    []string `json:"gpu_classes,omitempty"`
-	Cpu           *int64   `json:"cpu,omitempty"`
+	CPU           *int64   `json:"cpu,omitempty"`
 	Memory        *int64   `json:"memory,omitempty"`         // MB
 	StorageAmount *int64   `json:"storage_amount,omitempty"` // bytes
 	CountryCodes  []string `json:"country_codes,omitempty"`
@@ -41,9 +41,9 @@ func (c *Client) GetGpuAvailability(
 	return restJSON[organizations.GpuAvailability](ctx, c, "POST", c.availabilityPath("sce-gpu-availability"), "", req)
 }
 
-// GetCpuAvailability is GetGpuAvailability for CPU-only requirements
+// GetCPUAvailability is GetGpuAvailability for CPU-only requirements
 // (sce-cpu-availability); any GPU classes in req are dropped.
-func (c *Client) GetCpuAvailability(
+func (c *Client) GetCPUAvailability(
 	ctx context.Context,
 	req AvailabilityRequest,
 ) (*organizations.CpuAvailability, *clierr.Error) {

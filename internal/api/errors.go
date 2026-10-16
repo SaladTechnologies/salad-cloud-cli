@@ -68,13 +68,13 @@ func flattenFieldErrors(raw json.RawMessage) string {
 	return strings.Join(parts, "; ")
 }
 
-// truncateMessage caps s at max bytes without splitting a UTF-8 rune,
+// truncateMessage caps s at limit bytes without splitting a UTF-8 rune,
 // appending "..." when it truncates.
-func truncateMessage(s string, max int) string {
-	if len(s) <= max {
+func truncateMessage(s string, limit int) string {
+	if len(s) <= limit {
 		return s
 	}
-	cut := max
+	cut := limit
 	for cut > 0 && !isRuneStart(s[cut]) {
 		cut--
 	}

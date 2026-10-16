@@ -67,9 +67,9 @@ func lastEventSuffix(j *inferenceendpoints.InferenceEndpointJob) string {
 }
 
 // compactJSON renders a decoded JSON value ("input"/"output" are `any` in the
-// SDK) as one compact line, truncated to max bytes (0 = no truncation).
+// SDK) as one compact line, truncated to limit bytes (0 = no truncation).
 // nil renders as "-".
-func compactJSON(v any, max int) string {
+func compactJSON(v any, limit int) string {
 	if v == nil {
 		return "-"
 	}
@@ -78,19 +78,19 @@ func compactJSON(v any, max int) string {
 		return fmt.Sprintf("%v", v)
 	}
 	s := string(b)
-	if max > 0 {
-		s = truncateRunes(s, max)
+	if limit > 0 {
+		s = truncateRunes(s, limit)
 	}
 	return s
 }
 
-// truncateRunes caps s at max bytes without splitting a UTF-8 rune,
+// truncateRunes caps s at limit bytes without splitting a UTF-8 rune,
 // appending "..." when it truncates.
-func truncateRunes(s string, max int) string {
-	if len(s) <= max {
+func truncateRunes(s string, limit int) string {
+	if len(s) <= limit {
 		return s
 	}
-	cut := max
+	cut := limit
 	for cut > 0 && s[cut]&0xC0 == 0x80 {
 		cut--
 	}
@@ -615,24 +615,24 @@ saladcloud inference jobs get <id> --endpoint <endpoint>.`,
 }
 
 // jobsLimitNote writes the stderr note for a job listing that left older
-// jobs out: at the cap, the most one listing returns, in every mode (with no
-// limit, or a limit above the cap, the caller asked for more than it got);
+// jobs out: at the ceiling, the most one listing returns, in every mode (with no
+// limit, or a limit above the ceiling, the caller asked for more than it got);
 // below it, in table mode, when --limit kept the newest and more exist.
-func jobsLimitNote(w io.Writer, shown, limit, cap int, more bool) {
+func jobsLimitNote(w io.Writer, shown, limit, ceiling int, more bool) {
 	switch {
 	case !more:
-	case (limit == 0 || limit > cap) && shown >= cap:
+	case (limit == 0 || limit > ceiling) && shown >= ceiling:
 		fmt.Fprintf(
 			w,
 			"note: showing the newest %d jobs, the most one listing returns; older jobs are not shown\n",
-			cap,
+			ceiling,
 		)
 	case output.Mode() == "table":
 		fmt.Fprintf(
 			w,
 			"note: showing the newest %d jobs; older ones exist\nhint: for more, raise --limit; 0 means all, up to %d\n",
 			shown,
-			cap,
+			ceiling,
 		)
 	}
 }
