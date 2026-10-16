@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -79,7 +78,7 @@ func TestGetGroupDecodesLiveWireFormat(t *testing.T) {
 	defer srv.Close()
 
 	c := newRestTestClient(t, srv.URL)
-	group, cerr := c.GetGroup(context.Background(), "my-app")
+	group, cerr := c.GetGroup(t.Context(), "my-app")
 	if cerr != nil {
 		t.Fatalf("GetGroup: %v", cerr)
 	}
@@ -110,7 +109,7 @@ func TestUpdateGroupSendsMergePatchContentType(t *testing.T) {
 	defer srv.Close()
 
 	c := newRestTestClient(t, srv.URL)
-	if _, cerr := c.UpdateGroup(context.Background(), "my-app", containergroups.ContainerGroupPatch{}); cerr != nil {
+	if _, cerr := c.UpdateGroup(t.Context(), "my-app", containergroups.ContainerGroupPatch{}); cerr != nil {
 		t.Fatalf("UpdateGroup: %v", cerr)
 	}
 	if gotMethod != http.MethodPatch {
@@ -139,7 +138,7 @@ func TestUpdateGroupRawSendsBodyVerbatim(t *testing.T) {
 	defer srv.Close()
 
 	c := newRestTestClient(t, srv.URL)
-	if _, cerr := c.UpdateGroupRaw(context.Background(), "my-app", doc); cerr != nil {
+	if _, cerr := c.UpdateGroupRaw(t.Context(), "my-app", doc); cerr != nil {
 		t.Fatalf("UpdateGroupRaw: %v", cerr)
 	}
 	if gotMethod != http.MethodPatch {
@@ -166,7 +165,7 @@ func TestUpdateGroupRawRejectsEmptyPatch(t *testing.T) {
 	// "{}" is included: a keyless object is a merge patch that changes
 	// nothing, and the API rejects it with a bare 400 — catch it client-side.
 	for _, patch := range []json.RawMessage{nil, {}, json.RawMessage("  \n"), json.RawMessage("null"), json.RawMessage("{}"), json.RawMessage(" { } ")} {
-		_, cerr := c.UpdateGroupRaw(context.Background(), "my-app", patch)
+		_, cerr := c.UpdateGroupRaw(t.Context(), "my-app", patch)
 		if cerr == nil {
 			t.Fatalf("UpdateGroupRaw(%q) = nil error, want invalid_input", patch)
 		}
@@ -192,7 +191,7 @@ func TestDeleteGroupEmpty202Body(t *testing.T) {
 	defer srv.Close()
 
 	c := newRestTestClient(t, srv.URL)
-	if cerr := c.DeleteGroup(context.Background(), "my-app"); cerr != nil {
+	if cerr := c.DeleteGroup(t.Context(), "my-app"); cerr != nil {
 		t.Fatalf("DeleteGroup: %v, want nil for an empty 202", cerr)
 	}
 }
@@ -218,7 +217,7 @@ func TestRetryOn429ThenSuccess(t *testing.T) {
 	defer srv.Close()
 
 	c := newRestTestClient(t, srv.URL)
-	group, cerr := c.GetGroup(context.Background(), "my-app")
+	group, cerr := c.GetGroup(t.Context(), "my-app")
 	if cerr != nil {
 		t.Fatalf("GetGroup after 429: %v", cerr)
 	}
@@ -243,7 +242,7 @@ func TestRetriesExhaustedOn429(t *testing.T) {
 	defer srv.Close()
 
 	c := newRestTestClient(t, srv.URL)
-	_, cerr := c.GetGroup(context.Background(), "my-app")
+	_, cerr := c.GetGroup(t.Context(), "my-app")
 	if cerr == nil {
 		t.Fatal("GetGroup = nil error, want rate_limited")
 	}
@@ -293,7 +292,7 @@ func TestCreateGroupPreservesExplicitFalseOnTheWire(t *testing.T) {
 		},
 	}
 	c := newRestTestClient(t, srv.URL)
-	if _, cerr := c.CreateGroup(context.Background(), req); cerr != nil {
+	if _, cerr := c.CreateGroup(t.Context(), req); cerr != nil {
 		t.Fatalf("CreateGroup: %v", cerr)
 	}
 	if gotMethod != http.MethodPost {
@@ -341,7 +340,7 @@ func TestCreateGroupRawSendsBodyVerbatim(t *testing.T) {
 	defer srv.Close()
 
 	c := newRestTestClient(t, srv.URL)
-	if _, cerr := c.CreateGroupRaw(context.Background(), doc); cerr != nil {
+	if _, cerr := c.CreateGroupRaw(t.Context(), doc); cerr != nil {
 		t.Fatalf("CreateGroupRaw: %v", cerr)
 	}
 	if gotMethod != http.MethodPost {

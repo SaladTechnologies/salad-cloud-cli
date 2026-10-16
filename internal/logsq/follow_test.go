@@ -56,7 +56,7 @@ func runFollower(
 	poll, maxBackoff, lookback time.Duration,
 ) (emitted []Entry, calls []fetchCall, sleeps []time.Duration, f *Follower) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	clock := &fakeClock{now: followNow, allowed: allowedSleeps, cancel: cancel}
 	fetch := scriptFetcher(results, &calls)
@@ -251,7 +251,7 @@ func TestFollowCancelReturnsNil(t *testing.T) {
 
 func TestFollowBacklogErrorIsFatal(t *testing.T) {
 	boom := clierr.New(clierr.CodeAuth, clierr.KindAuth, "key revoked")
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	clock := &fakeClock{now: followNow, allowed: 10, cancel: cancel}
 	var calls []fetchCall
@@ -270,7 +270,7 @@ func TestFollowBacklogErrorIsFatal(t *testing.T) {
 func TestFollowNonRateLimitErrorExits(t *testing.T) {
 	e1 := ent("2026-03-01T09:59:00Z", "2026-03-01T09:59:10Z", "i1", "e1")
 	boom := clierr.New(clierr.CodeAuth, clierr.KindAuth, "key revoked")
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	clock := &fakeClock{now: followNow, allowed: 10, cancel: cancel}
 	var calls []fetchCall

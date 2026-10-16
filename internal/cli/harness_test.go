@@ -302,7 +302,7 @@ func (s session) run(t *testing.T) outcome {
 	}
 	// The run's context, which the fake cancels at cancelOn; set before the
 	// server starts, so its handlers see it.
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	api.cancel = cancel
 	srv := httptest.NewServer(api)

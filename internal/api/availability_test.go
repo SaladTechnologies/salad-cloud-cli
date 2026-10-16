@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -37,7 +36,7 @@ func TestGetGpuAvailabilityRequest(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv.URL)
-	avail, cerr := c.GetGpuAvailability(context.Background(), AvailabilityRequest{
+	avail, cerr := c.GetGpuAvailability(t.Context(), AvailabilityRequest{
 		GpuClasses: []string{"gpu-class-1"}, Cpu: ptr.To(int64(4)), StorageAmount: ptr.To(int64(1 << 30)),
 		CountryCodes: []string{"us"},
 	})
@@ -77,7 +76,7 @@ func TestGetCpuAvailabilityDropsGpuClasses(t *testing.T) {
 
 	c := newTestClient(t, srv.URL)
 	avail, cerr := c.GetCpuAvailability(
-		context.Background(),
+		t.Context(),
 		AvailabilityRequest{GpuClasses: []string{"x"}, Memory: ptr.To(int64(2048))},
 	)
 	if cerr != nil {
@@ -109,7 +108,7 @@ func TestGetGpuAvailabilityRetries429(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv.URL)
-	_, cerr := c.GetGpuAvailability(context.Background(), AvailabilityRequest{GpuClasses: []string{"g"}})
+	_, cerr := c.GetGpuAvailability(t.Context(), AvailabilityRequest{GpuClasses: []string{"g"}})
 	if cerr == nil || cerr.Code != clierr.CodeRateLimited || ptr.Deref(cerr.HTTPStatus) != 429 {
 		t.Fatalf("error = %+v, want rate limited 429", cerr)
 	}

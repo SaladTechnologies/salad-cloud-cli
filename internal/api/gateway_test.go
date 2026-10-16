@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -73,14 +72,14 @@ func TestGatewayListModelsAndComplete(t *testing.T) {
 	defer srv.Close()
 	g := newTestGateway(t, srv.URL)
 
-	models, cerr := g.ListModels(context.Background())
+	models, cerr := g.ListModels(t.Context())
 	if cerr != nil {
 		t.Fatalf("ListModels: %v", cerr)
 	}
 	if ids := models.IDs(); len(ids) != 2 || ids[0] != "qwen3.6-35b-a3b" {
 		t.Errorf("IDs = %v", ids)
 	}
-	c, cerr := g.Complete(context.Background(), "qwen3.6-35b-a3b", "say hi", 16, false)
+	c, cerr := g.Complete(t.Context(), "qwen3.6-35b-a3b", "say hi", 16, false)
 	if cerr != nil {
 		t.Fatalf("Complete: %v", cerr)
 	}
@@ -115,7 +114,7 @@ func TestGatewayCheckKeyUsesACompletion(t *testing.T) {
 	}))
 	defer srv.Close()
 	g := newTestGateway(t, srv.URL)
-	_, cerr := g.CheckKey(context.Background())
+	_, cerr := g.CheckKey(t.Context())
 	if !sawCompletion {
 		t.Fatal("CheckKey never sent a completion; /v1/models alone does not authenticate")
 	}
@@ -159,7 +158,7 @@ func TestGatewayErrorMapping(t *testing.T) {
 			w.Write([]byte(tt.body))
 		}))
 		g := newTestGateway(t, srv.URL)
-		_, cerr := g.ListModels(context.Background())
+		_, cerr := g.ListModels(t.Context())
 		srv.Close()
 		if cerr == nil {
 			t.Errorf("status %d: no error", tt.status)

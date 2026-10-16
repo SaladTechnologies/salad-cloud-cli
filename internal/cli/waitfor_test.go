@@ -86,7 +86,7 @@ func runWaitFrom(
 	timeout time.Duration,
 ) (*clierr.Error, *waitHarness) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	h := &waitHarness{
 		t:             t,
@@ -351,7 +351,7 @@ func TestWaitForGroupSettlePredicate(t *testing.T) {
 			CurrentState:  &shared.ContainerGroupState{Status: &running},
 		}}
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	h := &waitHarness{
 		t:             t,
@@ -398,7 +398,7 @@ func TestSettleTimeoutSaysPatchAccepted(t *testing.T) {
 		PendingChange: ptr.To(true),
 		CurrentState:  &shared.ContainerGroupState{Status: &running},
 	}}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	h := &waitHarness{
 		t:             t,

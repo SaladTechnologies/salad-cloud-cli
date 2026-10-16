@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -43,7 +42,7 @@ func TestListInferenceEndpointsPagesWithNullTotal(t *testing.T) {
 	for _, tc := range []struct{ total, pages int }{{60, 3}, {50, 3}, {3, 1}, {0, 1}} {
 		var n int32
 		c := newRestTestClient(t, pagedServer(t, tc.total, "name", &n).URL)
-		coll, cerr := c.ListInferenceEndpoints(context.Background())
+		coll, cerr := c.ListInferenceEndpoints(t.Context())
 		if cerr != nil {
 			t.Fatal(cerr)
 		}
@@ -125,7 +124,7 @@ func TestListInferenceJobsNewestFirst(t *testing.T) {
 	} {
 		var n int32
 		c := newRestTestClient(t, jobServer(t, tc.total, false, &n).URL)
-		jobs, more, cerr := c.ListInferenceJobs(context.Background(), "transcribe", tc.limit)
+		jobs, more, cerr := c.ListInferenceJobs(t.Context(), "transcribe", tc.limit)
 		if cerr != nil {
 			t.Fatal(cerr)
 		}
@@ -155,7 +154,7 @@ func TestListQueueJobsNewestFirst(t *testing.T) {
 	} {
 		var n int32
 		c := newRestTestClient(t, jobServer(t, tc.total, true, &n).URL)
-		jobs, more, _, cerr := c.ListQueueJobs(context.Background(), "q", tc.limit)
+		jobs, more, _, cerr := c.ListQueueJobs(t.Context(), "q", tc.limit)
 		if cerr != nil {
 			t.Fatal(cerr)
 		}
@@ -194,7 +193,7 @@ func TestListQueueJobsReadBudget(t *testing.T) {
 	} {
 		var n int32
 		c := newRestTestClient(t, jobServer(t, tc.total, true, &n).URL)
-		jobs, _, partial, cerr := c.ListQueueJobs(context.Background(), "q", tc.limit)
+		jobs, _, partial, cerr := c.ListQueueJobs(t.Context(), "q", tc.limit)
 		if cerr != nil {
 			t.Fatal(cerr)
 		}

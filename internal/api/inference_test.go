@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -37,7 +36,7 @@ func TestListInferenceEndpointsWirePath(t *testing.T) {
 	defer srv.Close()
 
 	c := newRestTestClient(t, srv.URL)
-	coll, cerr := c.ListInferenceEndpoints(context.Background())
+	coll, cerr := c.ListInferenceEndpoints(t.Context())
 	if cerr != nil {
 		t.Fatalf("ListInferenceEndpoints: %v", cerr)
 	}
@@ -75,7 +74,7 @@ func TestCreateInferenceJobRoundTrip(t *testing.T) {
 	proto := inferenceendpoints.InferenceEndpointJobPrototype{
 		Input: map[string]any{"url": "https://example.com/a.mp3", "language_code": "en"},
 	}
-	job, cerr := c.CreateInferenceJob(context.Background(), "transcribe", proto)
+	job, cerr := c.CreateInferenceJob(t.Context(), "transcribe", proto)
 	if cerr != nil {
 		t.Fatalf("CreateInferenceJob: %v", cerr)
 	}
@@ -116,10 +115,10 @@ func TestGetAndCancelInferenceJobPaths(t *testing.T) {
 	defer srv.Close()
 
 	c := newRestTestClient(t, srv.URL)
-	if _, cerr := c.GetInferenceJob(context.Background(), "transcribe", "job-1"); cerr != nil {
+	if _, cerr := c.GetInferenceJob(t.Context(), "transcribe", "job-1"); cerr != nil {
 		t.Fatalf("GetInferenceJob: %v", cerr)
 	}
-	if cerr := c.CancelInferenceJob(context.Background(), "transcribe", "job-1"); cerr != nil {
+	if cerr := c.CancelInferenceJob(t.Context(), "transcribe", "job-1"); cerr != nil {
 		t.Fatalf("CancelInferenceJob: %v", cerr)
 	}
 	wantPath := "/organizations/my-org/inference-endpoints/transcribe/jobs/job-1"
@@ -140,7 +139,7 @@ func TestInferenceEndpoint404Maps(t *testing.T) {
 	defer srv.Close()
 
 	c := newRestTestClient(t, srv.URL)
-	_, cerr := c.GetInferenceEndpoint(context.Background(), "no-such")
+	_, cerr := c.GetInferenceEndpoint(t.Context(), "no-such")
 	if cerr == nil {
 		t.Fatal("GetInferenceEndpoint = nil error, want not_found")
 	}

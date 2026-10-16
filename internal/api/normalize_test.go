@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -69,7 +68,7 @@ func TestRestJSONNumericEnumRetry(t *testing.T) {
 	if cerr != nil {
 		t.Fatalf("New: %v", cerr)
 	}
-	got, cerr := restJSON[containergroups.ContainerGroupCollection](context.Background(), client, "GET", "/x", "", nil)
+	got, cerr := restJSON[containergroups.ContainerGroupCollection](t.Context(), client, "GET", "/x", "", nil)
 	if cerr != nil {
 		t.Fatalf("restJSON: %v", cerr)
 	}

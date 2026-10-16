@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -40,7 +39,7 @@ func debugRun(t *testing.T, level DebugLevel) string {
 	SetDebug(level)
 	t.Cleanup(func() { debugOut, debugLevel = oldOut, oldLevel })
 	c := newTestClient(t, srv.URL)
-	if _, cerr := c.GetWebhookSecret(context.Background()); cerr != nil {
+	if _, cerr := c.GetWebhookSecret(t.Context()); cerr != nil {
 		t.Fatal(cerr)
 	}
 	return buf.String()
@@ -106,7 +105,7 @@ func TestDebugBodiesRedactDefinitionSecrets(t *testing.T) {
 		"logging":{"http":{"host":"logs.example.com","headers":[{"name":"Authorization","value":"Bearer sink-secret"}]}},
 		"registry_authentication":{"basic":{"username":"u","password":"reg-secret"}}},
 		"liveness_probe":{"http":{"path":"/","headers":[{"name":"X-Key","value":"probe-secret"}]}}}`
-	c.CreateGroupRaw(context.Background(), json.RawMessage(def))
+	c.CreateGroupRaw(t.Context(), json.RawMessage(def))
 	out := buf.String()
 	for _, secret := range []string{"hf-secret", "sink-secret", "reg-secret", "probe-secret", "test-key"} {
 		if strings.Contains(out, secret) {
@@ -127,7 +126,7 @@ func TestDebugBodiesRedactAuthorizationHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 	buf := debugCapture(t, DebugBodies)
-	if _, cerr := newTestGateway(t, srv.URL).ListModels(context.Background()); cerr != nil {
+	if _, cerr := newTestGateway(t, srv.URL).ListModels(t.Context()); cerr != nil {
 		t.Fatal(cerr)
 	}
 	if out := buf.String(); !strings.Contains(out, "debug: > Authorization: REDACTED") ||
@@ -147,7 +146,7 @@ func TestDebugBodiesHideUploads(t *testing.T) {
 	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newTestClient(t, srv.URL)
 	if _, cerr := c.UploadFile(
-		context.Background(),
+		t.Context(),
 		"f.wav",
 		strings.NewReader("audio-bytes"),
 		"audio/wav",
@@ -184,7 +183,7 @@ func TestUserAgentOnEveryClient(t *testing.T) {
 	}))
 	defer srv.Close()
 	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
-	ctx := context.Background()
+	ctx := t.Context()
 	c := newTestClient(t, srv.URL)
 	c.GetWebhookSecret(ctx)
 	newTestGateway(t, srv.URL).ListModels(ctx)

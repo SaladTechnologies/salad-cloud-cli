@@ -26,7 +26,7 @@ func fakeWatchDeps(out *bytes.Buffer, tty bool, tick chan time.Time) watchDeps {
 func TestWatchLoopStopsCleanlyOnCancel(t *testing.T) {
 	var out bytes.Buffer
 	tick := make(chan time.Time)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	renders := 0
 	done := make(chan error)
 	go func() {
@@ -54,7 +54,7 @@ func TestWatchLoopStopsCleanlyOnCancel(t *testing.T) {
 
 func TestWatchLoopClearsATerminal(t *testing.T) {
 	var out bytes.Buffer
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	_ = watchLoop(ctx, fakeWatchDeps(&out, true, nil), func(context.Context) *clierr.Error { return nil })
 	if !strings.HasPrefix(out.String(), "\x1b[2J\x1b[H") {
@@ -64,7 +64,7 @@ func TestWatchLoopClearsATerminal(t *testing.T) {
 
 func TestWatchLoopEndsOnFatalError(t *testing.T) {
 	var out bytes.Buffer
-	err := watchLoop(context.Background(), fakeWatchDeps(&out, false, nil), func(context.Context) *clierr.Error {
+	err := watchLoop(t.Context(), fakeWatchDeps(&out, false, nil), func(context.Context) *clierr.Error {
 		return clierr.New(clierr.CodeNotFound, clierr.KindNotFound, "gone")
 	})
 	if cerr, ok := err.(*clierr.Error); !ok || cerr.Code != clierr.CodeNotFound {

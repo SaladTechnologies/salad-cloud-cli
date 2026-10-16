@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -64,7 +63,7 @@ func TestUploadFile(t *testing.T) {
 
 	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newRestTestClient(t, srv.URL) // API base URL is irrelevant here
-	url, cerr := c.UploadFile(context.Background(),
+	url, cerr := c.UploadFile(t.Context(),
 		"saladcloud-cli/transcribe/meeting-123.mp3", bytes.NewReader(fileBytes), "audio/mpeg", true, 86400)
 	if cerr != nil {
 		t.Fatalf("UploadFile: %v", cerr)
@@ -95,7 +94,7 @@ func TestUploadFileUnsigned(t *testing.T) {
 	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newRestTestClient(t, srv.URL)
 	if _, cerr := c.UploadFile(
-		context.Background(),
+		t.Context(),
 		"a.bin",
 		strings.NewReader("x"),
 		"application/octet-stream",
@@ -116,7 +115,7 @@ func TestUploadFileNon2xxMapsStatus(t *testing.T) {
 
 	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newRestTestClient(t, srv.URL)
-	_, cerr := c.UploadFile(context.Background(), "a.mp3", strings.NewReader("x"), "audio/mpeg", true, 60)
+	_, cerr := c.UploadFile(t.Context(), "a.mp3", strings.NewReader("x"), "audio/mpeg", true, 60)
 	if cerr == nil {
 		t.Fatal("UploadFile = nil error, want auth")
 	}
