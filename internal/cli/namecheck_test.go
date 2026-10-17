@@ -13,8 +13,8 @@ import (
 // (equal to a key in use or saved, or longer than any name) fails before any
 // request, by where it came from, without the value.
 func TestKeyLikeNamesAreNeverShown(t *testing.T) {
-	K := testAPIKey
-	saved := &config.File{APIKey: K, Organization: "my-org", Project: "default"}
+	k := testAPIKey
+	saved := &config.File{APIKey: k, Organization: "my-org", Project: "default"}
 	long := strings.Repeat("a", 64)
 	runBranches(t, []branchCase{
 		{
@@ -22,7 +22,7 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 			s: session{
 				args:  []string{"quotas", "get"},
 				saved: saved,
-				env:   map[string]string{"SALAD_ORGANIZATION": K},
+				env:   map[string]string{"SALAD_ORGANIZATION": k},
 			},
 			code: 6,
 			kind: "invalid_input",
@@ -43,7 +43,7 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 		},
 		{
 			id:   "the API key in SALAD_PROJECT",
-			s:    session{args: []string{"cg", "list"}, saved: saved, env: map[string]string{"SALAD_PROJECT": K}},
+			s:    session{args: []string{"cg", "list"}, saved: saved, env: map[string]string{"SALAD_PROJECT": k}},
 			code: 6,
 			kind: "invalid_input",
 			stderr: errLines(
@@ -53,7 +53,7 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 		},
 		{
 			id:   "the API key saved as the organization",
-			s:    session{args: []string{"cg", "list"}, saved: &config.File{APIKey: K, Organization: K}},
+			s:    session{args: []string{"cg", "list"}, saved: &config.File{APIKey: k, Organization: k}},
 			code: 6,
 			kind: "invalid_input",
 			stderr: errLines(
@@ -63,7 +63,7 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 		},
 		{
 			id:   "the API key as use's argument",
-			s:    session{args: []string{"use", K}, saved: saved},
+			s:    session{args: []string{"use", k}, saved: saved},
 			code: 6,
 			kind: "invalid_input",
 			stderr: errLines(
@@ -74,7 +74,7 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 	})
 
 	// whoami and doctor report it without the value or a request for it.
-	env := map[string]string{"SALAD_ORGANIZATION": K}
+	env := map[string]string{"SALAD_ORGANIZATION": k}
 	o := session{args: []string{"whoami"}, saved: saved, env: env}.run(t)
 	if o.code != 0 ||
 		!strings.Contains(o.stdout, "hidden, looks like an API key (from SALAD_ORGANIZATION; saved: my-org)") {
@@ -102,11 +102,11 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 		t.Errorf("use: stderr\n%s", u.stderr)
 	}
 	for _, r := range []outcome{o, j, d, u} {
-		if strings.Contains(r.all(), K) {
+		if strings.Contains(r.all(), k) {
 			t.Errorf("the key was printed:\n%s", r.all())
 		}
 		for _, req := range r.api.Requests() {
-			if strings.Contains(req, K) {
+			if strings.Contains(req, k) {
 				t.Errorf("the key was sent in a request path: %s", req)
 			}
 		}

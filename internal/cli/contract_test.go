@@ -116,13 +116,13 @@ func TestEveryCommandIsClassified(t *testing.T) {
 // project, and one already saved is hidden by the config commands, logout,
 // doctor and the run-time warning; only config get returns it.
 func TestKeyLikeSavedNames(t *testing.T) {
-	K := testAPIKey
-	o := session{args: []string{"config", "set", "organization", K}, saved: savedLogin()}.run(t)
+	k := testAPIKey
+	o := session{args: []string{"config", "set", "organization", k}, saved: savedLogin()}.run(t)
 	if o.code != 6 || !strings.Contains(o.stderr, "that looks like an API key, not an organization name") ||
-		o.config.Organization == K {
+		o.config.Organization == k {
 		t.Errorf("config set: exit %d, saved %q\n%s", o.code, o.config.Organization, o.stderr)
 	}
-	saved := &config.File{APIKey: K, Organization: K, Project: "staging"}
+	saved := &config.File{APIKey: k, Organization: k, Project: "staging"}
 	var outs []outcome
 	for _, args := range [][]string{
 		{"config", "list"},
@@ -134,7 +134,7 @@ func TestKeyLikeSavedNames(t *testing.T) {
 	} {
 		o := session{args: args, saved: saved}.run(t)
 		outs = append(outs, o)
-		if strings.Contains(o.all(), K) {
+		if strings.Contains(o.all(), k) {
 			t.Errorf("%v printed the key:\n%s", args, o.all())
 		}
 	}
@@ -149,7 +149,7 @@ func TestKeyLikeSavedNames(t *testing.T) {
 		t,
 	); !strings.Contains(
 		g.stdout,
-		K,
+		k,
 	) {
 		t.Errorf("config get does not return the saved value: %q", g.stdout)
 	}

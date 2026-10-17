@@ -75,8 +75,8 @@ func failed(n int, names string) string {
 
 func TestDoctorRows(t *testing.T) {
 	stubSSH(t, true, false)
-	K, O := testAPIKey, testOtherAPIKey
-	good := &config.File{APIKey: K, Organization: "my-org", Project: "default"}
+	k, o := testAPIKey, testOtherAPIKey
+	good := &config.File{APIKey: k, Organization: "my-org", Project: "default"}
 	doctor := []string{"doctor"}
 	noListing := newFakeAPI()
 	noListing.listing = 404
@@ -177,7 +177,7 @@ func TestDoctorRows(t *testing.T) {
 		},
 		{
 			id:   "the key rejected, from config",
-			s:    session{args: doctor, saved: &config.File{APIKey: O, Organization: "my-org"}},
+			s:    session{args: doctor, saved: &config.File{APIKey: o, Organization: "my-org"}},
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
@@ -196,7 +196,7 @@ func TestDoctorRows(t *testing.T) {
 		},
 		{
 			id:   "the key rejected, SALAD_API_KEY, another saved",
-			s:    session{args: doctor, saved: good, env: map[string]string{"SALAD_API_KEY": O}},
+			s:    session{args: doctor, saved: good, env: map[string]string{"SALAD_API_KEY": o}},
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
@@ -216,7 +216,7 @@ func TestDoctorRows(t *testing.T) {
 		},
 		{
 			id:   "the key rejected, SALAD_API_KEY, none saved",
-			s:    session{args: doctor, env: map[string]string{"SALAD_API_KEY": O}},
+			s:    session{args: doctor, env: map[string]string{"SALAD_API_KEY": o}},
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
@@ -262,7 +262,7 @@ func TestDoctorRows(t *testing.T) {
 		},
 		{
 			id: "no listing, no organization",
-			s:  session{args: doctor, saved: &config.File{APIKey: K}, api: noListing},
+			s:  session{args: doctor, saved: &config.File{APIKey: k}, api: noListing},
 			stdout: doctorTable(
 				rConfig,
 				rReachable,
@@ -290,7 +290,7 @@ func TestDoctorRows(t *testing.T) {
 		},
 		{
 			id:   "no organization",
-			s:    session{args: doctor, saved: &config.File{APIKey: K}},
+			s:    session{args: doctor, saved: &config.File{APIKey: k}},
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
@@ -309,7 +309,7 @@ func TestDoctorRows(t *testing.T) {
 		},
 		{
 			id:   "no organization, at a terminal",
-			s:    session{args: doctor, saved: &config.File{APIKey: K}, tty: []string{}},
+			s:    session{args: doctor, saved: &config.File{APIKey: k}, tty: []string{}},
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
@@ -330,7 +330,7 @@ func TestDoctorRows(t *testing.T) {
 			id: "the organization from SALAD_ORGANIZATION not found",
 			s: session{
 				args:  doctor,
-				saved: &config.File{APIKey: K},
+				saved: &config.File{APIKey: k},
 				env:   map[string]string{"SALAD_ORGANIZATION": "acme-stagng"},
 			},
 			code: 1,
@@ -351,7 +351,7 @@ func TestDoctorRows(t *testing.T) {
 		},
 		{
 			id:   "the saved organization not found",
-			s:    session{args: doctor, saved: &config.File{APIKey: K, Organization: "old-org"}, tty: []string{}},
+			s:    session{args: doctor, saved: &config.File{APIKey: k, Organization: "old-org"}, tty: []string{}},
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
@@ -372,7 +372,7 @@ func TestDoctorRows(t *testing.T) {
 			id: "an organization name that cannot be",
 			s: session{
 				args:  doctor,
-				saved: &config.File{APIKey: K},
+				saved: &config.File{APIKey: k},
 				env:   map[string]string{"SALAD_ORGANIZATION": "Acme Prod"},
 			},
 			code: 1,
@@ -407,7 +407,7 @@ func TestDoctorRows(t *testing.T) {
 		},
 		{
 			id: "no project, default exists",
-			s:  session{args: doctor, saved: &config.File{APIKey: K, Organization: "my-org"}},
+			s:  session{args: doctor, saved: &config.File{APIKey: k, Organization: "my-org"}},
 			stdout: doctorTable(
 				rConfig,
 				rReachable,
@@ -421,7 +421,7 @@ func TestDoctorRows(t *testing.T) {
 		},
 		{
 			id: "no project, no default",
-			s:  session{args: doctor, saved: &config.File{APIKey: K, Organization: "my-org"}, api: noDefault},
+			s:  session{args: doctor, saved: &config.File{APIKey: k, Organization: "my-org"}, api: noDefault},
 			stdout: doctorTable(
 				rConfig,
 				rReachable,
@@ -437,7 +437,7 @@ func TestDoctorRows(t *testing.T) {
 			id: "the saved project is another organization's",
 			s: session{
 				args:  []string{"doctor", "--org", "acme-prod"},
-				saved: &config.File{APIKey: K, Organization: "my-org", Project: "staging"},
+				saved: &config.File{APIKey: k, Organization: "my-org", Project: "staging"},
 			},
 			stdout: doctorTable(
 				rConfig,
@@ -456,7 +456,7 @@ func TestDoctorRows(t *testing.T) {
 		},
 		{
 			id:   "the saved project not found",
-			s:    session{args: doctor, saved: &config.File{APIKey: K, Organization: "my-org", Project: "stagng"}},
+			s:    session{args: doctor, saved: &config.File{APIKey: k, Organization: "my-org", Project: "stagng"}},
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
@@ -497,7 +497,7 @@ func TestDoctorRows(t *testing.T) {
 			id: "a project name that cannot be",
 			s: session{
 				args:  doctor,
-				saved: &config.File{APIKey: K, Organization: "my-org"},
+				saved: &config.File{APIKey: k, Organization: "my-org"},
 				env:   map[string]string{"SALAD_PROJECT": "Staging Env"},
 			},
 			code: 1,
@@ -536,7 +536,7 @@ func TestDoctorRows(t *testing.T) {
 				args:   doctor,
 				sshKey: true,
 				saved: &config.File{
-					APIKey:        K,
+					APIKey:        k,
 					Organization:  "my-org",
 					Project:       "default",
 					GatewayAPIKey: testGatewayKey,

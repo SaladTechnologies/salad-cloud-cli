@@ -11,8 +11,8 @@ import (
 // can meet after login (a rejected key, no key, organization or project, an
 // invalid name), as every command reports them.
 func TestRunTimeErrors(t *testing.T) {
-	K, O := testAPIKey, testOtherAPIKey
-	saved := &config.File{APIKey: K, Organization: "my-org", Project: "default"}
+	k, o := testAPIKey, testOtherAPIKey
+	saved := &config.File{APIKey: k, Organization: "my-org", Project: "default"}
 	quotas := []string{"quotas", "get"}
 	test := []string{"ai-gateway", "test"}
 	noDefault := withOrgs(map[string][]string{"my-org": {"staging"}})
@@ -21,7 +21,7 @@ func TestRunTimeErrors(t *testing.T) {
 		{
 			id:     "401, the key from config",
 			status: 401,
-			s:      session{args: quotas, saved: &config.File{APIKey: O, Organization: "my-org"}},
+			s:      session{args: quotas, saved: &config.File{APIKey: o, Organization: "my-org"}},
 			code:   3,
 			kind:   "auth",
 			stderr: errLines(
@@ -32,7 +32,7 @@ func TestRunTimeErrors(t *testing.T) {
 		{
 			id:     "401, SALAD_API_KEY, another key saved",
 			status: 401,
-			s:      session{args: quotas, saved: saved, env: map[string]string{"SALAD_API_KEY": O}},
+			s:      session{args: quotas, saved: saved, env: map[string]string{"SALAD_API_KEY": o}},
 			code:   3,
 			kind:   "auth",
 			stderr: errLines(
@@ -43,7 +43,7 @@ func TestRunTimeErrors(t *testing.T) {
 		{
 			id:     "401, SALAD_API_KEY, none saved",
 			status: 401,
-			s:      session{args: quotas, env: map[string]string{"SALAD_API_KEY": O, "SALAD_ORGANIZATION": "my-org"}},
+			s:      session{args: quotas, env: map[string]string{"SALAD_API_KEY": o, "SALAD_ORGANIZATION": "my-org"}},
 			code:   3,
 			kind:   "auth",
 			stderr: errLines(
@@ -56,14 +56,14 @@ func TestRunTimeErrors(t *testing.T) {
 			status: 401,
 			s: session{
 				args: quotas,
-				env:  map[string]string{"SALAD_API_KEY": `"` + K + `"`, "SALAD_ORGANIZATION": "my-org"},
+				env:  map[string]string{"SALAD_API_KEY": `"` + k + `"`, "SALAD_ORGANIZATION": "my-org"},
 			},
 			code:   3,
 			kind:   "auth",
 			stderr: errLines(`API key ****...13m" (from SALAD_API_KEY) was rejected`, "remove the quotes around it"),
 		},
 		{
-			id: "no organization", s: session{args: quotas, saved: &config.File{APIKey: K}}, code: 2, kind: "usage",
+			id: "no organization", s: session{args: quotas, saved: &config.File{APIKey: k}}, code: 2, kind: "usage",
 			stderr: errLines("no organization set", "pass --org, set SALAD_ORGANIZATION, or run saladcloud use <org>"),
 		},
 		{
@@ -149,7 +149,7 @@ func TestRunTimeErrors(t *testing.T) {
 			id: "no project, no default",
 			s: session{
 				args:  []string{"cg", "list"},
-				saved: &config.File{APIKey: K, Organization: "my-org"},
+				saved: &config.File{APIKey: k, Organization: "my-org"},
 				api:   noDefault,
 			},
 			code: 2,
@@ -211,8 +211,8 @@ func TestRunTimeNameCheckMakesNoRequest(t *testing.T) {
 // reported as the organization, with the fix for where it came from; names
 // are listed only at a terminal (which costs the listing).
 func TestVanishedOrganization(t *testing.T) {
-	K := testAPIKey
-	gone := &config.File{APIKey: K, Organization: "old-org", Project: "default"}
+	k := testAPIKey
+	gone := &config.File{APIKey: k, Organization: "old-org", Project: "default"}
 	list := []string{"cg", "list"}
 	runBranches(t, []branchCase{
 		{
@@ -242,7 +242,7 @@ func TestVanishedOrganization(t *testing.T) {
 			status: 404,
 			s: session{
 				args:  list,
-				saved: &config.File{APIKey: K},
+				saved: &config.File{APIKey: k},
 				env:   map[string]string{"SALAD_ORGANIZATION": "old-org"},
 			},
 			code: 4,
@@ -258,7 +258,7 @@ func TestVanishedOrganization(t *testing.T) {
 			status: 404,
 			s: session{
 				args:  []string{"cg", "get", "my-app", "--org", "old-org", "--project", "default"},
-				saved: &config.File{APIKey: K},
+				saved: &config.File{APIKey: k},
 				tty:   []string{},
 			},
 			code:   4,
@@ -290,7 +290,7 @@ func TestVanishedOrganization(t *testing.T) {
 	// An organization that exists keeps the command's own not-found error.
 	o = session{
 		args:  []string{"cg", "get", "missing"},
-		saved: &config.File{APIKey: K, Organization: "my-org", Project: "default"},
+		saved: &config.File{APIKey: k, Organization: "my-org", Project: "default"},
 	}.run(
 		t,
 	)

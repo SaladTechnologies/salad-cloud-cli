@@ -17,8 +17,8 @@ func errLines(msg, hint string) string { return "saladcloud: error: " + msg + "\
 // project checks, rejected keys, a variable that overrides what was saved,
 // and failed or cancelled requests.
 func TestUseBranches(t *testing.T) {
-	K := testAPIKey
-	saved := &config.File{APIKey: K, Organization: "my-org", Project: "default"}
+	k := testAPIKey
+	saved := &config.File{APIKey: k, Organization: "my-org", Project: "default"}
 	use := func(target string) []string { return []string{"use", target} }
 	noDefault := withOrgs(map[string][]string{"my-org": {"staging"}})
 	serverError := newFakeAPI()
@@ -102,7 +102,7 @@ func TestUseBranches(t *testing.T) {
 			s:      session{args: use("my-org"), saved: saved, api: noDefault},
 			stderr: "Project \"default\" not found in my-org. Create one later if needed.\n",
 			stdout: "Switched to my-org, no project set\n",
-			after:  &config.File{APIKey: K, Organization: "my-org"},
+			after:  &config.File{APIKey: k, Organization: "my-org"},
 			doc: map[string]any{
 				"organization":  "my-org",
 				"project":       nil,
@@ -115,18 +115,18 @@ func TestUseBranches(t *testing.T) {
 			id: "organization alone, default project",
 			s: session{
 				args:  use("acme-prod"),
-				saved: &config.File{APIKey: K, Organization: "my-org", Project: "staging"},
+				saved: &config.File{APIKey: k, Organization: "my-org", Project: "staging"},
 			},
 			stdout: "Switched to acme-prod/default\n",
 			stderr: "hint: no project named, so \"default\" is used; for another, run saladcloud use acme-prod/<project>\n",
-			after:  &config.File{APIKey: K, Organization: "acme-prod", Project: "default"},
+			after:  &config.File{APIKey: k, Organization: "acme-prod", Project: "default"},
 			doc:    map[string]any{"organization": "acme-prod", "project": "default", "env_overrides": "[]"},
 		},
 		{
 			id:     "organization and project",
 			s:      session{args: use("my-org/staging"), saved: saved},
 			stdout: "Switched to my-org/staging\n",
-			after:  &config.File{APIKey: K, Organization: "my-org", Project: "staging"},
+			after:  &config.File{APIKey: k, Organization: "my-org", Project: "staging"},
 			doc:    map[string]any{"organization": "my-org", "project": "staging"},
 		},
 		{
@@ -138,7 +138,7 @@ func TestUseBranches(t *testing.T) {
 			},
 			stdout: "Switched to acme-prod/default\n",
 			stderr: "warning: commands will use SALAD_ORGANIZATION (my-org) instead of the organization you just saved (acme-prod)\n",
-			after:  &config.File{APIKey: K, Organization: "acme-prod", Project: "default"},
+			after:  &config.File{APIKey: k, Organization: "acme-prod", Project: "default"},
 			doc:    map[string]any{"env_overrides": "[SALAD_ORGANIZATION]"},
 		},
 		{
@@ -151,7 +151,7 @@ func TestUseBranches(t *testing.T) {
 			},
 			stdout: "Switched to acme-prod/default\n",
 			stderr: "warning: commands will use SALAD_ORGANIZATION (my-org) instead of the organization you just saved (acme-prod). To remove the variable:\n" + removeOrgSteps,
-			after:  &config.File{APIKey: K, Organization: "acme-prod", Project: "default"},
+			after:  &config.File{APIKey: k, Organization: "acme-prod", Project: "default"},
 			doc:    map[string]any{"env_overrides": "[SALAD_ORGANIZATION]"},
 		},
 		{

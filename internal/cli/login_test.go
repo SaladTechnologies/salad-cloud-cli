@@ -53,8 +53,8 @@ func withOrgs(orgs map[string][]string) *fakeAPI {
 }
 
 func loginCases() []loginCase {
-	K, O := testAPIKey, testOtherAPIKey
-	stdinK := K + "\n"
+	k, o := testAPIKey, testOtherAPIKey
+	stdinK := k + "\n"
 	piped := []string{"login", "--api-key", "-"}
 	pipedOrg := []string{"login", "--api-key", "-", "--org", "my-org"}
 	saved := func(key, org, project string) *config.File {
@@ -111,32 +111,32 @@ func loginCases() []loginCase {
 		// Step 1: where the key comes from.
 		{
 			id:     "key from --api-key",
-			s:      session{args: []string{"login", "--api-key", K, "--org", "my-org"}},
+			s:      session{args: []string{"login", "--api-key", k, "--org", "my-org"}},
 			stderr: "warning: --api-key exposes the key on the command line; pipe it instead\nAPI key: ****...H13m (from --api-key)\nOrganization: my-org (from --org)\nProject: default\n",
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id:     "key from stdin",
 			s:      session{args: pipedOrg, stdin: stdinK},
 			stderr: eKeyH13m + "Organization: my-org (from --org)\nProject: default\n",
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id: "--api-key - with nothing on stdin", s: session{args: pipedOrg}, code: 2, kind: "usage",
 			stderr: errLine("--api-key - got no key on stdin", "pipe the key in, or set SALAD_API_KEY"),
 		},
 		{
-			id: "key from stdin at a terminal", s: session{args: pipedOrg, tty: []string{K, ""}},
+			id: "key from stdin at a terminal", s: session{args: pipedOrg, tty: []string{k, ""}},
 			device: "\n" + dProject, stderr: eKeyH13m + "Organization: my-org (from --org)\nProject: default\n" + eNext,
-			stdout: oLoggedIn, after: saved(K, "my-org", "default"),
+			stdout: oLoggedIn, after: saved(k, "my-org", "default"),
 		},
 		{
 			id: "key from SALAD_API_KEY",
 			s: session{
 				args: []string{"login"},
-				env:  map[string]string{"SALAD_API_KEY": K, "SALAD_ORGANIZATION": "my-org"},
+				env:  map[string]string{"SALAD_API_KEY": k, "SALAD_ORGANIZATION": "my-org"},
 			},
 			stderr: "No API key provided, using SALAD_API_KEY (****...H13m).\nOrganization: my-org (from SALAD_ORGANIZATION)\nProject: default\n" +
 				"The API key is not saved, so it works only where SALAD_API_KEY is set.\nhint: to save it, pipe it to saladcloud login --api-key -\n",
@@ -150,7 +150,7 @@ func loginCases() []loginCase {
 		},
 		{
 			id:   "no new key, one already saved",
-			s:    session{args: []string{"login"}, saved: saved(K, "my-org", "default")},
+			s:    session{args: []string{"login"}, saved: saved(k, "my-org", "default")},
 			code: 2,
 			kind: "usage",
 			stderr: errLine(
@@ -175,12 +175,12 @@ func loginCases() []loginCase {
 			id: "a pasted key no key can be",
 			s: session{
 				args: []string{"login", "--org", "my-org"},
-				tty:  []string{"salad_cloud_user_caf\u00e9000DTb9", K, ""},
+				tty:  []string{"salad_cloud_user_caf\u00e9000DTb9", k, ""},
 			},
 			device: dGet + dPaste + "That API key contains characters an API key cannot have. Check for quotes or stray characters in it.\n" + dPaste + dProject,
 			stderr: eKeyH13m + "Organization: my-org (from --org)\nProject: default\n" + eNext,
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 
 		// Step 2: the key prompt.
@@ -188,7 +188,7 @@ func loginCases() []loginCase {
 			id: "an overriding variable named at the key prompt",
 			s: session{
 				args: []string{"login", "--org", "my-org"},
-				tty:  []string{K, ""},
+				tty:  []string{k, ""},
 				env:  map[string]string{"SALAD_ORGANIZATION": "acme-prod"},
 			},
 			device: "SALAD_ORGANIZATION is set in this shell (acme-prod); commands will use it instead of what login saves.\n" + dGet + dPaste + dProject,
@@ -198,25 +198,25 @@ func loginCases() []loginCase {
 				"If it comes back in a new terminal, remove it permanently:\n  [Environment]::SetEnvironmentVariable('SALAD_ORGANIZATION', $null, 'User')\n" +
 				"Then open a new terminal (restart VS Code if you use its terminal).\n" + eNext,
 			stdout:    oLoggedIn,
-			after:     saved(K, "my-org", "default"),
+			after:     saved(k, "my-org", "default"),
 			overrides: []string{"SALAD_ORGANIZATION"},
 		},
 		{
 			id:     "Enter at the key prompt opens the browser",
-			s:      session{args: []string{"login", "--org", "my-org"}, tty: []string{"", K, ""}},
+			s:      session{args: []string{"login", "--org", "my-org"}, tty: []string{"", k, ""}},
 			device: dGet + dPaste + "Opening https://portal.salad.com/api-key in your browser.\n" + dPaste + dProject,
 			opened: 1,
 			stderr: eKeyH13m + "Organization: my-org (from --org)\nProject: default\n" + eNext,
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id:     "Enter at the key prompt with no display",
-			s:      session{args: []string{"login", "--org", "my-org"}, tty: []string{"", K, ""}, os: "linux"},
+			s:      session{args: []string{"login", "--org", "my-org"}, tty: []string{"", k, ""}, os: "linux"},
 			device: dGet + "Paste it here, hidden: \nPaste it here, hidden: \n" + dProject,
 			stderr: eKeyH13m + "Organization: my-org (from --org)\nProject: default\n" + eNext,
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id:     "Ctrl-C at the key prompt",
@@ -228,7 +228,7 @@ func loginCases() []loginCase {
 		},
 		{
 			id:     "end of input at the key prompt, a key saved",
-			s:      session{args: []string{"login"}, tty: []string{keyEOF}, saved: saved(O, "my-org", "default")},
+			s:      session{args: []string{"login"}, tty: []string{keyEOF}, saved: saved(o, "my-org", "default")},
 			code:   1,
 			kind:   "interrupted",
 			device: dSavedKey + dGet + dPaste,
@@ -238,24 +238,24 @@ func loginCases() []loginCase {
 		// Step 3: is the key good?
 		{
 			id:     "a rejected key at the prompt, then a good one",
-			s:      session{args: []string{"login", "--org", "my-org"}, tty: []string{O, K, ""}},
+			s:      session{args: []string{"login", "--org", "my-org"}, tty: []string{o, k, ""}},
 			device: dGet + dPaste + dInvalid + dPaste + dProject,
 			stderr: "API key: ****...ABCD\n" + eKeyH13m + "Organization: my-org (from --org)\nProject: default\n" + eNext,
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id:     "a quoted key at the prompt",
-			s:      session{args: []string{"login", "--org", "my-org"}, tty: []string{`"` + K + `"`, K, ""}},
+			s:      session{args: []string{"login", "--org", "my-org"}, tty: []string{`"` + k + `"`, k, ""}},
 			device: dGet + dPaste + "That API key is invalid. Remove the quotes around it and paste it again.\n" + dPaste + dProject,
 			stderr: "API key: ****...13m\"\n" + eKeyH13m + "Organization: my-org (from --org)\nProject: default\n" + eNext,
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id:     "a rejected key from --api-key",
 			status: 401,
-			s:      session{args: []string{"login", "--api-key", O, "--org", "my-org"}},
+			s:      session{args: []string{"login", "--api-key", o, "--org", "my-org"}},
 			code:   3,
 			kind:   "auth",
 			stderr: "warning: --api-key exposes the key on the command line; pipe it instead\n" +
@@ -267,7 +267,7 @@ func loginCases() []loginCase {
 		{
 			id:     "a rejected key from stdin",
 			status: 401,
-			s:      session{args: pipedOrg, stdin: O},
+			s:      session{args: pipedOrg, stdin: o},
 			code:   3,
 			kind:   "auth",
 			stderr: errLine(
@@ -280,8 +280,8 @@ func loginCases() []loginCase {
 			status: 401,
 			s: session{
 				args:  []string{"login", "--org", "my-org"},
-				env:   map[string]string{"SALAD_API_KEY": O},
-				saved: saved(K, "my-org", "default"),
+				env:   map[string]string{"SALAD_API_KEY": o},
+				saved: saved(k, "my-org", "default"),
 			},
 			code: 3,
 			kind: "auth",
@@ -293,7 +293,7 @@ func loginCases() []loginCase {
 		{
 			id:     "a rejected SALAD_API_KEY, none saved",
 			status: 401,
-			s:      session{args: []string{"login", "--org", "my-org"}, env: map[string]string{"SALAD_API_KEY": O}},
+			s:      session{args: []string{"login", "--org", "my-org"}, env: map[string]string{"SALAD_API_KEY": o}},
 			code:   3,
 			kind:   "auth",
 			stderr: errLine(
@@ -304,7 +304,7 @@ func loginCases() []loginCase {
 		{
 			id:     "a quoted key from stdin",
 			status: 401,
-			s:      session{args: pipedOrg, stdin: "'" + K + "'"},
+			s:      session{args: pipedOrg, stdin: "'" + k + "'"},
 			code:   3,
 			kind:   "auth",
 			stderr: errLine("API key ****...13m' (from stdin) is invalid", "remove the quotes around it"),
@@ -322,7 +322,7 @@ func loginCases() []loginCase {
 			s:      session{args: pipedOrg, stdin: stdinK, api: listing(403)},
 			stderr: eKeyH13m + "Organization: my-org (from --org)\nProject: default\n",
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id:     "Ctrl-C during a request",
@@ -338,7 +338,7 @@ func loginCases() []loginCase {
 			s:      session{args: piped, stdin: stdinK, env: map[string]string{"SALAD_ORGANIZATION": "acme-prod"}},
 			stderr: eKeyH13m + "Organization: acme-prod (from SALAD_ORGANIZATION)\nProject: default\n",
 			stdout: "Logged in: acme-prod/default\nConfig at: <path>\n",
-			after:  saved(K, "acme-prod", "default"),
+			after:  saved(k, "acme-prod", "default"),
 		},
 		{
 			id:     "organization from --org not found",
@@ -354,7 +354,7 @@ func loginCases() []loginCase {
 		{
 			id:     "organization from --org not found at a terminal",
 			status: 404,
-			s:      session{args: []string{"login", "--org", "acme-stagng"}, tty: []string{K}},
+			s:      session{args: []string{"login", "--org", "acme-stagng"}, tty: []string{k}},
 			code:   4,
 			kind:   "not_found",
 			device: dGet + dPaste,
@@ -368,31 +368,31 @@ func loginCases() []loginCase {
 			s:      session{args: piped, stdin: stdinK, saved: saved("", "my-org", "")},
 			stderr: eKeyH13m + "Organization: my-org\nProject: default\n",
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id:     "saved organization, your only one",
-			s:      session{args: []string{"login"}, tty: []string{K, ""}, saved: saved("", "my-org", ""), api: oneOrg},
+			s:      session{args: []string{"login"}, tty: []string{k, ""}, saved: saved("", "my-org", ""), api: oneOrg},
 			device: dGet + dPaste + dProject,
 			stderr: eKeyH13m + "Organization: my-org\nProject: default\n" + eNext,
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id:     "organization menu, the saved one as default",
-			s:      session{args: []string{"login"}, tty: []string{K, "", ""}, saved: saved("", "acme-prod", "")},
+			s:      session{args: []string{"login"}, tty: []string{k, "", ""}, saved: saved("", "acme-prod", "")},
 			device: dGet + dPaste + dMenu + "Select an organization by number or name [acme-prod]: \n" + dProject,
 			stderr: eKeyH13m + "Organization: acme-prod\nProject: default\n" + eNext,
 			stdout: "Logged in: acme-prod/default\nConfig at: <path>\n",
-			after:  saved(K, "acme-prod", "default"),
+			after:  saved(k, "acme-prod", "default"),
 		},
 		{
 			id:     "saved organization not found, then the menu",
-			s:      session{args: []string{"login"}, tty: []string{K, "2", ""}, saved: saved("", "old-org", "")},
+			s:      session{args: []string{"login"}, tty: []string{k, "2", ""}, saved: saved("", "old-org", "")},
 			device: dGet + dPaste + "Saved organization \"old-org\" not found.\n" + dMenu + "Select an organization by number or name: 2\n" + dProject,
 			stderr: eKeyH13m + "Organization: my-org\nProject: default\n" + eNext,
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id:     "saved organization not found, no terminal",
@@ -417,63 +417,63 @@ func loginCases() []loginCase {
 		},
 		{
 			id:     "your only organization",
-			s:      session{args: []string{"login"}, tty: []string{K, ""}, api: oneOrg},
+			s:      session{args: []string{"login"}, tty: []string{k, ""}, api: oneOrg},
 			device: dGet + dPaste + dProject,
 			stderr: eKeyH13m + "Organization: my-org\nProject: default\n" + eNext,
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id:     "organization menu, picked by number",
-			s:      session{args: []string{"login"}, tty: []string{K, "2", ""}},
+			s:      session{args: []string{"login"}, tty: []string{k, "2", ""}},
 			device: dGet + dPaste + dMenu + "Select an organization by number or name: 2\n" + dProject,
 			stderr: eKeyH13m + "Organization: my-org\nProject: default\n" + eNext,
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id: "organization menu, invalid answers",
-			s:  session{args: []string{"login"}, tty: []string{K, "3", "acme-stagng", "Acme Prod", K, "1", ""}},
+			s:  session{args: []string{"login"}, tty: []string{k, "3", "acme-stagng", "Acme Prod", k, "1", ""}},
 			device: dGet + dPaste + dMenu +
 				"Select an organization by number or name: 3\n\"3\" isn't on the list; pick 1-2 or type a name.\n" +
 				"Select an organization by number or name: acme-stagng\n\"acme-stagng\" not found; pick 1-2 or type a name.\n" +
 				"Select an organization by number or name: Acme Prod\n\"Acme Prod\" is not a valid organization name. It looks like a display name; type the name from the portal URL, the part after /organizations/.\n" +
-				"Select an organization by number or name: " + K + "\nThat looks like the API key you just pasted, not an organization name.\n" +
+				"Select an organization by number or name: " + k + "\nThat looks like the API key you just pasted, not an organization name.\n" +
 				"Select an organization by number or name: 1\n" + dProject,
 			stderr: eKeyH13m + "Organization: acme-prod\nProject: default\n" + eNext,
 			stdout: "Logged in: acme-prod/default\nConfig at: <path>\n",
-			after:  saved(K, "acme-prod", "default"),
+			after:  saved(k, "acme-prod", "default"),
 		},
 		{
 			id: "no listing, organization typed",
-			s:  session{args: []string{"login"}, tty: []string{K, "acme-stagng", "my-org", ""}, api: listing(404)},
+			s:  session{args: []string{"login"}, tty: []string{k, "acme-stagng", "my-org", ""}, api: listing(404)},
 			device: dGet + dPaste + "Type an organization name: acme-stagng\n" +
 				"Organization \"acme-stagng\" not found. Visit https://portal.salad.com/organizations to see your organizations, create one or accept an invitation.\n" +
 				"Type an organization name: my-org\n" + dProject,
 			stderr: eKeyH13m + "Organization: my-org\nProject: default\n" + eNext,
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id: "no listing, the saved organization as default",
 			s: session{
 				args:  []string{"login"},
-				tty:   []string{K, "", ""},
+				tty:   []string{k, "", ""},
 				api:   listing(404),
 				saved: saved("", "my-org", ""),
 			},
 			device: dGet + dPaste + "Type an organization name [my-org]: \n" + dProject,
 			stderr: eKeyH13m + "Organization: my-org\nProject: default\n" + eNext,
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id:     "no listing, the key rejected by the organization check",
-			s:      session{args: []string{"login"}, tty: []string{O, "my-org", K, "my-org", ""}, api: listing(404)},
+			s:      session{args: []string{"login"}, tty: []string{o, "my-org", k, "my-org", ""}, api: listing(404)},
 			device: dGet + dPaste + "Type an organization name: my-org\n" + dInvalid + dPaste + "Type an organization name: my-org\n" + dProject,
 			stderr: "API key: ****...ABCD\n" + eKeyH13m + "Organization: my-org\nProject: default\n" + eNext,
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id:   "no organizations",
@@ -522,14 +522,14 @@ func loginCases() []loginCase {
 			},
 			stderr: eKeyH13m + "Organization: my-org (from --org)\nProject: staging (from --project)\n",
 			stdout: "Logged in: my-org/staging\nConfig at: <path>\n",
-			after:  saved(K, "my-org", "staging"),
+			after:  saved(k, "my-org", "staging"),
 		},
 		{
 			id:     "project from SALAD_PROJECT",
 			s:      session{args: pipedOrg, stdin: stdinK, env: map[string]string{"SALAD_PROJECT": "staging"}},
 			stderr: eKeyH13m + "Organization: my-org (from --org)\nProject: staging (from SALAD_PROJECT)\n",
 			stdout: "Logged in: my-org/staging\nConfig at: <path>\n",
-			after:  saved(K, "my-org", "staging"),
+			after:  saved(k, "my-org", "staging"),
 		},
 		{
 			id:     "project from --project not found",
@@ -548,76 +548,76 @@ func loginCases() []loginCase {
 		},
 		{
 			id:     "the saved project as the prompt's default",
-			s:      session{args: []string{"login"}, tty: []string{K, "", ""}, saved: saved("", "my-org", "staging")},
+			s:      session{args: []string{"login"}, tty: []string{k, "", ""}, saved: saved("", "my-org", "staging")},
 			device: dGet + dPaste + dMenu + "Select an organization by number or name [my-org]: \nType a project name [staging]: \n",
 			stderr: eKeyH13m + "Organization: my-org\nProject: staging\n" + eNext,
 			stdout: "Logged in: my-org/staging\nConfig at: <path>\n",
-			after:  saved(K, "my-org", "staging"),
+			after:  saved(k, "my-org", "staging"),
 		},
 		{
 			id:     "saved project",
 			s:      session{args: piped, stdin: stdinK, saved: saved("", "my-org", "staging")},
 			stderr: eKeyH13m + "Organization: my-org\nProject: staging\n",
 			stdout: "Logged in: my-org/staging\nConfig at: <path>\n",
-			after:  saved(K, "my-org", "staging"),
+			after:  saved(k, "my-org", "staging"),
 		},
 		{
 			id:     "saved project not found",
 			s:      session{args: piped, stdin: stdinK, saved: saved("", "my-org", "old-proj")},
 			stderr: eKeyH13m + "Organization: my-org\nSaved project \"old-proj\" not found in my-org. Create one at https://portal.salad.com/organizations/my-org/projects/new.\nProject: default\n",
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id: "saved project not found at a terminal",
 			s: session{
 				args:  []string{"login", "--org", "my-org"},
-				tty:   []string{K, ""},
+				tty:   []string{k, ""},
 				saved: saved("", "my-org", "old-proj"),
 			},
 			device: dGet + dPaste + "Saved project \"old-proj\" not found in my-org. Create one at https://portal.salad.com/organizations/my-org/projects/new.\n" + dProject,
 			stderr: eKeyH13m + "Organization: my-org (from --org)\nProject: default\n" + eNext,
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 		{
 			id:     "no default project, skipped",
-			s:      session{args: []string{"login"}, tty: []string{K, ""}, api: noDefault},
+			s:      session{args: []string{"login"}, tty: []string{k, ""}, api: noDefault},
 			device: dGet + dPaste + "Project \"default\" not found in my-org. Create one later if needed.\nType a project name, or press Enter to skip: \n",
 			stderr: eKeyH13m + "Organization: my-org\n" + eNext,
 			stdout: "Logged in: my-org, no project set\nConfig at: <path>\n",
-			after:  saved(K, "my-org", ""),
+			after:  saved(k, "my-org", ""),
 		},
 		{
 			id:     "no default project, a name typed",
-			s:      session{args: []string{"login"}, tty: []string{K, "staging"}, api: noDefault},
+			s:      session{args: []string{"login"}, tty: []string{k, "staging"}, api: noDefault},
 			device: dGet + dPaste + "Project \"default\" not found in my-org. Create one later if needed.\nType a project name, or press Enter to skip: staging\n",
 			stderr: eKeyH13m + "Organization: my-org\nProject: staging\n" + eNext,
 			stdout: "Logged in: my-org/staging\nConfig at: <path>\n",
-			after:  saved(K, "my-org", "staging"),
+			after:  saved(k, "my-org", "staging"),
 		},
 		{
 			id: "no default project, no terminal", s: session{args: pipedOrg, stdin: stdinK, api: noDefault},
 			stderr: eKeyH13m + "Organization: my-org (from --org)\n",
-			stdout: "Logged in: my-org, no project set\nConfig at: <path>\n", after: saved(K, "my-org", ""),
+			stdout: "Logged in: my-org, no project set\nConfig at: <path>\n", after: saved(k, "my-org", ""),
 		},
 		{
 			id: "project prompt, invalid answers",
-			s:  session{args: []string{"login"}, tty: []string{K, "stagng", "Staging Env", "staging"}, api: noDefault},
+			s:  session{args: []string{"login"}, tty: []string{k, "stagng", "Staging Env", "staging"}, api: noDefault},
 			device: dGet + dPaste + "Project \"default\" not found in my-org. Create one later if needed.\n" +
 				"Type a project name, or press Enter to skip: stagng\nProject \"stagng\" not found in my-org. Create one at https://portal.salad.com/organizations/my-org/projects/new.\n" +
 				"Type a project name, or press Enter to skip: Staging Env\n\"Staging Env\" is not a valid project name. It looks like a display name; type the name from the portal URL, the part after /projects/.\n" +
 				"Type a project name, or press Enter to skip: staging\n",
 			stderr: eKeyH13m + "Organization: my-org\nProject: staging\n" + eNext,
 			stdout: "Logged in: my-org/staging\nConfig at: <path>\n",
-			after:  saved(K, "my-org", "staging"),
+			after:  saved(k, "my-org", "staging"),
 		},
 		{
 			id:     "a project saved for another organization",
 			s:      session{args: pipedOrg, stdin: stdinK, saved: saved("", "acme-prod", "staging")},
 			stderr: eKeyH13m + "Organization: my-org (from --org)\nProject: default\n",
 			stdout: oLoggedIn,
-			after:  saved(K, "my-org", "default"),
+			after:  saved(k, "my-org", "default"),
 		},
 
 		// Step 6: save.
@@ -626,33 +626,33 @@ func loginCases() []loginCase {
 			s: session{
 				args:  pipedOrg,
 				stdin: stdinK,
-				env:   map[string]string{"SALAD_API_KEY": O, "SALAD_ORGANIZATION": "acme-prod"},
+				env:   map[string]string{"SALAD_API_KEY": o, "SALAD_ORGANIZATION": "acme-prod"},
 			},
 			stderr: eKeyH13m + "Organization: my-org (from --org)\nProject: default\n" +
 				"warning: commands will use these environment variables instead of what you just saved:\n" +
 				"warning:   SALAD_API_KEY       ****...ABCD  (saved: ****...H13m)\n" +
 				"warning:   SALAD_ORGANIZATION  acme-prod    (saved: my-org)\n",
 			stdout:    oLoggedIn,
-			after:     saved(K, "my-org", "default"),
+			after:     saved(k, "my-org", "default"),
 			overrides: []string{"SALAD_API_KEY", "SALAD_ORGANIZATION"},
 		},
 		{
 			id: "key from SALAD_API_KEY, another key saved",
 			s: session{
 				args:  []string{"login"},
-				env:   map[string]string{"SALAD_API_KEY": K, "SALAD_ORGANIZATION": "my-org"},
-				saved: saved(O, "", ""),
+				env:   map[string]string{"SALAD_API_KEY": k, "SALAD_ORGANIZATION": "my-org"},
+				saved: saved(o, "", ""),
 			},
 			stderr: "No API key provided, using SALAD_API_KEY (****...H13m).\nOrganization: my-org (from SALAD_ORGANIZATION)\nProject: default\n" +
 				"The API key is not saved, so it works only where SALAD_API_KEY is set.\n" +
 				"Where SALAD_API_KEY is not set, commands use the saved API key (****...ABCD).\nhint: to save it, pipe it to saladcloud login --api-key -\n",
 			stdout:     oLoggedIn,
-			after:      saved(O, "my-org", "default"),
+			after:      saved(o, "my-org", "default"),
 			keyUnsaved: true,
 		},
 		{
 			id:     "Ctrl-C at the organization prompt, a key saved",
-			s:      session{args: []string{"login"}, tty: []string{K, keyCtrlC}, saved: saved(O, "", "")},
+			s:      session{args: []string{"login"}, tty: []string{k, keyCtrlC}, saved: saved(o, "", "")},
 			code:   1,
 			kind:   "interrupted",
 			device: dSavedKey + dGet + dPaste + dMenu + "Select an organization by number or name: \n",

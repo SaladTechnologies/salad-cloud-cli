@@ -23,7 +23,7 @@ func gatewayFake() *fakeAPI {
 }
 
 func TestGatewayLoginBranches(t *testing.T) {
-	K, W := testGatewayKey, testOtherGatewayKey
+	k, w := testGatewayKey, testOtherGatewayKey
 	gw := func(args ...string) []string { return append([]string{"ai-gateway", "login"}, args...) }
 	piped := gw("--api-key", "-")
 	saved := func(key string) *config.File { return &config.File{GatewayAPIKey: key} }
@@ -59,7 +59,7 @@ func TestGatewayLoginBranches(t *testing.T) {
 	runBranches(t, []branchCase{
 		{
 			id:   "corrupt config",
-			s:    session{args: piped, stdin: K, rawConfig: "{"},
+			s:    session{args: piped, stdin: k, rawConfig: "{"},
 			code: 1,
 			kind: "api_error",
 			stderr: errLine(
@@ -73,15 +73,15 @@ func TestGatewayLoginBranches(t *testing.T) {
 		},
 		{
 			id:     "--api-key",
-			s:      session{args: gw("--api-key", K), api: gatewayFake()},
+			s:      session{args: gw("--api-key", k), api: gatewayFake()},
 			stderr: "warning: --api-key exposes the key on the command line; pipe it instead\nAI Gateway key: ****...EFGH (from --api-key)\n" + eTry,
 			stdout: oSaved,
-			after:  saved(K),
+			after:  saved(k),
 			doc:    docSaved,
 		},
 		{
-			id: "--api-key -", s: session{args: piped, stdin: K + "\n", api: gatewayFake()},
-			stderr: "AI Gateway key: ****...EFGH\n" + eTry, stdout: oSaved, after: saved(K), doc: docSaved,
+			id: "--api-key -", s: session{args: piped, stdin: k + "\n", api: gatewayFake()},
+			stderr: "AI Gateway key: ****...EFGH\n" + eTry, stdout: oSaved, after: saved(k), doc: docSaved,
 		},
 		{
 			id: "--api-key -, nothing on stdin", s: session{args: piped}, code: 2, kind: "usage",
@@ -99,25 +99,25 @@ func TestGatewayLoginBranches(t *testing.T) {
 		},
 		{
 			id:     "key from SALAD_AI_GATEWAY_API_KEY",
-			s:      session{args: gw(), env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": K}, api: gatewayFake()},
+			s:      session{args: gw(), env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": k}, api: gatewayFake()},
 			stderr: "No AI Gateway key provided, using SALAD_AI_GATEWAY_API_KEY (****...EFGH).\nhint: to save it, pipe it to saladcloud ai-gateway login --api-key -\n",
 			stdout: "The AI Gateway key works. It is not saved, so it works only where SALAD_AI_GATEWAY_API_KEY is set.\n",
 			doc:    with(docSaved, "ai_gateway_api_key_saved", false, "ai_gateway_api_key_source", "env"),
 		},
 		{
 			id:     "at a terminal",
-			s:      session{args: gw(), tty: []string{K}, api: gatewayFake()},
+			s:      session{args: gw(), tty: []string{k}, api: gatewayFake()},
 			device: dGet + dPaste,
 			stderr: "AI Gateway key: ****...EFGH\n" + eTry,
 			stdout: oSaved,
-			after:  saved(K),
+			after:  saved(k),
 			doc:    docSaved,
 		},
 		{
 			id: "at a terminal, a variable set and a key saved",
 			s: session{
-				args: gw(), tty: []string{"", K}, api: gatewayFake(),
-				env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": W}, saved: saved(W),
+				args: gw(), tty: []string{"", k}, api: gatewayFake(),
+				env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": w}, saved: saved(w),
 			},
 			device: "SALAD_AI_GATEWAY_API_KEY is set in this shell (****...WXYZ); commands will use it instead of what ai-gateway login saves.\n" +
 				"Saved AI Gateway key: ****...WXYZ (Ctrl-C to keep it)\n" + dGet + dPaste + "Opening https://portal.salad.com/ai-gateway in your browser.\n" + dPaste,
@@ -127,7 +127,7 @@ func TestGatewayLoginBranches(t *testing.T) {
 				"If it comes back in a new terminal, remove it permanently:\n  [Environment]::SetEnvironmentVariable('SALAD_AI_GATEWAY_API_KEY', $null, 'User')\n" +
 				"Then open a new terminal (restart VS Code if you use its terminal).\n",
 			stdout: oSaved,
-			after:  saved(K),
+			after:  saved(k),
 			doc:    with(docSaved, "ai_gateway_api_key_source", "env", "env_overrides", "[SALAD_AI_GATEWAY_API_KEY]"),
 		},
 		{
@@ -136,7 +136,7 @@ func TestGatewayLoginBranches(t *testing.T) {
 		},
 		{
 			id:     "end of input, a key saved",
-			s:      session{args: gw(), tty: []string{keyEOF}, saved: saved(W)},
+			s:      session{args: gw(), tty: []string{keyEOF}, saved: saved(w)},
 			code:   1,
 			kind:   "interrupted",
 			device: "Saved AI Gateway key: ****...WXYZ (Ctrl-C to keep it)\n" + dGet + dPaste,
@@ -144,26 +144,26 @@ func TestGatewayLoginBranches(t *testing.T) {
 		},
 		{
 			id:     "401, pasted",
-			s:      session{args: gw(), tty: []string{W, K}, api: gatewayFake()},
+			s:      session{args: gw(), tty: []string{w, k}, api: gatewayFake()},
 			device: dGet + dPaste + dInvalidG + dPaste,
 			stderr: "AI Gateway key: ****...WXYZ\nAI Gateway key: ****...EFGH\n" + eTry,
 			stdout: oSaved,
-			after:  saved(K),
+			after:  saved(k),
 			doc:    docSaved,
 		},
 		{
 			id:     "401, pasted in quotes",
-			s:      session{args: gw(), tty: []string{`"` + K + `"`, K}, api: gatewayFake()},
+			s:      session{args: gw(), tty: []string{`"` + k + `"`, k}, api: gatewayFake()},
 			device: dGet + dPaste + "That AI Gateway key is invalid. Remove the quotes around it and paste it again.\n" + dPaste,
 			stderr: "AI Gateway key: ****...FGH\"\nAI Gateway key: ****...EFGH\n" + eTry,
 			stdout: oSaved,
-			after:  saved(K),
+			after:  saved(k),
 			doc:    docSaved,
 		},
 		{
 			id:     "401, --api-key",
 			status: 401,
-			s:      session{args: gw("--api-key", W), api: gatewayFake()},
+			s:      session{args: gw("--api-key", w), api: gatewayFake()},
 			code:   3,
 			kind:   "auth",
 			stderr: "warning: --api-key exposes the key on the command line; pipe it instead\n" +
@@ -175,7 +175,7 @@ func TestGatewayLoginBranches(t *testing.T) {
 		{
 			id:     "401, stdin",
 			status: 401,
-			s:      session{args: piped, stdin: W, api: gatewayFake()},
+			s:      session{args: piped, stdin: w, api: gatewayFake()},
 			code:   3,
 			kind:   "auth",
 			stderr: errLine(
@@ -188,8 +188,8 @@ func TestGatewayLoginBranches(t *testing.T) {
 			status: 401,
 			s: session{
 				args:  gw(),
-				env:   map[string]string{"SALAD_AI_GATEWAY_API_KEY": W},
-				saved: saved(K),
+				env:   map[string]string{"SALAD_AI_GATEWAY_API_KEY": w},
+				saved: saved(k),
 				api:   gatewayFake(),
 			},
 			code: 3,
@@ -202,7 +202,7 @@ func TestGatewayLoginBranches(t *testing.T) {
 		{
 			id:     "401, the variable, none saved",
 			status: 401,
-			s:      session{args: gw(), env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": W}, api: gatewayFake()},
+			s:      session{args: gw(), env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": w}, api: gatewayFake()},
 			code:   3,
 			kind:   "auth",
 			stderr: errLine(
@@ -213,7 +213,7 @@ func TestGatewayLoginBranches(t *testing.T) {
 		{
 			id:     "401, in quotes",
 			status: 401,
-			s:      session{args: piped, stdin: "'" + K + "'", api: gatewayFake()},
+			s:      session{args: piped, stdin: "'" + k + "'", api: gatewayFake()},
 			code:   3,
 			kind:   "auth",
 			stderr: errLine("AI Gateway key ****...FGH' (from stdin) is invalid", "remove the quotes around it"),
@@ -242,13 +242,13 @@ func TestGatewayLoginBranches(t *testing.T) {
 			id: "the variable differs",
 			s: session{
 				args:  piped,
-				stdin: K,
-				env:   map[string]string{"SALAD_AI_GATEWAY_API_KEY": W},
+				stdin: k,
+				env:   map[string]string{"SALAD_AI_GATEWAY_API_KEY": w},
 				api:   gatewayFake(),
 			},
 			stderr: "AI Gateway key: ****...EFGH\n" + eTry + eWarnW + "\n",
 			stdout: oSaved,
-			after:  saved(K),
+			after:  saved(k),
 			doc:    with(docSaved, "ai_gateway_api_key_source", "env", "env_overrides", "[SALAD_AI_GATEWAY_API_KEY]"),
 		},
 		{
@@ -263,7 +263,7 @@ func TestGatewayLoginBranches(t *testing.T) {
 		},
 		{
 			id:     "Ctrl-C during the check",
-			s:      session{args: piped, stdin: K, api: cancelAtCheck},
+			s:      session{args: piped, stdin: k, api: cancelAtCheck},
 			code:   1,
 			kind:   "interrupted",
 			stderr: "saladcloud: error: ai-gateway login cancelled, nothing changed\n",
@@ -272,8 +272,8 @@ func TestGatewayLoginBranches(t *testing.T) {
 }
 
 func TestGatewayLogoutBranches(t *testing.T) {
-	K, W := testGatewayKey, testOtherGatewayKey
-	both := &config.File{APIKey: testAPIKey, Organization: "my-org", GatewayAPIKey: K}
+	k, w := testGatewayKey, testOtherGatewayKey
+	both := &config.File{APIKey: testAPIKey, Organization: "my-org", GatewayAPIKey: k}
 	runBranches(t, []branchCase{
 		{
 			id: "a key saved", s: session{args: []string{"ai-gateway", "logout"}, saved: both},
@@ -289,7 +289,7 @@ func TestGatewayLogoutBranches(t *testing.T) {
 		{
 			id: "the variable set, at a terminal", s: session{
 				args: []string{"ai-gateway", "logout"}, saved: both, tty: []string{},
-				env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": W},
+				env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": w},
 			},
 			stdout: "Logged out: removed the saved AI Gateway key (****...EFGH)\n",
 			stderr: "warning: commands still use SALAD_AI_GATEWAY_API_KEY (****...WXYZ). To remove the variable:\n" +
@@ -303,7 +303,7 @@ func TestGatewayLogoutBranches(t *testing.T) {
 			id: "the variable set, no terminal",
 			s: session{
 				args: []string{"ai-gateway", "logout"},
-				env:  map[string]string{"SALAD_AI_GATEWAY_API_KEY": W},
+				env:  map[string]string{"SALAD_AI_GATEWAY_API_KEY": w},
 			},
 			stdout: "No AI Gateway key was saved; nothing to remove\n",
 			stderr: "warning: commands still use SALAD_AI_GATEWAY_API_KEY (****...WXYZ)\n",

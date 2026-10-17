@@ -21,7 +21,7 @@ func whoamiTable(apiKey, org, project, gateway, auth, orgs string) string {
 }
 
 func TestWhoamiBranches(t *testing.T) {
-	K := testAPIKey
+	k := testAPIKey
 	twelve := make(map[string][]string)
 	for i := 1; i <= 12; i++ {
 		twelve[fmt.Sprintf("org-%02d", i)] = []string{"default"}
@@ -32,7 +32,7 @@ func TestWhoamiBranches(t *testing.T) {
 		{
 			id: "a variable hides the saved key",
 			s: session{
-				args: []string{"whoami"}, env: map[string]string{"SALAD_API_KEY": K},
+				args: []string{"whoami"}, env: map[string]string{"SALAD_API_KEY": k},
 				saved: &config.File{APIKey: keyRotated, Organization: "my-org"},
 			},
 			stdout: whoamiTable(
@@ -62,8 +62,8 @@ func TestWhoamiBranches(t *testing.T) {
 		{
 			id: "the same key saved and in the variable",
 			s: session{
-				args: []string{"whoami"}, env: map[string]string{"SALAD_API_KEY": K},
-				saved: &config.File{APIKey: K, Organization: "my-org", Project: "staging"},
+				args: []string{"whoami"}, env: map[string]string{"SALAD_API_KEY": k},
+				saved: &config.File{APIKey: k, Organization: "my-org", Project: "staging"},
 			},
 			stdout: whoamiTable(
 				"****...H13m (from SALAD_API_KEY)",
@@ -79,7 +79,7 @@ func TestWhoamiBranches(t *testing.T) {
 			id: "a flag hides the saved organization",
 			s: session{
 				args:  []string{"whoami", "--org", "acme-prod"},
-				saved: &config.File{APIKey: K, Organization: "my-org"},
+				saved: &config.File{APIKey: k, Organization: "my-org"},
 			},
 			stdout: whoamiTable(
 				"****...H13m (from config)",
@@ -114,7 +114,7 @@ func TestWhoamiBranches(t *testing.T) {
 		{
 			id: "the organization not found",
 			s: session{
-				args: []string{"whoami"}, saved: &config.File{APIKey: K, Organization: "old-org", Project: "default"},
+				args: []string{"whoami"}, saved: &config.File{APIKey: k, Organization: "old-org", Project: "default"},
 				env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": testGatewayKey},
 			},
 			stdout: whoamiTable(
@@ -148,7 +148,7 @@ func TestWhoamiBranches(t *testing.T) {
 			id: "no listing, the organization found",
 			s: session{
 				args:  []string{"whoami"},
-				saved: &config.File{APIKey: K, Organization: "my-org"},
+				saved: &config.File{APIKey: k, Organization: "my-org"},
 				api:   noListing,
 			},
 			stdout: whoamiTable(
@@ -163,7 +163,7 @@ func TestWhoamiBranches(t *testing.T) {
 		},
 		{
 			id: "no listing, no organization",
-			s:  session{args: []string{"whoami"}, saved: &config.File{APIKey: K}, api: noListing},
+			s:  session{args: []string{"whoami"}, saved: &config.File{APIKey: k}, api: noListing},
 			stdout: whoamiTable(
 				"****...H13m (from config)",
 				"not set",
@@ -176,7 +176,7 @@ func TestWhoamiBranches(t *testing.T) {
 		},
 		{
 			id: "twelve organizations",
-			s:  session{args: []string{"whoami"}, saved: &config.File{APIKey: K}, api: withOrgs(twelve)},
+			s:  session{args: []string{"whoami"}, saved: &config.File{APIKey: k}, api: withOrgs(twelve)},
 			stdout: whoamiTable("****...H13m (from config)", "not set", `none set, using "default"`, "not set", "yes",
 				"org-01, org-02, org-03, org-04, org-05, org-06, org-07, org-08, org-09, org-10 and 2 more"),
 			doc: map[string]any{
@@ -199,7 +199,7 @@ func TestWhoamiNetworkError(t *testing.T) {
 }
 
 func TestLogoutBranches(t *testing.T) {
-	K := testAPIKey
+	k := testAPIKey
 	logout := []string{"logout"}
 	const removed = "Logged out: removed the saved API key (****...H13m)\n"
 	runBranches(t, []branchCase{
@@ -208,7 +208,7 @@ func TestLogoutBranches(t *testing.T) {
 			s: session{
 				args: logout,
 				saved: &config.File{
-					APIKey:        K,
+					APIKey:        k,
 					Organization:  "my-org",
 					Project:       "default",
 					GatewayAPIKey: testGatewayKey,
@@ -227,14 +227,14 @@ func TestLogoutBranches(t *testing.T) {
 		},
 		{
 			id:     "the organization stays",
-			s:      session{args: logout, saved: &config.File{APIKey: K, Organization: "my-org"}},
+			s:      session{args: logout, saved: &config.File{APIKey: k, Organization: "my-org"}},
 			stdout: removed + "Organization stays saved: my-org\n",
 			after:  &config.File{Organization: "my-org"},
 			doc:    map[string]any{"removed": true, "organization": "my-org", "project": nil},
 		},
 		{
 			id:     "nothing else saved",
-			s:      session{args: logout, saved: &config.File{APIKey: K}},
+			s:      session{args: logout, saved: &config.File{APIKey: k}},
 			stdout: removed,
 			after:  &config.File{},
 			doc:    map[string]any{"removed": true, "organization": nil, "project": nil},
@@ -248,7 +248,7 @@ func TestLogoutBranches(t *testing.T) {
 		{
 			id: "the variable still set, at a terminal", s: session{
 				args: logout, tty: []string{}, env: map[string]string{"SALAD_API_KEY": testOtherAPIKey},
-				saved: &config.File{APIKey: K, Organization: "my-org", Project: "default"},
+				saved: &config.File{APIKey: k, Organization: "my-org", Project: "default"},
 			},
 			stdout: removed + "Organization and project stay saved: my-org/default\n",
 			stderr: "warning: commands still use SALAD_API_KEY (****...ABCD). To remove the variable:\n" +
