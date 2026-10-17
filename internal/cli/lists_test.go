@@ -118,8 +118,9 @@ func TestQueuesListSaysWhenEmpty(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if want := "no queues in my-org/default\nhint: to create one, run saladcloud queues create " +
-		"<name>\n"; stderr != want {
+	want := "no queues in my-org/default\nhint: to create one, run saladcloud queues create " +
+		"<name>\n"
+	if stderr != want {
 		t.Errorf("stderr = %q, want %q", stderr, want)
 	}
 }

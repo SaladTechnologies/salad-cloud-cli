@@ -132,8 +132,9 @@ func TestInvalidOrganizationName(t *testing.T) {
 			t.Errorf("whoami sent the name: %s", req)
 		}
 	}
-	if doc := (session{args: []string{"whoami", "-o", "json"}, saved: saved, env: env}).run(t).
-		document(t); doc["organization_found"] != false {
+	doc := (session{args: []string{"whoami", "-o", "json"}, saved: saved, env: env}).run(t).
+		document(t)
+	if doc["organization_found"] != false {
 		t.Errorf("organization_found = %v, want false", doc["organization_found"])
 	}
 	if l := (session{args: []string{"orgs", "list"}, saved: saved, env: env}).run(t); l.code != 0 {

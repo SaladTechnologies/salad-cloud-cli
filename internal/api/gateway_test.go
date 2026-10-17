@@ -126,13 +126,14 @@ func TestGatewayCheckKeyUsesACompletion(t *testing.T) {
 
 func TestGatewayCompletionReasoningFields(t *testing.T) {
 	var c GatewayCompletion
-	if err := json.Unmarshal(
+	err := json.Unmarshal(
 		[]byte(
 			`{"model":"m","choices":[{"message":{"content":"","reasoning":"thinking `+
 				`hard"},"finish_reason":"length"}],"usage":{"completion_tokens":64}}`,
 		),
 		&c,
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
 	if c.Reply() != "" || c.FinishReason() != "length" || c.ReasoningLen() != len("thinking hard") {

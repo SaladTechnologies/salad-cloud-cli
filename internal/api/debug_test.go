@@ -145,14 +145,15 @@ func TestDebugBodiesHideUploads(t *testing.T) {
 	buf := debugCapture(t, DebugBodies)
 	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newTestClient(t, srv.URL)
-	if _, cerr := c.UploadFile(
+	_, cerr := c.UploadFile(
 		t.Context(),
 		"f.wav",
 		strings.NewReader("audio-bytes"),
 		"audio/wav",
 		false,
 		0,
-	); cerr != nil {
+	)
+	if cerr != nil {
 		t.Fatal(cerr)
 	}
 	if out := buf.String(); !strings.Contains(out, "(file upload, not shown)") || strings.Contains(out, "audio-bytes") {

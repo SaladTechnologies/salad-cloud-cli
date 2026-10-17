@@ -49,13 +49,14 @@ func TestOrgsListAndGet(t *testing.T) {
 	if _, present := list.Items[0]["update_time"]; !present {
 		t.Errorf("update_time missing; every key is present: %v", list.Items[0])
 	}
-	if out, err = runRoot(
+	out, err = runRoot(
 		t,
 		"orgs",
 		"list",
 		"-o",
 		"table",
-	); err != nil || !strings.Contains(out, "NAME") ||
+	)
+	if err != nil || !strings.Contains(out, "NAME") ||
 		!strings.Contains(out, "My Org") {
 		t.Errorf("orgs list table = %q (%v)", out, err)
 	}
@@ -90,13 +91,14 @@ func TestQuotasGet(t *testing.T) {
 	if _, present := q["max_container_group_restarts_per_minute"]; !present {
 		t.Errorf("an absent quota renders null, not missing: %v", q)
 	}
-	if out, err = runRoot(
+	out, err = runRoot(
 		t,
 		"quotas",
 		"get",
 		"-o",
 		"table",
-	); err != nil || !strings.Contains(out, "replicas") ||
+	)
+	if err != nil || !strings.Contains(out, "replicas") ||
 		!strings.Contains(out, "3 / 10") {
 		t.Errorf("quotas get table = %q (%v)", out, err)
 	}

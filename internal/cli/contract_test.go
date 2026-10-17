@@ -150,9 +150,10 @@ func TestKeyLikeSavedNames(t *testing.T) {
 	if !strings.Contains(outs[4].stderr, `the saved project "staging" is for "hidden, looks like an API key"`) {
 		t.Errorf("cg list warning:\n%s", outs[4].stderr)
 	}
-	if g := (session{args: []string{"config", "get", "organization"}, saved: saved}).run(
+	g := (session{args: []string{"config", "get", "organization"}, saved: saved}).run(
 		t,
-	); !strings.Contains(
+	)
+	if !strings.Contains(
 		g.stdout,
 		k,
 	) {

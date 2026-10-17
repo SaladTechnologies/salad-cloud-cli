@@ -71,9 +71,10 @@ func commandsNamed(root *cobra.Command, word, next string) []string {
 			if sub.Name() == word || sub.HasAlias(word) || slices.Contains(sub.SuggestFor, word) {
 				path := sub.CommandPath()
 				if next != "" {
-					if i := slices.IndexFunc(sub.Commands(), func(v *cobra.Command) bool {
+					i := slices.IndexFunc(sub.Commands(), func(v *cobra.Command) bool {
 						return v.IsAvailableCommand() && (v.Name() == next || v.HasAlias(next))
-					}); i >= 0 {
+					})
+					if i >= 0 {
 						path += " " + sub.Commands()[i].Name()
 					}
 				}

@@ -93,14 +93,15 @@ func TestUploadFileUnsigned(t *testing.T) {
 
 	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newRestTestClient(t, srv.URL)
-	if _, cerr := c.UploadFile(
+	_, cerr := c.UploadFile(
 		t.Context(),
 		"a.bin",
 		strings.NewReader("x"),
 		"application/octet-stream",
 		false,
 		0,
-	); cerr != nil {
+	)
+	if cerr != nil {
 		t.Fatalf("UploadFile: %v", cerr)
 	}
 }

@@ -114,12 +114,13 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 			ovs = append(ovs, o)
 		}
 	}
-	if err := output.Emit(doctorResult{Items: rows, EnvOverrides: overrideNames(ovs)}, func(w io.Writer) {
+	err := output.Emit(doctorResult{Items: rows, EnvOverrides: overrideNames(ovs)}, func(w io.Writer) {
 		fmt.Fprintln(w, "CHECK\tSTATUS\tDETAIL")
 		for _, r := range rows {
 			fmt.Fprintf(w, "%s\t%s\t%s\n", r.Name, strings.ToUpper(r.Status), r.Detail)
 		}
-	}); err != nil {
+	})
+	if err != nil {
 		return wrapErr(err)
 	}
 	for _, r := range rows {

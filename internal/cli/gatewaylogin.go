@@ -331,12 +331,13 @@ func (g *gatewayLogin) save() error {
 func (g *gatewayLogin) reportUnsaved() error {
 	path, _ := config.Path()
 	say("No AI Gateway key provided, using SALAD_AI_GATEWAY_API_KEY (%s).", maskAPIKey(g.key))
-	if err := output.Emit(g.result(false, path, nil), func(w io.Writer) {
+	err := output.Emit(g.result(false, path, nil), func(w io.Writer) {
 		fmt.Fprintln(
 			w,
 			"The AI Gateway key works. It is not saved, so it works only where SALAD_AI_GATEWAY_API_KEY is set.",
 		)
-	}); err != nil {
+	})
+	if err != nil {
 		return wrapErr(err)
 	}
 	hintLine("to save it, pipe it to saladcloud ai-gateway login --api-key -")

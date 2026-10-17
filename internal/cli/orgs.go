@@ -45,7 +45,7 @@ func init() {
 				if cerr != nil {
 					return cerr
 				}
-				if err := output.Emit(orgs, func(w io.Writer) {
+				err := output.Emit(orgs, func(w io.Writer) {
 					fmt.Fprintln(w, "NAME\tDISPLAY NAME\tCREATED")
 					for _, o := range orgs.Items {
 						fmt.Fprintf(
@@ -56,7 +56,8 @@ func init() {
 							timeCell(o.CreateTime),
 						)
 					}
-				}); err != nil {
+				})
+				if err != nil {
 					return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)
 				}
 				return nil

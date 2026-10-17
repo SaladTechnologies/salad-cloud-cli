@@ -357,14 +357,15 @@ func TestGroupLifecycle(t *testing.T) {
 	if err := os.WriteFile(wdoc, []byte(wr.Stdout), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if rt := run(
+	rt := run(
 		t,
 		"container-groups",
 		"update",
 		g,
 		"-f",
 		wdoc,
-	); rt.Code != 0 ||
+	)
+	if rt.Code != 0 ||
 		strings.Contains(rt.Stderr, "warning:") {
 		t.Errorf("get --writable | update -f round trip: exit %d, stderr %q", rt.Code, rt.Stderr)
 	}
@@ -395,10 +396,11 @@ func TestGroupLifecycle(t *testing.T) {
 	if strings.Contains(r.Stderr, "warning:") {
 		t.Errorf("the hold rule must be a note, not a warning; stderr %q", r.Stderr)
 	}
-	if held := oneDoc(
+	held := oneDoc(
 		t,
 		run(t, "container-groups", "get", g, "-o", "json"),
-	); held["scheduled-scaling-enabled"] != false {
+	)
+	if held["scheduled-scaling-enabled"] != false {
 		t.Errorf("scheduled-scaling-enabled after scale = %v, want false (on hold)", held["scheduled-scaling-enabled"])
 	}
 	// --keep-schedule: re-enable, scale again with the flag, and the schedule
@@ -411,10 +413,11 @@ func TestGroupLifecycle(t *testing.T) {
 	} else if !strings.Contains(r.Stderr, "re-enabled") {
 		t.Errorf("scale --keep-schedule did not report the re-enable; stderr %q", r.Stderr)
 	}
-	if kept := oneDoc(
+	kept := oneDoc(
 		t,
 		run(t, "container-groups", "get", g, "-o", "json"),
-	); kept["scheduled-scaling-enabled"] != true ||
+	)
+	if kept["scheduled-scaling-enabled"] != true ||
 		kept["replicas"] != float64(2) {
 		t.Errorf(
 			"after scale --keep-schedule: enabled=%v replicas=%v, want true and 2",
@@ -1302,7 +1305,7 @@ func TestQueues(t *testing.T) {
 	if g := run(t, "queues", "get", q, "-o", "json"); g.Code != 0 {
 		t.Errorf("queues get exit %d: %s", g.Code, g.Stderr)
 	}
-	if u := run(
+	u := run(
 		t,
 		"queues",
 		"update",
@@ -1311,7 +1314,8 @@ func TestQueues(t *testing.T) {
 		"updated",
 		"-o",
 		"json",
-	); u.Code != 0 ||
+	)
+	if u.Code != 0 ||
 		oneDoc(t, u)["description"] != "updated" {
 		t.Errorf("queues update exit %d: %s %s", u.Code, u.Stdout, u.Stderr)
 	}
@@ -1327,7 +1331,7 @@ func TestQueues(t *testing.T) {
 	if g := run(t, "queues", "jobs", "get", id, "--queue", q, "-o", "json"); g.Code != 0 {
 		t.Errorf("queues jobs get exit %d: %s", g.Code, g.Stderr)
 	}
-	if l := run(
+	l := run(
 		t,
 		"queues",
 		"jobs",
@@ -1336,7 +1340,8 @@ func TestQueues(t *testing.T) {
 		q,
 		"-o",
 		"json",
-	); l.Code != 0 ||
+	)
+	if l.Code != 0 ||
 		!strings.Contains(l.Stdout, id) {
 		t.Errorf("queues jobs list exit %d does not list %s: %s", l.Code, id, l.Stdout)
 	}
@@ -1353,11 +1358,12 @@ func TestQueues(t *testing.T) {
 	time.Sleep(createSpacing)
 	g := name("qcg")
 	auto := filepath.Join(t.TempDir(), "auto.json")
-	if err := os.WriteFile(
+	err := os.WriteFile(
 		auto,
 		[]byte(`{"queue_autoscaler":{"min_replicas":0,"max_replicas":1,"desired_queue_length":1}}`),
 		0o600,
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
 	cg := run(t, "container-groups", "create", g, "--image", "docker.io/library/busybox:1.36", "--no-autostart",

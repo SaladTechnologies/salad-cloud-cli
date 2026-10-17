@@ -248,8 +248,9 @@ func TestFetchWindowSameTimestampLoopGuard(t *testing.T) {
 		{page: stuck},
 		{page: &Page{}},
 	}, &calls)
-	if err := FetchWindow(t.Context(), fetch, "q",
-		time.Date(2026, time.March, 1, 0, 0, 1, 0, time.UTC), winEnd, 2, collectEmit(&got)); err != nil {
+	err := FetchWindow(t.Context(), fetch, "q",
+		time.Date(2026, time.March, 1, 0, 0, 1, 0, time.UTC), winEnd, 2, collectEmit(&got))
+	if err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
 	assertTexts(t, got, "a", "b")
@@ -374,7 +375,7 @@ func TestFetchWindowResumesFromEmissionTimeNotPageMaxTime(t *testing.T) {
 	}
 	for _, size := range []int{1, 3, 10, 46, 47, 100} {
 		var got []Entry
-		if cerr := FetchWindow(
+		cerr := FetchWindow(
 			t.Context(),
 			realisticFetcher(all),
 			"q",
@@ -382,7 +383,8 @@ func TestFetchWindowResumesFromEmissionTimeNotPageMaxTime(t *testing.T) {
 			winEnd,
 			size,
 			collectEmit(&got),
-		); cerr != nil {
+		)
+		if cerr != nil {
 			t.Fatalf("page size %d: %v", size, cerr)
 		}
 		if len(got) != len(all) {

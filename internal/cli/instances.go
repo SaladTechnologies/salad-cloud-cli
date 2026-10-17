@@ -250,7 +250,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 				if payload.Items == nil {
 					payload.Items = []containergroups.ContainerGroupInstance{}
 				}
-				if err := output.Emit(payload, func(w io.Writer) {
+				err := output.Emit(payload, func(w io.Writer) {
 					fmt.Fprintln(w, "ID\tMACHINE\tSTATE\tREADY\tCPU\tMEMORY\tPULL%\tSSH\tUPDATED")
 					for i := range instances.Instances {
 						inst := &instances.Instances[i]
@@ -259,7 +259,8 @@ positional argument (its ID, or a unique prefix of it) and the group is
 							ptr.Deref(inst.Ready), instanceCPU(inst), instanceMem(inst),
 							instancePull(inst), instanceSSH(inst), timeCell(inst.UpdateTime))
 					}
-				}); err != nil {
+				})
+				if err != nil {
 					return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)
 				}
 				// An empty table is ambiguous: allocating/creating instances

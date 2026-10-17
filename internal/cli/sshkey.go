@@ -274,14 +274,15 @@ func (sshKeySetup) show(path string, generated bool, passphrase *bool) error {
 		Action:        action,
 		OK:            true,
 	}
-	if err := output.Emit(v, func(w io.Writer) {
+	err := output.Emit(v, func(w io.Writer) {
 		if generated {
 			fmt.Fprintf(w, "Generated %s\n\n", strings.TrimSuffix(path, ".pub"))
 		}
 		fmt.Fprintf(w, "Public key (%s):\n  %s\n\n", path, key)
 		fmt.Fprintf(w, "Register the public key at %s\n", sshKeysPage)
 		fmt.Fprintln(w, "Your account holds one SSH key: registering this one replaces any other.")
-	}); err != nil {
+	})
+	if err != nil {
 		return wrapErr(err)
 	}
 	if output.Machine() {

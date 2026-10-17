@@ -115,8 +115,9 @@ func make101() []string {
 func TestCreateSendsCommand(t *testing.T) {
 	posted := stubCreate(t)
 	script := `echo "hi there"; sleep 5`
-	if _, err := runRoot(t, "container-groups", "create", "new", "--image", "busybox:1.36", "--no-autostart",
-		"-o", "json", "--", "sh", "-c", script); err != nil {
+	_, err := runRoot(t, "container-groups", "create", "new", "--image", "busybox:1.36", "--no-autostart",
+		"-o", "json", "--", "sh", "-c", script)
+	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	got, ok := postedPath(t, *posted, "container.command")

@@ -454,7 +454,7 @@ older jobs were left out.`,
 			payload := struct {
 				Items []inferenceendpoints.InferenceEndpointJob `json:"items"`
 			}{jobs}
-			if err := wrapErr(output.Emit(payload, func(w io.Writer) {
+			err := wrapErr(output.Emit(payload, func(w io.Writer) {
 				fmt.Fprintln(w, "ID\tSTATUS\tCREATED\tUPDATED")
 				for i := range jobs {
 					j := &jobs[i]
@@ -462,7 +462,8 @@ older jobs were left out.`,
 						ptr.Deref(j.Id), jobStatusString(j),
 						timeCell(j.CreateTime), timeCell(j.UpdateTime))
 				}
-			})); err != nil {
+			}))
+			if err != nil {
 				return err
 			}
 			if len(jobs) == 0 && output.Mode() == "table" {

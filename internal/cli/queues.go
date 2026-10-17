@@ -228,14 +228,15 @@ is whatever your container returns.`,
 			if payload.Items == nil {
 				payload.Items = []queues.Queue{}
 			}
-			if err := wrapErr(output.Emit(payload, func(w io.Writer) {
+			err := wrapErr(output.Emit(payload, func(w io.Writer) {
 				fmt.Fprintln(w, "NAME\tDISPLAY NAME\tLENGTH\tGROUPS\tCREATED")
 				for i := range list.Items {
 					q := &list.Items[i]
 					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", ptr.Deref(q.Name), ptr.Deref(q.DisplayName),
 						int64Cell(q.CurrentQueueLength), queueGroupsCell(q.ContainerGroups), timeCell(q.CreateTime))
 				}
-			})); err != nil {
+			}))
+			if err != nil {
 				return err
 			}
 			if len(payload.Items) == 0 && output.Mode() == "table" {
@@ -371,7 +372,7 @@ every job, up to 10,000.`,
 			payload := struct {
 				Items []queues.QueueJob `json:"items"`
 			}{jobs}
-			if err := wrapErr(output.Emit(payload, func(w io.Writer) {
+			err := wrapErr(output.Emit(payload, func(w io.Writer) {
 				fmt.Fprintln(w, "ID\tSTATUS\tCREATED\tUPDATED")
 				for i := range jobs {
 					j := &jobs[i]
@@ -384,7 +385,8 @@ every job, up to 10,000.`,
 						timeCell(j.UpdateTime),
 					)
 				}
-			})); err != nil {
+			}))
+			if err != nil {
 				return err
 			}
 			if len(jobs) == 0 && output.Mode() == "table" {

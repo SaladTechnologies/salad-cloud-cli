@@ -238,10 +238,11 @@ func TestNoPromptAndCIDropTheSteps(t *testing.T) {
 		atATerminal(t, true, "windows", "table")
 		setEnv(t, "SALAD_API_KEY", keyABCD)
 		t.Setenv(v, "1")
-		if got := warned(
+		got := warned(
 			afterRemove,
 			stillSupplied("SALAD_API_KEY"),
-		); got != "warning: commands still use SALAD_API_KEY (****...ABCD)\n" {
+		)
+		if got != "warning: commands still use SALAD_API_KEY (****...ABCD)\n" {
 			t.Errorf("%s=1: got %q", v, got)
 		}
 	}

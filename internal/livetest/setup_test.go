@@ -525,10 +525,11 @@ func TestSetupDoctor(t *testing.T) {
 	if table.Code != 0 {
 		t.Fatalf("doctor table exit %d: %s", table.Code, table.Stderr)
 	}
-	if first, _, _ := strings.Cut(
+	first, _, _ := strings.Cut(
 		table.Stdout,
 		"\n",
-	); strings.Join(
+	)
+	if strings.Join(
 		strings.Fields(first),
 		" ",
 	) != "CHECK STATUS DETAIL" {

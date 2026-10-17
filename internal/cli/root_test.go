@@ -131,10 +131,11 @@ func TestErrorsAreJSONUnderYAML(t *testing.T) {
 		t.Fatalf("exit %d stdout %q", code, stdout)
 	}
 	var doc map[string]map[string]any
-	if err := json.Unmarshal(
+	err := json.Unmarshal(
 		[]byte(strings.TrimSpace(stderr)),
 		&doc,
-	); err != nil ||
+	)
+	if err != nil ||
 		doc["error"]["kind"] != string(clierr.KindUsage) {
 		t.Errorf("stderr = %q, want the JSON error document", stderr)
 	}

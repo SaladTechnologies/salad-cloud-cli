@@ -297,9 +297,10 @@ func TestResourceNounsTakeListAndGet(t *testing.T) {
 // both job nouns take cancel; delete is gone with no alias.
 func TestJobsCancelNotDelete(t *testing.T) {
 	for _, noun := range [][]string{{"inference", "jobs"}, {"queues", "jobs"}} {
-		if c, _, err := rootCmd.Find(
+		c, _, err := rootCmd.Find(
 			append(append([]string{}, noun...), "cancel"),
-		); err != nil ||
+		)
+		if err != nil ||
 			c.Name() != "cancel" {
 			t.Errorf("%v cancel: not found", noun)
 		}

@@ -93,7 +93,7 @@ func TestCreateSendsEmptyListsFromFile(t *testing.T) {
 // --from sends back the empty lists the API returned for the source.
 func TestCreateFromKeepsSourceEmptyLists(t *testing.T) {
 	posted := stubCreate(t)
-	if _, err := runRoot(
+	_, err := runRoot(
 		t,
 		"container-groups",
 		"create",
@@ -103,7 +103,8 @@ func TestCreateFromKeepsSourceEmptyLists(t *testing.T) {
 		"--no-autostart",
 		"-o",
 		"json",
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatalf("create --from: %v", err)
 	}
 	for _, path := range []string{"readiness_probe.http.headers", "country_codes"} {
