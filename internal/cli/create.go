@@ -336,7 +336,7 @@ func resolveGpuClassName(value string, classes []organizationdata.GpuClass) (str
 		if id == "" || name == "" {
 			continue
 		}
-		if strings.ToLower(name) == lower {
+		if strings.EqualFold(name, lower) {
 			return id, nil
 		}
 		if strings.Contains(strings.ToLower(name), lower) {

@@ -23,7 +23,7 @@ type validationRow struct {
 	used     bool
 }
 
-var tableRow = regexp.MustCompile("^\\| .* \\| ([0-9]+) \\| .* \\| (message|hint) \\| `([^`]+)` \\|$")
+var tableRow = regexp.MustCompile("^\\| .* \\| (\\d+) \\| .* \\| (message|hint) \\| `([^`]+)` \\|$")
 
 func readValidationTable(t *testing.T) []*validationRow {
 	t.Helper()

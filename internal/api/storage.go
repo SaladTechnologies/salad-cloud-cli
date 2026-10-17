@@ -119,7 +119,7 @@ func (c *Client) DeleteFile(ctx context.Context, remoteName string) *clierr.Erro
 	if err := c.RequireOrg(); err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.storageFileURL(remoteName), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.storageFileURL(remoteName), http.NoBody)
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot build the delete request: %v", err)
 	}

@@ -74,8 +74,6 @@ type object struct {
 	vals map[string]any
 }
 
-func (o *object) has(k string) bool { _, ok := o.vals[k]; return ok }
-
 func (o *object) MarshalJSON() ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteByte('{')
@@ -98,6 +96,8 @@ func (o *object) MarshalJSON() ([]byte, error) {
 	b.WriteByte('}')
 	return b.Bytes(), nil
 }
+
+func (o *object) has(k string) bool { _, ok := o.vals[k]; return ok }
 
 // decodeOrdered reads one JSON value, objects as *object and numbers as
 // [json.Number] so re-encoding reproduces them exactly.

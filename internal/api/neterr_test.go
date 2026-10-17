@@ -55,7 +55,7 @@ func tlsGetWithCert(t *testing.T, notBefore, notAfter time.Time) error {
 	pool := x509.NewCertPool()
 	pool.AddCert(leaf)
 	client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}}
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+"/v1/models", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+"/v1/models", http.NoBody)
 	if err != nil {
 		t.Fatal(err)
 	}

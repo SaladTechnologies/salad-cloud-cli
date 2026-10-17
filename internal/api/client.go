@@ -93,53 +93,6 @@ func AssumedProjectMissing(org string) *clierr.Error {
 		WithHint("create one at https://portal.salad.com/organizations/%s/projects/new, then pass --project or run saladcloud use %s/<project>", org, org)
 }
 
-// quotasPath is the organization check's path.
-func (c *Client) quotasPath() string { return fmt.Sprintf("/organizations/%s/quotas", seg(c.org)) }
-
-// orgGone is OnOrgGone's error when a 404 under the organization is the
-// organization's own: the request that failed was the organization check,
-// or the check, made once, also answers 404. It returns nil otherwise.
-func (c *Client) orgGone(ctx context.Context, path string) *clierr.Error {
-	if c.OnOrgGone == nil || c.org == "" || !strings.HasPrefix(path, "/organizations/"+seg(c.org)+"/") ||
-		!c.checkingOrg.CompareAndSwap(false, true) {
-		return nil
-	}
-	defer c.checkingOrg.Store(false)
-	if path != c.quotasPath() {
-		if err := restNoBody(ctx, c, "GET", c.quotasPath()); err == nil || err.Code != clierr.CodeNotFound {
-			return nil
-		}
-	}
-	return c.OnOrgGone().Final()
-}
-
-// projectPrefix is the path prefix of every project-scoped endpoint.
-func (c *Client) projectPrefix() string {
-	return fmt.Sprintf("/organizations/%s/projects/%s/", seg(c.org), seg(c.project))
-}
-
-// assumedProjectMissing turns a 404 under an assumed project into the
-// no-valid-project error when the project is what is missing: it lists the
-// project's container groups (unless that is the request that failed) and
-// checks the organization, so a missing group or a wrong organization keeps
-// its own error. It returns nil when the 404 is not the assumed project's.
-func (c *Client) assumedProjectMissing(ctx context.Context, method, path string) *clierr.Error {
-	if !c.projectAssumed || !strings.HasPrefix(path, c.projectPrefix()) ||
-		!c.checkingProject.CompareAndSwap(false, true) {
-		return nil
-	}
-	defer c.checkingProject.Store(false)
-	if method != "GET" || path != c.groupPath() {
-		if err := restNoBody(ctx, c, "GET", c.groupPath()); err == nil || err.Code != clierr.CodeNotFound {
-			return nil
-		}
-	}
-	if err := c.CheckOrg(ctx); err != nil {
-		return nil
-	}
-	return AssumedProjectMissing(c.org)
-}
-
 // RequireOrg returns a usage error if no organization is set.
 func (c *Client) RequireOrg() *clierr.Error {
 	if c.org == "" {
@@ -169,21 +122,6 @@ func (c *Client) APIKey() string { return c.apiKey }
 
 // BaseURL returns the API base URL in effect.
 func (c *Client) BaseURL() string { return c.baseURL }
-
-// requireOrgProject bundles the two checks every project-scoped call makes,
-// and runs OnAssumedProject the first time the project is an assumed one.
-func (c *Client) requireOrgProject() *clierr.Error {
-	if err := c.RequireOrg(); err != nil {
-		return err
-	}
-	if err := c.RequireProject(); err != nil {
-		return err
-	}
-	if c.projectAssumed && c.OnAssumedProject != nil {
-		c.assumedNoted.Do(c.OnAssumedProject)
-	}
-	return nil
-}
 
 // ListGroups lists the container groups in the resolved org/project.
 func (c *Client) ListGroups(ctx context.Context) (*containergroups.ContainerGroupCollection, *clierr.Error) {
@@ -375,11 +313,6 @@ func (c *Client) QueryLogs(ctx context.Context, q logs.LogEntryQuery) (*logs.Log
 	)
 }
 
-// webhookSecretPath is the organization's webhook secret key resource.
-func (c *Client) webhookSecretPath() string {
-	return fmt.Sprintf("/organizations/%s/webhook-secret-key", seg(c.org))
-}
-
 // GetWebhookSecret fetches the key the platform signs webhook deliveries
 // with.
 func (c *Client) GetWebhookSecret(ctx context.Context) (*webhooksecretkey.WebhookSecretKey, *clierr.Error) {
@@ -436,4 +369,71 @@ func (c *Client) ListGpuClasses(ctx context.Context) (*organizationdata.GpuClass
 		"",
 		nil,
 	)
+}
+
+// quotasPath is the organization check's path.
+func (c *Client) quotasPath() string { return fmt.Sprintf("/organizations/%s/quotas", seg(c.org)) }
+
+// orgGone is OnOrgGone's error when a 404 under the organization is the
+// organization's own: the request that failed was the organization check,
+// or the check, made once, also answers 404. It returns nil otherwise.
+func (c *Client) orgGone(ctx context.Context, path string) *clierr.Error {
+	if c.OnOrgGone == nil || c.org == "" || !strings.HasPrefix(path, "/organizations/"+seg(c.org)+"/") ||
+		!c.checkingOrg.CompareAndSwap(false, true) {
+		return nil
+	}
+	defer c.checkingOrg.Store(false)
+	if path != c.quotasPath() {
+		if err := restNoBody(ctx, c, "GET", c.quotasPath()); err == nil || err.Code != clierr.CodeNotFound {
+			return nil
+		}
+	}
+	return c.OnOrgGone().Final()
+}
+
+// projectPrefix is the path prefix of every project-scoped endpoint.
+func (c *Client) projectPrefix() string {
+	return fmt.Sprintf("/organizations/%s/projects/%s/", seg(c.org), seg(c.project))
+}
+
+// assumedProjectMissing turns a 404 under an assumed project into the
+// no-valid-project error when the project is what is missing: it lists the
+// project's container groups (unless that is the request that failed) and
+// checks the organization, so a missing group or a wrong organization keeps
+// its own error. It returns nil when the 404 is not the assumed project's.
+func (c *Client) assumedProjectMissing(ctx context.Context, method, path string) *clierr.Error {
+	if !c.projectAssumed || !strings.HasPrefix(path, c.projectPrefix()) ||
+		!c.checkingProject.CompareAndSwap(false, true) {
+		return nil
+	}
+	defer c.checkingProject.Store(false)
+	if method != "GET" || path != c.groupPath() {
+		if err := restNoBody(ctx, c, "GET", c.groupPath()); err == nil || err.Code != clierr.CodeNotFound {
+			return nil
+		}
+	}
+	if err := c.CheckOrg(ctx); err != nil {
+		return nil
+	}
+	return AssumedProjectMissing(c.org)
+}
+
+// requireOrgProject bundles the two checks every project-scoped call makes,
+// and runs OnAssumedProject the first time the project is an assumed one.
+func (c *Client) requireOrgProject() *clierr.Error {
+	if err := c.RequireOrg(); err != nil {
+		return err
+	}
+	if err := c.RequireProject(); err != nil {
+		return err
+	}
+	if c.projectAssumed && c.OnAssumedProject != nil {
+		c.assumedNoted.Do(c.OnAssumedProject)
+	}
+	return nil
+}
+
+// webhookSecretPath is the organization's webhook secret key resource.
+func (c *Client) webhookSecretPath() string {
+	return fmt.Sprintf("/organizations/%s/webhook-secret-key", seg(c.org))
 }
