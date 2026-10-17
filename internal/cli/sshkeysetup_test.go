@@ -39,9 +39,12 @@ func TestSSHKeySetupBranches(t *testing.T) {
 	own := filepath.Join("<home>", ".ssh", "saladcloud_ed25519")
 	found := filepath.Join("<home>", ".ssh", "id_ed25519")
 	setup := []string{"ssh-key", "setup"}
-	const register = "Register the public key at https://portal.salad.com/ssh-keys\nYour account holds one SSH key: registering this one replaces any other.\n"
-	const connect = "hint: to connect to a running instance, run saladcloud container-groups ssh <group> [--instance <id>]\n"
-	generated := "Generated " + own + "\n\nPublic key (" + own + ".pub):\n  ssh-ed25519 AAAAgenerated saladcloud-cli\n\n" + register
+	const register = "Register the public key at https://portal.salad.com/ssh-keys\nYour account holds one SSH key: " +
+		"registering this one replaces any other.\n"
+	const connect = "hint: to connect to a running instance, run saladcloud container-groups ssh <group> [--instance " +
+		"<id>]\n"
+	generated := "Generated " + own + "\n\nPublic key (" + own + ".pub):\n  ssh-ed25519 AAAAgenerated " +
+		"saladcloud-cli\n\n" + register
 	shown := "Public key (" + found + ".pub):\n  ssh-ed25519 AAAA test@host\n\n" + register
 	ask := "No SSH key found. Generate one at " + own + "? [Y/n]: "
 	cancelled := "saladcloud: error: ssh-key setup cancelled, no key generated\n"
@@ -97,11 +100,12 @@ func TestSSHKeySetupBranches(t *testing.T) {
 				stderr: cancelled,
 			},
 			{
-				id:     "no key, no terminal",
-				s:      session{args: setup},
-				code:   2,
-				kind:   "usage",
-				stderr: "saladcloud: error: no local SSH key found, and no terminal to ask whether to generate one\nhint: to generate one, run saladcloud ssh-key setup --generate\n",
+				id:   "no key, no terminal",
+				s:    session{args: setup},
+				code: 2,
+				kind: "usage",
+				stderr: "saladcloud: error: no local SSH key found, and no terminal to ask whether to generate " +
+					"one\nhint: to generate one, run saladcloud ssh-key setup --generate\n",
 			},
 			{
 				id:     "no key, --generate",
@@ -129,16 +133,19 @@ func TestSSHKeySetupBranches(t *testing.T) {
 					sshKey:     true,
 					sshKeyName: "saladcloud_ed25519",
 				},
-				code:   1,
-				kind:   "api_error",
-				stderr: "saladcloud: error: cannot generate a key: " + own + " already exists\nhint: register " + own + ".pub, or remove it to generate a new one\n",
+				code: 1,
+				kind: "api_error",
+				stderr: "saladcloud: error: cannot generate a key: " +
+					"" + own + " already exists\nhint: register " + own + ".pub, or remove it to generate a new one\n",
 			},
 		})
 	})
 	t.Run("a passphrase", func(t *testing.T) {
 		stubPassphrase(t, true)
-		warn := "warning: " + found + " has a passphrase, which cp and one-shot ssh commands cannot ask for\nhint: to use it with those, run ssh-add " + found + " first\n"
-		offer := "Generate a key without a passphrase at " + own + "? The CLI will use it instead, and registering it replaces your account's current key. [y/N]: "
+		warn := "warning: " + found + " has a passphrase, which cp and one-shot ssh commands cannot ask for\nhint: " +
+			"to use it with those, run ssh-add " + found + " first\n"
+		offer := "Generate a key without a passphrase at " + own + "? The CLI will use it instead, and registering " +
+			"it replaces your account's current key. [y/N]: "
 		runBranches(t, []branchCase{
 			{
 				id:     "Enter keeps the found key",
@@ -171,7 +178,8 @@ func TestSSHKeySetupBranches(t *testing.T) {
 				id:     "the CLI's own key",
 				s:      session{args: setup, sshKey: true, sshKeyName: "saladcloud_ed25519.pub", tty: []string{}},
 				stdout: "Public key (" + own + ".pub):\n  ssh-ed25519 AAAA test@host\n\n" + register,
-				stderr: "warning: " + own + " has a passphrase, which cp and one-shot ssh commands cannot ask for\nhint: to use it with those, run ssh-add " + own + " first\n" + connect,
+				stderr: "warning: " + own + " has a passphrase, which cp and one-shot ssh commands cannot ask " +
+					"for\nhint: to use it with those, run ssh-add " + own + " first\n" + connect,
 			},
 		})
 	})
@@ -181,7 +189,8 @@ func TestSSHKeySetupBranches(t *testing.T) {
 		for _, tc := range []struct{ os, hint string }{
 			{"windows", "add the OpenSSH Client optional feature in Windows Settings, then open a new terminal"},
 			{"darwin", "macOS includes it at /usr/bin/ssh-keygen; check that /usr/bin is on your PATH"},
-			{"linux", "install your distribution's OpenSSH client (openssh-client on Debian and Ubuntu, openssh-clients on Fedora)"},
+			{"linux", "install your distribution's OpenSSH client (openssh-client on Debian and Ubuntu, " +
+				"openssh-clients on Fedora)"},
 		} {
 			runBranches(t, []branchCase{
 				{

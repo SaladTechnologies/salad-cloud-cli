@@ -95,7 +95,8 @@ func TestFollowSilentGroupNote(t *testing.T) {
 	)
 	if got, want := groupSilentNote(
 		failed,
-	), `note: group my-app is failed: Access Denied, Check Permissions; nothing will be logged until it runs`; got != want {
+	), `note: group my-app is failed: Access Denied, Check Permissions; nothing will be logged until it `+
+		`runs`; got != want {
 		t.Errorf("note = %q, want %q", got, want)
 	}
 	stopped := failedGroup(shared.CONTAINER_GROUP_STATUS_STOPPED, nil)

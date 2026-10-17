@@ -29,7 +29,8 @@ func TestOutcomeFactsInJSON(t *testing.T) {
 		{"the saved project is gone", &config.File{Organization: "my-org", Project: "gone"}, nil, false},
 		{"the saved project is found", &config.File{Organization: "my-org", Project: "staging"}, nil, true},
 		{"none saved", nil, nil, nil},
-		{"--project names it", &config.File{Organization: "my-org", Project: "staging"}, []string{"--project", "default"}, nil},
+		{"--project names " +
+			"it", &config.File{Organization: "my-org", Project: "staging"}, []string{"--project", "default"}, nil},
 	} {
 		if got := login(tc.saved, tc.extra...)["saved_project_found"]; got != tc.want {
 			t.Errorf("%s: saved_project_found = %v, want %v", tc.name, got, tc.want)

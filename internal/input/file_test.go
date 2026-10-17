@@ -231,7 +231,8 @@ func TestLoadExampleRoundTrip(t *testing.T) {
 	// that way once; pin the full text so a YAML edit cannot reintroduce it.
 	if !strings.Contains(c.Command.Value[2], "#$i") || !strings.HasSuffix(c.Command.Value[2], "sleep 5; done") {
 		t.Errorf(
-			"container.command[2] = %q, want the full loop through \"sleep 5; done\" (a YAML comment truncated it before)",
+			"container.command[2] = %q, want the full loop through \"sleep 5; done\" (a YAML comment truncated it "+
+				"before)",
 			c.Command.Value[2],
 		)
 	}

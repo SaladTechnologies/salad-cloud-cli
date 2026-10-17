@@ -428,7 +428,8 @@ func TestDidYouMean(t *testing.T) {
 	}{
 		{[]string{"transcribe", "x.mp3"}, "did you mean saladcloud inference transcribe?"},
 		{[]string{"restart", "x"}, "did you mean saladcloud container-groups instances restart?"},
-		{[]string{"create"}, "did you mean saladcloud container-groups create, saladcloud inference jobs create, saladcloud queues create, saladcloud queues jobs create?"},
+		{[]string{"create"}, "did you mean saladcloud container-groups create, saladcloud inference jobs create, " +
+			"saladcloud queues create, saladcloud queues jobs create?"},
 		{[]string{"cg", "transcribe"}, "did you mean saladcloud inference transcribe?"},
 		{[]string{"bogusverb"}, ""},
 		// Nouns resolve too, with the verb that followed them.
@@ -436,7 +437,8 @@ func TestDidYouMean(t *testing.T) {
 		{[]string{"jobs", "list"}, "did you mean saladcloud inference jobs list, saladcloud queues jobs list?"},
 		{[]string{"instances"}, "did you mean saladcloud container-groups instances?"},
 		// A misplaced verb's own flags do not hide the suggestion.
-		{[]string{"cg", "instances", "logs", "0521ee78", "-c", "sr-ex2", "-f"}, "did you mean saladcloud container-groups logs, saladcloud logs?"},
+		{[]string{"cg", "instances", "logs", "0521ee78", "-c", "sr-ex2", "-f"}, "did you mean saladcloud " +
+			"container-groups logs, saladcloud logs?"},
 		// Typos get the near spellings under the same parent, one line.
 		{[]string{"cg", "lst"}, "did you mean saladcloud container-groups list?"},
 		{[]string{"loggs"}, "did you mean saladcloud logs?"},

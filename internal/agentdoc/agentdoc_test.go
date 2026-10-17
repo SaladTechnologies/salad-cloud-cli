@@ -37,7 +37,8 @@ func TestBlockShape(t *testing.T) {
 		"`container-groups delete` is immediate and unconfirmed",
 		"`saladcloud container-groups` (alias `cg`)",
 		"`cg logs <group>`",
-		"`saladcloud availability --gpu <class>` costs platform queries (one per class, one more for several): call it once",
+		"`saladcloud availability --gpu <class>` costs platform queries (one per class, one more for several): call " +
+			"it once",
 		"The CLI is a beta release",
 		"https://github.com/SaladTechnologies/salad-cloud-cli/issues",
 		"Never include credential values",

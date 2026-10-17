@@ -61,7 +61,8 @@ func TestCreateSendsEmptyListsFromFile(t *testing.T) {
 	posted := stubCreate(t)
 	file := filepath.Join(t.TempDir(), "g.yaml")
 	def := "readiness_probe:\n  http: {path: /, port: 8000, scheme: http, headers: []}\n" +
-		"  initial_delay_seconds: 0\n  period_seconds: 5\n  timeout_seconds: 2\n  success_threshold: 1\n  failure_threshold: 3\n"
+		"  initial_delay_seconds: 0\n  period_seconds: 5\n  timeout_seconds: 2\n  success_threshold: 1\n  " +
+		"failure_threshold: 3\n"
 	if err := os.WriteFile(file, []byte(def), 0o600); err != nil {
 		t.Fatal(err)
 	}

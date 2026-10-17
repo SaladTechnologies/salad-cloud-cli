@@ -24,7 +24,8 @@ func stubAvailability(t *testing.T) *[]int {
 		case strings.HasSuffix(r.URL.Path, "/gpu-classes"):
 			w.Write(
 				[]byte(
-					`{"items":[{"id":"` + classA + `","name":"RTX A (12 GB)"},{"id":"` + classB + `","name":"RTX B (24 GB)"}]}`,
+					`{"items":[{"id":"` + classA + `","name":"RTX A (12 ` +
+						`GB)"},{"id":"` + classB + `","name":"RTX B (24 GB)"}]}`,
 				),
 			)
 		case strings.HasSuffix(r.URL.Path, "/sce-gpu-availability"):

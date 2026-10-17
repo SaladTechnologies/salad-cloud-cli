@@ -30,7 +30,8 @@ func stubAPI(t *testing.T, routes map[string]string) {
 	t.Setenv("SALAD_PROJECT", "default")
 }
 
-const orgsBody = `{"items":[{"organization_name":"my-org","display_name":"My Org","organization_id":"o-1","create_time":"2026-01-01T00:00:00Z"}]}`
+const orgsBody = `{"items":[{"organization_name":"my-org","display_name":"My ` +
+	`Org","organization_id":"o-1","create_time":"2026-01-01T00:00:00Z"}]}`
 
 func TestOrgsListAndGet(t *testing.T) {
 	stubAPI(t, map[string]string{"/v1/organizations": orgsBody})

@@ -28,7 +28,9 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 			kind: "invalid_input",
 			stderr: errLines(
 				"SALAD_ORGANIZATION looks like an API key, not an organization name",
-				"set it to the organization's name from the portal URL, the part after /organizations/; the key goes in SALAD_API_KEY",
+				"set it to the organization's name from the portal URL, the part after /organizations/; the key goes "+
+					"in "+
+					"SALAD_API_KEY",
 			),
 		},
 		{
@@ -48,7 +50,8 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 			kind: "invalid_input",
 			stderr: errLines(
 				"SALAD_PROJECT looks like an API key, not a project name",
-				"set it to the project's name from the portal URL, the part after /projects/; the key goes in SALAD_API_KEY",
+				"set it to the project's name from the portal URL, the part after /projects/; the key goes in "+
+					"SALAD_API_KEY",
 			),
 		},
 		{

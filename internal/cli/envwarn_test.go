@@ -87,12 +87,14 @@ If it comes back in a new terminal, delete it from your shell profile (~/.zshrc,
 		{
 			name: "one variable, no terminal", terminal: false, os: "windows", mode: "table",
 			env: []string{"SALAD_API_KEY", keyABCD}, vars: []string{"SALAD_API_KEY"}, file: saved,
-			want: "warning: commands will use SALAD_API_KEY (****...ABCD) instead of the API key you just saved (****...9QxZ)\n",
+			want: "warning: commands will use SALAD_API_KEY (****...ABCD) instead of the API key you just saved " +
+				"(****...9QxZ)\n",
 		},
 		{
 			name: "one variable, json mode at a terminal", terminal: true, os: "windows", mode: "json",
 			env: []string{"SALAD_API_KEY", keyABCD}, vars: []string{"SALAD_API_KEY"}, file: saved,
-			want: "warning: commands will use SALAD_API_KEY (****...ABCD) instead of the API key you just saved (****...9QxZ)\n",
+			want: "warning: commands will use SALAD_API_KEY (****...ABCD) instead of the API key you just saved " +
+				"(****...9QxZ)\n",
 		},
 		{
 			name: "two variables, Windows, at a terminal", terminal: true, os: "windows", mode: "table",
@@ -261,9 +263,13 @@ func TestBeforePrompt(t *testing.T) {
 		vars    []string
 		want    string
 	}{
-		{"login", []string{"SALAD_API_KEY"}, "SALAD_API_KEY is set in this shell (****...ABCD); commands will use it instead of what login saves."},
-		{"login", []string{"SALAD_API_KEY", "SALAD_ORGANIZATION"}, "SALAD_API_KEY (****...ABCD) and SALAD_ORGANIZATION (acme-prod) are set in this shell; commands will use them instead of what login saves."},
-		{"ai-gateway login", []string{"SALAD_AI_GATEWAY_API_KEY"}, "SALAD_AI_GATEWAY_API_KEY is set in this shell (****...EFGH); commands will use it instead of what ai-gateway login saves."},
+		{"login", []string{"SALAD_API_KEY"}, "SALAD_API_KEY is set in this shell (****...ABCD); commands will use it " +
+			"instead of what login saves."},
+		{"login", []string{"SALAD_API_KEY", "SALAD_ORGANIZATION"}, "SALAD_API_KEY (****...ABCD) and " +
+			"SALAD_ORGANIZATION " +
+			"(acme-prod) are set in this shell; commands will use them instead of what login saves."},
+		{"ai-gateway login", []string{"SALAD_AI_GATEWAY_API_KEY"}, "SALAD_AI_GATEWAY_API_KEY is set in this shell " +
+			"(****...EFGH); commands will use it instead of what ai-gateway login saves."},
 		{"login", []string{"SALAD_PROJECT"}, ""},
 	} {
 		if got := beforePrompt(tc.command, overridesOf(empty, tc.vars...)); got != tc.want {
@@ -276,7 +282,8 @@ func TestBeforePrompt(t *testing.T) {
 		three,
 	); !strings.HasPrefix(
 		got,
-		"SALAD_API_KEY (****...ABCD), SALAD_ORGANIZATION (acme-prod) and SALAD_AI_GATEWAY_API_KEY (****...EFGH) are set",
+		"SALAD_API_KEY (****...ABCD), SALAD_ORGANIZATION (acme-prod) and SALAD_AI_GATEWAY_API_KEY (****...EFGH) are "+
+			"set",
 	) {
 		t.Errorf("three variables: %q", got)
 	}

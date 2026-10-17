@@ -62,7 +62,8 @@ func TestGatewayListModelsAndComplete(t *testing.T) {
 			}
 			w.Write(
 				[]byte(
-					`{"model":"qwen3.6-35b-a3b","choices":[{"message":{"role":"assistant","content":"  Hi there.\n"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":3}}`,
+					`{"model":"qwen3.6-35b-a3b","choices":[{"message":{"role":"assistant","content":"  Hi ` +
+						`there.\n"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":3}}`,
 				),
 			)
 		default:
@@ -127,7 +128,8 @@ func TestGatewayCompletionReasoningFields(t *testing.T) {
 	var c GatewayCompletion
 	if err := json.Unmarshal(
 		[]byte(
-			`{"model":"m","choices":[{"message":{"content":"","reasoning":"thinking hard"},"finish_reason":"length"}],"usage":{"completion_tokens":64}}`,
+			`{"model":"m","choices":[{"message":{"content":"","reasoning":"thinking `+
+				`hard"},"finish_reason":"length"}],"usage":{"completion_tokens":64}}`,
 		),
 		&c,
 	); err != nil {

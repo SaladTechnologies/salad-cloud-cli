@@ -10,7 +10,9 @@ import (
 // whoamiTable is whoami's table with the given rows' values.
 func whoamiTable(apiKey, org, project, gateway, auth, orgs string) string {
 	return fmt.Sprintf(
-		"api-key             %s\norganization        %s\nproject             %s\nai-gateway-api-key  %s\nauthenticated       %s\norganizations       %s\nconfig-path         <path>\n",
+		"api-key             %s\norganization        %s\nproject             %s\nai-gateway-api-key  "+
+			"%s\nauthenticated     "+
+			"  %s\norganizations       %s\nconfig-path         <path>\n",
 		apiKey,
 		org,
 		project,
@@ -180,7 +182,8 @@ func TestWhoamiBranches(t *testing.T) {
 			stdout: whoamiTable("****...H13m (from config)", "not set", `none set, using "default"`, "not set", "yes",
 				"org-01, org-02, org-03, org-04, org-05, org-06, org-07, org-08, org-09, org-10 and 2 more"),
 			doc: map[string]any{
-				"organizations": "[org-01 org-02 org-03 org-04 org-05 org-06 org-07 org-08 org-09 org-10 org-11 org-12]",
+				"organizations": "[org-01 org-02 org-03 org-04 org-05 org-06 org-07 org-08 org-09 org-10 org-11 " +
+					"org-12]",
 			},
 		},
 	})
@@ -253,7 +256,8 @@ func TestLogoutBranches(t *testing.T) {
 			stdout: removed + "Organization and project stay saved: my-org/default\n",
 			stderr: "warning: commands still use SALAD_API_KEY (****...ABCD). To remove the variable:\n" +
 				"  PowerShell:  Remove-Item Env:SALAD_API_KEY\n  cmd:         set SALAD_API_KEY=\n" +
-				"If it comes back in a new terminal, remove it permanently:\n  [Environment]::SetEnvironmentVariable('SALAD_API_KEY', $null, 'User')\n" +
+				"If it comes back in a new terminal, remove it permanently:\n  " +
+				"[Environment]::SetEnvironmentVariable('SALAD_API_KEY', $null, 'User')\n" +
 				"Then open a new terminal (restart VS Code if you use its terminal).\n",
 			after: &config.File{Organization: "my-org", Project: "default"},
 			doc:   map[string]any{"env_overrides": "[SALAD_API_KEY]"},

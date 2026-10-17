@@ -55,7 +55,8 @@ func TestNameCheck(t *testing.T) {
 			"organization", "Acme Prod", "--org",
 			`invalid organization name "Acme Prod" (from --org)`,
 			"it looks like a display name; use the name from the portal URL, the part after /organizations/",
-			`"Acme Prod" is not a valid organization name. It looks like a display name; type the name from the portal URL, the part after /organizations/.`,
+			`"Acme Prod" is not a valid organization name. It looks like a display name; type the name from the ` +
+				`portal URL, the part after /organizations/.`,
 		},
 		{
 			"organization", "My-Org", "--org",
@@ -65,17 +66,21 @@ func TestNameCheck(t *testing.T) {
 		{
 			"organization", "1org", "SALAD_ORGANIZATION",
 			`invalid organization name "1org" (from SALAD_ORGANIZATION)`,
-			"names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending with a letter or digit",
-			`"1org" is not a valid organization name. Names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending with a letter or digit.`,
+			"names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending " +
+				"with a letter or digit",
+			`"1org" is not a valid organization name. Names are 2-63 characters: lowercase letters, digits and ` +
+				`hyphens, starting with a letter and ending with a letter or digit.`,
 		},
 		{
 			"organization", "org-", "config",
 			`invalid organization name "org-" (from config)`,
-			"names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending with a letter or digit", "",
+			"names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending " +
+				"with a letter or digit", "",
 		},
 		{
 			"organization", "a", "--org", `invalid organization name "a" (from --org)`,
-			"names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending with a letter or digit", "",
+			"names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending " +
+				"with a letter or digit", "",
 		},
 		{
 			"organization", "acme_prod", "--org", `invalid organization name "acme_prod" (from --org)`,
@@ -85,9 +90,11 @@ func TestNameCheck(t *testing.T) {
 			"project", "Staging Env", "SALAD_PROJECT",
 			`invalid project name "Staging Env" (from SALAD_PROJECT)`,
 			"it looks like a display name; use the name from the portal URL, the part after /projects/",
-			`"Staging Env" is not a valid project name. It looks like a display name; type the name from the portal URL, the part after /projects/.`,
+			`"Staging Env" is not a valid project name. It looks like a display name; type the name from the portal ` +
+				`URL, the part after /projects/.`,
 		},
-		{"project", "STAGING", "--project", `invalid project name "STAGING" (from --project)`, `did you mean "staging"?`, ""},
+		{"project", "STAGING", "--project", `invalid project name "STAGING" (from ` +
+			`--project)`, `did you mean "staging"?`, ""},
 	} {
 		t.Run(tc.kind+" "+tc.name, func(t *testing.T) {
 			err := checkName(tc.kind, tc.name, tc.origin)
@@ -204,8 +211,10 @@ func TestOrgsClause(t *testing.T) {
 		want  string
 	}{
 		{[]string{"my-org", "acme-prod"}, "your organizations: my-org, acme-prod"},
-		{names(10), "your organizations: org-01, org-02, org-03, org-04, org-05, org-06, org-07, org-08, org-09, org-10"},
-		{names(22), "your organizations: org-01, org-02, org-03, org-04, org-05, org-06, org-07, org-08, org-09, org-10 and 12 more; to list all, run saladcloud orgs list"},
+		{names(10), "your organizations: org-01, org-02, org-03, org-04, org-05, org-06, org-07, org-08, org-09, " +
+			"org-10"},
+		{names(22), "your organizations: org-01, org-02, org-03, org-04, org-05, org-06, org-07, org-08, org-09, " +
+			"org-10 and 12 more; to list all, run saladcloud orgs list"},
 		{nil, ""},
 		{[]string{}, ""},
 	} {
@@ -270,8 +279,10 @@ func TestConfigReady(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chmod(ro, 0o700) }) //nolint:gosec // a directory: TempDir cleanup needs its x bit back
 	t.Setenv("SALAD_CLI_CONFIG_DIR", ro)
 	for _, tc := range []struct{ command, hint string }{
-		{"login", "set SALAD_CLI_CONFIG_DIR to a writable folder, or set SALAD_API_KEY, SALAD_ORGANIZATION and SALAD_PROJECT instead of logging in"},
-		{"ai-gateway login", "set SALAD_CLI_CONFIG_DIR to a writable folder, or set SALAD_AI_GATEWAY_API_KEY instead of logging in"},
+		{"login", "set SALAD_CLI_CONFIG_DIR to a writable folder, or set SALAD_API_KEY, SALAD_ORGANIZATION and " +
+			"SALAD_PROJECT instead of logging in"},
+		{"ai-gateway login", "set SALAD_CLI_CONFIG_DIR to a writable folder, or set SALAD_AI_GATEWAY_API_KEY instead " +
+			"of logging in"},
 		{"use", "set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud use again"},
 	} {
 		err := configReady(tc.command)
@@ -398,7 +409,8 @@ func TestOpenOffered(t *testing.T) {
 	openOffered(url)
 	openPage = func(string) error { return errors.New("no opener") }
 	openOffered(url)
-	want := "Opening https://portal.salad.com/api-key in your browser.\nCould not open a browser; open https://portal.salad.com/api-key yourself.\n"
+	want := "Opening https://portal.salad.com/api-key in your browser.\nCould not open a browser; open " +
+		"https://portal.salad.com/api-key yourself.\n"
 	if got := fc.device.String(); got != want {
 		t.Errorf("device:\n%s\nwant:\n%s", got, want)
 	}
@@ -421,8 +433,8 @@ func TestAskUntil(t *testing.T) {
 		t.Fatalf("got %q, %v", got, err)
 	}
 	want := "Type an organization name: Acme Prod\n" +
-		`"Acme Prod" is not a valid organization name. It looks like a display name; type the name from the portal URL, the part after /organizations/.` + "\n" +
-		"Type an organization name: my-org\n"
+		`"Acme Prod" is not a valid organization name. It looks like a display name; type the name from the portal ` +
+		`URL, the part after /organizations/.` + "\nType an organization name: my-org\n"
 	if fc.device.String() != want {
 		t.Errorf("device:\n%s\nwant:\n%s", fc.device.String(), want)
 	}

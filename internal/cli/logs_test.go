@@ -27,7 +27,8 @@ func TestNoMatchNote(t *testing.T) {
 			instance: "8a2f13ba",
 			severity: "warning",
 			filter:   "timeout",
-			want:     `no log entries matched (group "my-cg", since 2h, instance "8a2f13ba", severity "warning", filter "timeout")`,
+			want: `no log entries matched (group "my-cg", since 2h, instance "8a2f13ba", severity "warning", filter ` +
+				`"timeout")`,
 		},
 		{
 			name:  "filter only",

@@ -303,7 +303,8 @@ func TestSessionFailedHintNamesTheKeyLocation(t *testing.T) {
 	hint := sessionFailedHint
 	for _, want := range []string{
 		"permission denied", "must be registered", "https://portal.salad.com/ssh-keys", "owns the API key",
-		"ssh-key setup", "this machine", "passphrase", "ssh-add", "closed or refused", "still starting", "try again in a minute",
+		"ssh-key setup", "this machine", "passphrase", "ssh-add", "closed or refused", "still starting", "try again in a " +
+			"minute",
 	} {
 		if !strings.Contains(hint, want) {
 			t.Errorf("hint missing %q; got: %s", want, hint)
@@ -372,7 +373,8 @@ func TestRunChildHints(t *testing.T) {
 	goos = "darwin"
 	cerr = runChild("saladcloud-test-no-such-ssh", nil)
 	if cerr == nil || cerr.Message != "saladcloud-test-no-such-ssh not found" ||
-		cerr.HintText() != "macOS includes it at /usr/bin/saladcloud-test-no-such-ssh; check that /usr/bin is on your PATH" {
+		cerr.HintText() != "macOS includes it at /usr/bin/saladcloud-test-no-such-ssh; check that /usr/bin is on "+
+			"your PATH" {
 		t.Errorf("missing: %+v hint %q", cerr, cerr.HintText())
 	}
 }

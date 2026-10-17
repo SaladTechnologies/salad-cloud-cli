@@ -249,9 +249,11 @@ func TestLoginNeverWaitsOnStdin(t *testing.T) {
 		env  map[string]string
 	}{
 		{"login, no key anywhere", []string{"login", "--org", "my-org"}, nil},
-		{"login, SALAD_API_KEY set", []string{"login", "--org", "my-org"}, map[string]string{"SALAD_API_KEY": testAPIKey}},
+		{"login, SALAD_API_KEY " +
+			"set", []string{"login", "--org", "my-org"}, map[string]string{"SALAD_API_KEY": testAPIKey}},
 		{"ai-gateway login, no key anywhere", []string{"ai-gateway", "login"}, nil},
-		{"ai-gateway login, SALAD_AI_GATEWAY_API_KEY set", []string{"ai-gateway", "login"}, map[string]string{"SALAD_AI_GATEWAY_API_KEY": testGatewayKey}},
+		{"ai-gateway login, SALAD_AI_GATEWAY_API_KEY " +
+			"set", []string{"ai-gateway", "login"}, map[string]string{"SALAD_AI_GATEWAY_API_KEY": testGatewayKey}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			o := session{args: tc.args, env: tc.env, openStdin: true}.run(t)

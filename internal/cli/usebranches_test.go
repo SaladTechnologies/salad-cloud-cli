@@ -8,7 +8,8 @@ import (
 )
 
 const removeOrgSteps = "  PowerShell:  Remove-Item Env:SALAD_ORGANIZATION\n  cmd:         set SALAD_ORGANIZATION=\n" +
-	"If it comes back in a new terminal, remove it permanently:\n  [Environment]::SetEnvironmentVariable('SALAD_ORGANIZATION', $null, 'User')\n" +
+	"If it comes back in a new terminal, remove it permanently:\n  " +
+	"[Environment]::SetEnvironmentVariable('SALAD_ORGANIZATION', $null, 'User')\n" +
 	"Then open a new terminal (restart VS Code if you use its terminal).\n"
 
 func errLines(msg, hint string) string { return "saladcloud: error: " + msg + "\nhint: " + hint + "\n" }
@@ -118,9 +119,10 @@ func TestUseBranches(t *testing.T) {
 				saved: &config.File{APIKey: k, Organization: "my-org", Project: "staging"},
 			},
 			stdout: "Switched to acme-prod/default\n",
-			stderr: "hint: no project named, so \"default\" is used; for another, run saladcloud use acme-prod/<project>\n",
-			after:  &config.File{APIKey: k, Organization: "acme-prod", Project: "default"},
-			doc:    map[string]any{"organization": "acme-prod", "project": "default", "env_overrides": "[]"},
+			stderr: "hint: no project named, so \"default\" is used; for another, run saladcloud use " +
+				"acme-prod/<project>\n",
+			after: &config.File{APIKey: k, Organization: "acme-prod", Project: "default"},
+			doc:   map[string]any{"organization": "acme-prod", "project": "default", "env_overrides": "[]"},
 		},
 		{
 			id:     "organization and project",
@@ -137,9 +139,10 @@ func TestUseBranches(t *testing.T) {
 				env:   map[string]string{"SALAD_ORGANIZATION": "my-org"},
 			},
 			stdout: "Switched to acme-prod/default\n",
-			stderr: "warning: commands will use SALAD_ORGANIZATION (my-org) instead of the organization you just saved (acme-prod)\n",
-			after:  &config.File{APIKey: k, Organization: "acme-prod", Project: "default"},
-			doc:    map[string]any{"env_overrides": "[SALAD_ORGANIZATION]"},
+			stderr: "warning: commands will use SALAD_ORGANIZATION (my-org) instead of the organization you just " +
+				"saved (acme-prod)\n",
+			after: &config.File{APIKey: k, Organization: "acme-prod", Project: "default"},
+			doc:   map[string]any{"env_overrides": "[SALAD_ORGANIZATION]"},
 		},
 		{
 			id: "a variable overrides the organization, at a terminal",
@@ -150,9 +153,10 @@ func TestUseBranches(t *testing.T) {
 				env:   map[string]string{"SALAD_ORGANIZATION": "my-org"},
 			},
 			stdout: "Switched to acme-prod/default\n",
-			stderr: "warning: commands will use SALAD_ORGANIZATION (my-org) instead of the organization you just saved (acme-prod). To remove the variable:\n" + removeOrgSteps,
-			after:  &config.File{APIKey: k, Organization: "acme-prod", Project: "default"},
-			doc:    map[string]any{"env_overrides": "[SALAD_ORGANIZATION]"},
+			stderr: "warning: commands will use SALAD_ORGANIZATION (my-org) instead of the organization you just " +
+				"saved (acme-prod). To remove the variable:\n" + removeOrgSteps,
+			after: &config.File{APIKey: k, Organization: "acme-prod", Project: "default"},
+			doc:   map[string]any{"env_overrides": "[SALAD_ORGANIZATION]"},
 		},
 		{
 			id:     "a rejected key from config",
@@ -217,8 +221,9 @@ func TestConfigSetUnsetBranches(t *testing.T) {
 			id:     "set organization, a saved project carried over",
 			s:      session{args: cfg("set", "organization", "acme-prod"), saved: saved},
 			stdout: "Set organization to acme-prod\nConfig at: <path>\n",
-			stderr: "warning: the saved project \"staging\" was saved with my-org and now applies to acme-prod\nhint: to switch both, run saladcloud use acme-prod/<project>\n",
-			after:  &config.File{Organization: "acme-prod", Project: "staging"},
+			stderr: "warning: the saved project \"staging\" was saved with my-org and now applies to " +
+				"acme-prod\nhint: to switch both, run saladcloud use acme-prod/<project>\n",
+			after: &config.File{Organization: "acme-prod", Project: "staging"},
 			doc: map[string]any{
 				"key":           "organization",
 				"value":         "acme-prod",
@@ -232,9 +237,10 @@ func TestConfigSetUnsetBranches(t *testing.T) {
 			id:     "set api-key as an argument",
 			s:      session{args: cfg("set", "api-key", keyRotated)},
 			stdout: "Set api-key to ****...9QxZ\nConfig at: <path>\n",
-			stderr: "warning: a key passed as an argument is exposed on the command line; pipe it to saladcloud config set api-key - instead\n",
-			after:  &config.File{APIKey: keyRotated},
-			doc:    map[string]any{"value": "****...9QxZ"},
+			stderr: "warning: a key passed as an argument is exposed on the command line; pipe it to saladcloud " +
+				"config set api-key - instead\n",
+			after: &config.File{APIKey: keyRotated},
+			doc:   map[string]any{"value": "****...9QxZ"},
 		},
 		{
 			id:     "set ai-gateway-api-key from stdin",
@@ -254,7 +260,8 @@ func TestConfigSetUnsetBranches(t *testing.T) {
 				env:  map[string]string{"SALAD_ORGANIZATION": "my-org"},
 			},
 			stdout: "Set organization to acme-prod\nConfig at: <path>\n",
-			stderr: "warning: commands will use SALAD_ORGANIZATION (my-org) instead of the organization you just saved (acme-prod)\n",
+			stderr: "warning: commands will use SALAD_ORGANIZATION (my-org) instead of the organization you just " +
+				"saved (acme-prod)\n",
 			after: &config.File{
 				Organization: "acme-prod",
 			},
@@ -292,9 +299,10 @@ func TestConfigSetUnsetBranches(t *testing.T) {
 				env: map[string]string{"SALAD_ORGANIZATION": "acme-prod"},
 			},
 			stdout: "Unset organization\nConfig at: <path>\n",
-			stderr: "warning: commands still use SALAD_ORGANIZATION (acme-prod). To remove the variable:\n" + removeOrgSteps,
-			after:  &config.File{Project: "staging"},
-			doc:    map[string]any{"env_overrides": "[SALAD_ORGANIZATION]"},
+			stderr: "warning: commands still use SALAD_ORGANIZATION (acme-prod). To remove the " +
+				"variable:\n" + removeOrgSteps,
+			after: &config.File{Project: "staging"},
+			doc:   map[string]any{"env_overrides": "[SALAD_ORGANIZATION]"},
 		},
 		{
 			id: "unset, the variable still set, no terminal", s: session{

@@ -416,7 +416,8 @@ func TestSettleTimeoutSaysPatchAccepted(t *testing.T) {
 	if cerr.Kind != clierr.KindWaitTimeout || cerr.Code != clierr.CodeGeneric {
 		t.Errorf("error = kind %q code %d, want wait_timeout / generic", cerr.Kind, cerr.Code)
 	}
-	for _, want := range []string{"patch accepted", "still pending", "not verified", "saladcloud container-groups get demo"} {
+	for _, want := range []string{"patch accepted", "still pending", "not verified", "saladcloud container-groups " +
+		"get demo"} {
 		if !strings.Contains(errText(cerr), want) {
 			t.Errorf("settle timeout message %q lacks %q", errText(cerr), want)
 		}

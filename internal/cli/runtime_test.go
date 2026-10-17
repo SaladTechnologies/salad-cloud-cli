@@ -105,7 +105,8 @@ func TestRunTimeErrors(t *testing.T) {
 			kind: "auth",
 			stderr: errLines(
 				"AI Gateway key ****...WXYZ (from SALAD_AI_GATEWAY_API_KEY) was rejected",
-				"remove SALAD_AI_GATEWAY_API_KEY to use the saved AI Gateway key (****...EFGH), or set it to a working key",
+				"remove SALAD_AI_GATEWAY_API_KEY to use the saved AI Gateway key (****...EFGH), or set it to a "+
+					"working key",
 			),
 		},
 		{
@@ -154,10 +155,13 @@ func TestRunTimeErrors(t *testing.T) {
 			},
 			code: 2,
 			kind: "usage",
-			stderr: "warning: using project \"default\" because none was set; pass --project or set SALAD_PROJECT to choose one\n" +
+			stderr: "warning: using project \"default\" because none was set; pass --project or set SALAD_PROJECT to " +
+				"choose one\n" +
 				errLines(
 					`no valid project set: my-org has no "default" project`,
-					"create one at https://portal.salad.com/organizations/my-org/projects/new, then pass --project or run saladcloud use my-org/<project>",
+					"create one at https://portal.salad.com/organizations/my-org/projects/new, then pass --project "+
+						"or run "+
+						"saladcloud use my-org/<project>",
 				),
 		},
 		{
@@ -247,7 +251,8 @@ func TestVanishedOrganization(t *testing.T) {
 			},
 			code: 4,
 			kind: "not_found",
-			stderr: "warning: using project \"default\" because none was set; pass --project or set SALAD_PROJECT to choose one\n" +
+			stderr: "warning: using project \"default\" because none was set; pass --project or set SALAD_PROJECT to " +
+				"choose one\n" +
 				errLines(
 					`organization "old-org" (from SALAD_ORGANIZATION) not found`,
 					"to list yours, run saladcloud orgs list; fix or remove SALAD_ORGANIZATION",

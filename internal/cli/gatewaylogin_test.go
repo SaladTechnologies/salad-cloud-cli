@@ -32,8 +32,10 @@ func TestGatewayLoginBranches(t *testing.T) {
 		dGet      = "Get your AI Gateway key at https://portal.salad.com/ai-gateway\n"
 		eTry      = "hint: to try it, run saladcloud ai-gateway test (sends one billed request)\n"
 		oSaved    = "AI Gateway key saved\nConfig at: <path>\n"
-		dInvalidG = "That AI Gateway key is invalid. Check that you copied all of it, and that it isn't your SaladCloud API key (that one goes in saladcloud login).\n"
-		eWarnW    = "warning: commands will use SALAD_AI_GATEWAY_API_KEY (****...WXYZ) instead of the AI Gateway key you just saved (****...EFGH)"
+		dInvalidG = "That AI Gateway key is invalid. Check that you copied all of it, and that it isn't your " +
+			"SaladCloud API key (that one goes in saladcloud login).\n"
+		eWarnW = "warning: commands will use SALAD_AI_GATEWAY_API_KEY (****...WXYZ) instead of the AI Gateway key " +
+			"you just saved (****...EFGH)"
 	)
 	cancelAtCheck := gatewayFake()
 	cancelAtCheck.cancelOn = "/models"
@@ -72,9 +74,10 @@ func TestGatewayLoginBranches(t *testing.T) {
 			stderr: errLine("--api-key is empty", "check that the variable you passed is set"),
 		},
 		{
-			id:     "--api-key",
-			s:      session{args: gw("--api-key", k), api: gatewayFake()},
-			stderr: "warning: --api-key exposes the key on the command line; pipe it instead\nAI Gateway key: ****...EFGH (from --api-key)\n" + eTry,
+			id: "--api-key",
+			s:  session{args: gw("--api-key", k), api: gatewayFake()},
+			stderr: "warning: --api-key exposes the key on the command line; pipe it instead\nAI Gateway key: " +
+				"****...EFGH (from --api-key)\n" + eTry,
 			stdout: oSaved,
 			after:  saved(k),
 			doc:    docSaved,
@@ -98,11 +101,13 @@ func TestGatewayLoginBranches(t *testing.T) {
 			),
 		},
 		{
-			id:     "key from SALAD_AI_GATEWAY_API_KEY",
-			s:      session{args: gw(), env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": k}, api: gatewayFake()},
-			stderr: "No AI Gateway key provided, using SALAD_AI_GATEWAY_API_KEY (****...EFGH).\nhint: to save it, pipe it to saladcloud ai-gateway login --api-key -\n",
-			stdout: "The AI Gateway key works. It is not saved, so it works only where SALAD_AI_GATEWAY_API_KEY is set.\n",
-			doc:    with(docSaved, "ai_gateway_api_key_saved", false, "ai_gateway_api_key_source", "env"),
+			id: "key from SALAD_AI_GATEWAY_API_KEY",
+			s:  session{args: gw(), env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": k}, api: gatewayFake()},
+			stderr: "No AI Gateway key provided, using SALAD_AI_GATEWAY_API_KEY (****...EFGH).\nhint: to save it, " +
+				"pipe it to saladcloud ai-gateway login --api-key -\n",
+			stdout: "The AI Gateway key works. It is not saved, so it works only where SALAD_AI_GATEWAY_API_KEY is " +
+				"set.\n",
+			doc: with(docSaved, "ai_gateway_api_key_saved", false, "ai_gateway_api_key_source", "env"),
 		},
 		{
 			id:     "at a terminal",
@@ -119,12 +124,14 @@ func TestGatewayLoginBranches(t *testing.T) {
 				args: gw(), tty: []string{"", k}, api: gatewayFake(),
 				env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": w}, saved: saved(w),
 			},
-			device: "SALAD_AI_GATEWAY_API_KEY is set in this shell (****...WXYZ); commands will use it instead of what ai-gateway login saves.\n" +
+			device: "SALAD_AI_GATEWAY_API_KEY is set in this shell (****...WXYZ); commands will use it instead of " +
+				"what ai-gateway login saves.\n" +
 				"Saved AI Gateway key: ****...WXYZ (Ctrl-C to keep it)\n" + dGet + dPaste + "Opening https://portal.salad.com/ai-gateway in your browser.\n" + dPaste,
 			opened: 1,
 			stderr: "AI Gateway key: ****...EFGH\n" + eTry + eWarnW + ". To remove the variable:\n" +
-				"  PowerShell:  Remove-Item Env:SALAD_AI_GATEWAY_API_KEY\n  cmd:         set SALAD_AI_GATEWAY_API_KEY=\n" +
-				"If it comes back in a new terminal, remove it permanently:\n  [Environment]::SetEnvironmentVariable('SALAD_AI_GATEWAY_API_KEY', $null, 'User')\n" +
+				"  PowerShell:  Remove-Item Env:SALAD_AI_GATEWAY_API_KEY\n  cmd:         set " +
+				"SALAD_AI_GATEWAY_API_KEY=\nIf it comes back in a new terminal, remove it permanently:\n  " +
+				"[Environment]::SetEnvironmentVariable('SALAD_AI_GATEWAY_API_KEY', $null, 'User')\n" +
 				"Then open a new terminal (restart VS Code if you use its terminal).\n",
 			stdout: oSaved,
 			after:  saved(k),
@@ -140,7 +147,8 @@ func TestGatewayLoginBranches(t *testing.T) {
 			code:   1,
 			kind:   "interrupted",
 			device: "Saved AI Gateway key: ****...WXYZ (Ctrl-C to keep it)\n" + dGet + dPaste,
-			stderr: "saladcloud: error: ai-gateway login cancelled, your saved AI Gateway key (****...WXYZ) is unchanged\n",
+			stderr: "saladcloud: error: ai-gateway login cancelled, your saved AI Gateway key (****...WXYZ) is " +
+				"unchanged\n",
 		},
 		{
 			id:     "401, pasted",
@@ -152,9 +160,10 @@ func TestGatewayLoginBranches(t *testing.T) {
 			doc:    docSaved,
 		},
 		{
-			id:     "401, pasted in quotes",
-			s:      session{args: gw(), tty: []string{`"` + k + `"`, k}, api: gatewayFake()},
-			device: dGet + dPaste + "That AI Gateway key is invalid. Remove the quotes around it and paste it again.\n" + dPaste,
+			id: "401, pasted in quotes",
+			s:  session{args: gw(), tty: []string{`"` + k + `"`, k}, api: gatewayFake()},
+			device: dGet + dPaste + "That AI Gateway key is invalid. Remove the quotes around it and paste it " +
+				"again.\n" + dPaste,
 			stderr: "AI Gateway key: ****...FGH\"\nAI Gateway key: ****...EFGH\n" + eTry,
 			stdout: oSaved,
 			after:  saved(k),
@@ -196,7 +205,8 @@ func TestGatewayLoginBranches(t *testing.T) {
 			kind: "auth",
 			stderr: errLine(
 				"AI Gateway key ****...WXYZ (from SALAD_AI_GATEWAY_API_KEY) is invalid",
-				"remove SALAD_AI_GATEWAY_API_KEY to use the saved AI Gateway key (****...EFGH), or set it to a working key",
+				"remove SALAD_AI_GATEWAY_API_KEY to use the saved AI Gateway key (****...EFGH), or set it to a "+
+					"working key",
 			),
 		},
 		{
@@ -221,7 +231,8 @@ func TestGatewayLoginBranches(t *testing.T) {
 		{
 			id: "402",
 			s:  session{args: piped, stdin: keyNoCredits, api: gatewayFake()},
-			stderr: "AI Gateway key: ****...CRDT\nwarning: the key's organization is out of credits, so AI Gateway requests are rejected until you add some\n" +
+			stderr: "AI Gateway key: ****...CRDT\nwarning: the key's organization is out of credits, so AI Gateway " +
+				"requests are rejected until you add some\n" +
 				"hint: add credits from the organization's AI Gateway page: https://portal.salad.com/ai-gateway\n",
 			stdout: oSaved,
 			after:  saved(keyNoCredits),
@@ -293,8 +304,9 @@ func TestGatewayLogoutBranches(t *testing.T) {
 			},
 			stdout: "Logged out: removed the saved AI Gateway key (****...EFGH)\n",
 			stderr: "warning: commands still use SALAD_AI_GATEWAY_API_KEY (****...WXYZ). To remove the variable:\n" +
-				"  PowerShell:  Remove-Item Env:SALAD_AI_GATEWAY_API_KEY\n  cmd:         set SALAD_AI_GATEWAY_API_KEY=\n" +
-				"If it comes back in a new terminal, remove it permanently:\n  [Environment]::SetEnvironmentVariable('SALAD_AI_GATEWAY_API_KEY', $null, 'User')\n" +
+				"  PowerShell:  Remove-Item Env:SALAD_AI_GATEWAY_API_KEY\n  cmd:         set " +
+				"SALAD_AI_GATEWAY_API_KEY=\nIf it comes back in a new terminal, remove it permanently:\n  " +
+				"[Environment]::SetEnvironmentVariable('SALAD_AI_GATEWAY_API_KEY', $null, 'User')\n" +
 				"Then open a new terminal (restart VS Code if you use its terminal).\n",
 			after: &config.File{APIKey: testAPIKey, Organization: "my-org"},
 			doc:   map[string]any{"removed": true, "env_overrides": "[SALAD_AI_GATEWAY_API_KEY]"},

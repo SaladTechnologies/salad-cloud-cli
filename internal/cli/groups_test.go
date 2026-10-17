@@ -110,7 +110,8 @@ func TestScheduledScalingString(t *testing.T) {
 				scalingAction(1, "0 1 * * *"), scalingAction(2, "0 2 * * *"),
 				scalingAction(3, "0 3 * * *"), scalingAction(4, "0 4 * * *"),
 			},
-			`enabled (4 actions: 1 replicas @ "0 1 * * *"; 2 replicas @ "0 2 * * *"; 3 replicas @ "0 3 * * *"; and 1 more)`,
+			`enabled (4 actions: 1 replicas @ "0 1 * * *"; 2 replicas @ "0 2 * * *"; 3 replicas @ "0 3 * * *"; and 1 ` +
+				`more)`,
 		},
 		{"enabled without actions", ptr.To(true), nil, "enabled (no actions)"},
 		{"disabled with actions", ptr.To(false), weekdayPair, "disabled (2 actions configured)"},

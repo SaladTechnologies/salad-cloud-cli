@@ -46,7 +46,8 @@ func TestCompile(t *testing.T) {
 		{
 			name: "raw query wrapped in parens",
 			f:    Filters{Group: "g", RawQuery: `json_log.status >= 500 or text_log startswith "panic"`},
-			want: `resource.labels.container_group_name = "g" and (json_log.status >= 500 or text_log startswith "panic")`,
+			want: `resource.labels.container_group_name = "g" and (json_log.status >= 500 or text_log startswith ` +
+				`"panic")`,
 		},
 		{
 			name: "everything, in order, raw last",
@@ -54,7 +55,9 @@ func TestCompile(t *testing.T) {
 				Group: "g", Project: "p", Instance: "i", MinSeverity: "error",
 				Contains: "boom", RawQuery: `resource.type = "container"`,
 			},
-			want: `resource.labels.container_group_name = "g" and resource.labels.project_name = "p" and resource.labels.instance_id = "i" and severity >= "error" and log contains "boom" and (resource.type = "container")`,
+			want: `resource.labels.container_group_name = "g" and resource.labels.project_name = "p" and ` +
+				`resource.labels.instance_id = "i" and severity >= "error" and log contains "boom" and ` +
+				`(resource.type = "container")`,
 		},
 	}
 	for _, tt := range tests {
@@ -114,7 +117,8 @@ func TestCompileEscapingAppliesToAllQuotedFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile error: %v", err)
 	}
-	want := `resource.labels.container_group_name = "g\"1" and resource.labels.project_name = "p\\2" and resource.labels.instance_id = "i\"3" and log contains "say \"hi\""`
+	want := `resource.labels.container_group_name = "g\"1" and resource.labels.project_name = "p\\2" and ` +
+		`resource.labels.instance_id = "i\"3" and log contains "say \"hi\""`
 	if got != want {
 		t.Errorf("mismatch\n got: %s\nwant: %s", got, want)
 	}

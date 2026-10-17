@@ -192,9 +192,12 @@ func TestJobsLimitNote(t *testing.T) {
 		more         bool
 		want         string
 	}{
-		{"json", 10000, 0, true, "note: showing the newest 10000 jobs, the most one listing returns; older jobs are not shown\n"},
-		{"json", 10000, 20000, true, "note: showing the newest 10000 jobs, the most one listing returns; older jobs are not shown\n"},
-		{"table", 3, 3, true, "note: showing the newest 3 jobs; older ones exist\nhint: for more, raise --limit; 0 means all, up to 10000\n"},
+		{"json", 10000, 0, true, "note: showing the newest 10000 jobs, the most one listing returns; older jobs are " +
+			"not shown\n"},
+		{"json", 10000, 20000, true, "note: showing the newest 10000 jobs, the most one listing returns; older jobs " +
+			"are not shown\n"},
+		{"table", 3, 3, true, "note: showing the newest 3 jobs; older ones exist\nhint: for more, raise --limit; 0 " +
+			"means all, up to 10000\n"},
 		{"json", 3, 3, true, ""},
 		{"table", 39, 100, false, ""},
 		{"table", 10000, 10000, false, ""},

@@ -62,8 +62,9 @@ func TestMessageFromBody(t *testing.T) {
 		{
 			name:   "non-RFC URL type hint is kept",
 			status: 400,
-			body:   `{"type":"https://example.com/probs/invalid-name","title":"Invalid name","detail":"Container group names must be lowercase"}`,
-			want:   "Container group names must be lowercase (type: https://example.com/probs/invalid-name)",
+			body: `{"type":"https://example.com/probs/invalid-name","title":"Invalid name","detail":"Container group ` +
+				`names must be lowercase"}`,
+			want: "Container group names must be lowercase (type: https://example.com/probs/invalid-name)",
 		},
 		{
 			name:   "tools.ietf.org type hint is suppressed (live 404 default)",
@@ -93,34 +94,39 @@ func TestMessageFromBody(t *testing.T) {
 			name:   "known type: quota exceeded gets a sentence",
 			status: 400,
 			body:   `{"type":"created_replicas_quota_exceeded","title":"Bad Request"}`,
-			want:   "the requested replica count exceeds the organization's replica quota (type: created_replicas_quota_exceeded)",
+			want: "the requested replica count exceeds the organization's replica quota (type: " +
+				"created_replicas_quota_exceeded)",
 		},
 		{
 			// Live body captured from an organization with no credits.
 			name:   "known type: no credits gets a portal remediation sentence",
 			status: 400,
-			body:   `{"type":"no_credits_available","title":"Entitlement check failed.","status":400,"instance":"54976218"}`,
-			want:   "the organization is out of credits (type: no_credits_available)",
+			body: `{"type":"no_credits_available","title":"Entitlement check ` +
+				`failed.","status":400,"instance":"54976218"}`,
+			want: "the organization is out of credits (type: no_credits_available)",
 		},
 		{
 			// Live body captured from a start under zeroed quota.
 			name:   "known type: start-time quota exceeded gets a sentence",
 			status: 400,
 			body:   `{"type":"replicas_quota_exceeded","title":"Bad Request"}`,
-			want:   "cannot start the group: its replica count exceeds the organization's replica quota (type: replicas_quota_exceeded)",
+			want: "cannot start the group: its replica count exceeds the organization's replica quota (type: " +
+				"replicas_quota_exceeded)",
 		},
 		{
 			// Live body captured from a scale under zeroed quota.
 			name:   "known type: update/scale quota exceeded gets a sentence",
 			status: 400,
 			body:   `{"type":"updated_replicas_quota_exceeded","title":"Bad Request"}`,
-			want:   "the new replica count exceeds the organization's replica quota (type: updated_replicas_quota_exceeded)",
+			want: "the new replica count exceeds the organization's replica quota (type: " +
+				"updated_replicas_quota_exceeded)",
 		},
 		{
 			name:   "known type: name conflict gets a sentence",
 			status: 400,
 			body:   `{"type":"name_conflict","title":"Bad Request"}`,
-			want:   "a container group with this name already exists in this project, or existed and was deleted (type: name_conflict)",
+			want: "a container group with this name already exists in this project, or existed and was deleted " +
+				"(type: name_conflict)",
 		},
 		{
 			// The API's body for a duplicate queues create.
@@ -133,7 +139,8 @@ func TestMessageFromBody(t *testing.T) {
 			name:   "known type: pending update in progress gets a sentence",
 			status: 400,
 			body:   `{"type":"pending_update_in_progress","title":"Bad Request"}`,
-			want:   "the group has a change still being applied (a new group's first deploy, or an earlier update) (type: pending_update_in_progress)",
+			want: "the group has a change still being applied (a new group's first deploy, or an earlier update) " +
+				"(type: pending_update_in_progress)",
 		},
 		{
 			name:   "title only",
@@ -196,7 +203,10 @@ func TestMessageFromBody(t *testing.T) {
 
 func TestMessageFromBodyValidationErrors(t *testing.T) {
 	// The exact payload observed live from `create` with a bad name.
-	livePayload := `{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.1","title":"One or more validation errors occurred.","status":400,"errors":{"Name":["The field Name must match the regular expression '^[a-z][a-z0-9-]{0,61}[a-z0-9]$'.","The field Name must be a string with a minimum length of 2 and a maximum length of 63."]},"traceId":"00-abc-def-00"}`
+	livePayload := `{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.1","title":"One or more validation ` +
+		`errors occurred.","status":400,"errors":{"Name":["The field Name must match the regular expression ` +
+		`'^[a-z][a-z0-9-]{0,61}[a-z0-9]$'.","The field Name must be a string with a minimum length of 2 and a ` +
+		`maximum length of 63."]},"traceId":"00-abc-def-00"}`
 
 	tests := []struct {
 		name   string
@@ -208,13 +218,16 @@ func TestMessageFromBodyValidationErrors(t *testing.T) {
 			name:   "live ASP.NET ValidationProblemDetails payload",
 			status: 400,
 			body:   livePayload,
-			want:   "One or more validation errors occurred.; Name: The field Name must match the regular expression '^[a-z][a-z0-9-]{0,61}[a-z0-9]$'.; Name: The field Name must be a string with a minimum length of 2 and a maximum length of 63.",
+			want: "One or more validation errors occurred.; Name: The field Name must match the regular expression " +
+				"'^[a-z][a-z0-9-]{0,61}[a-z0-9]$'.; Name: The field Name must be a string with a minimum length of 2 " +
+				"and a maximum length of 63.",
 		},
 		{
 			name:   "multiple fields sorted alphabetically",
 			status: 400,
-			body:   `{"title":"One or more validation errors occurred.","errors":{"Replicas":["out of range"],"Name":["too short"]}}`,
-			want:   "One or more validation errors occurred.; Name: too short; Replicas: out of range",
+			body: `{"title":"One or more validation errors occurred.","errors":{"Replicas":["out of ` +
+				`range"],"Name":["too short"]}}`,
+			want: "One or more validation errors occurred.; Name: too short; Replicas: out of range",
 		},
 		{
 			name:   "empty errors dict leaves the message unchanged",
@@ -270,10 +283,15 @@ func TestMessageFromBodyValidationErrorsCapped(t *testing.T) {
 // error's hint, whether or not the API sent a detail.
 func TestKnownProblemTypesCarryTheirFix(t *testing.T) {
 	for _, tc := range []struct{ body, hint string }{
-		{`{"type":"created_replicas_quota_exceeded","title":"Bad Request"}`, "to see the quota, run saladcloud quotas get"},
-		{`{"type":"name_conflict","title":"Bad Request"}`, "pick a different name; names are unique within the organization and project, and deleting a group does not release its name"},
-		{`{"type":"pending_update_in_progress","detail":"busy"}`, "wait for pending_change to clear and try again, which can take a long time under platform load; to watch it, run saladcloud container-groups get <name>"},
-		{`{"type":"no_credits_available","title":"Entitlement check failed."}`, "add credits at https://portal.salad.com; creating, starting or scaling workloads, inference and transcription all need them"},
+		{`{"type":"created_replicas_quota_exceeded","title":"Bad ` +
+			`Request"}`, "to see the quota, run saladcloud quotas get"},
+		{`{"type":"name_conflict","title":"Bad Request"}`, "pick a different name; names are unique within the " +
+			"organization and project, and deleting a group does not release its name"},
+		{`{"type":"pending_update_in_progress","detail":"busy"}`, "wait for pending_change to clear and try again, " +
+			"which can take a long time under platform load; to watch it, run saladcloud container-groups get <name>"},
+		{`{"type":"no_credits_available","title":"Entitlement check ` +
+			`failed."}`, "add credits at https://portal.salad.com; " +
+			"creating, starting or scaling workloads, inference and transcription all need them"},
 	} {
 		e := errorFromBody(400, []byte(tc.body))
 		if e.HintText() != tc.hint || e.Code != clierr.CodeInvalidInput {

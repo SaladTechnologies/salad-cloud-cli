@@ -90,7 +90,8 @@ func TestRejectUnknownsGetResponseTellLeads(t *testing.T) {
 		t.Fatal("nil")
 	}
 	want := "this document is a get response, not a patch (10 of its fields only responses carry); " +
-		"to get a document update -f accepts, run saladcloud container-groups get <group> --writable; --debug lists the fields"
+		"to get a document update -f accepts, run saladcloud container-groups get <group> --writable; --debug lists " +
+		"the fields"
 	if errText(cerr) != want || cerr.Kind != clierr.KindUnknownField || cerr.Code != clierr.CodeInvalidInput {
 		t.Errorf("(%d, %s) %s\nwant (6, unknown_field) %s", cerr.Code, cerr.Kind, errText(cerr), want)
 	}

@@ -267,7 +267,9 @@ func TestSetupLogin(t *testing.T) {
 				mask(k),
 				org,
 			)+
-				projectLine+"The API key is not saved, so it works only where SALAD_API_KEY is set.\nhint: to save it, pipe it to saladcloud login --api-key -\n",
+				projectLine+"The API key is not saved, so it works only where SALAD_API_KEY is set.\nhint: to save "+
+				"it, pipe it "+
+				"to saladcloud login --api-key -\n",
 		)
 		expect(t, "whoami after login", d.whoami(t, nil), map[string]any{
 			"saved_api_key": nil, "saved_organization": org, "saved_project": project,
@@ -700,7 +702,8 @@ func TestRunTimeMissingOrganization(t *testing.T) {
 	d := loggedIn(t)
 	missing := prefix + "-nope"
 	want := fmt.Sprintf(
-		"saladcloud: error: organization \"%s\" (from --org) not found\nhint: to list yours, run saladcloud orgs list\n",
+		"saladcloud: error: organization \"%s\" (from --org) not found\nhint: to list yours, run saladcloud orgs "+
+			"list\n",
 		missing,
 	)
 	for _, tc := range []struct {
@@ -765,7 +768,8 @@ func TestRunTimeInvalidName(t *testing.T) {
 			map[string]string{"SALAD_ORGANIZATION": "Acme Prod"},
 			[]string{"quotas", "get"},
 			"saladcloud: error: invalid organization name \"Acme Prod\" (from SALAD_ORGANIZATION)\n" +
-				"hint: it looks like a display name; use the name from the portal URL, the part after /organizations/\n",
+				"hint: it looks like a display name; use the name from the portal URL, the part after " +
+				"/organizations/\n",
 		},
 		{
 			"--project with capitals", nil,

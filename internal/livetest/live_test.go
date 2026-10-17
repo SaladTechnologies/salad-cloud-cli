@@ -671,7 +671,8 @@ func TestCreateFrom(t *testing.T) {
 	// the copy below.
 	probe := filepath.Join(t.TempDir(), "probe.yaml")
 	if err := os.WriteFile(probe, []byte("readiness_probe:\n  http: {path: /, port: 8080, scheme: http, headers: []}\n"+
-		"  initial_delay_seconds: 0\n  period_seconds: 5\n  timeout_seconds: 2\n  success_threshold: 1\n  failure_threshold: 3\n"), 0o600); err != nil {
+		"  initial_delay_seconds: 0\n  period_seconds: 5\n  timeout_seconds: 2\n  success_threshold: 1\n  "+
+		"failure_threshold: 3\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if r := run(t, "container-groups", "create", src, "--image", "docker.io/library/busybox:1.36", "-f", probe,
@@ -895,8 +896,11 @@ func testSSH(t *testing.T, g string) { //nolint:thelper // a subtest body, not a
 			skip = t.Fatalf
 		}
 		skip(
-			"ssh denied on publickey after 3 attempts. Three causes cover nearly every case: the key on this machine is not "+
-				"registered on the account that owns the API key (keys are per user); this shell has a different ~/.ssh (WSL/container); "+
+			"ssh denied on publickey after 3 attempts. Three causes cover nearly every case: the key on this machine "+
+				"is not "+
+				"registered on the account that owns the API key (keys are per user); this shell has a different "+
+				"~/.ssh "+
+				"(WSL/container); "+
 				"or the key is passphrase-protected and not in ssh-add (one-shot ssh runs in BatchMode). "+
 				"`saladcloud ssh-key get` reports which key this build offers. stderr: %s",
 			strings.TrimSpace(r.Stderr),

@@ -121,7 +121,9 @@ func TestAssumedProjectMissing(t *testing.T) {
 			}
 			if tc.wantCode == clierr.CodeUsage {
 				if ce.Message != `no valid project set: my-org has no "default" project` ||
-					ce.HintText() != "create one at https://portal.salad.com/organizations/my-org/projects/new, then pass --project or run saladcloud use my-org/<project>" {
+					ce.HintText() != "create one at https://portal.salad.com/organizations/my-org/projects/new, then "+
+						"pass --project "+
+						"or run saladcloud use my-org/<project>" {
 					t.Errorf("message %q, hint %q", ce.Message, ce.HintText())
 				}
 			}

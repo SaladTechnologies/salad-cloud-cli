@@ -24,7 +24,8 @@ func TestErrorDocumentKeys(t *testing.T) {
 		},
 		{
 			"hint", New(CodeUsage, KindUsage, "no organization set").WithHint("pass --org %s", "my-org"),
-			`{"exit_code":2,"kind":"usage","message":"no organization set","hint":"pass --org my-org","http_status":null}`,
+			`{"exit_code":2,"kind":"usage","message":"no organization set","hint":"pass --org ` +
+				`my-org","http_status":null}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

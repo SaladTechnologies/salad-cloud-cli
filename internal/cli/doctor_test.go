@@ -41,9 +41,10 @@ var (
 )
 
 const (
-	hReachable = "hint: api-reachable: every command uses this server; remove SALAD_CLI_API_BASE_URL to use https://api.salad.com\n"
-	hGateway   = "hint: ai-gateway-api-key-present: to use the AI Gateway, run saladcloud ai-gateway login\n"
-	hSSH       = "hint: local-ssh-key-present: to use container-groups ssh, cp or sftp, run saladcloud ssh-key setup\n"
+	hReachable = "hint: api-reachable: every command uses this server; remove SALAD_CLI_API_BASE_URL to use " +
+		"https://api.salad.com\n"
+	hGateway = "hint: ai-gateway-api-key-present: to use the AI Gateway, run saladcloud ai-gateway login\n"
+	hSSH     = "hint: local-ssh-key-present: to use container-groups ssh, cp or sftp, run saladcloud ssh-key setup\n"
 )
 
 // stubSSH makes ssh present or not, and keys passphrase-protected or not.
@@ -139,7 +140,8 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: "hint: config: fix or delete it, then run saladcloud login again\n" + hReachable + hGateway + hSSH + failed(
+			stderr: "hint: config: fix or delete it, then run saladcloud login " +
+				"again\n" + hReachable + hGateway + hSSH + failed(
 				1,
 				"config",
 			),
@@ -151,7 +153,8 @@ func TestDoctorRows(t *testing.T) {
 			kind: "api_error",
 			stdout: doctorTable(dRow{"config", "PASS", "none yet at <path>; using flags and environment"}, rReachable,
 				dRow{"api-key", "FAIL", "not set"}, skipNone, skipProject, rGateway, rSSH),
-			stderr: hReachable + "hint: api-key: run saladcloud login, or set SALAD_API_KEY; for the AI Gateway only, run saladcloud ai-gateway login\n" +
+			stderr: hReachable + "hint: api-key: run saladcloud login, or set SALAD_API_KEY; for the AI Gateway " +
+				"only, run saladcloud ai-gateway login\n" +
 				hGateway + hSSH + failed(
 				1,
 				"api-key",
@@ -173,7 +176,8 @@ func TestDoctorRows(t *testing.T) {
 				},
 				rSSH,
 			),
-			stderr: hReachable + "hint: api-key: to use SaladCloud beyond the AI Gateway, run saladcloud login\n" + hSSH,
+			stderr: hReachable + "hint: api-key: to use SaladCloud beyond the AI Gateway, run saladcloud " +
+				"login\n" + hSSH,
 		},
 		{
 			id:   "the key rejected, from config",
@@ -208,8 +212,10 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: api-key: remove SALAD_API_KEY to use the saved API key (****...H13m), or set it to a working key\n" + hGateway + hSSH +
-				"warning: commands use SALAD_API_KEY (****...ABCD) instead of the saved API key (****...H13m)\n" + failed(
+			stderr: hReachable + "hint: api-key: remove SALAD_API_KEY to use the saved API key (****...H13m), or set " +
+				"it to a working key\n" + hGateway + hSSH +
+				"warning: commands use SALAD_API_KEY (****...ABCD) instead of the saved API key " +
+				"(****...H13m)\n" + failed(
 				1,
 				"api-key",
 			),
@@ -232,7 +238,8 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: api-key: set SALAD_API_KEY to a working key, or remove it and run saladcloud login\n" + hGateway + hSSH + failed(
+			stderr: hReachable + "hint: api-key: set SALAD_API_KEY to a working key, or remove it and run saladcloud " +
+				"login\n" + hGateway + hSSH + failed(
 				1,
 				"api-key",
 			),
@@ -255,7 +262,8 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: api-key: check for quotes or stray characters in it\n" + hGateway + hSSH + failed(
+			stderr: hReachable + "hint: api-key: check for quotes or stray characters in " +
+				"it\n" + hGateway + hSSH + failed(
 				1,
 				"api-key",
 			),
@@ -302,7 +310,8 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: organization: to list yours, run saladcloud orgs list; to set one, run saladcloud use <org>\n" + hGateway + hSSH + failed(
+			stderr: hReachable + "hint: organization: to list yours, run saladcloud orgs list; to set one, run " +
+				"saladcloud use <org>\n" + hGateway + hSSH + failed(
 				1,
 				"organization",
 			),
@@ -321,7 +330,8 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: organization: your organizations: acme-prod, my-org; to set one, run saladcloud use <org>\n" + hGateway + hSSH + failed(
+			stderr: hReachable + "hint: organization: your organizations: acme-prod, my-org; to set one, run " +
+				"saladcloud use <org>\n" + hGateway + hSSH + failed(
 				1,
 				"organization",
 			),
@@ -344,7 +354,8 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: organization: to list yours, run saladcloud orgs list; fix or remove SALAD_ORGANIZATION\n" + hGateway + hSSH + failed(
+			stderr: hReachable + "hint: organization: to list yours, run saladcloud orgs list; fix or remove " +
+				"SALAD_ORGANIZATION\n" + hGateway + hSSH + failed(
 				1,
 				"organization",
 			),
@@ -363,7 +374,8 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: organization: your organizations: acme-prod, my-org; to switch, run saladcloud use <org>\n" + hGateway + hSSH + failed(
+			stderr: hReachable + "hint: organization: your organizations: acme-prod, my-org; to switch, run " +
+				"saladcloud use <org>\n" + hGateway + hSSH + failed(
 				1,
 				"organization",
 			),
@@ -386,7 +398,8 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: organization: it looks like a display name; use the name from the portal URL, the part after /organizations/\n" + hGateway + hSSH + failed(
+			stderr: hReachable + "hint: organization: it looks like a display name; use the name from the portal " +
+				"URL, the part after /organizations/\n" + hGateway + hSSH + failed(
 				1,
 				"organization",
 			),
@@ -417,7 +430,8 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: project: container group and queue commands warn each time; to choose one, set SALAD_PROJECT or run saladcloud use my-org/<project>\n" + hGateway + hSSH,
+			stderr: hReachable + "hint: project: container group and queue commands warn each time; to choose one, " +
+				"set SALAD_PROJECT or run saladcloud use my-org/<project>\n" + hGateway + hSSH,
 		},
 		{
 			id: "no project, no default",
@@ -431,7 +445,9 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: project: container groups and queues need one; create one at https://portal.salad.com/organizations/my-org/projects/new, then run saladcloud use my-org/<project>\n" + hGateway + hSSH,
+			stderr: hReachable + "hint: project: container groups and queues need one; create one at " +
+				"https://portal.salad.com/organizations/my-org/projects/new, then run saladcloud use " +
+				"my-org/<project>\n" + hGateway + hSSH,
 		},
 		{
 			id: "the saved project is another organization's",
@@ -452,7 +468,8 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: project: to choose one for acme-prod, run saladcloud use acme-prod/<project>\n" + hGateway + hSSH,
+			stderr: hReachable + "hint: project: to choose one for acme-prod, run saladcloud use " +
+				"acme-prod/<project>\n" + hGateway + hSSH,
 		},
 		{
 			id:   "the saved project not found",
@@ -468,7 +485,8 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: project: to switch, run saladcloud use my-org/<project>\n" + hGateway + hSSH + failed(
+			stderr: hReachable + "hint: project: to switch, run saladcloud use " +
+				"my-org/<project>\n" + hGateway + hSSH + failed(
 				1,
 				"project",
 			),
@@ -487,7 +505,8 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: project: fix or remove SALAD_PROJECT, or create it at https://portal.salad.com/organizations/my-org/projects/new\n" + hGateway + hSSH +
+			stderr: hReachable + "hint: project: fix or remove SALAD_PROJECT, or create it at " +
+				"https://portal.salad.com/organizations/my-org/projects/new\n" + hGateway + hSSH +
 				"warning: commands use SALAD_PROJECT (stagng) instead of the saved project (default)\n" + failed(
 				1,
 				"project",
@@ -511,7 +530,8 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: project: it looks like a display name; use the name from the portal URL, the part after /projects/\n" + hGateway + hSSH + failed(
+			stderr: hReachable + "hint: project: it looks like a display name; use the name from the portal URL, the " +
+				"part after /projects/\n" + hGateway + hSSH + failed(
 				1,
 				"project",
 			),
@@ -574,8 +594,10 @@ func TestDoctorRows(t *testing.T) {
 				rGateway,
 				rSSH,
 			),
-			stderr: hReachable + "hint: project: to choose one for acme-prod, run saladcloud use acme-prod/<project>\n" + hGateway + hSSH +
-				"warning: commands use SALAD_ORGANIZATION (acme-prod) instead of the saved organization (my-org). To remove the variable:\n" + removeOrgSteps,
+			stderr: hReachable + "hint: project: to choose one for acme-prod, run saladcloud use " +
+				"acme-prod/<project>\n" + hGateway + hSSH +
+				"warning: commands use SALAD_ORGANIZATION (acme-prod) instead of the saved organization (my-org). To " +
+				"remove the variable:\n" + removeOrgSteps,
 		},
 		{
 			id:   "two checks fail",
@@ -592,7 +614,8 @@ func TestDoctorRows(t *testing.T) {
 				rSSH,
 			),
 			stderr: "hint: config: fix or delete it, then run saladcloud login again\n" + hReachable +
-				"hint: api-key: run saladcloud login, or set SALAD_API_KEY; for the AI Gateway only, run saladcloud ai-gateway login\n" + hGateway + hSSH + failed(2, "config, api-key"),
+				"hint: api-key: run saladcloud login, or set SALAD_API_KEY; for the AI Gateway only, run saladcloud " +
+				"ai-gateway login\n" + hGateway + hSSH + failed(2, "config, api-key"),
 		},
 	}))
 }
@@ -666,7 +689,8 @@ func TestDoctorSSHRows(t *testing.T) {
 		for _, tc := range []struct{ os, hint string }{
 			{"windows", "add the OpenSSH Client optional feature in Windows Settings, then open a new terminal"},
 			{"darwin", "macOS includes it at /usr/bin/ssh; check that /usr/bin is on your PATH"},
-			{"linux", "install your distribution's OpenSSH client (openssh-client on Debian and Ubuntu, openssh-clients on Fedora)"},
+			{"linux", "install your distribution's OpenSSH client (openssh-client on Debian and Ubuntu, " +
+				"openssh-clients on Fedora)"},
 		} {
 			runBranches(t, []branchCase{
 				{

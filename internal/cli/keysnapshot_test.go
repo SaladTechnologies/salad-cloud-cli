@@ -168,7 +168,8 @@ func TestJSONKeySnapshot(t *testing.T) {
 	// A Windows checkout may hold the golden file with CRLF endings.
 	if w := strings.ReplaceAll(string(want), "\r\n", "\n"); w != got {
 		t.Errorf("the JSON key paths changed (an SDK bump or a CLI result type). Review the difference, record it in "+
-			"CHANGELOG.md, and regenerate: go test ./internal/cli -run TestJSONKeySnapshot -update-keys\n%s", lineDiff(w, got))
+			"CHANGELOG.md, and regenerate: go test ./internal/cli -run TestJSONKeySnapshot "+
+			"-update-keys\n%s", lineDiff(w, got))
 	}
 }
 

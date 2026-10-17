@@ -58,8 +58,10 @@ func TestShadowedFlagSaysWhy(t *testing.T) {
 		args []string
 		want string
 	}{
-		{[]string{"gpus", "list", "--project", "default"}, "gpus list is organization-scoped and takes no --project; run saladcloud gpus list"},
-		{[]string{"use", "my-org", "--org", "acme-prod"}, "use takes neither --org nor --project; run saladcloud use <org>[/<project>]"},
+		{[]string{"gpus", "list", "--project", "default"}, "gpus list is organization-scoped and takes no --project; " +
+			"run saladcloud gpus list"},
+		{[]string{"use", "my-org", "--org", "acme-prod"}, "use takes neither --org nor --project; run saladcloud use " +
+			"<org>[/<project>]"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			_, err := runRoot(t, tc.args...)
@@ -95,7 +97,9 @@ func TestEveryCommandIsClassified(t *testing.T) {
 		class, ok := classes[top.Name()]
 		if !ok {
 			t.Errorf(
-				"%s is not classified: add it to this table and, if it reads no organization or project, to contextFreeCommands or orgScoped",
+				"%s is not classified: add it to this table and, if it reads no organization or project, to "+
+					"contextFreeCommands "+
+					"or orgScoped",
 				top.Name(),
 			)
 			continue

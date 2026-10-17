@@ -20,8 +20,10 @@ func TestJobIDsMustBeFullUUIDs(t *testing.T) {
 	}{
 		{[]string{"queues", "jobs", "get", "c39e9f69", "--queue", "q1"}, "saladcloud queues jobs list --queue q1"},
 		{[]string{"queues", "jobs", "cancel", "c39e9f69", "--queue", "q1"}, "saladcloud queues jobs list --queue q1"},
-		{[]string{"inference", "jobs", "get", "c39e9f69", "--endpoint", "transcribe"}, "saladcloud inference jobs list --endpoint transcribe"},
-		{[]string{"inference", "jobs", "cancel", "c39e9f69", "--endpoint", "transcribe"}, "saladcloud inference jobs list --endpoint transcribe"},
+		{[]string{"inference", "jobs", "get", "c39e9f69", "--endpoint", "transcribe"}, "saladcloud inference jobs " +
+			"list --endpoint transcribe"},
+		{[]string{"inference", "jobs", "cancel", "c39e9f69", "--endpoint", "transcribe"}, "saladcloud inference jobs " +
+			"list --endpoint transcribe"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			stubAPI(t, make(map[string]string)) // any request would 404
@@ -116,7 +118,8 @@ func TestQueuesListSaysWhenEmpty(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if want := "no queues in my-org/default\nhint: to create one, run saladcloud queues create <name>\n"; stderr != want {
+	if want := "no queues in my-org/default\nhint: to create one, run saladcloud queues create " +
+		"<name>\n"; stderr != want {
 		t.Errorf("stderr = %q, want %q", stderr, want)
 	}
 }
