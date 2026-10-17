@@ -130,7 +130,12 @@ lint-powershell:
     {{ powershell-prelude }}
     $bad = $false
     foreach ($file in $files) {
-        $records = Invoke-ScriptAnalyzer -Path $file -Settings $settings
+        # PSScriptAnalyzer 1.25.0 throws "Object reference not set to an instance of an object" on install.ps1 when
+        # this preference is on together with Stop and strict mode; it reports normally with it off.
+        $records = & {
+            $PSNativeCommandUseErrorActionPreference = $false
+            Invoke-ScriptAnalyzer -Path $file -Settings $settings
+        }
         foreach ($record in $records | Sort-Object Line, Column) {
             $bad = $true
             $location = if ($record.Line) { "${file}:$($record.Line):$($record.Column)" } else { $file }
