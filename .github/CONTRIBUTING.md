@@ -59,8 +59,10 @@ Before starting on any code contribution, please discuss it with the team first 
 direction and the CLI's public contracts. Exit codes, JSON output shapes, and error kinds are depended on by scripts and
 agents, so changes to them are held to a high bar.
 
-The development workflow, layout, and contracts are documented in [`AGENTS.md`](../AGENTS.md). In short, a change is
-done when `go vet ./...`, `go test ./...` and `make lint` pass, and the docs and `CHANGELOG.md` reflect it.
+The development workflow, layout, and contracts are documented in [`AGENTS.md`](../AGENTS.md). To set up, install
+[mise](https://mise.jdx.dev), then run `mise install` (Go, just, the linters and formatters, at the pinned versions) and
+`npm ci` (prettier and cspell). In short, a change is done when `just ci` passes, and the docs and `CHANGELOG.md`
+reflect it.
 
 Additionally, please consider taking a moment to read Miguel de Icaza's blog post titled
 [Open Source Contribution Etiquette](https://tirania.org/blog/archive/2010/Dec-31.html) and Ilya Grigorik's blog post

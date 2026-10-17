@@ -8,12 +8,17 @@ choices and their reasons are under [Settled decisions](#settled-decisions) belo
 ## Build, test, verify
 
 ```sh
-make build        # cross-compiles into dist/ (windows-amd64, linux-amd64, darwin-arm64, darwin-amd64)
-make test         # offline suite: go test ./...
-make vet          # go vet ./...
-make fmt          # gofumpt and goimports (golangci-lint fmt), then prettier
-make lint         # golangci-lint, prettier --check, cspell; golangci-lint and Node from .tool-versions (mise install)
-make test-live    # live suite against the real API; needs SALAD_API_KEY and SALAD_ORGANIZATION (SALAD_PROJECT
+mise install      # the tools at the versions in mise.toml: Go, golangci-lint, govulncheck, go-licenses, just, Node,
+                  # PowerShell, ShellCheck, shfmt
+npm ci            # prettier and cspell, at the versions in package-lock.json
+just build        # cross-compiles into dist/ (windows-amd64, linux-amd64, darwin-arm64, darwin-amd64)
+just test         # offline suite, shuffled, with -race where cgo is available
+just vet          # go vet ./...
+just fmt          # golangci-lint fmt (gci, gofumpt, golines), PSScriptAnalyzer, shfmt, prettier
+just lint         # golangci-lint, go mod tidy -diff and verify, govulncheck, go-licenses, PSScriptAnalyzer,
+                  # ShellCheck, cspell
+just ci           # fmt-check, lint and test, as CI runs them
+just test-live    # live suite against the real API; needs SALAD_API_KEY and SALAD_ORGANIZATION (SALAD_PROJECT
                   # optional), spends money, fails without them. Optional: SALAD_CLI_TEST_REQUIRE_SSH=1 fails the ssh
                   # test instead of skipping it on a publickey denial, SALAD_AI_GATEWAY_API_KEY adds the
                   # AI Gateway test, SALAD_CLI_TEST_AUDIO=<short wav> and SALAD_CLI_TEST_PHRASE=<words in it> add
@@ -21,17 +26,17 @@ make test-live    # live suite against the real API; needs SALAD_API_KEY and SAL
                   # language_code and audio_stream_index test, SALAD_CLI_TEST_BIN=<path> tests another binary than dist/.
 ```
 
-A change is done when `go vet ./...`, `go test ./...` and `make lint` pass, `docs/` and the CHANGELOG reflect it, and
-anything that touches an API call has been exercised live (or the pull request says it has not). Lint settings live in
-`.golangci.yml`, `.prettierignore` (`AGENTS.md` and `docs/` keep their hand-wrapped compact tables) and `cspell.json`;
-add a project term to `dictionaries/salad-cloud-cli.txt`, and a deliberate misspelling in a test to
-`dictionaries/test-fixtures.txt`.
-CI (`.github/workflows/test.yml`) runs gofmt, vet, the offline suite (with `-race` on Linux and macOS), `make lint`,
-govulncheck, and a cross-build on Linux, macOS, and Windows; it does not run the live suite by decision. It runs on
+A change is done when `just ci` passes, `docs/` and the CHANGELOG reflect it, and anything that touches an API call
+has been exercised live (or the pull request says it has not). Lint settings live in `.golangci.yml`, `.prettierrc.yaml`
+and `.prettierignore` (`AGENTS.md` and `docs/` keep their hand-wrapped compact tables), `.shellcheckrc`,
+`PSScriptAnalyzerSettings.psd1` and `cspell.json`; add a project term to `dictionaries/salad-cloud-cli.txt`, and a
+deliberate misspelling in a test to `dictionaries/test-fixtures.txt`.
+CI (`.github/workflows/test.yml`) installs the `mise.toml` tools and runs `just vet`, `just test` and `just build` on
+Linux, macOS, and Windows, and `just fmt-check lint` on Linux; it does not run the live suite by decision. It runs on
 every push and pull request, and by hand with `gh workflow run test.yml` (`--ref <branch>` for another branch).
 Actions are pinned by commit SHA and Dependabot bumps them.
 
-Releasing: run `make test-live` with `SALAD_CLI_TEST_REQUIRE_SSH=1`, using the Windows build from a machine whose SSH
+Releasing: run `just test-live` with `SALAD_CLI_TEST_REQUIRE_SSH=1`, using the Windows build from a machine whose SSH
 key is registered on the account (so ssh and cp really run), open one `sftp` session by hand, run `test.yml` on the
 commit and see it pass, then push a `v*` tag. `.github/workflows/release.yml` checks that the binary's
 `version` matches the tag, then runs goreleaser (`.goreleaser.yaml`): reproducible archives for linux and darwin
@@ -318,7 +323,7 @@ Each of these was argued out; reopen one only with a reason the original did not
   document, which `--writable` gives without an editor or TTY.
 - **No standalone `wait` verb.** `--wait` on create/start/stop and the settle-by-default writes cover every poll shape
   so far; revisit only if a third shape appears.
-- **The live suite is not run in CI.** It needs an API key and spends money, so `make test-live` is a manual step before
+- **The live suite is not run in CI.** It needs an API key and spends money, so `just test-live` is a manual step before
   tagging.
 - **The CLI ships its own HTTP transport.** The SDK's transport validation rejects real responses (7-digit fractional
   timestamps, JSON nulls such as `current_state.description`); the SDK is used for types only. Regression tests are in
@@ -375,8 +380,8 @@ silently. Platform asks, evidence and internal locations stay out of this reposi
 
 ### Go
 
-- Run `just fmt-go` after editing Go code, and `just fmt-check-go`, `just lint-go`, and `just test-go` before calling the work done. Never run `gofmt`, `goimports`, or `go fmt` directly, they disagree with `.golangci.yaml`. Never run the formatting and linting tools directly with flags that override our configuration.
-- Fix every golangci-lint finding. A suppression is `//nolint:<linter> // <reason>` on the narrowest line, never a bare `//nolint`, a file-wide directive, or a `.golangci.yaml` exclusion.
+- Run `just fmt-go` after editing Go code, and `just fmt-check-go`, `just lint-go`, and `just test-go` before calling the work done. Never run `gofmt`, `goimports`, or `go fmt` directly, they disagree with `.golangci.yml`. Never run the formatting and linting tools directly with flags that override our configuration.
+- Fix every golangci-lint finding. A suppression is `//nolint:<linter> // <reason>` on the narrowest line, never a bare `//nolint`, a file-wide directive, or a `.golangci.yml` exclusion.
 - Add dependencies with `go get` then `go mod tidy`, and commit `go.mod` and `go.sum` together. A dependency's license must be on the justfile's allowlist. Developer tools go in `mise.toml`, never a `tool` directive.
 - Log with `log/slog` through a passed-in `*slog.Logger` and its `...Context` methods: attributes only, snake_case keys, lowercase constant messages.
 - Return errors wrapped with `%w` and match them with `errors.Is`/`errors.As`. Never `panic`; only `main` calls `os.Exit` or creates a root context, and tests use `t.Context()`.

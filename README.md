@@ -1,10 +1,12 @@
 # SaladCloud CLI
 
-> [!WARNING] **This is a beta release.** Expect bugs and changes: commands, flags, messages, exit codes and JSON output
-> may all still change, and some behavior will surprise you. Every change is listed in the [changelog](CHANGELOG.md),
-> and the [exit codes and JSON output](docs/guide.md#exit-codes-and-json-output) are the parts we work hardest to keep
-> stable. **Please [report anything that looks wrong](#reporting-issues)**; during the beta, those reports are the most
-> useful thing you can send us.
+<!-- prettier-ignore -->
+> [!WARNING]
+> **This is a beta release.** Expect bugs and changes: commands, flags, messages, exit codes and JSON output may all
+> still change, and some behavior will surprise you. Every change is listed in the [changelog](CHANGELOG.md), and the
+> [exit codes and JSON output](docs/guide.md#exit-codes-and-json-output) are the parts we work hardest to keep stable.
+> **Please [report anything that looks wrong](#reporting-issues)**; during the beta, those reports are the most useful
+> thing you can send us.
 
 A thin command-line wrapper over the [SaladCloud Public API](https://docs.salad.com/reference/api-reference), built for
 people, scripts, CI, and AI agents. Every command works non-interactively and exits with a documented code, and every
@@ -40,7 +42,8 @@ Other ways to install:
   attestation: `gh attestation verify <archive> --repo SaladTechnologies/salad-cloud-cli`.
 - **With Go 1.25 or later**, on any platform Go supports:
   `go install github.com/saladtechnologies/salad-cloud-cli/cmd/saladcloud@latest`
-- **From source:** `make build` (needs bash and Go) writes `dist/<os>-<arch>/saladcloud`.
+- **From source:** `just build` (needs bash, Go and [just](https://just.systems); `mise install` sets up both) writes
+  `dist/<os>-<arch>/saladcloud`.
 
 Run `saladcloud version` to confirm the install; it prints the version and commit you will want in any bug report.
 

@@ -394,9 +394,6 @@ vite.config.ts.timestamp-*
 # Codex
 .codex/
 
-# Claude Code
-.claude/
-
 # Gemini CLI
 .gemini/
 

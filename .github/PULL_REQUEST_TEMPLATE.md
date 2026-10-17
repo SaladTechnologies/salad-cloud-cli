@@ -9,7 +9,7 @@ Thanks for opening a pull request! Here are some tips:
 
 ## Checklist
 
-- [ ] `go vet ./...` and `go test ./...` pass, and `gofmt -l .` prints nothing
+- [ ] `just ci` passes (formatting, lint, and the offline tests)
 - [ ] `docs/` (and the README, if install or getting started changed) and `CHANGELOG.md` (under Unreleased) reflect the
       change
 - [ ] Anything that touches an API call was exercised live, or this pull request says it was not
