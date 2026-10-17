@@ -96,8 +96,9 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	orgFlag, _ := cmd.Flags().GetString("org")
 	projectFlag, _ := cmd.Flags().GetString("project")
 	d := &doctorRun{ctx: cmd.Context(), orgFlag: orgFlag, projectFlag: projectFlag}
-	rows := []checkResult{d.configRow(), d.reachableRow()}
-	rows = append(rows, d.apiKeyRow(), d.organizationRow(), d.projectRow(), d.gatewayRow(), d.sshRow())
+	rows := []checkResult{
+		d.configRow(), d.reachableRow(), d.apiKeyRow(), d.organizationRow(), d.projectRow(), d.gatewayRow(), d.sshRow(),
+	}
 
 	var failed []string
 	for _, r := range rows {

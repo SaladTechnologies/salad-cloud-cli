@@ -95,7 +95,7 @@ func stillSupplied(vars ...string) []override {
 // overrideNames is a document's env_overrides: the variables the warning
 // names, [] when none.
 func overrideNames(ovs []override) []string {
-	names := []string{}
+	names := make([]string, 0, len(ovs))
 	for _, o := range ovs {
 		names = append(names, o.setting.env)
 	}

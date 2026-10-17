@@ -214,7 +214,7 @@ func checkMachineStderr(t *testing.T, o outcome) {
 		t.Errorf("message %q: want one non-empty line", msg)
 	}
 	t.Run("five keys", func(t *testing.T) {
-		var keys []string
+		keys := make([]string, 0, len(doc))
 		for k := range doc {
 			keys = append(keys, k)
 		}
@@ -275,7 +275,7 @@ func credentialCases() []credentialCase {
 		Project:       "default",
 		GatewayAPIKey: testOtherGatewayKey,
 	}
-	var cases []credentialCase
+	var cases []credentialCase                                  //nolint:prealloc // built by several appends; a count would only drift
 	for _, key := range []string{testAPIKey, testOtherAPIKey} { // accepted, rejected
 		cases = append(
 			cases,
@@ -542,7 +542,7 @@ func TestConfigWritesNameOverridingVariables(t *testing.T) {
 						named[v] = true
 					}
 				}
-				var got []string
+				got := make([]string, 0, len(named))
 				for v := range named {
 					got = append(got, v)
 				}

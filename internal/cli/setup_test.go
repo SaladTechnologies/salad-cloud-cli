@@ -318,8 +318,9 @@ func TestReadKeys(t *testing.T) {
 // does not read an empty answer; a \n on its own still ends a line.
 func TestReadKeysCRLF(t *testing.T) {
 	k := &keyReader{r: strings.NewReader("key\r\nmy-org\r\n\nnext\r")}
-	var got []string
-	for range 4 {
+	const lines = 4
+	got := make([]string, 0, lines)
+	for range lines {
 		line, err := k.readLine(io.Discard)
 		if err != nil {
 			t.Fatal(err)

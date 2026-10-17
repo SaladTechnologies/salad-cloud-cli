@@ -123,15 +123,16 @@ func TestKeyLikeSavedNames(t *testing.T) {
 		t.Errorf("config set: exit %d, saved %q\n%s", o.code, o.config.Organization, o.stderr)
 	}
 	saved := &config.File{APIKey: k, Organization: k, Project: "staging"}
-	var outs []outcome
-	for _, args := range [][]string{
+	commands := [][]string{
 		{"config", "list"},
 		{"config", "list", "-o", "json"},
 		{"logout"},
 		{"logout", "-o", "json"},
 		{"cg", "list", "--org", "my-org"},
 		{"doctor", "--org", "my-org"},
-	} {
+	}
+	outs := make([]outcome, 0, len(commands))
+	for _, args := range commands {
 		o := session{args: args, saved: saved}.run(t)
 		outs = append(outs, o)
 		if strings.Contains(o.all(), k) {

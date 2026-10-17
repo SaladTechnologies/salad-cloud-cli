@@ -80,7 +80,7 @@ func (d cfgDir) path() string { return filepath.Join(string(d), "config.json") }
 // one.
 func (d cfgDir) run(t *testing.T, env map[string]string, stdin string, args ...string) result {
 	t.Helper()
-	cmd := exec.Command(binPath(t), args...)
+	cmd := exec.CommandContext(t.Context(), binPath(t), args...)
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
 		if !slices.ContainsFunc(setupVars, func(v string) bool { return strings.EqualFold(v, name) }) {
@@ -88,7 +88,7 @@ func (d cfgDir) run(t *testing.T, env map[string]string, stdin string, args ...s
 		}
 	}
 	cmd.Env = append(cmd.Env, "SALAD_CLI_CONFIG_DIR="+string(d))
-	var names []string
+	names := make([]string, 0, len(env))
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 		names = append(names, k)
@@ -493,7 +493,7 @@ func TestSetupDoctor(t *testing.T) {
 	}
 	machineStderr(t, r)
 	rows := doctorRows(t, r)
-	var names []string
+	names := make([]string, 0, len(rows))
 	for _, row := range rows {
 		names = append(names, row["name"].(string))
 		if _, ok := row["hint"]; !ok {

@@ -98,7 +98,7 @@ type result struct {
 // are assertions here, not accidents.
 func runEnv(t *testing.T, extraEnv map[string]string, args ...string) result {
 	t.Helper()
-	cmd := exec.Command(binPath(t), args...)
+	cmd := exec.CommandContext(t.Context(), binPath(t), args...)
 	cmd.Env = os.Environ()
 	for k, v := range extraEnv {
 		cmd.Env = append(cmd.Env, k+"="+v)

@@ -104,7 +104,7 @@ func nearNames(parent *cobra.Command, word string) []string {
 		}
 		switch {
 		case d < best:
-			best, paths = d, []string{sub.CommandPath()}
+			best, paths = d, append(paths[:0], sub.CommandPath())
 		case d == best:
 			paths = append(paths, sub.CommandPath())
 		}

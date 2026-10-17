@@ -76,8 +76,12 @@ func TestRejectUnknownsSingleNovelDoesNotRepeat(t *testing.T) {
 }
 
 func TestRejectUnknownsGetResponseTellLeads(t *testing.T) {
-	var us []input.Unknown
-	for _, p := range []string{"id", "create_time", "update_time", "version", "pending_change", "current_state", "organization_name", "project_name", "container.hash", "container.size", "name", "autostart_policy", "restart_policy", "priority"} {
+	paths := []string{
+		"id", "create_time", "update_time", "version", "pending_change", "current_state", "organization_name",
+		"project_name", "container.hash", "container.size", "name", "autostart_policy", "restart_policy", "priority",
+	}
+	us := make([]input.Unknown, 0, len(paths))
+	for _, p := range paths {
 		us = append(us, input.Unknown{Desc: `unknown field "` + p + `"`, Path: p})
 	}
 	// The diagnosis and the command to start from are the whole message.

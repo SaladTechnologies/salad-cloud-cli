@@ -60,7 +60,7 @@ func TestParseCRLF(t *testing.T) {
 }
 
 func versions(rs []Release) string {
-	var v []string
+	v := make([]string, 0, len(rs))
 	for _, r := range rs {
 		v = append(v, r.Version)
 	}

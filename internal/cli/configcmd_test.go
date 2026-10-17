@@ -51,7 +51,7 @@ func TestConfigListResultStableJSONShape(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	var keys []string
+	keys := make([]string, 0, len(doc.Items))
 	for _, item := range doc.Items {
 		var key string
 		_ = json.Unmarshal(item["key"], &key)

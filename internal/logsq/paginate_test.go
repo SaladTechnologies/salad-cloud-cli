@@ -49,7 +49,7 @@ func collectEmit(got *[]Entry) func(Entry) error {
 }
 
 func texts(entries []Entry) []string {
-	var out []string
+	out := make([]string, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, e.Text)
 	}
@@ -357,8 +357,9 @@ func realisticFetcher(all []Entry) Fetcher {
 // skipped the entries emitted in between, so the total depended on the page
 // size. Every page size must now return every entry exactly once, in order.
 func TestFetchWindowResumesFromEmissionTimeNotPageMaxTime(t *testing.T) {
-	var all []Entry
-	for i := range 47 {
+	const total = 47
+	all := make([]Entry, 0, total)
+	for i := range total {
 		emitted := winStart.Add(time.Duration(i) * 400 * time.Millisecond)
 		received := emitted.Add(1500 * time.Millisecond)
 		all = append(
