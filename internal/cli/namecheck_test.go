@@ -89,15 +89,7 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 		t.Errorf("whoami json: organization %v, organization_found %v", doc["organization"], doc["organization_found"])
 	}
 	d := session{args: []string{"doctor", "-o", "json"}, saved: saved, env: env}.run(t)
-	items := asType[[]any](d.document(t)["items"])
-	shown := false
-	for _, it := range items {
-		if row := asType[map[string]any](it); row["name"] == "organization" {
-			shown = row["status"] == "fail" &&
-				row["detail"] == "(from SALAD_ORGANIZATION) looks like an API key, not an organization name"
-		}
-	}
-	if !shown {
+	if !doctorFailsKeyLikeOrganization(t, &d) {
 		t.Errorf("doctor: %s", d.stdout)
 	}
 	// A variable warning after a config write hides it too.
@@ -106,13 +98,34 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 		t.Errorf("use: stderr\n%s", u.stderr)
 	}
 	for _, r := range []outcome{o, j, d, u} {
-		if strings.Contains(r.all(), k) {
-			t.Errorf("the key was printed:\n%s", r.all())
+		checkKeyNeitherShownNorSent(t, k, &r)
+	}
+}
+
+// doctorFailsKeyLikeOrganization reports whether the json doctor run d's last organization row fails because
+// SALAD_ORGANIZATION looks like an API key.
+func doctorFailsKeyLikeOrganization(t *testing.T, d *outcome) bool {
+	t.Helper()
+	items := asType[[]any](d.document(t)["items"])
+	shown := false
+	for _, it := range items {
+		if row := asType[map[string]any](it); row["name"] == "organization" {
+			shown = row["status"] == "fail" &&
+				row["detail"] == "(from SALAD_ORGANIZATION) looks like an API key, not an organization name"
 		}
-		for _, req := range r.api.Requests() {
-			if strings.Contains(req, k) {
-				t.Errorf("the key was sent in a request path: %s", req)
-			}
+	}
+	return shown
+}
+
+// checkKeyNeitherShownNorSent checks that the run r printed the key k nowhere and sent it in no request path.
+func checkKeyNeitherShownNorSent(t *testing.T, k string, r *outcome) {
+	t.Helper()
+	if strings.Contains(r.all(), k) {
+		t.Errorf("the key was printed:\n%s", r.all())
+	}
+	for _, req := range r.api.Requests() {
+		if strings.Contains(req, k) {
+			t.Errorf("the key was sent in a request path: %s", req)
 		}
 	}
 }
@@ -195,10 +208,7 @@ func TestFlagsACommandDoesNotRead(t *testing.T) {
 		t.Errorf("quotas get --org: exit %d\n%s", o.code, o.stderr)
 	}
 	walkTree(app.root, func(c *cobra.Command) {
-		top := c
-		for top.Parent() != nil && top.Parent() != app.root {
-			top = top.Parent()
-		}
+		top := namecheckTopCommand(app.root, c)
 		if top == app.root || !contextFreeCommands()[top.Name()] {
 			return
 		}
@@ -206,4 +216,13 @@ func TestFlagsACommandDoesNotRead(t *testing.T) {
 			t.Errorf("%s offers --org or --project, which it never reads", c.CommandPath())
 		}
 	})
+}
+
+// namecheckTopCommand is the top-level command c sits under (c itself when it is one), or root for root.
+func namecheckTopCommand(root, c *cobra.Command) *cobra.Command {
+	top := c
+	for top.Parent() != nil && top.Parent() != root {
+		top = top.Parent()
+	}
+	return top
 }

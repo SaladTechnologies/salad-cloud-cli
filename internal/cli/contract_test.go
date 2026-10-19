@@ -29,22 +29,27 @@ func TestCpErrorDocument(t *testing.T) {
 					deps: func(d *Deps) { d.SFTPProgram = os.Args[0] },
 				}.run(t)
 				checkMachineStderr(t, o)
-				if fake == "ok" {
-					if o.code != 0 {
-						t.Errorf("%s %s: exit %d\n%s", src, mode, o.code, o.stderr)
-					}
-					continue
-				}
-				doc, err := o.errorDocument()
-				if err != nil || o.code != 1 || doc["kind"] != "child_exit" ||
-					!strings.HasSuffix(
-						assertAs[string](t, doc["message"]),
-						`exited with status 1; remote open("/etc/hostname"): Permission denied`,
-					) {
-					t.Errorf("%s %s: exit %d, document %v (%v)", src, mode, o.code, doc, err)
+				if fake != "ok" {
+					checkCpChildExit(t, src+" "+mode, &o)
+				} else if o.code != 0 {
+					t.Errorf("%s %s: exit %d\n%s", src, mode, o.code, o.stderr)
 				}
 			}
 		}
+	}
+}
+
+// checkCpChildExit checks the outcome of the cp run named id, whose sftp failed: exit 1 with a child_exit error
+// document that ends with sftp's last line.
+func checkCpChildExit(t *testing.T, id string, o *outcome) {
+	t.Helper()
+	doc, err := o.errorDocument()
+	if err != nil || o.code != 1 || doc["kind"] != "child_exit" ||
+		!strings.HasSuffix(
+			assertAs[string](t, doc["message"]),
+			`exited with status 1; remote open("/etc/hostname"): Permission denied`,
+		) {
+		t.Errorf("%s: exit %d, document %v (%v)", id, o.code, doc, err)
 	}
 }
 

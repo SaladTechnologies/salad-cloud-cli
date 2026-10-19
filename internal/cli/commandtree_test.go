@@ -51,6 +51,12 @@ func TestContainerGroupVerbsLiveUnderTheNoun(t *testing.T) {
 			t.Errorf("container-groups %s: not found (got %v, err %v)", v, c.Name(), err)
 		}
 	}
+	checkContainerGroupAliases(t, app)
+}
+
+// checkContainerGroupAliases checks that each of container-groups' aliases reaches its list command.
+func checkContainerGroupAliases(t *testing.T, app *testRun) {
+	t.Helper()
 	containerGroups, _, err := app.root.Find([]string{"container-groups"})
 	if err != nil {
 		t.Fatal(err)
@@ -230,19 +236,7 @@ func TestBareNounIsUsageError(t *testing.T) {
 		path := strings.Fields(p.CommandPath())[1:]
 		t.Run(strings.Join(path, " "), func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
-			out, err := app.runRoot(t, append(path, "-o", "json")...)
-			var cerr *clierr.Error
-			ok := errors.As(err, &cerr)
-			if !ok || cerr.Code != clierr.CodeUsage {
-				t.Fatalf("bare %v = %v, want a usage error", path, err)
-			}
-			if !strings.Contains(cerr.Message, "needs a verb: ") {
-				t.Errorf("message = %q, want it to list the verbs", cerr.Message)
-			}
-			if out != "" {
-				t.Errorf("stdout = %q, want empty", out)
-			}
+			checkBareNoun(t, app.clone(t), path)
 		})
 	}
 	if _, err := app.runRoot(
@@ -252,6 +246,24 @@ func TestBareNounIsUsageError(t *testing.T) {
 	); err == nil ||
 		!strings.Contains(err.Error(), `unknown command "bogus"`) {
 		t.Errorf("gpus bogus = %v, want an unknown-command usage error", err)
+	}
+}
+
+// checkBareNoun runs the parent command at path bare in json mode and checks it is a usage error that lists the
+// verbs, with nothing on stdout.
+func checkBareNoun(t *testing.T, app *testRun, path []string) {
+	t.Helper()
+	out, err := app.runRoot(t, append(path, "-o", "json")...)
+	var cerr *clierr.Error
+	ok := errors.As(err, &cerr)
+	if !ok || cerr.Code != clierr.CodeUsage {
+		t.Fatalf("bare %v = %v, want a usage error", path, err)
+	}
+	if !strings.Contains(cerr.Message, "needs a verb: ") {
+		t.Errorf("message = %q, want it to list the verbs", cerr.Message)
+	}
+	if out != "" {
+		t.Errorf("stdout = %q, want empty", out)
 	}
 }
 
@@ -333,14 +345,7 @@ func TestLeafPositionalAncestorsAsFlags(t *testing.T) {
 			t.Fatalf("%v: %v", tc.parent, err)
 		}
 		for _, verb := range p.Commands() {
-			f := verb.Flags().Lookup(tc.flag)
-			if f == nil {
-				t.Errorf("%s has no --%s", verb.CommandPath(), tc.flag)
-				continue
-			}
-			if req := f.Annotations[cobra.BashCompOneRequiredFlag]; len(req) == 0 || req[0] != "true" {
-				t.Errorf("%s --%s is not required", verb.CommandPath(), tc.flag)
-			}
+			checkAncestorFlagRequired(t, verb, tc.flag)
 		}
 	}
 	for _, path := range [][]string{{"logs"}, {"container-groups", "instances", "list"}, {"inference", "jobs", "list"}} {
@@ -357,6 +362,19 @@ func TestLeafPositionalAncestorsAsFlags(t *testing.T) {
 		if err := c.Args(c, []string{"my-app", "8a2f"}); err == nil {
 			t.Errorf("%s accepts the instance as a second positional", c.CommandPath())
 		}
+	}
+}
+
+// checkAncestorFlagRequired checks that verb has the ancestor flag --flag and marks it required.
+func checkAncestorFlagRequired(t *testing.T, verb *cobra.Command, flag string) {
+	t.Helper()
+	f := verb.Flags().Lookup(flag)
+	if f == nil {
+		t.Errorf("%s has no --%s", verb.CommandPath(), flag)
+		return
+	}
+	if req := f.Annotations[cobra.BashCompOneRequiredFlag]; len(req) == 0 || req[0] != "true" {
+		t.Errorf("%s --%s is not required", verb.CommandPath(), flag)
 	}
 }
 

@@ -83,26 +83,43 @@ func TestEveryCommandIsDocumented(t *testing.T) {
 	for _, c := range app.documentedLeaves() {
 		path := strings.TrimPrefix(c.CommandPath(), app.root.Name()+" ")
 		parent := strings.TrimSuffix(strings.TrimSuffix(path, c.Name()), " ")
-		found := false
-		for _, cell := range rows {
-			spans := backtickSpan.FindAllStringSubmatch(cell, -1)
-			if len(spans) == 0 {
-				continue
-			}
-			first := spans[0][1]
-			if parent != "" && !strings.HasPrefix(first, parent+" ") ||
-				parent == "" && !strings.HasPrefix(first+" ", c.Name()+" ") {
-				continue
-			}
-			if rowWords(cell)[c.Name()] {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.ContainsFunc(rows, func(cell string) bool { return docRowCovers(cell, parent, c.Name()) }) {
 			t.Errorf("%s has no row in docs/commands.md", path)
 		}
 	}
+}
+
+// docRowCovers reports whether the command table cell documents the command name under parent ("" for a top-level
+// command): its first span starts with parent (or with name itself at the top level), and its words include name.
+func docRowCovers(cell, parent, name string) bool {
+	spans := backtickSpan.FindAllStringSubmatch(cell, -1)
+	if len(spans) == 0 {
+		return false
+	}
+	first := spans[0][1]
+	if parent != "" && !strings.HasPrefix(first, parent+" ") ||
+		parent == "" && !strings.HasPrefix(first+" ", name+" ") {
+		return false
+	}
+	return rowWords(cell)[name]
+}
+
+// docRowCommandWords are the leading plain words of the cell's first span, which name the command; a last word with
+// "/" lists alternatives under the same parent. It is empty when the cell has no span or its span starts with no
+// plain word.
+func docRowCommandWords(cell string) []string {
+	spans := backtickSpan.FindAllStringSubmatch(cell, -1)
+	if len(spans) == 0 {
+		return nil
+	}
+	var words []string
+	for f := range strings.FieldsSeq(spans[0][1]) {
+		if strings.ContainsAny(f[:1], "<[-(.¦") || strings.Contains(f, "|") || strings.Contains(f, "¦") {
+			break
+		}
+		words = append(words, f)
+	}
+	return words
 }
 
 func TestEveryDocumentedCommandExists(t *testing.T) {
@@ -112,19 +129,7 @@ func TestEveryDocumentedCommandExists(t *testing.T) {
 	app.root.InitDefaultCompletionCmd()
 	rows, _ := commandDocRows(t)
 	for _, cell := range rows {
-		spans := backtickSpan.FindAllStringSubmatch(cell, -1)
-		if len(spans) == 0 {
-			continue
-		}
-		// The leading plain words of the first span name the command; a last
-		// word with "/" lists alternatives under the same parent.
-		var words []string
-		for f := range strings.FieldsSeq(spans[0][1]) {
-			if strings.ContainsAny(f[:1], "<[-(.¦") || strings.Contains(f, "|") || strings.Contains(f, "¦") {
-				break
-			}
-			words = append(words, f)
-		}
+		words := docRowCommandWords(cell)
 		if len(words) == 0 {
 			continue
 		}

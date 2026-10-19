@@ -98,22 +98,30 @@ func TestEveryLeafDeclaresItsOutputKind(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
 	seen := make(map[string]bool)
-	var walk func(c *cobra.Command)
-	walk = func(c *cobra.Command) {
-		if !c.HasSubCommands() && c.Runnable() && !c.Hidden && c.Name() != "help" && c.Parent() != nil &&
-			c.Parent().Name() != "completion" {
-			path := c.CommandPath()
-			seen[path] = true
-			if _, ok := outputKinds()[path]; !ok {
-				t.Errorf("%s declares no output kind: add it to outputKinds (an action carries action and ok)", path)
-			}
+	walkTree(app.root, func(c *cobra.Command) {
+		if !outputKindLeaf(c) {
+			return
 		}
-		for _, s := range c.Commands() {
-			walk(s)
+		path := c.CommandPath()
+		seen[path] = true
+		if _, ok := outputKinds()[path]; !ok {
+			t.Errorf("%s declares no output kind: add it to outputKinds (an action carries action and ok)", path)
 		}
-	}
-	walk(app.root)
+	})
+	checkOutputKindsStale(t, seen)
+	checkActionResultsCarryActionAndOK(t)
+}
 
+// outputKindLeaf reports whether c is a leaf command that must declare an output kind: runnable, visible, and
+// neither help nor a completion script.
+func outputKindLeaf(c *cobra.Command) bool {
+	return !c.HasSubCommands() && c.Runnable() && !c.Hidden && c.Name() != "help" && c.Parent() != nil &&
+		c.Parent().Name() != "completion"
+}
+
+// checkOutputKindsStale reports every path outputKinds lists that is not among the leaf commands seen.
+func checkOutputKindsStale(t *testing.T, seen map[string]bool) {
+	t.Helper()
 	var stale []string
 	for path := range outputKinds() {
 		if !seen[path] {
@@ -124,7 +132,12 @@ func TestEveryLeafDeclaresItsOutputKind(t *testing.T) {
 	for _, path := range stale {
 		t.Errorf("outputKinds lists %q, which is not a command", path)
 	}
+}
 
+// checkActionResultsCarryActionAndOK checks that the result of every command outputKinds declares an action encodes
+// the action and ok keys.
+func checkActionResultsCarryActionAndOK(t *testing.T) {
+	t.Helper()
 	for path, k := range outputKinds() {
 		if k.kind != kindAction {
 			continue
