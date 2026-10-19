@@ -56,14 +56,18 @@ notice in `--help`, `version`, and the `agent init` block; drop it there when th
 
 ## Layout
 
-- `cmd/saladcloud/main.go` — entry point; `os.Exit(cli.Execute())`, nothing else.
-- `internal/cli/` — one file per verb (`create.go`, `logs.go`, `agent.go`, …), registered from `init()` with
-  `Register(cmd)`. `root.go` owns global flags, the error-to-exit-code mapping, and `NewClient`; `orgScoped` and
-  `contextFree` keep `--project` (and `--org`) off commands that never read them. The setup helpers every verb
-  uses: `console.go` (`atTerminal()`, which counts `SALAD_CLI_NO_PROMPT` and `CI`, and the hidden read),
-  `prompt.go` (`ask` and `tell`, which write to the terminal device, falling back to stderr only when it cannot be
-  opened), `setup.go` (`errw()`, `say` and
-  `hintLine` for stderr status and `hint:` lines, which print in table mode only; `maskAPIKey`, `fromTag`,
+- `cmd/saladcloud/main.go` — entry point: creates the root context (canceled on Ctrl-C or SIGTERM), runs
+  `cli.Run(ctx, cli.ProcessDeps())` and exits with its code; nothing else.
+- `internal/cli/` — one file per verb (`create.go`, `logs.go`, `agent.go`, …), each with an `addXxxCommands` method
+  that builds its commands for one run; `New` builds the whole tree from them, so nothing is registered at package
+  load. `app.go` holds `Deps`, everything a run takes from the process (arguments, streams, the environment as a
+  `config.Env`, the terminal, and the seams tests replace: the sftp program, ssh-keygen, the child environment), and
+  `App`, one run: its deps, the output printer, and the flags every command reads. `root.go` owns the global flags,
+  `Run` with the error-to-exit-code mapping, and `NewClient`; `orgScoped` and `contextFree` keep `--project` (and
+  `--org`) off commands that never read them. The setup helpers every verb uses, all `*App` methods: `console.go`
+  (`atTerminal()`, which counts `SALAD_CLI_NO_PROMPT` and `CI`, and the hidden read), `prompt.go` (`ask` and `tell`,
+  which write to the terminal device, falling back to stderr only when it cannot be opened), `setup.go` (`errw()`,
+  `say` and `hintLine` for stderr status and `hint:` lines, which print in table mode only; `maskAPIKey`, `fromTag`,
   `checkName`) and `envwarn.go` (`warnOverrides` and `env_overrides` for every command that writes the config
   file).
 - `internal/api/` — the CLI's own HTTP transport (`rest.go`) plus per-area calls. The generated SDK
@@ -345,28 +349,31 @@ Each of these was argued out; reopen one only with a reason the original did not
 - **Error kinds are a closed set.** Scripts switch on `kind`, so it is a contract like the exit codes: a `clierr.Kind`
   constant, never a literal or a kind derived from a status string, and a new failure mode maps onto an existing kind.
   `internal/clierr/kinds_test.go` walks every call site and checks the guide's table. `interrupted` is Ctrl-C during a
-  wait, a prompt or a request; a canceled request reads `<command> canceled` (`Execute` names it), while
+  wait, a prompt or a request; a canceled request reads `<command> canceled` (`Run` names it), while
   `logs --follow` and `--watch` end with exit 0.
 
 ## How to add or change a verb
 
-1. New file in `internal/cli/`, cobra command registered in `init()`. `RunE` must return a `*clierr.Error` (wrap
-   anything else with `wrapErr`) so `Execute` maps it to the right exit code instead of reporting a usage error.
-2. Render through `output.Emit(v, tableFn)` (or `output.Stream` for line-oriented output). Define a result struct with
+1. New file in `internal/cli/` with an `(app *App) addXxxCommands(parent)` method that `New` calls. The command's flags
+   bind to the fields of an options struct the command owns (never read back by name), and code that needs the run
+   is an `*App` method. `RunE` must return a `*clierr.Error` (wrap anything else with `wrapErr`) so `Run` maps it to
+   the right exit code instead of reporting a usage error.
+2. Render through `app.printer.Emit(v, tableFn)` (or `Stream` for line-oriented output). Define a result struct with
    json tags for every key, no `omitempty`; pointer types for values that can be unset. A verb that emits an SDK type
    directly gets the key fill from `output` for free.
 3. Tests in the same package: unit tests for the pure logic, plus a JSON-shape test asserting every key is present and
    null when unset (see `configcmd_test.go`, `agent_test.go`); a newly emitted SDK type gets a case in
-   `TestSDKBackedJSONShape` (`shape_test.go`). Run commands through `rootCmd.SetArgs(...)` and capture `output.Stdout`
-   when the verb has no API dependency. Declare the new command's output kind in `outputkind_test.go`, add its result
-   to `keysnapshot_test.go` and regenerate the golden file
-   (`go test ./internal/cli -run TestJSONKeySnapshot -update-keys`), and give it a row in docs/commands.md
-   (`docscommands_test.go` checks both directions and the alias table). A verb that prints to stderr, prompts, or
-   writes the config file also gets a case in `invariants_test.go`'s lists (the error document and json-mode
-   stderr, no credential in any output, the override warning), which nothing adds for you. Status lines go
-   through `say`/`hintLine` and prompts through `ask`/`tell` (a direct `os.Stderr` write must be table-mode only), and
-   whether a person can be asked is `atTerminal()`, which counts `CI` and `SALAD_CLI_NO_PROMPT`; `term.IsTerminal` is for
-   what a stream is (watch's stdout), so json mode and CI stay quiet.
+   `TestSDKBackedJSONShape` (`shape_test.go`). Run a command line through `newTestRun(t)` and its `runRoot` (a fresh
+   tree on fake deps whose environment is a map the test sets with `setenv`), or a harness `session` for the whole run
+   against the fake API (`harness_test.go`); every test and subtest calls `t.Parallel()`, and none sets the process
+   environment. Declare the new command's output kind in `outputkind_test.go`, add its result to `keysnapshot_test.go`
+   and regenerate the golden file (`go test ./internal/cli -run TestJSONKeySnapshot -update-keys`), and give it a row in
+   docs/commands.md (`docscommands_test.go` checks both directions and the alias table). A verb that prints to stderr,
+   prompts, or writes the config file also gets a case in `invariants_test.go`'s lists (the error document and json-mode
+   stderr, no credential in any output, the override warning), which nothing adds for you. Status lines go through
+   `say`/`hintLine` and prompts through `ask`/`tell` (a direct write to `app.errw()` must be table-mode only), and
+   whether a person can be asked is `atTerminal()`, which counts `CI` and `SALAD_CLI_NO_PROMPT`; `term.IsTerminal` is
+   for what a stream is (watch's stdout), so json mode and CI stay quiet.
 4. If it calls the API, add a case to `internal/livetest` and run it before tagging.
 5. Update `docs/commands.md` (plus a section in `docs/guide.md` if the verb has semantics), the CHANGELOG, and
    `internal/agentdoc` only if the CLI's public contract for agents changed. CHANGELOG entries go under
@@ -383,13 +390,25 @@ silently. Platform asks, evidence and internal locations stay out of this reposi
 
 ### Go
 
-- Run `just fmt-go` after editing Go code, and `just fmt-check-go`, `just lint-go`, and `just test-go` before calling the work done. Never run `gofmt`, `goimports`, or `go fmt` directly, they disagree with `.golangci.yml`. Never run the formatting and linting tools directly with flags that override our configuration.
-- Fix every golangci-lint finding. A suppression is `//nolint:<linter> // <reason>` on the narrowest line, never a bare `//nolint`, a file-wide directive, or a `.golangci.yml` exclusion.
-- Add dependencies with `go get` then `go mod tidy`, and commit `go.mod` and `go.sum` together. A dependency's license must be on the justfile's allowlist. Developer tools go in `mise.toml`, never a `tool` directive.
-- Log with `log/slog` through a passed-in `*slog.Logger` and its `...Context` methods: attributes only, snake_case keys, lowercase constant messages.
-- Return errors wrapped with `%w` and match them with `errors.Is`/`errors.As`. Never `panic`; only `main` calls `os.Exit` or creates a root context, and tests use `t.Context()`.
+- Run `just fmt-go` after editing Go code, and `just fmt-check-go`, `just lint-go`, and `just test-go` before calling
+  the work done. Never run `gofmt`, `goimports`, or `go fmt` directly, they disagree with `.golangci.yml`. Never run the
+  formatting and linting tools directly with flags that override our configuration.
+- Fix every golangci-lint finding. A suppression is `//nolint:<linter> // <reason>` on the narrowest line, never a bare
+  `//nolint`, a file-wide directive, or a `.golangci.yml` exclusion.
+- Add dependencies with `go get` then `go mod tidy`, and commit `go.mod` and `go.sum` together. A dependency's license
+  must be on the justfile's allowlist. Developer tools go in `mise.toml`, never a `tool` directive.
+- Diagnostic logging, should the CLI ever add any, goes through `log/slog` and a passed-in `*slog.Logger` and its
+  `...Context` methods: attributes only, snake_case keys, lowercase constant messages. Results, `warning:`, `note:`
+  and `hint:` lines, the error document and `--debug` dumps are not logging and keep their own paths.
+- Return errors wrapped with `%w` and match them with `errors.Is`/`errors.As`. Never `panic`; only `main` calls
+  `os.Exit` or creates a root context, and tests use `t.Context()`.
+- No package state: a run's state lives on its `App`, constant tables are functions, and only regexps, sentinel errors
+  and the ldflags-stamped version variables are package variables. The environment is read through `config.Env`,
+  never `os.Getenv`.
 - Godoc every package and exported identifier. Wrap comments by hand at 120 columns; the formatter wraps code only.
-- Tests use the standard `testing` package and `github.com/google/go-cmp/cmp`, are table-driven, and call `t.Parallel()`.
+- Tests use the standard `testing` package and `github.com/google/go-cmp/cmp`, are table-driven, and call
+  `t.Parallel()`; none calls `t.Setenv`. A live test that creates resources on the account runs alone, under a
+  `//nolint:paralleltest` with that reason.
 
 ### PowerShell
 
