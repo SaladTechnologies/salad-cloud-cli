@@ -85,7 +85,7 @@ func (c *Client) ListQueueJobs(
 	ctx context.Context,
 	queue string,
 	limit int,
-) (jobs []queues.QueueJob, more, partial bool, cerr *clierr.Error) {
+) ([]queues.QueueJob, bool, bool, *clierr.Error) {
 	if err := c.requireOrgProject(); err != nil {
 		return nil, false, false, err
 	}
@@ -94,7 +94,8 @@ func (c *Client) ListQueueJobs(
 		maxPages = (max(limit, QueueJobsBudget) + queueJobsPageSize - 1) / queueJobsPageSize
 		maxPages = min(maxPages, queueJobsMaxPages)
 	}
-	jobs = []queues.QueueJob{}
+	jobs := make([]queues.QueueJob, 0, queueJobsPageSize)
+	more, partial := false, false
 	// One page at a time: reading several at once gains nothing, because the
 	// API answers one key's concurrent page reads one after another.
 	for page := 1; page <= maxPages; page++ {

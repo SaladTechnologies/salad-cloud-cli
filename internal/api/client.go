@@ -111,7 +111,11 @@ func New(res config.Resolved, opts Options) (*Client, *clierr.Error) {
 // by that name.
 func AssumedProjectMissing(org string) *clierr.Error {
 	return clierr.New(clierr.CodeUsage, clierr.KindUsage, `no valid project set: %s has no "default" project`, org).
-		WithHint("create one at https://portal.salad.com/organizations/%s/projects/new, then pass --project or run saladcloud use %s/<project>", org, org)
+		WithHint(
+			"create one at https://portal.salad.com/organizations/%s/projects/new, "+
+				"then pass --project or run saladcloud use %s/<project>",
+			org, org,
+		)
 }
 
 // RequireOrg returns a usage error if no organization is set.

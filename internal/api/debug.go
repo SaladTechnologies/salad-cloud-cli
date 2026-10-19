@@ -84,7 +84,8 @@ func (d debugger) closeFailed(err error) {
 
 // newHTTPClient is an HTTP client with timeout whose requests d reports. Its transport is a copy of the default one
 // (the same proxy and timeout settings) with a connection pool of its own, which nothing else can reset:
-// httptest.Server.Close drops the default transport's idle connections, cutting off a parallel test's request.
+// [net/http/httptest.Server.Close] drops the default transport's idle connections, cutting off a parallel test's
+// request.
 func newHTTPClient(timeout time.Duration, d debugger) *http.Client {
 	base := http.DefaultTransport
 	if t, ok := base.(*http.Transport); ok {
@@ -98,8 +99,9 @@ func newHTTPClient(timeout time.Duration, d debugger) *http.Client {
 // credential fields, header values and environment variable values in JSON
 // bodies, and signed S4 URL query strings are redacted.
 type debugTransport struct {
-	base http.RoundTripper
 	debugger
+
+	base http.RoundTripper
 }
 
 func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -142,6 +144,9 @@ func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return resp, nil
 }
 
+// bodyNotShown stands in for a request body --debug=body cannot read without consuming it.
+const bodyNotShown = "(body not shown)"
+
 // requestBodyForLog renders a request body for --debug=body without
 // consuming it. A multipart upload (a file to S4) is not shown.
 func (d debugTransport) requestBodyForLog(req *http.Request) string {
@@ -152,16 +157,16 @@ func (d debugTransport) requestBodyForLog(req *http.Request) string {
 		return "(file upload, not shown)"
 	}
 	if req.GetBody == nil {
-		return "(body not shown)"
+		return bodyNotShown
 	}
 	rc, err := req.GetBody()
 	if err != nil {
-		return "(body not shown)"
+		return bodyNotShown
 	}
 	defer d.closeBody(rc)
 	b, err := io.ReadAll(rc)
 	if err != nil {
-		return "(body not shown)"
+		return bodyNotShown
 	}
 	return redactBody(b)
 }
@@ -195,7 +200,8 @@ func sortedHeaderKeys(h http.Header) []string {
 // webhook secret, API keys, and the registry and log-sink credentials a
 // container group definition can carry.
 var credentialField = regexp.MustCompile(
-	`"(secret_key|api_key|password|personal_access_token|secret_access_key|access_key_id|service_key|api_token|ingestion_key|token)"\s*:\s*"(?:[^"\\]|\\.)*"`,
+	`"(secret_key|api_key|password|personal_access_token|secret_access_key|access_key_id|service_key|api_token|` +
+		`ingestion_key|token)"\s*:\s*"(?:[^"\\]|\\.)*"`,
 )
 
 // signedURL matches an S4 URL's query string, which holds its signing token.

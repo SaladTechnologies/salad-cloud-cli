@@ -51,15 +51,15 @@ func NewGateway(res config.Resolved, opts Options) (*Gateway, *clierr.Error) {
 		return nil, clierr.New(clierr.CodeAuth, clierr.KindAuth, "no AI Gateway key set").
 			WithHint("run saladcloud ai-gateway login in a terminal, or set SALAD_AI_GATEWAY_API_KEY")
 	}
-	return newGateway(res.GatewayAPIKey, opts), nil
+	return buildGateway(res.GatewayAPIKey, opts), nil
 }
 
 // NewPublicGateway builds a Gateway with no key, for the one public route:
 // the model list answers anyone the same.
-func NewPublicGateway(opts Options) *Gateway { return newGateway("", opts) }
+func NewPublicGateway(opts Options) *Gateway { return buildGateway("", opts) }
 
-// newGateway is a Gateway for key ("" for none) built with opts.
-func newGateway(key string, opts Options) *Gateway {
+// buildGateway is a Gateway for key ("" for none) built with opts.
+func buildGateway(key string, opts Options) *Gateway {
 	dbg := opts.debugger()
 	return &Gateway{
 		key:     key,
@@ -135,8 +135,8 @@ func (g *Gateway) CheckKey(ctx context.Context) (*GatewayModels, *clierr.Error) 
 
 // DefaultModel is the model the CLI uses when none is named: the first id in
 // sorted order. The gateway's own listing order changes between calls, and
-// a default that changes is not a default. ok is false for an empty listing.
-func DefaultModel(ids []string) (model string, ok bool) {
+// a default that changes is not a default. The second result is false for an empty listing.
+func DefaultModel(ids []string) (string, bool) {
 	if len(ids) == 0 {
 		return "", false
 	}
@@ -147,18 +147,24 @@ func DefaultModel(ids []string) (model string, ok bool) {
 
 // GatewayCompletion is the part of a chat completion the CLI reports.
 type GatewayCompletion struct {
-	Model   string `json:"model"`
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-			// Reasoning models return their thinking here and may leave
-			// Content empty when max_tokens runs out first.
-			Reasoning        string `json:"reasoning"`
-			ReasoningContent string `json:"reasoning_content"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	Usage map[string]any `json:"usage"`
+	Model   string          `json:"model"`
+	Choices []GatewayChoice `json:"choices"`
+	Usage   map[string]any  `json:"usage"`
+}
+
+// GatewayChoice is one choice of a chat completion.
+type GatewayChoice struct {
+	Message      GatewayMessage `json:"message"`
+	FinishReason string         `json:"finish_reason"`
+}
+
+// GatewayMessage is a choice's message.
+type GatewayMessage struct {
+	Content string `json:"content"`
+	// Reasoning models return their thinking here and may leave
+	// Content empty when max_tokens runs out first.
+	Reasoning        string `json:"reasoning"`
+	ReasoningContent string `json:"reasoning_content"`
 }
 
 // FinishReason returns the first choice's finish reason ("" when absent).

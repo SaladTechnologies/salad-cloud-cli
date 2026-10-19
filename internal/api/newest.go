@@ -12,8 +12,12 @@ import (
 // jobs come in job ID order. Their totals are null, so
 // a listing cannot jump to its last page either.
 
-// maxProbePage bounds the search for an oldest-first listing's last page.
-const maxProbePage = 1 << 20
+const (
+	// maxProbePage bounds the search for an oldest-first listing's last page.
+	maxProbePage = 1 << 20
+	// halves splits the bisected page range in two.
+	halves = 2
+)
 
 // newestPages reads an oldest-first paged listing from its end: it finds the
 // last page by doubling and then bisecting the page number (a page past the
@@ -24,7 +28,7 @@ const maxProbePage = 1 << 20
 func newestPages[T any](
 	fetch func(page int) ([]T, *clierr.Error),
 	pageSize, want int,
-) (items []T, more bool, cerr *clierr.Error) {
+) ([]T, bool, *clierr.Error) {
 	pages := make(map[int][]T)
 	get := func(p int) ([]T, *clierr.Error) {
 		if v, ok := pages[p]; ok {
@@ -40,6 +44,7 @@ func newestPages[T any](
 	if cerr != nil {
 		return nil, false, cerr
 	}
+	var items []T
 	p := last
 	for ; p >= 1 && len(items) < want; p-- {
 		v, cerr := get(p)
@@ -50,7 +55,7 @@ func newestPages[T any](
 			items = append(items, item)
 		}
 	}
-	more = p >= 1 || len(items) > want
+	more := p >= 1 || len(items) > want
 	if len(items) > want {
 		items = items[:want]
 	}
@@ -77,7 +82,7 @@ func lastPage[T any](get func(int) ([]T, *clierr.Error), pageSize int) (int, *cl
 		}
 	}
 	for s.empty-s.full > 1 {
-		if last, cerr := s.probe((s.full + s.empty) / 2); cerr != nil || last > 0 {
+		if last, cerr := s.probe((s.full + s.empty) / halves); cerr != nil || last > 0 {
 			return last, cerr
 		}
 	}

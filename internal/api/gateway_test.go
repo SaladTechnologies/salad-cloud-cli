@@ -28,7 +28,7 @@ func newTestGateway(t *testing.T, url string, opts ...Options) *Gateway {
 
 func TestNewGatewayNeedsItsOwnKey(t *testing.T) {
 	t.Parallel()
-	_, cerr := NewGateway(config.Resolved{APIKey: "salad-api-key"}, testOptions(nil))
+	_, cerr := NewGateway(config.Resolved{APIKey: "salad-api-key"}, testOptions(nil)) //nolint:gosec // a test value
 	if cerr == nil || cerr.Code != clierr.CodeAuth {
 		t.Fatalf("NewGateway without a gateway key = %v, want an auth error", cerr)
 	}
@@ -71,7 +71,8 @@ func modelsAndCompletionServer(t *testing.T) *httptest.Server {
 			respond(
 				t,
 				w,
-				`{"object":"list","data":[{"id":"qwen3.6-35b-a3b","object":"model","owned_by":"salad"},{"id":"gemma-4-26b","object":"model"}]}`,
+				`{"object":"list","data":[{"id":"qwen3.6-35b-a3b","object":"model","owned_by":"salad"},`+
+					`{"id":"gemma-4-26b","object":"model"}]}`,
 			)
 		case "/chat/completions":
 			checkCompletionRequest(t, r)
@@ -102,7 +103,7 @@ func checkCompletionRequest(t *testing.T, r *http.Request) {
 	}
 	// thinking=false must send the one switch the gateway honors.
 	kw := valueAs[map[string]any](req["chat_template_kwargs"])
-	if kw == nil || kw["enable_thinking"] != false {
+	if on, isBool := kw["enable_thinking"].(bool); !isBool || on {
 		t.Errorf("chat_template_kwargs = %v, want enable_thinking false", req["chat_template_kwargs"])
 	}
 }

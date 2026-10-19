@@ -14,15 +14,24 @@ import (
 
 func TestRedactText(t *testing.T) {
 	t.Parallel()
-	for in, want := range map[string]string{
-		`{"secret_key":"abc123=="}`:                                                     `{"secret_key":"REDACTED"}`,
-		`{"api_key": "salad_cloud_user_x", "name":"a"}`:                                 `{"api_key":"REDACTED", "name":"a"}`,
-		`{"registry_authentication":{"basic":{"username":"u","password":"p\"q"}}}`:      `{"registry_authentication":{"basic":{"username":"u","password":"REDACTED"}}}`,
-		`{"url":"https://storage-api.salad.com/organizations/o/files/a.wav?token=t-1"}`: `{"url":"https://storage-api.salad.com/organizations/o/files/a.wav?REDACTED"}`,
-		`https://api.salad.com/api/public/organizations/o/containers?page=2`:            `https://api.salad.com/api/public/organizations/o/containers?page=2`,
+	for _, tc := range []struct{ in, want string }{
+		{in: `{"secret_key":"abc123=="}`, want: `{"secret_key":"REDACTED"}`},
+		{in: `{"api_key": "salad_cloud_user_x", "name":"a"}`, want: `{"api_key":"REDACTED", "name":"a"}`},
+		{
+			in:   `{"registry_authentication":{"basic":{"username":"u","password":"p\"q"}}}`,
+			want: `{"registry_authentication":{"basic":{"username":"u","password":"REDACTED"}}}`,
+		},
+		{
+			in:   `{"url":"https://storage-api.salad.com/organizations/o/files/a.wav?token=t-1"}`,
+			want: `{"url":"https://storage-api.salad.com/organizations/o/files/a.wav?REDACTED"}`,
+		},
+		{
+			in:   `https://api.salad.com/api/public/organizations/o/containers?page=2`,
+			want: `https://api.salad.com/api/public/organizations/o/containers?page=2`,
+		},
 	} {
-		if got := redactText(in); got != want {
-			t.Errorf("redactText(%s)\n got %s\nwant %s", in, got, want)
+		if got := redactText(tc.in); got != tc.want {
+			t.Errorf("redactText(%s)\n got %s\nwant %s", tc.in, got, tc.want)
 		}
 	}
 }
@@ -102,7 +111,8 @@ func TestDebugBodiesRedactDefinitionSecrets(t *testing.T) {
 	}
 	def := `{"name":"g","container":{"image":"busybox",
 		"environment_variables":{"HF_TOKEN":"hf-secret"},
-		"logging":{"http":{"host":"logs.example.com","headers":[{"name":"Authorization","value":"Bearer sink-secret"}]}},
+		"logging":{"http":{"host":"logs.example.com",
+		"headers":[{"name":"Authorization","value":"Bearer sink-secret"}]}},
 		"registry_authentication":{"basic":{"username":"u","password":"reg-secret"}}},
 		"liveness_probe":{"http":{"path":"/","headers":[{"name":"X-Key","value":"probe-secret"}]}}}`
 	if _, cerr := c.CreateGroupRaw(t.Context(), json.RawMessage(def)); cerr != nil {
@@ -114,7 +124,9 @@ func TestDebugBodiesRedactDefinitionSecrets(t *testing.T) {
 			t.Errorf("%s reached the debug log:\n%s", secret, out)
 		}
 	}
-	for _, kept := range []string{`"HF_TOKEN":"REDACTED"`, `"name":"Authorization"`, `"username":"u"`, "debug: > {", "debug: < {"} {
+	for _, kept := range []string{
+		`"HF_TOKEN":"REDACTED"`, `"name":"Authorization"`, `"username":"u"`, "debug: > {", "debug: < {",
+	} {
 		if !strings.Contains(out, kept) {
 			t.Errorf("debug log lacks %s:\n%s", kept, out)
 		}
@@ -166,7 +178,7 @@ func TestDebugBodiesHideUploads(t *testing.T) {
 
 func TestRedactBody(t *testing.T) {
 	t.Parallel()
-	for in, want := range map[string]string{
+	for in, want := range map[string]string{ //nolint:gosec // redactor fixtures, not credentials
 		`{"headers":{"Authorization":"Bearer x"}}`: `{"headers":{"Authorization":"REDACTED"}}`,
 		`{"b":1,"a":[true,null,"<s>"]}`:            `{"a":[true,null,"<s>"],"b":1}`,
 		`not json "password":"p"`:                  `not json "password":"REDACTED"`,

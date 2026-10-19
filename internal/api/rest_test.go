@@ -175,7 +175,9 @@ func TestUpdateGroupRawRejectsEmptyPatch(t *testing.T) {
 	c := newRestTestClient(t, srv.URL)
 	// "{}" is included: a keyless object is a merge patch that changes
 	// nothing, and the API rejects it with a bare 400 — catch it client-side.
-	for _, patch := range []json.RawMessage{nil, {}, json.RawMessage("  \n"), json.RawMessage("null"), json.RawMessage("{}"), json.RawMessage(" { } ")} {
+	for _, patch := range []json.RawMessage{
+		nil, {}, json.RawMessage("  \n"), json.RawMessage("null"), json.RawMessage("{}"), json.RawMessage(" { } "),
+	} {
 		_, cerr := c.UpdateGroupRaw(t.Context(), "my-app", patch)
 		if cerr == nil {
 			t.Fatalf("UpdateGroupRaw(%q) = nil error, want invalid_input", patch)
@@ -313,14 +315,16 @@ func TestCreateGroupPreservesExplicitFalseOnTheWire(t *testing.T) {
 	if err := json.Unmarshal(gotBody, &sent); err != nil {
 		t.Fatalf("wire body is not JSON: %s", gotBody)
 	}
-	if got, ok := sent["autostart_policy"]; !ok || got != false {
+	got, ok := sent["autostart_policy"]
+	if on, isBool := got.(bool); !isBool || on {
 		t.Errorf("autostart_policy on the wire = %v (present=%t), want false", got, ok)
 	}
 	container := valueAs[map[string]any](sent["container"])
 	if container == nil {
 		t.Fatalf("no container on the wire: %s", gotBody)
 	}
-	if got, ok := container["image_caching"]; !ok || got != false {
+	got, ok = container["image_caching"]
+	if on, isBool := got.(bool); !isBool || on {
 		t.Errorf(
 			"container.image_caching on the wire = %v (present=%t), want false — an explicit false must not be dropped",
 			got,
@@ -336,7 +340,8 @@ func TestCreateGroupPreservesExplicitFalseOnTheWire(t *testing.T) {
 func TestCreateGroupRawSendsBodyVerbatim(t *testing.T) {
 	t.Parallel()
 	doc := json.RawMessage(
-		`{"name":"my-app","replicas":1,"future_field":{"nested":[1,2]},"container":{"image":"x","image_caching":false}}`,
+		`{"name":"my-app","replicas":1,"future_field":{"nested":[1,2]},` +
+			`"container":{"image":"x","image_caching":false}}`,
 	)
 	var gotBody []byte
 	var gotMethod string
@@ -419,7 +424,7 @@ func reportErr(t *testing.T, err error) {
 }
 
 // assertAs returns v as a T and fails the test when it holds something else.
-func assertAs[T any](t *testing.T, v any) T {
+func assertAs[T any](t *testing.T, v any) T { //nolint:ireturn // returns the caller's type parameter
 	t.Helper()
 	x, ok := v.(T)
 	if !ok {
@@ -430,7 +435,7 @@ func assertAs[T any](t *testing.T, v any) T {
 
 // assertAsOrError is assertAs for a handler: it reports a mismatch and returns
 // T's zero value.
-func assertAsOrError[T any](t *testing.T, v any) T {
+func assertAsOrError[T any](t *testing.T, v any) T { //nolint:ireturn // returns the caller's type parameter
 	t.Helper()
 	x, ok := v.(T)
 	if !ok {
@@ -441,7 +446,7 @@ func assertAsOrError[T any](t *testing.T, v any) T {
 
 // valueAs returns v as a T, or T's zero value when it holds something else
 // (a field missing from a decoded document).
-func valueAs[T any](v any) T {
+func valueAs[T any](v any) T { //nolint:ireturn // returns the caller's type parameter
 	if x, ok := v.(T); ok {
 		return x
 	}

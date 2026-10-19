@@ -59,12 +59,20 @@ func TestListInferenceEndpointsPagesWithNullTotal(t *testing.T) {
 	}
 }
 
+// jobListing is the order a job listing answers in.
+type jobListing int
+
+// The two job listings' orders.
+const (
+	inferenceListing jobListing = iota // oldest first
+	queueListing                       // job ID order
+)
+
 // jobServer serves total jobs in pages, total_size null and a page past the
 // end empty, the way both job listings answer. Job i was created i seconds
-// after a base time. byID lists them in job ID order, as the queue jobs
-// listing does (IDs scrambled against creation); otherwise oldest first, as
-// the inference jobs listing does.
-func jobServer(t *testing.T, total int, byID bool, requests *int32) *httptest.Server {
+// after a base time. The queue listing lists them in job ID order (IDs scrambled against creation); the inference
+// listing oldest first.
+func jobServer(t *testing.T, total int, listing jobListing, requests *int32) *httptest.Server {
 	t.Helper()
 	base := time.Date(2026, time.October, 1, 0, 0, 0, 0, time.UTC)
 	order := make([]int, total)
@@ -72,7 +80,7 @@ func jobServer(t *testing.T, total int, byID bool, requests *int32) *httptest.Se
 		order[i] = i
 	}
 	id := func(i int) string { return fmt.Sprintf("%08d", (i*7919)%10007) }
-	if byID {
+	if listing == queueListing {
 		slices.SortFunc(order, func(a, b int) int { return strings.Compare(id(a), id(b)) })
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +131,7 @@ func TestListInferenceJobsNewestFirst(t *testing.T) {
 		{1000, 5, 5, 15, true}, // 40 pages: a search, not 40 requests
 	} {
 		var n int32
-		c := newRestTestClient(t, jobServer(t, tc.total, false, &n).URL)
+		c := newRestTestClient(t, jobServer(t, tc.total, inferenceListing, &n).URL)
 		jobs, more, cerr := c.ListInferenceJobs(t.Context(), "transcribe", tc.limit)
 		if cerr != nil {
 			t.Fatal(cerr)
@@ -154,7 +162,7 @@ func TestListQueueJobsNewestFirst(t *testing.T) {
 		{10, 100, 10, 1, false},
 	} {
 		var n int32
-		c := newRestTestClient(t, jobServer(t, tc.total, true, &n).URL)
+		c := newRestTestClient(t, jobServer(t, tc.total, queueListing, &n).URL)
 		jobs, more, _, cerr := c.ListQueueJobs(t.Context(), "q", tc.limit)
 		if cerr != nil {
 			t.Fatal(cerr)
@@ -195,7 +203,7 @@ func TestListQueueJobsReadBudget(t *testing.T) {
 		{120, 100, 5, false},   // a short queue is read to the end
 	} {
 		var n int32
-		c := newRestTestClient(t, jobServer(t, tc.total, true, &n).URL)
+		c := newRestTestClient(t, jobServer(t, tc.total, queueListing, &n).URL)
 		jobs, _, partial, cerr := c.ListQueueJobs(t.Context(), "q", tc.limit)
 		if cerr != nil {
 			t.Fatal(cerr)

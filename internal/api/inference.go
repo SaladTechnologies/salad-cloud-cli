@@ -98,7 +98,7 @@ func (c *Client) ListInferenceJobs(
 	ctx context.Context,
 	endpoint string,
 	limit int,
-) (jobs []inferenceendpoints.InferenceEndpointJob, more bool, cerr *clierr.Error) {
+) ([]inferenceendpoints.InferenceEndpointJob, bool, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return nil, false, err
 	}
@@ -116,13 +116,13 @@ func (c *Client) ListInferenceJobs(
 		}
 		return coll.Items, nil
 	}
-	jobs, more, cerr = newestPages(fetch, inferencePageSize, jobsWanted(limit, InferenceJobsCap))
+	jobs, more, cerr := newestPages(fetch, inferencePageSize, jobsWanted(limit, InferenceJobsCap))
 	if cerr != nil {
 		return nil, false, cerr
 	}
 	sortNewestFirst(jobs, func(j *inferenceendpoints.InferenceEndpointJob) *string { return j.CreateTime })
 	if jobs == nil {
-		jobs = []inferenceendpoints.InferenceEndpointJob{}
+		jobs = []inferenceendpoints.InferenceEndpointJob{} //nolint:revive // known empty, not unknown: [] in JSON
 	}
 	return jobs, more, nil
 }

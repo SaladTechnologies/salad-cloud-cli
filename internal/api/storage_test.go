@@ -24,7 +24,7 @@ func TestUploadFile(t *testing.T) {
 		if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "multipart/form-data") {
 			t.Errorf("Content-Type = %q, want multipart/form-data", ct)
 		}
-		if err := r.ParseMultipartForm(1 << 20); err != nil {
+		if err := r.ParseMultipartForm(1 << 20); err != nil { //nolint:gosec // a test server reading the CLI's upload
 			t.Fatalf("ParseMultipartForm: %v", err)
 		}
 		for field, want := range map[string]string{"mimeType": "audio/mpeg", "sign": "true", "signatureExp": "86400"} {
@@ -45,7 +45,8 @@ func TestUploadFile(t *testing.T) {
 		respond(
 			t,
 			w,
-			`{"url": "https://storage-api.salad.com/organizations/my-org/files/saladcloud-cli/transcribe/meeting-123.mp3?token=abc"}`,
+			`{"url": "https://storage-api.salad.com/organizations/my-org/files/`+
+				`saladcloud-cli/transcribe/meeting-123.mp3?token=abc"}`,
 		)
 	}))
 	t.Cleanup(srv.Close)
@@ -66,7 +67,7 @@ func TestUploadFile(t *testing.T) {
 func TestUploadFileUnsigned(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseMultipartForm(1 << 20); err != nil {
+		if err := r.ParseMultipartForm(1 << 20); err != nil { //nolint:gosec // a test server reading the CLI's upload
 			t.Fatalf("ParseMultipartForm: %v", err)
 		}
 		if _, ok := r.MultipartForm.Value["sign"]; ok {

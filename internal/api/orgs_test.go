@@ -34,7 +34,8 @@ func TestOrganizationsListingPages(t *testing.T) {
 			respond(
 				t,
 				w,
-				`{"items":[{"organization_name":"a"},{"organization_name":"b"}],"total_count":3,"next_page_token":"t2"}`,
+				`{"items":[{"organization_name":"a"},{"organization_name":"b"}],`+
+					`"total_count":3,"next_page_token":"t2"}`,
 			)
 		case "t2":
 			respond(t, w, `{"items":[{"organization_name":"c"}],"next_page_token":""}`)

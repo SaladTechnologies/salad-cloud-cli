@@ -197,7 +197,7 @@ func TestMessageFromBody(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got, _ := messageFromBody(tt.status, []byte(tt.body)); got != tt.want {
+			if got := messageFromBody(tt.status, []byte(tt.body)).msg; got != tt.want {
 				t.Errorf("messageFromBody(%d, %q) = %q, want %q", tt.status, tt.body, got, tt.want)
 			}
 		})
@@ -262,7 +262,7 @@ func TestMessageFromBodyValidationErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got, _ := messageFromBody(tt.status, []byte(tt.body)); got != tt.want {
+			if got := messageFromBody(tt.status, []byte(tt.body)).msg; got != tt.want {
 				t.Errorf("messageFromBody(%d, %q) = %q, want %q", tt.status, tt.body, got, tt.want)
 			}
 		})
@@ -273,7 +273,7 @@ func TestMessageFromBodyValidationErrorsCapped(t *testing.T) {
 	t.Parallel()
 	long := strings.Repeat("y", 2000)
 	body := `{"title":"One or more validation errors occurred.","errors":{"Name":["` + long + `"]}}`
-	got, _ := messageFromBody(400, []byte(body))
+	got := messageFromBody(400, []byte(body)).msg
 	if len(got) > maxErrorMessageLen+len("...") {
 		t.Errorf("message length = %d, want <= %d", len(got), maxErrorMessageLen+len("..."))
 	}

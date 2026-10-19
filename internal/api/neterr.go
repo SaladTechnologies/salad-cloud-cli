@@ -54,7 +54,7 @@ func certWindowMessage(err error, now func() time.Time) (string, bool) {
 	where := ""
 	var uerr *url.Error
 	if errors.As(err, &uerr) {
-		where = fmt.Sprintf(`%s "%s": `, uerr.Op, uerr.URL)
+		where = fmt.Sprintf(`%s "%s": `, uerr.Op, uerr.URL) //nolint:gocritic // the URL as sent; %q would escape it
 	}
 	t := now().UTC()
 	switch {
