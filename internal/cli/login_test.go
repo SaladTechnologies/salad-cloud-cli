@@ -698,35 +698,9 @@ func TestLoginBranches(t *testing.T) {
 	for _, tc := range loginCases() {
 		t.Run(tc.id, func(t *testing.T) {
 			t.Parallel()
-			before := config.File{}
-			if tc.s.saved != nil {
-				before = *tc.s.saved
-			}
-			want := before
-			if tc.after != nil {
-				want = *tc.after
-			}
-
+			want := tc.configAfter()
 			o := withMode(tc.s, "table").run(t)
-			at := func(s string) string { return strings.ReplaceAll(s, o.configPath, "<path>") }
-			if o.code != tc.code {
-				t.Errorf("table: exit %d, want %d\nstderr:\n%s", o.code, tc.code, o.stderr)
-			}
-			if got := at(o.stdout); got != tc.stdout {
-				t.Errorf("table stdout:\n%s\nwant:\n%s", got, tc.stdout)
-			}
-			if got := at(o.stderr); got != tc.stderr {
-				t.Errorf("table stderr:\n%s\nwant:\n%s", got, tc.stderr)
-			}
-			if o.device != tc.device {
-				t.Errorf("terminal:\n%s\nwant:\n%s", o.device, tc.device)
-			}
-			if len(o.opened) != tc.opened {
-				t.Errorf("opened %v, want %d pages", o.opened, tc.opened)
-			}
-			if tc.s.rawConfig == "" && o.config != want {
-				t.Errorf("config file %+v, want %+v", o.config, want)
-			}
+			checkLoginTableRun(t, &tc, &o, want)
 
 			j := withMode(tc.s, "json").run(t)
 			if j.code != tc.code || j.device != tc.device {
@@ -734,49 +708,106 @@ func TestLoginBranches(t *testing.T) {
 			}
 			checkMachineStderr(t, j)
 			if tc.code != 0 {
-				doc, err := j.errorDocument()
-				if err != nil {
-					t.Fatalf("json: %v\n%s", err, j.stderr)
-				}
-				msg, hint := tableError(at(o.stderr))
-				atJ := func(s string) string { return strings.ReplaceAll(s, j.configPath, "<path>") }
-				if doc["kind"] != tc.kind || atJ(fmt.Sprint(doc["message"])) != msg ||
-					atJ(fmt.Sprint(doc["hint"])) != hint {
-					t.Errorf("json error %v; want kind %s, message %q, hint %q", doc, tc.kind, msg, hint)
-				}
-				var status any
-				if tc.status != 0 {
-					status = float64(tc.status)
-				}
-				if doc["http_status"] != status {
-					t.Errorf("json http_status = %v, want %v", doc["http_status"], status)
-				}
+				checkLoginErrorDocument(t, &tc, &o, &j)
 				return
 			}
-			doc := j.document(t)
-			wantOverrides := tc.overrides
-			if wantOverrides == nil {
-				wantOverrides = []string{}
-			}
-			var gotOverrides []string
-			for _, v := range assertAs[[]any](t, doc["env_overrides"]) {
-				gotOverrides = append(gotOverrides, assertAs[string](t, v))
-			}
-			slices.Sort(gotOverrides)
-			project := any(nil)
-			if want.Project != "" {
-				project = want.Project
-			}
-			if doc["organization"] != want.Organization || doc["project"] != project ||
-				doc["api_key"] != "****...H13m" ||
-				doc["api_key_saved"] != !tc.keyUnsaved ||
-				doc["action"] != "logged_in" ||
-				doc["ok"] != true ||
-				fmt.Sprint(gotOverrides) != fmt.Sprint(wantOverrides) ||
-				doc["config_path"] != j.configPath {
-				t.Errorf("json document %v", doc)
-			}
+			checkLoginDocument(t, &tc, &j, want)
 		})
+	}
+}
+
+// configAfter is the config file a case leaves: after, or the file it started with when after is nil.
+func (tc *loginCase) configAfter() config.File {
+	switch {
+	case tc.after != nil:
+		return *tc.after
+	case tc.s.saved != nil:
+		return *tc.s.saved
+	}
+	return config.File{}
+}
+
+// checkLoginTableRun checks a case's table-mode run: the exit, stdout and stderr (<path> for the config file), the
+// terminal, the pages opened and the config file afterward.
+func checkLoginTableRun(t *testing.T, tc *loginCase, o *outcome, want config.File) {
+	t.Helper()
+	at := func(s string) string { return strings.ReplaceAll(s, o.configPath, "<path>") }
+	if o.code != tc.code {
+		t.Errorf("table: exit %d, want %d\nstderr:\n%s", o.code, tc.code, o.stderr)
+	}
+	if got := at(o.stdout); got != tc.stdout {
+		t.Errorf("table stdout:\n%s\nwant:\n%s", got, tc.stdout)
+	}
+	if got := at(o.stderr); got != tc.stderr {
+		t.Errorf("table stderr:\n%s\nwant:\n%s", got, tc.stderr)
+	}
+	if o.device != tc.device {
+		t.Errorf("terminal:\n%s\nwant:\n%s", o.device, tc.device)
+	}
+	if len(o.opened) != tc.opened {
+		t.Errorf("opened %v, want %d pages", o.opened, tc.opened)
+	}
+	if tc.s.rawConfig == "" && o.config != want {
+		t.Errorf("config file %+v, want %+v", o.config, want)
+	}
+}
+
+// checkLoginErrorDocument checks a failing case's json-mode error document against the error and hint its
+// table-mode run printed (o), and the case's kind and http_status.
+func checkLoginErrorDocument(t *testing.T, tc *loginCase, o, j *outcome) {
+	t.Helper()
+	doc, err := j.errorDocument()
+	if err != nil {
+		t.Fatalf("json: %v\n%s", err, j.stderr)
+	}
+	msg, hint := tableError(strings.ReplaceAll(o.stderr, o.configPath, "<path>"))
+	atJ := func(s string) string { return strings.ReplaceAll(s, j.configPath, "<path>") }
+	if doc["kind"] != tc.kind || atJ(fmt.Sprint(doc["message"])) != msg ||
+		atJ(fmt.Sprint(doc["hint"])) != hint {
+		t.Errorf("json error %v; want kind %s, message %q, hint %q", doc, tc.kind, msg, hint)
+	}
+	var status any
+	if tc.status != 0 {
+		status = float64(tc.status)
+	}
+	if doc["http_status"] != status {
+		t.Errorf("json http_status = %v, want %v", doc["http_status"], status)
+	}
+}
+
+// checkLoginDocument checks a successful case's json-mode login document against the config file it leaves (want).
+func checkLoginDocument(t *testing.T, tc *loginCase, j *outcome, want config.File) {
+	t.Helper()
+	doc := j.document(t)
+	wantOverrides := tc.overrides
+	if wantOverrides == nil {
+		wantOverrides = []string{}
+	}
+	listed := assertAs[[]any](t, doc["env_overrides"])
+	gotOverrides := make([]string, 0, len(listed))
+	for _, v := range listed {
+		gotOverrides = append(gotOverrides, assertAs[string](t, v))
+	}
+	slices.Sort(gotOverrides)
+	if fmt.Sprint(gotOverrides) != fmt.Sprint(wantOverrides) {
+		t.Errorf("json env_overrides = %v, want %v", gotOverrides, wantOverrides)
+	}
+	project := any(nil)
+	if want.Project != "" {
+		project = want.Project
+	}
+	for key, v := range map[string]any{
+		"organization":  want.Organization,
+		"project":       project,
+		"api_key":       "****...H13m",
+		"api_key_saved": !tc.keyUnsaved,
+		"action":        "logged_in",
+		"ok":            true,
+		"config_path":   j.configPath,
+	} {
+		if doc[key] != v {
+			t.Errorf("json document %s = %v, want %v\n%v", key, doc[key], v, doc)
+		}
 	}
 }
 
