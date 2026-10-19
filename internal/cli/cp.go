@@ -65,18 +65,27 @@ func (app *App) parseRemoteSpec(arg string) (*remoteSpec, *clierr.Error) {
 		return nil, cerr
 	}
 	head, path, ok := strings.Cut(arg, ":")
-	if !ok {
-		return nil, nil
-	}
-	if len(head) == 1 && isASCIILetter(head[0]) {
-		return nil, nil // Windows drive letter
-	}
-	if strings.Contains(head, `\`) {
+	if !ok || cpLocalHead(head) {
 		return nil, nil
 	}
 	if head == "" || path == "" {
 		return nil, badRemotePath(arg)
 	}
+	return remoteSpecOf(arg, head, path)
+}
+
+// cpLocalHead reports whether head, the part of a cp argument before its first colon, makes the argument a local
+// path: a Windows drive letter, or anything with a backslash.
+func cpLocalHead(head string) bool {
+	if len(head) == 1 && isASCIILetter(head[0]) {
+		return true // Windows drive letter
+	}
+	return strings.Contains(head, `\`)
+}
+
+// remoteSpecOf splits the remote cp argument arg, head:path with neither part empty, into its group, instance prefix
+// and path.
+func remoteSpecOf(arg, head, path string) (*remoteSpec, *clierr.Error) {
 	parts := strings.Split(head, "/")
 	switch len(parts) {
 	case 1:
@@ -143,15 +152,27 @@ func (app *App) buildSFTPArgs(t sshTarget, user, identity, batchPath string) []s
 	return append(args, user+"@"+t.IP)
 }
 
+// cpOptions are the flags of 'container-groups cp'.
+type cpOptions struct {
+	user, identity string
+	recursive      bool
+}
+
 // addCpCommands adds cp.go's commands to the tree.
 func (app *App) addCpCommands(cg *cobra.Command) {
-	var (
-		user      string
-		identity  string
-		recursive bool
-	)
+	var o cpOptions
+	cpCmd := app.newCpCmd(&o)
+	cpCmd.Flags().
+		StringVar(&o.user, "user", "root", "SSH username; selects the container user, which the image must define (root always exists)")
+	cpCmd.Flags().StringVarP(&o.identity, "identity", "i", "", "identity (private key) file, passed through to sftp -i")
+	cpCmd.Flags().BoolVarP(&o.recursive, "recursive", "r", false, "copy directories recursively")
+	app.addHiddenGroupFlag(cpCmd)
+	cg.AddCommand(cpCmd)
+}
 
-	cpCmd := &cobra.Command{
+// newCpCmd is 'saladcloud container-groups cp <src> <dst>', its flags bound to o by addCpCommands.
+func (app *App) newCpCmd(o *cpOptions) *cobra.Command {
+	return &cobra.Command{
 		Use:   "cp <src> <dst>",
 		Short: "Copy files to or from an instance over SFTP",
 		Long: `Copy files between the local machine and a running instance over SFTP,
@@ -189,95 +210,124 @@ set it up, run saladcloud ssh-key setup.`,
   # Download a directory's contents into ./results
   saladcloud container-groups cp -r my-app:/outputs/. ./results`,
 		Args: cobra.ExactArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			srcSpec, cerr := app.parseRemoteSpec(args[0])
-			if cerr != nil {
-				return cerr
-			}
-			dstSpec, cerr := app.parseRemoteSpec(args[1])
-			if cerr != nil {
-				return cerr
-			}
-			if srcSpec != nil && dstSpec != nil {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "both sides are remote").
-					WithHint("give exactly one remote side, written as %s", remoteSpecSyntax)
-			}
-			if srcSpec == nil && dstSpec == nil {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "no remote side").
-					WithHint("give exactly one remote side, written as %s", remoteSpecSyntax)
-			}
-			upload := dstSpec != nil
-			spec, local := dstSpec, args[0]
-			if !upload {
-				spec, local = srcSpec, args[1]
-			}
-
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			collection, cerr := client.ListInstances(cmd.Context(), spec.Group)
-			if cerr != nil {
-				return groupNotFound(cerr, spec.Group, client.Org(), client.Project())
-			}
-			inst, cerr := pickInstance(app.errw(), collection.Instances, spec.Group, spec.InstancePrefix)
-			if cerr != nil {
-				return cerr
-			}
-			target, cerr := sshTargetOf(inst, spec.Group)
-			if cerr != nil {
-				return cerr
-			}
-
-			batch, err := os.CreateTemp("", "saladcloud-sftp-*.batch")
-			if err != nil {
-				return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot create the sftp batch file: %v", err)
-			}
-			defer func() {
-				if err := os.Remove(batch.Name()); err != nil {
-					fprintf(app.errw(), "warning: could not remove the sftp batch file %s: %v\n", batch.Name(), err)
-				}
-			}()
-			if _, err := batch.WriteString(buildSFTPBatch(upload, recursive, local, spec.Path)); err != nil {
-				err = errors.Join(err, batch.Close())
-				return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the sftp batch file: %v", err)
-			}
-			if err := batch.Close(); err != nil {
-				return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the sftp batch file: %v", err)
-			}
-
-			// sftp echoes its batch ("sftp> get ...") on stdout; in table
-			// mode that goes to stderr with its progress, so stdout carries
-			// the one result. In json and yaml mode stderr carries only
-			// warnings, notes and the error document, so sftp's output is
-			// held back, and its last line ends the error when it fails.
-			sftpArgs := app.buildSFTPArgs(target, user, app.resolveIdentity(identity), batch.Name())
-			var runErr *clierr.Error
-			if app.printer.Machine() {
-				runErr = app.runChildQuiet(app.SFTPProgram, sftpArgs)
-			} else {
-				runErr = app.runChildTo(app.errw(), app.SFTPProgram, sftpArgs)
-			}
-			if runErr != nil {
-				return runErr
-			}
-			v := cpResult{
-				Group:    spec.Group,
-				Instance: target.InstanceID,
-				Action:   "copied",
-				OK:       true,
-				Src:      args[0],
-				Dst:      args[1],
-			}
-			return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
-				w.Printf("Copied %s to %s (instance %s)\n", v.Src, v.Dst, v.Instance)
-			}))
-		},
+		RunE: func(cmd *cobra.Command, args []string) error { return app.runCp(cmd, args, o) },
 	}
-	cpCmd.Flags().
-		StringVar(&user, "user", "root", "SSH username; selects the container user, which the image must define (root always exists)")
-	cpCmd.Flags().StringVarP(&identity, "identity", "i", "", "identity (private key) file, passed through to sftp -i")
-	cpCmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "copy directories recursively")
-	app.addHiddenGroupFlag(cpCmd)
-	cg.AddCommand(cpCmd)
+}
+
+// runCp copies between the local path and the remote side of args, one sftp batch command.
+func (app *App) runCp(cmd *cobra.Command, args []string, o *cpOptions) error {
+	plan, cerr := app.cpPlanOf(args)
+	if cerr != nil {
+		return cerr
+	}
+	target, cerr := app.cpTarget(cmd, plan.spec)
+	if cerr != nil {
+		return cerr
+	}
+	batch, cerr := app.cpWriteBatch(buildSFTPBatch(plan.upload, o.recursive, plan.local, plan.spec.Path))
+	if cerr != nil {
+		return cerr
+	}
+	defer app.cpRemoveBatch(batch)
+
+	// sftp echoes its batch ("sftp> get ...") on stdout; in table
+	// mode that goes to stderr with its progress, so stdout carries
+	// the one result. In json and yaml mode stderr carries only
+	// warnings, notes and the error document, so sftp's output is
+	// held back, and its last line ends the error when it fails.
+	sftpArgs := app.buildSFTPArgs(target, o.user, app.resolveIdentity(o.identity), batch)
+	var runErr *clierr.Error
+	if app.printer.Machine() {
+		runErr = app.runChildQuiet(app.SFTPProgram, sftpArgs)
+	} else {
+		runErr = app.runChildTo(app.errw(), app.SFTPProgram, sftpArgs)
+	}
+	if runErr != nil {
+		return runErr
+	}
+	v := cpResult{
+		Group:    plan.spec.Group,
+		Instance: target.InstanceID,
+		Action:   "copied",
+		OK:       true,
+		Src:      args[0],
+		Dst:      args[1],
+	}
+	return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
+		w.Printf("Copied %s to %s (instance %s)\n", v.Src, v.Dst, v.Instance)
+	}))
+}
+
+// cpPlan is what a cp command line asks for: the remote side, the local path, and the direction.
+type cpPlan struct {
+	spec   *remoteSpec
+	local  string
+	upload bool
+}
+
+// cpPlanOf parses cp's two arguments, of which exactly one must be remote.
+func (app *App) cpPlanOf(args []string) (cpPlan, *clierr.Error) {
+	srcSpec, cerr := app.parseRemoteSpec(args[0])
+	if cerr != nil {
+		return cpPlan{}, cerr
+	}
+	dstSpec, cerr := app.parseRemoteSpec(args[1])
+	if cerr != nil {
+		return cpPlan{}, cerr
+	}
+	if srcSpec != nil && dstSpec != nil {
+		return cpPlan{}, clierr.New(clierr.CodeUsage, clierr.KindUsage, "both sides are remote").
+			WithHint("give exactly one remote side, written as %s", remoteSpecSyntax)
+	}
+	if srcSpec == nil && dstSpec == nil {
+		return cpPlan{}, clierr.New(clierr.CodeUsage, clierr.KindUsage, "no remote side").
+			WithHint("give exactly one remote side, written as %s", remoteSpecSyntax)
+	}
+	if dstSpec != nil {
+		return cpPlan{spec: dstSpec, local: args[0], upload: true}, nil
+	}
+	return cpPlan{spec: srcSpec, local: args[1], upload: false}, nil
+}
+
+// cpTarget finds the SSH endpoint of the instance spec names (the group's first running one without a prefix).
+func (app *App) cpTarget(cmd *cobra.Command, spec *remoteSpec) (sshTarget, *clierr.Error) {
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return sshTarget{}, cerr
+	}
+	collection, cerr := client.ListInstances(cmd.Context(), spec.Group)
+	if cerr != nil {
+		return sshTarget{}, groupNotFound(cerr, spec.Group, client.Org(), client.Project())
+	}
+	inst, cerr := pickInstance(app.errw(), collection.Instances, spec.Group, spec.InstancePrefix)
+	if cerr != nil {
+		return sshTarget{}, cerr
+	}
+	return sshTargetOf(inst, spec.Group)
+}
+
+// cpWriteBatch writes the sftp batch file and returns its name; the caller removes it with cpRemoveBatch. A batch
+// file that cannot be written is removed here.
+func (app *App) cpWriteBatch(content string) (string, *clierr.Error) {
+	batch, err := os.CreateTemp("", "saladcloud-sftp-*.batch")
+	if err != nil {
+		return "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot create the sftp batch file: %v", err)
+	}
+	if _, err := batch.WriteString(content); err != nil {
+		err = errors.Join(err, batch.Close())
+		app.cpRemoveBatch(batch.Name())
+		return "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the sftp batch file: %v", err)
+	}
+	if err := batch.Close(); err != nil {
+		app.cpRemoveBatch(batch.Name())
+		return "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the sftp batch file: %v", err)
+	}
+	return batch.Name(), nil
+}
+
+// cpRemoveBatch removes the sftp batch file name, warning on stderr when it cannot.
+func (app *App) cpRemoveBatch(name string) {
+	if err := os.Remove(name); err != nil {
+		fprintf(app.errw(), "warning: could not remove the sftp batch file %s: %v\n", name, err)
+	}
 }
