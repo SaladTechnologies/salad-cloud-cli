@@ -52,26 +52,31 @@ func (app *App) wrapArgs(root *cobra.Command) {
 		if c == root || c.HasSubCommands() || c.Args == nil || c.Annotations[annotationArgsWrapped] != "" {
 			return
 		}
-		orig := c.Args
-		c.Args = func(cmd *cobra.Command, args []string) error {
-			if cerr := app.groupGivenAsFlag(cmd, args); cerr != nil {
-				return cerr
-			}
-			if err := orig(cmd, args); err != nil {
-				var cerr *clierr.Error
-				if errors.As(err, &cerr) {
-					return cerr
-				}
-				return argsError(cmd, args, err)
-			}
-			//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
-			if cerr := missingRequiredFlag(cmd); cerr != nil {
-				return cerr
-			}
-			return nil
-		}
+		c.Args = app.usageCheckedArgs(c.Args)
 		annotate(c, annotationArgsWrapped, "true")
 	})
+}
+
+// usageCheckedArgs is wrapArgs' Args check around a leaf's own, orig: the hidden -c, then orig's positional count in
+// the CLI's phrasing, then the required flags.
+func (app *App) usageCheckedArgs(orig cobra.PositionalArgs) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if cerr := app.groupGivenAsFlag(cmd, args); cerr != nil {
+			return cerr
+		}
+		if err := orig(cmd, args); err != nil {
+			var cerr *clierr.Error
+			if errors.As(err, &cerr) {
+				return cerr
+			}
+			return argsError(cmd, args, err)
+		}
+		//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
+		if cerr := missingRequiredFlag(cmd); cerr != nil {
+			return cerr
+		}
+		return nil
+	}
 }
 
 func walkCommands(c *cobra.Command, fn func(*cobra.Command)) {
@@ -171,25 +176,30 @@ func changedFlagWords(cmd *cobra.Command, skip ...string) []string {
 		if skipped[f.Name] || f.Hidden || !f.Changed { // Visit also walks flags an earlier parse set
 			return
 		}
-		name := flagSpelling(f)
-		switch v := f.Value.(type) {
-		case pflag.SliceValue:
-			for _, s := range v.GetSlice() {
-				words = append(words, name, shellWord(s))
-			}
-		default:
-			if f.Value.Type() == "bool" {
-				if f.Value.String() == "true" {
-					words = append(words, "--"+f.Name)
-				} else {
-					words = append(words, "--"+f.Name+"=false")
-				}
-				return
-			}
-			words = append(words, name, shellWord(f.Value.String()))
-		}
+		words = append(words, flagWords(f)...)
 	})
 	return words
+}
+
+// flagWords renders one flag as given, as words for changedFlagWords: each value of a repeatable flag after its
+// name, a bool as --name or --name=false, and any other flag as its name and value.
+func flagWords(f *pflag.Flag) []string {
+	name := flagSpelling(f)
+	if v, ok := f.Value.(pflag.SliceValue); ok {
+		values := v.GetSlice()
+		words := make([]string, 0, 2*len(values))
+		for _, s := range values {
+			words = append(words, name, shellWord(s))
+		}
+		return words
+	}
+	if f.Value.Type() == "bool" {
+		if f.Value.String() == "true" {
+			return []string{"--" + f.Name}
+		}
+		return []string{"--" + f.Name + "=false"}
+	}
+	return []string{name, shellWord(f.Value.String())}
 }
 
 // correctedLine is the command to type instead: cmd's full path, its
@@ -335,6 +345,14 @@ func (app *App) groupGivenAsFlag(cmd *cobra.Command, args []string) *clierr.Erro
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "cp takes the group in its remote path, not as -c").
 			WithHint("run %s", strings.Join(strings.Fields(cmd.CommandPath()), " ")+" "+shellWord(group)+"[/<instance>]:<path> <local-path>")
 	}
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage,
+		"%s takes the group as its argument and the instance as --instance", commandName(cmd)).
+		WithHint("run %s", groupAsArgLine(cmd, args, group))
+}
+
+// groupAsArgLine is the command groupGivenAsFlag suggests: the group -c gave as the argument, the instance (from
+// --instance, or the argument given in its place) as --instance, the other flags as given, and anything after "--".
+func groupAsArgLine(cmd *cobra.Command, args []string, group string) string {
 	pos, dash := splitDash(cmd, args)
 	inst := cmd.Flags().Lookup("instance")
 	value := ""
@@ -358,8 +376,7 @@ func (app *App) groupGivenAsFlag(cmd *cobra.Command, args []string) *clierr.Erro
 		}
 		line += " -- " + strings.Join(quoted, " ")
 	}
-	return clierr.New(clierr.CodeUsage, clierr.KindUsage,
-		"%s takes the group as its argument and the instance as --instance", commandName(cmd)).WithHint("run %s", line)
+	return line
 }
 
 // missingRequiredFlag is cobra's required-flag check in the CLI's phrasing,
@@ -396,18 +413,41 @@ func flagError(cmd *cobra.Command, err error) error {
 	if m := invalidValueRe.FindStringSubmatch(msg); m != nil {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid %s "%s": %s`, m[2], m[1], valueProblem(m[3]))
 	}
-	if m := needsValueRe.FindStringSubmatch(msg); m != nil {
-		var f *pflag.Flag
-		if m[1] != "" {
-			f = cmd.Flags().ShorthandLookup(m[1])
-		} else {
-			f = cmd.Flags().Lookup(m[2])
-		}
-		if f != nil {
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing value for %s",
-				flagWithPlaceholder(cmd, f)).WithHint("run %s", usageLine(cmd))
-		}
+	if cerr := usageMissingValueError(cmd, msg); cerr != nil {
+		return cerr
 	}
+	if cerr := usageWaitFlagError(cmd, msg); cerr != nil {
+		return cerr
+	}
+	if cerr := usageUnknownFlagError(cmd, msg); cerr != nil {
+		return cerr
+	}
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
+}
+
+// usageMissingValueError is flagError's answer to pflag's error msg for a flag of cmd given without its value, or
+// nil when msg is another error or names no flag of cmd.
+func usageMissingValueError(cmd *cobra.Command, msg string) *clierr.Error {
+	m := needsValueRe.FindStringSubmatch(msg)
+	if m == nil {
+		return nil
+	}
+	var f *pflag.Flag
+	if m[1] != "" {
+		f = cmd.Flags().ShorthandLookup(m[1])
+	} else {
+		f = cmd.Flags().Lookup(m[2])
+	}
+	if f == nil {
+		return nil
+	}
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing value for %s",
+		flagWithPlaceholder(cmd, f)).WithHint("run %s", usageLine(cmd))
+}
+
+// usageWaitFlagError is flagError's answer to --no-wait on a verb where waiting is opt-in, or --wait on one where it
+// is the default, or nil for any other error msg.
+func usageWaitFlagError(cmd *cobra.Command, msg string) *clierr.Error {
 	switch {
 	case msg == "unknown flag: --no-wait" && cmd.Flags().Lookup("wait") != nil:
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: --no-wait").
@@ -420,20 +460,27 @@ func flagError(cmd *cobra.Command, err error) error {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: --wait").
 			WithHint("leave it out; %s %s by default, and --no-wait returns at once", commandName(cmd), waits)
 	}
-	if m := unknownFlagRe.FindStringSubmatch(msg); m != nil {
-		given, near := "-"+m[1], ""
-		if m[2] != "" {
-			given = "--" + m[2]
-			near = nearestFlag(cmd, m[2])
-		}
-		if near != "" {
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: %s", given).
-				WithHint("did you mean --%s?; run %s, or to list its flags, run %s --help", near, usageLine(cmd), cmd.CommandPath())
-		}
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: %s", given).
-			WithHint("run %s, or to list its flags, run %s --help", usageLine(cmd), cmd.CommandPath())
+	return nil
+}
+
+// usageUnknownFlagError is flagError's answer to pflag's unknown-flag error msg, with the nearest spelling when one
+// is close, or nil for any other error.
+func usageUnknownFlagError(cmd *cobra.Command, msg string) *clierr.Error {
+	m := unknownFlagRe.FindStringSubmatch(msg)
+	if m == nil {
+		return nil
 	}
-	return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
+	given, near := "-"+m[1], ""
+	if m[2] != "" {
+		given = "--" + m[2]
+		near = nearestFlag(cmd, m[2])
+	}
+	if near != "" {
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: %s", given).
+			WithHint("did you mean --%s?; run %s, or to list its flags, run %s --help", near, usageLine(cmd), cmd.CommandPath())
+	}
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: %s", given).
+		WithHint("run %s, or to list its flags, run %s --help", usageLine(cmd), cmd.CommandPath())
 }
 
 // unknownFlagRe matches pflag's unknown-flag errors, long and short.
