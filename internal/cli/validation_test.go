@@ -73,17 +73,39 @@ func (s validationSite) text(field string) string {
 	return s.format
 }
 
-// stringArg is the string literal at args[i], if it is one.
+// stringArg is the string literal at args[i], if it is one: a single literal or literals joined with +, which a long
+// message is split into to keep its lines short.
 func stringArg(args []ast.Expr, i int) (string, bool) {
 	if len(args) <= i {
 		return "", false
 	}
-	lit, ok := args[i].(*ast.BasicLit)
-	if !ok || lit.Kind != token.STRING {
+	return stringLiteral(args[i])
+}
+
+// stringLiteral is the value of e when e is a string literal or a concatenation of them.
+func stringLiteral(e ast.Expr) (string, bool) {
+	switch e := e.(type) {
+	case *ast.BasicLit:
+		if e.Kind != token.STRING {
+			return "", false
+		}
+		s, err := strconv.Unquote(e.Value)
+		return s, err == nil
+	case *ast.BinaryExpr:
+		if e.Op != token.ADD {
+			return "", false
+		}
+		left, ok := stringLiteral(e.X)
+		if !ok {
+			return "", false
+		}
+		right, ok := stringLiteral(e.Y)
+		return left + right, ok
+	case *ast.ParenExpr:
+		return stringLiteral(e.X)
+	default:
 		return "", false
 	}
-	s, err := strconv.Unquote(lit.Value)
-	return s, err == nil
 }
 
 // validationSites are the validation sites in the non-test Go files under root.
