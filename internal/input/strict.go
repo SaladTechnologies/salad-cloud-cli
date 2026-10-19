@@ -191,45 +191,63 @@ func collectUnknown(data json.RawMessage, t reflect.Type, path string, out *[]Un
 	}
 	switch t.Kind() {
 	case reflect.Struct:
-		fields := structFields(t)
-		if fields == nil {
-			return // no json-tagged fields (e.g. time.Time): leave it be
-		}
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(data, &obj); err != nil {
-			return // not an object: shape errors are the unmarshaler's job
-		}
-		keys := make([]string, 0, len(obj))
-		for k := range obj {
-			keys = append(keys, k)
-		}
-		slices.Sort(keys) // deterministic ordering
-		for _, k := range keys {
-			ft, ok := fields[k]
-			if !ok {
-				*out = append(*out, describeUnknown(k, path, fields))
-				continue // the subtree has no type to check against
-			}
-			collectUnknown(obj[k], ft, childPath(path, k), out)
-		}
+		collectUnknownFields(data, t, path, out)
 	case reflect.Slice, reflect.Array:
-		var items []json.RawMessage
-		if err := json.Unmarshal(data, &items); err != nil {
-			return
-		}
-		for i, item := range items {
-			collectUnknown(item, t.Elem(), fmt.Sprintf("%s[%d]", path, i), out)
-		}
+		collectUnknownItems(data, t, path, out)
 	case reflect.Map:
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(data, &obj); err != nil {
-			return
-		}
-		for k, v := range obj { // keys are free-form; values follow the map's value type
-			collectUnknown(v, t.Elem(), childPath(path, k), out)
-		}
+		collectUnknownValues(data, t, path, out)
 	default:
 		// scalars
+	}
+}
+
+// collectUnknownFields is collectUnknown for struct type t: every key of the object data that t has no field for
+// is unknown, and the rest are walked against their fields' types, in key order.
+func collectUnknownFields(data json.RawMessage, t reflect.Type, path string, out *[]Unknown) {
+	fields := structFields(t)
+	if fields == nil {
+		return // no json-tagged fields (e.g. time.Time): leave it be
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return // not an object: shape errors are the unmarshaler's job
+	}
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys) // deterministic ordering
+	for _, k := range keys {
+		ft, ok := fields[k]
+		if !ok {
+			*out = append(*out, describeUnknown(k, path, fields))
+			continue // the subtree has no type to check against
+		}
+		collectUnknown(obj[k], ft, childPath(path, k), out)
+	}
+}
+
+// collectUnknownItems is collectUnknown for slice or array type t: each item of the array data is walked against
+// t's element type.
+func collectUnknownItems(data json.RawMessage, t reflect.Type, path string, out *[]Unknown) {
+	var items []json.RawMessage
+	if err := json.Unmarshal(data, &items); err != nil {
+		return
+	}
+	for i, item := range items {
+		collectUnknown(item, t.Elem(), fmt.Sprintf("%s[%d]", path, i), out)
+	}
+}
+
+// collectUnknownValues is collectUnknown for map type t: the object data's keys are free-form, and its values are
+// walked against t's value type.
+func collectUnknownValues(data json.RawMessage, t reflect.Type, path string, out *[]Unknown) {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return
+	}
+	for k, v := range obj {
+		collectUnknown(v, t.Elem(), childPath(path, k), out)
 	}
 }
 
@@ -389,19 +407,27 @@ func editDistance(a, b string) int {
 	}
 	for i := 1; i <= len(ra); i++ {
 		for j := 1; j <= len(rb); j++ {
-			cost := 1
-			if ra[i-1] == rb[j-1] {
-				cost = 0
-			}
-			d[i][j] = min3(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
-			if i > 1 && j > 1 && ra[i-1] == rb[j-2] && ra[i-2] == rb[j-1] {
-				if t := d[i-2][j-2] + 1; t < d[i][j] {
-					d[i][j] = t
-				}
-			}
+			d[i][j] = osaCell(d, ra, rb, i, j)
 		}
 	}
 	return d[len(ra)][len(rb)]
+}
+
+// osaCell is the distance between the first i runes of ra and the first j of rb, from the cells of d before it: the
+// cheapest of a deletion, an insertion, a substitution (free when the runes match) and, when the last two runes are
+// swapped, a transposition.
+func osaCell(d [][]int, ra, rb []rune, i, j int) int {
+	cost := 1
+	if ra[i-1] == rb[j-1] {
+		cost = 0
+	}
+	v := min3(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
+	if i > 1 && j > 1 && ra[i-1] == rb[j-2] && ra[i-2] == rb[j-1] {
+		if t := d[i-2][j-2] + 1; t < v {
+			v = t
+		}
+	}
+	return v
 }
 
 func min3(a, b, c int) int {
@@ -429,45 +455,58 @@ func FilterTree(v any, t reflect.Type, path string, dropped *[]string) any {
 	}
 	switch t.Kind() {
 	case reflect.Struct:
-		obj, ok := v.(map[string]any)
-		if !ok {
-			return v
+		if obj, ok := v.(map[string]any); ok {
+			return filterFields(obj, t, path, dropped)
 		}
-		fields := structFields(t)
-		if fields == nil {
-			return v // opaque struct (time.Time): leave it be
-		}
-		out := make(map[string]any, len(obj))
-		for k, child := range obj {
-			ft, known := fields[k]
-			if !known {
-				*dropped = append(*dropped, childPath(path, k))
-				continue
-			}
-			out[k] = FilterTree(child, ft, childPath(path, k), dropped)
-		}
-		return out
 	case reflect.Slice, reflect.Array:
-		items, ok := v.([]any)
-		if !ok {
-			return v
+		if items, ok := v.([]any); ok {
+			return filterItems(items, t, path, dropped)
 		}
-		out := make([]any, len(items))
-		for i, item := range items {
-			out[i] = FilterTree(item, t.Elem(), fmt.Sprintf("%s[%d]", path, i), dropped)
-		}
-		return out
 	case reflect.Map:
-		obj, ok := v.(map[string]any)
-		if !ok {
-			return v
+		if obj, ok := v.(map[string]any); ok {
+			return filterValues(obj, t, path, dropped)
 		}
-		out := make(map[string]any, len(obj))
-		for k, child := range obj { // keys are free-form; values follow the map's value type
-			out[k] = FilterTree(child, t.Elem(), childPath(path, k), dropped)
-		}
-		return out
 	default:
-		return v
+		// scalars pass through
 	}
+	return v // also a value whose shape is not t's
+}
+
+// filterFields is FilterTree for an object against struct type t: a copy without the keys t has no field for, the
+// rest filtered against their fields' types. An opaque struct (time.Time) leaves the object as it is.
+func filterFields(obj map[string]any, t reflect.Type, path string, dropped *[]string) any {
+	fields := structFields(t)
+	if fields == nil {
+		return obj // opaque struct (time.Time): leave it be
+	}
+	out := make(map[string]any, len(obj))
+	for k, child := range obj {
+		ft, known := fields[k]
+		if !known {
+			*dropped = append(*dropped, childPath(path, k))
+			continue
+		}
+		out[k] = FilterTree(child, ft, childPath(path, k), dropped)
+	}
+	return out
+}
+
+// filterItems is FilterTree for an array against slice or array type t: a copy with each item filtered against
+// t's element type.
+func filterItems(items []any, t reflect.Type, path string, dropped *[]string) any {
+	out := make([]any, len(items))
+	for i, item := range items {
+		out[i] = FilterTree(item, t.Elem(), fmt.Sprintf("%s[%d]", path, i), dropped)
+	}
+	return out
+}
+
+// filterValues is FilterTree for an object against map type t: its keys are free-form, and a copy has each value
+// filtered against t's value type.
+func filterValues(obj map[string]any, t reflect.Type, path string, dropped *[]string) any {
+	out := make(map[string]any, len(obj))
+	for k, child := range obj {
+		out[k] = FilterTree(child, t.Elem(), childPath(path, k), dropped)
+	}
+	return out
 }
