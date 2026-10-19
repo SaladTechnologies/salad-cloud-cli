@@ -45,6 +45,9 @@ type doctorResult struct {
 // it probes it (tests point it at a stand-in).
 const apiHost = "https://api.salad.com"
 
+// doctorProbeTimeout is how long the api-reachable row waits for any answer.
+const doctorProbeTimeout = 10 * time.Second
+
 // addDoctorCommands adds doctor.go's commands to the tree.
 func (app *App) addDoctorCommands(root *cobra.Command) {
 	cmd := &cobra.Command{
@@ -71,7 +74,6 @@ Exits 0 when no row failed, and 1 naming the failed checks otherwise.`,
 
 // doctorRun is one run's findings, which later checks read.
 type doctorRun struct {
-	ctx                   context.Context
 	orgFlag, projectFlag  string
 	saved                 config.File
 	res                   config.Resolved
@@ -86,7 +88,6 @@ type doctorRun struct {
 func (app *App) runDoctor(cmd *cobra.Command, _ []string) error {
 	orgFlag, projectFlag := app.flags.org, app.flags.project
 	d := &doctorRun{
-		ctx:         cmd.Context(),
 		orgFlag:     orgFlag,
 		projectFlag: projectFlag,
 		saved:       config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
@@ -110,8 +111,15 @@ func (app *App) runDoctor(cmd *cobra.Command, _ []string) error {
 		orgGood:      false,
 		app:          app,
 	}
+	ctx := cmd.Context()
 	rows := []checkResult{
-		d.configRow(), d.reachableRow(), d.apiKeyRow(), d.organizationRow(), d.projectRow(), d.gatewayRow(), d.sshRow(),
+		d.configRow(),
+		d.reachableRow(ctx),
+		d.apiKeyRow(ctx),
+		d.organizationRow(ctx),
+		d.projectRow(ctx),
+		d.gatewayRow(),
+		d.sshRow(),
 	}
 	ovs := d.hidingOverrides()
 	err := app.printer.Emit(doctorResult{Items: rows, EnvOverrides: overrideNames(ovs)}, func(w *output.Writer) {
@@ -163,8 +171,14 @@ func (app *App) doctorFailure(rows []checkResult) error {
 	if app.printer.Machine() {
 		hint = "each failing row's hint says how to fix it"
 	}
-	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%d %s failed: %s", len(failed), checks, strings.Join(failed, ", ")).
-		WithHint("%s", hint)
+	return clierr.New(
+		clierr.CodeGeneric,
+		clierr.KindAPIError,
+		"%d %s failed: %s",
+		len(failed),
+		checks,
+		strings.Join(failed, ", "),
+	).WithHint("%s", hint)
 }
 
 func row(name, status, detail, hint string) checkResult {
@@ -220,15 +234,15 @@ func (d *doctorRun) configRow() checkResult {
 }
 
 // reachableRow checks the API answers at all (any HTTP status will do).
-func (d *doctorRun) reachableRow() checkResult {
+func (d *doctorRun) reachableRow(ctx context.Context) checkResult {
 	app := d.app
 	base, shown, override := app.ProductionAPI, apiHost, app.Env.Getenv("SALAD_CLI_API_BASE_URL")
 	if override != "" {
 		base, shown = override, override
 	}
-	ctx, cancel := context.WithTimeout(d.ctx, 10*time.Second)
+	probeCtx, cancel := context.WithTimeout(ctx, doctorProbeTimeout)
 	defer cancel()
-	if _, err := api.Probe(ctx, base+"/organizations/doctor-probe/gpu-classes", app.apiOptions()); err != nil {
+	if _, err := api.Probe(probeCtx, base+"/organizations/doctor-probe/gpu-classes", app.apiOptions()); err != nil {
 		var verr *tls.CertificateVerificationError
 		if errors.As(err, &verr) && len(verr.UnverifiedCertificates) > 0 &&
 			time.Now().Before(verr.UnverifiedCertificates[0].NotBefore) {
@@ -269,7 +283,7 @@ func unchecked(cerr *clierr.Error) string {
 
 // apiKeyRow checks the API accepts the key: through the organizations
 // listing, or the organization check when the listing cannot list.
-func (d *doctorRun) apiKeyRow() checkResult {
+func (d *doctorRun) apiKeyRow(ctx context.Context) checkResult {
 	app := d.app
 	const name = "api-key"
 	res := d.res
@@ -306,7 +320,7 @@ func (d *doctorRun) apiKeyRow() checkResult {
 	if cerr != nil {
 		return row(name, checkFail, cerr.Message, "")
 	}
-	return d.apiKeyCheckedRow(client, key)
+	return d.apiKeyCheckedRow(ctx, client, key)
 }
 
 // apiKeyUnsetRow is the api-key row when no key is set: a warning when the AI Gateway key is, a failure otherwise.
@@ -330,12 +344,12 @@ func (d *doctorRun) apiKeyUnsetRow() checkResult {
 
 // apiKeyCheckedRow is the api-key row from the API's answer: the organizations listing, or the organization check
 // when the listing cannot list and there is an organization to check.
-func (d *doctorRun) apiKeyCheckedRow(client *api.Client, key string) checkResult {
+func (d *doctorRun) apiKeyCheckedRow(ctx context.Context, client *api.Client, key string) checkResult {
 	const name = "api-key"
 	res := d.res
-	list, cerr := client.OrganizationListing(d.ctx)
+	list, cerr := client.OrganizationListing(ctx)
 	if cerr == nil && list == nil && res.Organization != "" && validName(res.Organization) {
-		cerr = d.checkKeyThroughOrg(client)
+		cerr = d.checkKeyThroughOrg(ctx, client)
 		if cerr == nil {
 			d.keyOK = true
 			return row(name, checkPass, d.keyShown(), "")
@@ -361,8 +375,8 @@ func (d *doctorRun) apiKeyCheckedRow(client *api.Client, key string) checkResult
 // checkKeyThroughOrg checks the key with the organization check, which the organization row then reuses unless the
 // key was rejected. An organization that is not found still means the key works: nil, and the organization row
 // reports the miss.
-func (d *doctorRun) checkKeyThroughOrg(client *api.Client) *clierr.Error {
-	cerr := client.CheckOrg(d.ctx)
+func (d *doctorRun) checkKeyThroughOrg(ctx context.Context, client *api.Client) *clierr.Error {
+	cerr := client.CheckOrg(ctx)
 	d.orgCheckMade, d.orgChecked = !rejected(cerr), cerr
 	if cerr != nil && cerr.Code == clierr.CodeNotFound {
 		return nil
@@ -375,7 +389,7 @@ func (d *doctorRun) keyFix(key string) string {
 	switch {
 	case quotedKey(key):
 		return "remove the quotes around it"
-	case d.res.APIKeySource != "env":
+	case d.res.APIKeySource != settingFromEnv:
 		return "run saladcloud login to save a new key"
 	case d.saved.APIKey != "" && d.saved.APIKey != d.res.APIKey:
 		return fmt.Sprintf(
@@ -387,7 +401,7 @@ func (d *doctorRun) keyFix(key string) string {
 }
 
 // checkOrg is the organization check, made once.
-func (d *doctorRun) checkOrg() *clierr.Error {
+func (d *doctorRun) checkOrg(ctx context.Context) *clierr.Error {
 	app := d.app
 	if !d.orgCheckMade {
 		key, _ := normalizeKey(d.res.APIKey)
@@ -407,27 +421,33 @@ func (d *doctorRun) checkOrg() *clierr.Error {
 			app.apiOptions(),
 		)
 		if cerr == nil {
-			cerr = client.CheckOrg(d.ctx)
+			cerr = client.CheckOrg(ctx)
 		}
 		d.orgCheckMade, d.orgChecked = true, cerr
 	}
 	return d.orgChecked
 }
 
-func (d *doctorRun) organizationRow() checkResult {
+func (d *doctorRun) organizationRow(ctx context.Context) checkResult {
 	app := d.app
 	const name = "organization"
 	org := d.res.Organization
 	from := originOf(d.res.OrganizationSource, "--org", envOrganization)
 	switch {
 	case org != "" && app.looksLikeKey(org):
-		return row(name, checkFail, keyLikeDetail("organization", from), keyLikeName("organization", from).HintText())
+		return row(
+			name,
+			checkFail,
+			keyLikeDetail(nameKindOrganization, from),
+			keyLikeName(nameKindOrganization, from).HintText(),
+		)
 	case org != "" && !validName(org):
 		return row(
 			name,
 			checkFail,
+			//nolint:gocritic // shows the name as written; %q would escape it
 			fmt.Sprintf(`"%s"%s is not a valid organization name`, org, fromTag(from)),
-			nameGuess("organization", org, "use"),
+			nameGuess(nameKindOrganization, org, "use"),
 		)
 	}
 	if !d.keyOK {
@@ -441,7 +461,7 @@ func (d *doctorRun) organizationRow() checkResult {
 			hintClauses(app.orgsClause(d.orgs), "to set one, run saladcloud use <org>"),
 		)
 	}
-	cerr := d.checkOrg()
+	cerr := d.checkOrg(ctx)
 	switch {
 	case cerr == nil:
 		d.orgGood = true
@@ -450,6 +470,7 @@ func (d *doctorRun) organizationRow() checkResult {
 		return row(
 			name,
 			checkFail,
+			//nolint:gocritic // shows the name as written; %q would escape it
 			fmt.Sprintf(`"%s"%s not found`, org, fromTag(from)),
 			hintClauses(app.orgsClause(d.orgs), organizationNotFoundFix(from)),
 		)
@@ -471,7 +492,7 @@ func organizationNotFoundFix(from string) string {
 	switch from {
 	case envOrganization:
 		return "fix or remove SALAD_ORGANIZATION"
-	case "config":
+	case settingFromConfig:
 		return "to switch, run saladcloud use <org>"
 	}
 	return ""
@@ -484,19 +505,19 @@ type doctorProject struct {
 	fallback           bool
 }
 
-func (d *doctorRun) projectRow() checkResult {
+func (d *doctorRun) projectRow(ctx context.Context) checkResult {
 	app := d.app
 	const name = "project"
 	res := d.res
 	p := doctorProject{
 		org:      res.Organization,
 		project:  res.Project,
-		from:     originOf(res.ProjectSource, "--project", envProject),
+		from:     originOf(res.ProjectSource, projectFlagSpelling, envProject),
 		fallback: res.ProjectSource == config.SourceDefault,
 	}
 	project, from := p.project, p.from
 	if !p.fallback && app.looksLikeKey(project) {
-		return row(name, checkFail, keyLikeDetail("project", from), keyLikeName("project", from).HintText())
+		return row(name, checkFail, keyLikeDetail(nameKindProject, from), keyLikeName(nameKindProject, from).HintText())
 	}
 	if !d.orgGood {
 		if p.fallback {
@@ -508,18 +529,19 @@ func (d *doctorRun) projectRow() checkResult {
 		return row(
 			name,
 			checkFail,
+			//nolint:gocritic // shows the name as written; %q would escape it
 			fmt.Sprintf(`"%s"%s is not a valid project name`, project, fromTag(from)),
-			nameGuess("project", project, "use"),
+			nameGuess(nameKindProject, project, "use"),
 		)
 	}
-	return d.projectCheckedRow(&p)
+	return d.projectCheckedRow(ctx, &p)
 }
 
 // projectCheckedRow is the project row from the project check.
-func (d *doctorRun) projectCheckedRow(p *doctorProject) checkResult {
+func (d *doctorRun) projectCheckedRow(ctx context.Context, p *doctorProject) checkResult {
 	const name = "project"
 	org, project, from := p.org, p.project, p.from
-	cerr := d.checkProject(org, project)
+	cerr := d.checkProject(ctx, org, project)
 	found := cerr == nil
 	if cerr != nil && cerr.Code != clierr.CodeNotFound {
 		shown := project + fromTag(from)
@@ -538,14 +560,16 @@ func (d *doctorRun) projectCheckedRow(p *doctorProject) checkResult {
 	switch from {
 	case envProject:
 		fix = "fix or remove SALAD_PROJECT, or create it at " + projectCreateURL(org)
-	case "--project":
+	case projectFlagSpelling:
 		fix = "fix --project, or create it at " + projectCreateURL(org)
 	}
-	return row(name, checkFail, fmt.Sprintf(`"%s"%s not found in %s`, project, fromTag(from), org), fix)
+	//nolint:gocritic // shows the name as written; %q would escape it
+	detail := fmt.Sprintf(`"%s"%s not found in %s`, project, fromTag(from), org)
+	return row(name, checkFail, detail, fix)
 }
 
 // checkProject is the project check for project in org.
-func (d *doctorRun) checkProject(org, project string) *clierr.Error {
+func (d *doctorRun) checkProject(ctx context.Context, org, project string) *clierr.Error {
 	key, _ := normalizeKey(d.res.APIKey)
 	client, cerr := api.New(
 		config.Resolved{
@@ -563,7 +587,7 @@ func (d *doctorRun) checkProject(org, project string) *clierr.Error {
 		d.app.apiOptions(),
 	)
 	if cerr == nil {
-		cerr = client.CheckProject(d.ctx)
+		cerr = client.CheckProject(ctx)
 	}
 	return cerr
 }
@@ -579,7 +603,7 @@ func (d *doctorRun) projectFallbackRow(org string, found bool) checkResult {
 		return row(
 			name,
 			checkWarn,
-			fmt.Sprintf(
+			fmt.Sprintf( //nolint:gocritic // shows the saved names as written; %q would escape them
 				`none set for %s, using "default"; the saved project "%s" is for %s`,
 				org,
 				app.shownName(res.SkippedProject),
@@ -593,7 +617,8 @@ func (d *doctorRun) projectFallbackRow(org string, found bool) checkResult {
 			checkWarn,
 			`none set, using "default"`,
 			fmt.Sprintf(
-				"container group and queue commands warn each time; to choose one, set SALAD_PROJECT or run saladcloud use %s/<project>",
+				"container group and queue commands warn each time; "+
+					"to choose one, set SALAD_PROJECT or run saladcloud use %s/<project>",
 				org,
 			),
 		)

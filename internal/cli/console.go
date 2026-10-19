@@ -68,7 +68,7 @@ func (*stdConsole) Terminal() bool { return term.IsTerminal(int(os.Stdin.Fd())) 
 func (c *stdConsole) Device() io.Writer {
 	if c.device == nil {
 		name := "/dev/tty"
-		if runtime.GOOS == "windows" {
+		if runtime.GOOS == setupGOOSWindows {
 			name = "CONOUT$"
 		}
 		if f, err := os.OpenFile(name, os.O_WRONLY, 0); err == nil {
@@ -80,28 +80,29 @@ func (c *stdConsole) Device() io.Writer {
 	return c.device
 }
 
-func (c *stdConsole) ReadHidden() (string, error) { return c.read(true) }
-func (c *stdConsole) ReadLine() (string, error)   { return c.read(false) }
+func (c *stdConsole) ReadHidden() (string, error) { return c.read(noEcho, c.readCookedHidden) }
+func (c *stdConsole) ReadLine() (string, error)   { return c.read(c.Device, c.readCookedLine) }
+
+// noEcho is where a hidden answer's typed characters are echoed: nowhere.
+func noEcho() io.Writer { return io.Discard }
 
 // read reads one answer with the terminal in raw mode, so Ctrl-C and end of
 // input arrive as keys and end the read at once instead of a signal that
 // leaves it waiting; the terminal is restored before read returns, whatever
-// happened. Typed characters are echoed to the device unless hidden.
-func (c *stdConsole) read(hidden bool) (string, error) {
+// happened. Typed characters are echoed to the writer echoTo returns; a
+// terminal that refuses raw mode is read by cooked instead.
+func (c *stdConsole) read(echoTo func() io.Writer, cooked func() (string, error)) (string, error) {
 	fd := int(os.Stdin.Fd())
 	state, err := term.MakeRaw(fd)
 	if err != nil {
-		return c.readCooked(hidden)
+		return cooked()
 	}
 	defer func() {
 		if restoreErr := term.Restore(fd, state); restoreErr != nil {
 			fprintf(os.Stderr, "warning: could not restore the terminal: %v\n", restoreErr)
 		}
 	}()
-	echo := c.Device()
-	if hidden {
-		echo = io.Discard
-	}
+	echo := echoTo()
 	if c.keys == nil {
 		c.keys = &keyReader{r: os.Stdin, afterCR: false}
 	}
@@ -110,13 +111,15 @@ func (c *stdConsole) read(hidden bool) (string, error) {
 	return answer, err
 }
 
-// readCooked is read for a terminal that refused raw mode.
-func (c *stdConsole) readCooked(hidden bool) (string, error) {
-	if hidden {
-		raw, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fprintln(c.Device())
-		return strings.TrimSpace(string(raw)), err
-	}
+// readCookedHidden is ReadHidden for a terminal that refused raw mode.
+func (c *stdConsole) readCookedHidden() (string, error) {
+	raw, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fprintln(c.Device())
+	return strings.TrimSpace(string(raw)), err
+}
+
+// readCookedLine is ReadLine for a terminal that refused raw mode.
+func (c *stdConsole) readCookedLine() (string, error) {
 	if c.in == nil {
 		c.in = bufio.NewReader(os.Stdin)
 	}
@@ -130,6 +133,7 @@ const (
 	keyEndWin    = 0x1a // Ctrl-Z
 	keyBackspace = 0x7f
 	keyCtrlH     = 0x08
+	keySpace     = 0x20 // the first printable character; those below it are control characters
 )
 
 // keyReader reads keystrokes from a terminal in raw mode, one line at a
@@ -193,7 +197,7 @@ func (k *keyReader) press(l *keyLine, c byte, echo io.Writer) (bool, string, err
 		return true, strings.TrimSpace(string(l.runes)), nil
 	case isBackspaceKey(c):
 		l.backspace(echo)
-	case c < 0x20:
+	case c < keySpace:
 		l.runes = append(l.runes, rune(c))
 	default:
 		l.add(c, echo)

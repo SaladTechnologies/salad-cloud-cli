@@ -12,13 +12,30 @@ import (
 
 const configKeys = "api-key, organization, project, ai-gateway-api-key"
 
+// The config keys, as config get, set and unset take them.
+const (
+	configKeyAPIKey        = "api-key"
+	configKeyOrganization  = "organization"
+	configKeyProject       = "project"
+	configKeyGatewayAPIKey = "ai-gateway-api-key"
+)
+
+// configCmdName is the config command's name.
+const configCmdName = "config"
+
+// setupVerbList is the list verb's name, under config and ai-gateway models.
+const setupVerbList = "list"
+
+// configSetArgCount is how many arguments config set takes: <key> <value>.
+const configSetArgCount = 2
+
 // isSecretKey reports whether a config key holds a credential that must be
 // masked on output.
-func isSecretKey(key string) bool { return key == "api-key" || key == "ai-gateway-api-key" }
+func isSecretKey(key string) bool { return key == configKeyAPIKey || key == configKeyGatewayAPIKey }
 
 func orNotSet(v string) string {
 	if v == "" {
-		return "(not set)"
+		return notSetLabel
 	}
 	return v
 }
@@ -79,10 +96,10 @@ type configUnsetResult struct {
 // instead of the config file.
 func configKeyEnv() map[string]string {
 	return map[string]string{
-		"api-key":            envAPIKey,
-		"organization":       envOrganization,
-		"project":            envProject,
-		"ai-gateway-api-key": envGatewayKey,
+		configKeyAPIKey:        envAPIKey,
+		configKeyOrganization:  envOrganization,
+		configKeyProject:       envProject,
+		configKeyGatewayAPIKey: envGatewayKey,
 	}
 }
 
@@ -91,13 +108,22 @@ func configKeyEnv() map[string]string {
 func (app *App) loadConfigFor(command string) (config.File, string, *clierr.Error) {
 	path, err := config.Path(app.Env)
 	if err != nil {
-		return config.File{}, "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err)).
-			WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder")
+		return config.File{}, "", clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot find a folder for the config file: %s",
+			config.Reason(err),
+		).WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder")
 	}
 	f, err := config.Load(app.Env)
 	if err != nil {
-		return config.File{}, path, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
-			WithHint("fix or delete it, then run saladcloud %s again", command)
+		return config.File{}, path, clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot read the config file %s: %s",
+			path,
+			readReason(err),
+		).WithHint("fix or delete it, then run saladcloud %s again", command)
 	}
 	return f, path, nil
 }
@@ -105,8 +131,13 @@ func (app *App) loadConfigFor(command string) (config.File, string, *clierr.Erro
 // saveConfigFor writes the config file for a config command.
 func (app *App) saveConfigFor(command, path string, f config.File) *clierr.Error {
 	if err := config.Save(app.Env, f); err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
-			WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud %s again", command)
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot write the config file %s: %s",
+			path,
+			config.Reason(err),
+		).WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud %s again", command)
 	}
 	return nil
 }
@@ -127,10 +158,10 @@ type configPathResult struct {
 func (app *App) configListOf(f config.File, path string) configListResult {
 	return configListResult{
 		Items: []configEntry{
-			{"api-key", maskedOrNil(f.APIKey)},
-			{"organization", app.nameOrNil(f.Organization)},
-			{"project", app.nameOrNil(f.Project)},
-			{"ai-gateway-api-key", maskedOrNil(f.GatewayAPIKey)},
+			{configKeyAPIKey, maskedOrNil(f.APIKey)},
+			{configKeyOrganization, app.nameOrNil(f.Organization)},
+			{configKeyProject, app.nameOrNil(f.Project)},
+			{configKeyGatewayAPIKey, maskedOrNil(f.GatewayAPIKey)},
 		},
 		ConfigPath: path,
 	}
@@ -138,13 +169,13 @@ func (app *App) configListOf(f config.File, path string) configListResult {
 
 func getField(f *config.File, key string) (*string, *clierr.Error) {
 	switch key {
-	case "api-key":
+	case configKeyAPIKey:
 		return &f.APIKey, nil
-	case "organization":
+	case configKeyOrganization:
 		return &f.Organization, nil
-	case "project":
+	case configKeyProject:
 		return &f.Project, nil
-	case "ai-gateway-api-key":
+	case configKeyGatewayAPIKey:
 		return &f.GatewayAPIKey, nil
 	default:
 		return nil, clierr.New(clierr.CodeUsage, clierr.KindUsage, `unknown config key "%s"`, key).
@@ -155,7 +186,7 @@ func getField(f *config.File, key string) (*string, *clierr.Error) {
 // addConfigCommands adds configcmd.go's commands to the tree.
 func (app *App) addConfigCommands(root *cobra.Command) {
 	configCmd := &cobra.Command{
-		Use:   "config",
+		Use:   configCmdName,
 		Short: "Manage the saladcloud config file",
 	}
 
@@ -177,7 +208,7 @@ line of stdin, so it is not exposed on the command line:
 A variable (SALAD_API_KEY, SALAD_ORGANIZATION, SALAD_PROJECT,
 SALAD_AI_GATEWAY_API_KEY) that is set is used instead of the saved value;
 config set says so.`,
-		Args: cobra.ExactArgs(2),
+		Args: cobra.ExactArgs(configSetArgCount),
 		RunE: func(_ *cobra.Command, args []string) error { return app.runConfigSet(args[0], args[1]) },
 	}
 
@@ -203,7 +234,7 @@ Keys: ` + configKeys + `.`,
 	}
 
 	listCmd := &cobra.Command{
-		Use:   "list",
+		Use:   setupVerbList,
 		Short: "Print all config values (both keys masked) and the config path",
 		Args:  cobra.NoArgs,
 		RunE:  func(_ *cobra.Command, _ []string) error { return app.runConfigList() },
@@ -239,7 +270,7 @@ func (app *App) runConfigSet(key, value string) error {
 	// writes as given, so changing the organization alone carries the
 	// project over. Say so, and name the command that switches both.
 	var carriedFrom *string
-	if key == "organization" && f.Project != "" && value != f.Organization {
+	if key == configKeyOrganization && f.Project != "" && value != f.Organization {
 		oldOrg := f.Organization
 		carriedFrom = &oldOrg
 	}
@@ -256,7 +287,8 @@ func (app *App) configSetValue(key, value string) (string, *clierr.Error) {
 	if isSecretKey(key) && value != "-" {
 		fprintf(
 			app.errw(),
-			"warning: a key passed as an argument is exposed on the command line; pipe it to saladcloud config set %s - instead\n",
+			"warning: a key passed as an argument is exposed on the command line; "+
+				"pipe it to saladcloud config set %s - instead\n",
 			key,
 		)
 	}
@@ -267,9 +299,14 @@ func (app *App) configSetValue(key, value string) (string, *clierr.Error) {
 		}
 		value = line
 	}
-	if (key == "organization" || key == "project") && app.looksLikeKey(value) {
-		return "", clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "that looks like an API key, not %s %s name", article(key), key).
-			WithHint("to save an API key, pipe it to saladcloud config set api-key -")
+	if (key == configKeyOrganization || key == configKeyProject) && app.looksLikeKey(value) {
+		return "", clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"that looks like an API key, not %s %s name",
+			article(key),
+			key,
+		).WithHint("to save an API key, pipe it to saladcloud config set api-key -")
 	}
 	return value, nil
 }
@@ -306,10 +343,11 @@ func (app *App) emitConfigSet(key, value, path string, f config.File, carriedFro
 	}
 	ovs := app.overridesOf(f, configKeyEnv()[key])
 	result := configSetResult{key, shown, overrideNames(ovs), path, "set", true}
-	if err := app.printer.Emit(result, func(w *output.Writer) {
+	err := app.printer.Emit(result, func(w *output.Writer) {
 		w.Printf("Set %s to %s\n", key, shown)
 		w.Printf("Config at: %s\n", path)
-	}); err != nil {
+	})
+	if err != nil {
 		return wrapErr(err)
 	}
 	if carriedFrom != nil {
@@ -342,10 +380,11 @@ func (app *App) runConfigUnset(key string) error {
 	}
 	ovs := app.stillSupplied(configKeyEnv()[key])
 	result := configUnsetResult{key, overrideNames(ovs), path, "unset", true}
-	if err := app.printer.Emit(result, func(w *output.Writer) {
+	err := app.printer.Emit(result, func(w *output.Writer) {
 		w.Printf("Unset %s\n", key)
 		w.Printf("Config at: %s\n", path)
-	}); err != nil {
+	})
+	if err != nil {
 		return wrapErr(err)
 	}
 	app.warnOverrides(app.errw(), afterRemove, ovs)
@@ -369,7 +408,7 @@ func (app *App) runConfigGet(key string) error {
 	result := configGetResult{key, value}
 	return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
 		if value == nil {
-			w.Println("(not set)")
+			w.Println(notSetLabel)
 			return
 		}
 		w.Println(*value)
@@ -396,8 +435,12 @@ func (app *App) runConfigList() error {
 func (app *App) runConfigPath() error {
 	path, err := config.Path(app.Env)
 	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err)).
-			WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder")
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot find a folder for the config file: %s",
+			config.Reason(err),
+		).WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder")
 	}
 	result := configPathResult{path}
 	return wrapErr(app.printer.Emit(result, func(w *output.Writer) {

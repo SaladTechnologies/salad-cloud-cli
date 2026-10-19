@@ -27,8 +27,8 @@ type envSetting struct {
 func envSettings() []envSetting {
 	return []envSetting{
 		{"SALAD_API_KEY", labelAPIKey, true, func(f config.File) string { return f.APIKey }},
-		{"SALAD_ORGANIZATION", "organization", false, func(f config.File) string { return f.Organization }},
-		{"SALAD_PROJECT", "project", false, func(f config.File) string { return f.Project }},
+		{"SALAD_ORGANIZATION", nameKindOrganization, false, func(f config.File) string { return f.Organization }},
+		{"SALAD_PROJECT", nameKindProject, false, func(f config.File) string { return f.Project }},
 		{"SALAD_AI_GATEWAY_API_KEY", labelGatewayKey, true, func(f config.File) string { return f.GatewayAPIKey }},
 	}
 }
@@ -118,7 +118,7 @@ func (app *App) warnOverrides(w io.Writer, when overrideWhen, ovs []override) {
 	if len(ovs) == 0 {
 		return
 	}
-	steps := app.printer.Mode() == "table" && app.atTerminal()
+	steps := !app.printer.Machine() && app.atTerminal()
 	if len(ovs) == 1 {
 		line := app.overrideLine(when, &ovs[0])
 		if !steps {
@@ -167,6 +167,7 @@ func overridesHeading(when overrideWhen) string {
 		return "warning: commands still use these environment variables:"
 	case asSaved:
 		return "warning: commands use these environment variables instead of what is saved:"
+	case afterSave: // the wording below
 	}
 	return "warning: commands will use these environment variables instead of what you just saved:"
 }
@@ -202,7 +203,7 @@ func (app *App) removalSteps(ovs []override) string {
 		it, comes = "them", "they come"
 	}
 	var b strings.Builder
-	if app.Env.GOOS == "windows" {
+	if app.Env.GOOS == setupGOOSWindows {
 		envs := make([]string, len(names))
 		sets := make([]string, len(names))
 		for i, n := range names {

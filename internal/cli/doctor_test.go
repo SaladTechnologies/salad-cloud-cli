@@ -46,15 +46,21 @@ const (
 	hSSH     = "hint: local-ssh-key-present: to use container-groups ssh, cp or sftp, run saladcloud ssh-key setup\n"
 )
 
-// stubSSH makes ssh present or not, and keys passphrase-protected or not.
-func stubSSH(d *Deps, sshInstalled, passphrase bool) {
-	d.LookPath = func(name string) (string, error) {
-		if sshInstalled {
-			return "/usr/bin/" + name, nil
-		}
-		return "", errors.New("not found")
-	}
+// stubSSH makes ssh present or not (lookPath is toolsFound or toolsMissing), and keys passphrase-protected or not.
+func stubSSH(d *Deps, lookPath func(string) (string, error), passphrase bool) {
+	d.LookPath = lookPath
 	d.HasPassphrase = func(string) (bool, bool) { return passphrase, true }
+}
+
+// toolsFound is a LookPath that finds every tool in /usr/bin.
+func toolsFound(name string) (string, error) { return "/usr/bin/" + name, nil }
+
+// toolsMissing is a LookPath that finds no tool.
+func toolsMissing(string) (string, error) { return "", errors.New("not found") }
+
+// ttyWithoutAnswers is a session's tty for a terminal at which nothing is typed.
+func ttyWithoutAnswers() []string {
+	return []string{} //nolint:revive // nil would mean no terminal to the harness; this is one with no answers
 }
 
 func failed(n int, names string) string {
@@ -86,7 +92,7 @@ func TestDoctorRows(t *testing.T) {
 	skipNone := dRow{"organization", "SKIP", "none set"}
 	skipProject := dRow{"project", "SKIP", "none set"}
 	skipProjectSet := dRow{"project", "SKIP", "default (from config); checking it needs a working organization"}
-	runBranches(t, withDeps(func(d *Deps) { stubSSH(d, true, false) }, failingHint([]branchCase{
+	runBranches(t, withDeps(func(d *Deps) { stubSSH(d, toolsFound, false) }, failingHint([]branchCase{
 		{
 			id: "all good",
 			s:  session{args: doctor, saved: good},
@@ -314,7 +320,7 @@ func TestDoctorRows(t *testing.T) {
 		},
 		{
 			id:   "no organization, at a terminal",
-			s:    session{args: doctor, saved: &config.File{APIKey: k}, tty: []string{}},
+			s:    session{args: doctor, saved: &config.File{APIKey: k}, tty: ttyWithoutAnswers()},
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
@@ -357,8 +363,12 @@ func TestDoctorRows(t *testing.T) {
 			),
 		},
 		{
-			id:   "the saved organization not found",
-			s:    session{args: doctor, saved: &config.File{APIKey: k, Organization: "old-org"}, tty: []string{}},
+			id: "the saved organization not found",
+			s: session{
+				args:  doctor,
+				saved: &config.File{APIKey: k, Organization: "old-org"},
+				tty:   ttyWithoutAnswers(),
+			},
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
@@ -574,7 +584,7 @@ func TestDoctorRows(t *testing.T) {
 			s: session{
 				args:  doctor,
 				saved: good,
-				tty:   []string{},
+				tty:   ttyWithoutAnswers(),
 				env:   map[string]string{"SALAD_ORGANIZATION": "acme-prod"},
 			},
 			stdout: doctorTable(
@@ -634,7 +644,7 @@ func TestDoctorSSHRows(t *testing.T) {
 	rG := dRow{"ai-gateway-api-key-present", "PASS", "****...EFGH (from config; not tested)"}
 	t.Run("a passphrase", func(t *testing.T) {
 		t.Parallel()
-		runBranches(t, withDeps(func(d *Deps) { stubSSH(d, true, true) }, []branchCase{
+		runBranches(t, withDeps(func(d *Deps) { stubSSH(d, toolsFound, true) }, []branchCase{
 			{
 				id: "a key of your own",
 				s:  session{args: []string{"doctor"}, saved: good, sshKey: true},
@@ -689,7 +699,7 @@ func TestDoctorSSHRows(t *testing.T) {
 			{"linux", "install your distribution's OpenSSH client (openssh-client on Debian and Ubuntu, " +
 				"openssh-clients on Fedora)"},
 		} {
-			runBranches(t, withDeps(func(d *Deps) { stubSSH(d, false, false) }, []branchCase{
+			runBranches(t, withDeps(func(d *Deps) { stubSSH(d, toolsMissing, false) }, []branchCase{
 				{
 					id: tc.os,
 					s:  session{args: []string{"doctor"}, saved: good, sshKey: true, os: tc.os},
@@ -715,7 +725,7 @@ func TestDoctorJSON(t *testing.T) {
 	t.Parallel()
 	o := withMode(session{
 		args: []string{"doctor"}, saved: &config.File{APIKey: testOtherAPIKey},
-		deps: func(d *Deps) { stubSSH(d, true, false) },
+		deps: func(d *Deps) { stubSSH(d, toolsFound, false) },
 	}, "json").run(t)
 	doc := o.document(t)
 	items := assertAs[[]any](t, doc["items"])
@@ -744,17 +754,16 @@ func TestDoctorReachable(t *testing.T) {
 	)
 	t.Cleanup(srv.Close)
 	app.ProductionAPI = srv.URL
-	d := &doctorRun{ctx: t.Context(), app: app.App}
-	if r := d.reachableRow(); r.Status != checkPass || r.Detail != "https://api.salad.com" || r.Hint != nil ||
-		!d.reachable {
+	d := &doctorRun{app: app.App}
+	r := d.reachableRow(t.Context())
+	if r.Status != checkPass || r.Detail != "https://api.salad.com" || r.Hint != nil || !d.reachable {
 		t.Errorf("reachable: %+v", r)
 	}
 	app.ProductionAPI = "http://127.0.0.1:1"
-	d = &doctorRun{ctx: t.Context(), app: app.App}
-	if r := d.reachableRow(); r.Status != checkFail || !strings.HasPrefix(r.Detail, "https://api.salad.com: ") ||
-		r.Hint == nil ||
-		*r.Hint != "check your network or proxy settings" ||
-		d.reachable {
+	d = &doctorRun{app: app.App}
+	r = d.reachableRow(t.Context())
+	if r.Status != checkFail || !strings.HasPrefix(r.Detail, "https://api.salad.com: ") || r.Hint == nil ||
+		*r.Hint != "check your network or proxy settings" || d.reachable {
 		t.Errorf("unreachable: %+v", r)
 	}
 }

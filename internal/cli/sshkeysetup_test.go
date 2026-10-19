@@ -1,27 +1,22 @@
 package cli
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 )
 
 // stubKeygen makes GenerateKey write a key pair instead of running
-// ssh-keygen, and ssh-keygen present or not.
-func stubKeygen(d *Deps, installed bool) {
+// ssh-keygen, and ssh-keygen present or not (lookPath is toolsFound or
+// toolsMissing).
+func stubKeygen(d *Deps, lookPath func(string) (string, error)) {
 	d.GenerateKey = func(keyPath string) error {
 		if err := os.WriteFile(keyPath, []byte("private"), 0o600); err != nil {
 			return err
 		}
 		return os.WriteFile(keyPath+".pub", []byte("ssh-ed25519 AAAAgenerated saladcloud-cli\n"), 0o600)
 	}
-	d.LookPath = func(name string) (string, error) {
-		if installed {
-			return "/usr/bin/" + name, nil
-		}
-		return "", errors.New("not found")
-	}
+	d.LookPath = lookPath
 }
 
 // stubPassphrase makes every key passphrase-protected or not.
@@ -53,7 +48,7 @@ func TestSSHKeySetupBranches(t *testing.T) {
 	}
 	t.Run("no passphrase", func(t *testing.T) {
 		t.Parallel()
-		runBranches(t, withDeps(func(d *Deps) { stubKeygen(d, true); stubPassphrase(d, false) }, []branchCase{
+		runBranches(t, withDeps(func(d *Deps) { stubKeygen(d, toolsFound); stubPassphrase(d, false) }, []branchCase{
 			{
 				id:     "no key, Enter",
 				s:      session{args: setup, tty: []string{""}},
@@ -141,7 +136,7 @@ func TestSSHKeySetupBranches(t *testing.T) {
 			"to use it with those, run ssh-add " + found + " first\n"
 		offer := "Generate a key without a passphrase at " + own + "? The CLI will use it instead, and registering " +
 			"it replaces your account's current key. [y/N]: "
-		runBranches(t, withDeps(func(d *Deps) { stubKeygen(d, true); stubPassphrase(d, true) }, []branchCase{
+		runBranches(t, withDeps(func(d *Deps) { stubKeygen(d, toolsFound); stubPassphrase(d, true) }, []branchCase{
 			{
 				id:     "Enter keeps the found key",
 				s:      session{args: setup, sshKey: true, tty: []string{""}},
@@ -170,8 +165,13 @@ func TestSSHKeySetupBranches(t *testing.T) {
 				doc:    map[string]any{"action": "found", "has_passphrase": true},
 			},
 			{
-				id:     "the CLI's own key",
-				s:      session{args: setup, sshKey: true, sshKeyName: "saladcloud_ed25519.pub", tty: []string{}},
+				id: "the CLI's own key",
+				s: session{
+					args:       setup,
+					sshKey:     true,
+					sshKeyName: "saladcloud_ed25519.pub",
+					tty:        ttyWithoutAnswers(),
+				},
 				stdout: "Public key (" + own + ".pub):\n  ssh-ed25519 AAAA test@host\n\n" + register,
 				stderr: "warning: " + own + " has a passphrase, which cp and one-shot ssh commands cannot ask " +
 					"for\nhint: to use it with those, run ssh-add " + own + " first\n" + connect,
@@ -186,15 +186,18 @@ func TestSSHKeySetupBranches(t *testing.T) {
 			{"linux", "install your distribution's OpenSSH client (openssh-client on Debian and Ubuntu, " +
 				"openssh-clients on Fedora)"},
 		} {
-			runBranches(t, withDeps(func(d *Deps) { stubKeygen(d, false); stubPassphrase(d, false) }, []branchCase{
-				{
-					id:     tc.os,
-					s:      session{args: []string{"ssh-key", "setup", "--generate"}, os: tc.os},
-					code:   1,
-					kind:   "api_error",
-					stderr: "saladcloud: error: ssh-keygen not found\nhint: " + tc.hint + "\n",
-				},
-			}))
+			runBranches(
+				t,
+				withDeps(func(d *Deps) { stubKeygen(d, toolsMissing); stubPassphrase(d, false) }, []branchCase{
+					{
+						id:     tc.os,
+						s:      session{args: []string{"ssh-key", "setup", "--generate"}, os: tc.os},
+						code:   1,
+						kind:   "api_error",
+						stderr: "saladcloud: error: ssh-keygen not found\nhint: " + tc.hint + "\n",
+					},
+				}),
+			)
 		}
 	})
 }

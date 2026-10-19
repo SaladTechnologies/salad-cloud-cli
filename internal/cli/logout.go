@@ -23,7 +23,7 @@ type logoutResult struct {
 // addLogoutCommands adds logout.go's commands to the tree.
 func (app *App) addLogoutCommands(root *cobra.Command) {
 	root.AddCommand(&cobra.Command{
-		Use:   "logout",
+		Use:   logoutCmdName,
 		Short: "Remove the saved API key (the organization and project stay)",
 		Long: `Remove the SaladCloud API key from the config file. The saved organization and
 project stay, so a later saladcloud login only needs the key again. When
@@ -45,8 +45,13 @@ func (app *App) runLogout(_ *cobra.Command, _ []string) error {
 	}
 	f, err := config.Load(app.Env)
 	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
-			WithHint("fix or delete it, then run saladcloud logout again")
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot read the config file %s: %s",
+			path,
+			readReason(err),
+		).WithHint("fix or delete it, then run saladcloud logout again")
 	}
 	old := f.APIKey
 	// Decided before the key is removed: a name equal to it is a key.
@@ -54,9 +59,14 @@ func (app *App) runLogout(_ *cobra.Command, _ []string) error {
 	orgShown, projectShown := app.shownName(f.Organization), app.shownName(f.Project)
 	if old != "" {
 		f.APIKey = ""
-		if err := config.Save(app.Env, f); err != nil {
-			return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
-				WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud logout again")
+		if saveErr := config.Save(app.Env, f); saveErr != nil {
+			return clierr.New(
+				clierr.CodeGeneric,
+				clierr.KindAPIError,
+				"cannot write the config file %s: %s",
+				path,
+				config.Reason(saveErr),
+			).WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud logout again")
 		}
 	}
 	ovs := app.stillSupplied(envAPIKey)
@@ -64,7 +74,7 @@ func (app *App) runLogout(_ *cobra.Command, _ []string) error {
 		Removed: old != "", Organization: orgJSON, Project: projectJSON,
 		EnvOverrides: overrideNames(ovs), Action: "logged_out", OK: true,
 	}
-	if err := app.printer.Emit(result, func(w *output.Writer) {
+	err = app.printer.Emit(result, func(w *output.Writer) {
 		if old == "" {
 			w.Println("No API key was saved; nothing to remove")
 			return
@@ -76,7 +86,8 @@ func (app *App) runLogout(_ *cobra.Command, _ []string) error {
 		case f.Organization != "":
 			w.Printf("Organization stays saved: %s\n", orgShown)
 		}
-	}); err != nil {
+	})
+	if err != nil {
 		return wrapErr(err)
 	}
 	app.warnOverrides(app.errw(), afterRemove, ovs)

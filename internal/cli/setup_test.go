@@ -33,7 +33,11 @@ func TestMaskShowsTheLastFourInASCII(t *testing.T) {
 func TestFromTag(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct{ source, want string }{
-		{"flag", " (from --org)"}, {"env", " (from SALAD_ORGANIZATION)"}, {"config", " (from config)"}, {"default", ""}, {"", ""},
+		{"flag", " (from --org)"},
+		{"env", " (from SALAD_ORGANIZATION)"},
+		{"config", " (from config)"},
+		{"default", ""},
+		{"", ""},
 	} {
 		if got := fromTag(originOf(tc.source, "--org", "SALAD_ORGANIZATION")); got != tc.want {
 			t.Errorf("%s: %q, want %q", tc.source, got, tc.want)
@@ -134,27 +138,15 @@ func wantNameCheck(t *testing.T, err *clierr.Error, msg, hint string) {
 func TestNameRetryNeverQuotesAKey(t *testing.T) {
 	t.Parallel()
 	key := "salad_cloud_user_SecretKeyValue000H13m"
-	if got := nameRetry(
-		"organization",
-		key,
-		key,
-	); got != "That looks like the API key you just pasted, not an organization name." {
-		t.Errorf("key: %q", got)
-	}
-	if got := nameRetry(
-		"project",
-		key,
-		key,
-	); got != "That looks like the API key you just pasted, not a project name." {
-		t.Errorf("key, project: %q", got)
-	}
 	long := strings.Repeat("a", 64)
-	if got := nameRetry(
-		"organization",
-		long,
-		key,
-	); got != "That is not a valid organization name: names are at most 63 characters." {
-		t.Errorf("long: %q", got)
+	for _, tc := range []struct{ name, kind, answer, want string }{
+		{"key", "organization", key, "That looks like the API key you just pasted, not an organization name."},
+		{"key, project", "project", key, "That looks like the API key you just pasted, not a project name."},
+		{"long", "organization", long, "That is not a valid organization name: names are at most 63 characters."},
+	} {
+		if got := nameRetry(tc.kind, tc.answer, key); got != tc.want {
+			t.Errorf("%s: %q", tc.name, got)
+		}
 	}
 }
 
@@ -197,17 +189,14 @@ func TestMalformedKey(t *testing.T) {
 		err.HintText() != "check for quotes or stray characters in it" {
 		t.Errorf("got %+v hint %q", err, err.HintText())
 	}
-	if got := malformedKeyRetry(
-		labelAPIKey,
-	); got != "That API key contains characters an API key cannot have. Check for quotes or stray characters in it." {
+	wantRetry := "That API key contains characters an API key cannot have. " +
+		"Check for quotes or stray characters in it."
+	if got := malformedKeyRetry(labelAPIKey); got != wantRetry {
 		t.Errorf("retry: %q", got)
 	}
-	if got := malformedKey(
-		labelGatewayKey,
-		"sk-é-0000000EFGH",
-		"stdin",
-	).Message; got != "AI Gateway key ****...EFGH (from stdin) contains characters an AI Gateway key cannot have" {
-		t.Errorf("gateway: %q", got)
+	gateway := malformedKey(labelGatewayKey, "sk-é-0000000EFGH", "stdin").Message
+	if gateway != "AI Gateway key ****...EFGH (from stdin) contains characters an AI Gateway key cannot have" {
+		t.Errorf("gateway: %q", gateway)
 	}
 }
 
@@ -232,7 +221,7 @@ func TestOrgsClause(t *testing.T) {
 		{names(22), "your organizations: org-01, org-02, org-03, org-04, org-05, org-06, org-07, org-08, org-09, " +
 			"org-10 and 12 more; to list all, run saladcloud orgs list"},
 		{nil, ""},
-		{[]string{}, ""},
+		{[]string{}, ""}, //nolint:revive // an empty list, not nil, is the case under test
 	} {
 		if got := app.orgsClause(tc.names); got != tc.want {
 			t.Errorf("%d names at a terminal:\n got %q\nwant %q", len(tc.names), got, tc.want)
@@ -246,11 +235,9 @@ func TestOrgsClause(t *testing.T) {
 			}
 		}
 	}
-	if got := hintClauses(
-		app.orgsClause([]string{"my-org"}),
-		"fix or remove SALAD_ORGANIZATION",
-	); got != "to list yours, run saladcloud orgs list; fix or remove SALAD_ORGANIZATION" {
-		t.Errorf("hintClauses: %q", got)
+	clauses := hintClauses(app.orgsClause([]string{"my-org"}), "fix or remove SALAD_ORGANIZATION")
+	if clauses != "to list yours, run saladcloud orgs list; fix or remove SALAD_ORGANIZATION" {
+		t.Errorf("hintClauses: %q", clauses)
 	}
 }
 
@@ -293,7 +280,7 @@ func TestConfigReadyCorruptFile(t *testing.T) {
 			t.Errorf("corrupt, %s: %+v hint %q", tc.command, err, err.HintText())
 		}
 	}
-	if b := must(os.ReadFile(path))(t); string(b) != "{not json" {
+	if b := must(os.ReadFile(path))(t); string(b) != "{not json" { //nolint:gosec // the test's config file
 		t.Errorf("the corrupt file was changed: %q", b)
 	}
 }
@@ -309,9 +296,9 @@ func TestConfigReadyReadOnlyFolder(t *testing.T) {
 	if err := os.Mkdir(ro, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(
-		func() { reportErr(t, os.Chmod(ro, 0o700)) },
-	) //nolint:gosec // a directory: TempDir cleanup needs its x bit back
+	t.Cleanup(func() {
+		reportErr(t, os.Chmod(ro, 0o700)) //nolint:gosec // a directory: TempDir cleanup needs its x bit back
+	})
 	app.setenv("SALAD_CLI_CONFIG_DIR", ro)
 	for _, tc := range []struct{ command, hint string }{
 		{"login", "set SALAD_CLI_CONFIG_DIR to a writable folder, or set SALAD_API_KEY, SALAD_ORGANIZATION and " +
@@ -469,7 +456,7 @@ func TestAskUntil(t *testing.T) {
 	t.Cleanup(func() { app.Console = old })
 	fc := &fakeConsole{terminal: true, answers: []string{"Acme Prod", "my-org"}}
 	app.Console = fc
-	got, err := app.askUntil("Type an organization name:", false, func(a string) (bool, string, *clierr.Error) {
+	got, err := app.askUntil("Type an organization name:", func(a string) (bool, string, *clierr.Error) {
 		if !validName(a) {
 			return false, nameRetry("organization", a, ""), nil
 		}
@@ -486,11 +473,8 @@ func TestAskUntil(t *testing.T) {
 	}
 	for _, end := range []string{keyCtrlC, keyEOF} {
 		app.Console = &fakeConsole{terminal: true, answers: []string{end}}
-		if _, err := app.askUntil(
-			"Paste it here, hidden:",
-			true,
-			func(string) (bool, string, *clierr.Error) { return true, "", nil },
-		); err == nil {
+		_, endErr := app.askUntil("Paste it here:", func(string) (bool, string, *clierr.Error) { return true, "", nil })
+		if endErr == nil {
 			t.Errorf("%q ended nothing", end)
 		}
 	}

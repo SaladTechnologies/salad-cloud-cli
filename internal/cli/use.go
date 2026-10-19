@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"net/http"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -52,16 +53,19 @@ type useResult struct {
 	OK           bool     `json:"ok"`
 }
 
+// useTarget is use's argument, split: the organization, and the project ("" when none was named).
+type useTarget struct{ org, project string }
+
 // parseUseTarget splits the positional <org>[/<project>] argument on the
 // first "/". An empty organization or project, or a second "/", is a usage
 // error.
-func parseUseTarget(arg string) (org, project string, err *clierr.Error) {
+func parseUseTarget(arg string) (useTarget, *clierr.Error) {
 	org, project, slash := strings.Cut(strings.TrimSpace(arg), "/")
 	if org == "" || slash && (project == "" || strings.Contains(project, "/")) {
-		return "", "", clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid target "%s"`, arg).
+		return useTarget{}, clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid target "%s"`, arg).
 			WithHint("the target is <org> or <org>/<project>, for example saladcloud use acme-prod/staging")
 	}
-	return org, project, nil
+	return useTarget{org: org, project: project}, nil
 }
 
 // useRun is one run of use: the key it checks with, the config file before it, and what its errors need to know.
@@ -74,10 +78,11 @@ type useRun struct {
 }
 
 func (app *App) runUse(cmd *cobra.Command, args []string) error {
-	org, project, perr := parseUseTarget(args[0])
+	target, perr := parseUseTarget(args[0])
 	if perr != nil {
 		return perr
 	}
+	org, project := target.org, target.project
 	if cerr := app.checkUseNames(org, project); cerr != nil {
 		return cerr
 	}
@@ -102,11 +107,11 @@ func (app *App) runUse(cmd *cobra.Command, args []string) error {
 
 // checkUseNames checks the organization and project use's argument names (the project only when there is one).
 func (app *App) checkUseNames(org, project string) *clierr.Error {
-	if cerr := app.checkName("organization", org, ""); cerr != nil {
+	if cerr := app.checkName(nameKindOrganization, org, ""); cerr != nil {
 		return cerr
 	}
 	if project != "" {
-		return app.checkName("project", project, "")
+		return app.checkName(nameKindProject, project, "")
 	}
 	return nil
 }
@@ -147,7 +152,8 @@ func (u *useRun) checkOrganization(ctx context.Context, org string) *clierr.Erro
 	case cerr.Code != clierr.CodeNotFound:
 		return u.failed(cerr)
 	}
-	e := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `organization "%s" not found`, org).WithStatus(404)
+	e := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `organization "%s" not found`, org).
+		WithStatus(http.StatusNotFound)
 	names := []string(nil)
 	if u.app.atTerminal() {
 		if list, lerr := client.OrganizationListing(ctx); lerr == nil && list != nil {
@@ -177,7 +183,7 @@ func (u *useRun) checkProject(ctx context.Context, org, project string) (string,
 		return "", u.failed(cerr)
 	case !u.defaulted:
 		return "", clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `project "%s" not found in %s`, project, org).
-			WithStatus(404).WithHint("create one at %s", projectCreateURL(org))
+			WithStatus(http.StatusNotFound).WithHint("create one at %s", projectCreateURL(org))
 	}
 	u.app.say(`Project "default" not found in %s. Create one later if needed.`, org)
 	return "", nil
@@ -219,13 +225,14 @@ func (u *useRun) save(org, project string) error {
 		Action:       "switched",
 		OK:           true,
 	}
-	if err := app.printer.Emit(result, func(w *output.Writer) {
+	err := app.printer.Emit(result, func(w *output.Writer) {
 		if project == "" {
 			w.Printf("Switched to %s, no project set\n", org)
 			return
 		}
 		w.Printf("Switched to %s/%s\n", org, project)
-	}); err != nil {
+	})
+	if err != nil {
 		return wrapErr(err)
 	}
 	if u.defaulted && project != "" {
@@ -247,8 +254,13 @@ func (u *useRun) failed(cerr *clierr.Error) *clierr.Error {
 	case cerr.IsCancel():
 		return u.canceled()
 	case rejected(cerr):
-		e := clierr.New(clierr.CodeAuth, clierr.KindAuth, "API key %s%s is invalid", maskAPIKey(u.key), fromTag(u.keyFrom)).
-			WithStatus(401)
+		e := clierr.New(
+			clierr.CodeAuth,
+			clierr.KindAuth,
+			"API key %s%s is invalid",
+			maskAPIKey(u.key),
+			fromTag(u.keyFrom),
+		).WithStatus(http.StatusUnauthorized)
 		switch {
 		case quotedKey(u.key):
 			return e.WithHint("remove the quotes around it")

@@ -213,47 +213,36 @@ func (chk *whoamiCheck) authenticate(ctx context.Context, client *api.Client) *c
 
 // whoamiTable is whoami's table: one row per value, with where it came from and what the API said.
 func (app *App) whoamiTable(w *output.Writer, path string, res *config.Resolved, saved config.File, chk *whoamiCheck) {
-	fprintf(
-		w,
-		"api-key\t%s\n",
-		whoamiRow(
-			maskAPIKey(res.APIKey),
-			res.APIKeySource,
-			"",
-			envAPIKey,
-			maskAPIKey(saved.APIKey),
-			saved.APIKey != "" && !sameKey(saved.APIKey, res.APIKey),
-			"",
-		),
-	)
+	keyHidden := ""
+	if saved.APIKey != "" && !sameKey(saved.APIKey, res.APIKey) {
+		keyHidden = maskAPIKey(saved.APIKey)
+	}
+	fprintf(w, "api-key\t%s\n", whoamiRow(maskAPIKey(res.APIKey), res.APIKeySource, "", envAPIKey, keyHidden, ""))
 	w.Printf("organization\t%s\n", app.whoamiOrganizationCell(res, saved, chk))
+	projectHidden := ""
+	if saved.Project != res.Project {
+		projectHidden = app.shownName(saved.Project)
+	}
 	project := whoamiRow(
 		app.shownName(res.Project),
 		res.ProjectSource,
-		"--project",
+		projectFlagSpelling,
 		envProject,
-		app.shownName(saved.Project),
-		saved.Project != res.Project,
+		projectHidden,
 		"",
 	)
 	if res.ProjectSource == config.SourceDefault {
 		project = `none set, using "default"`
 	}
 	w.Printf("project\t%s\n", project)
+	gatewayHidden := ""
+	if saved.GatewayAPIKey != "" && !sameKey(saved.GatewayAPIKey, res.GatewayAPIKey) {
+		gatewayHidden = maskAPIKey(saved.GatewayAPIKey)
+	}
 	fprintf(
 		w,
 		"ai-gateway-api-key\t%s\n",
-		whoamiRow(
-			maskAPIKey(res.GatewayAPIKey),
-			res.GatewayAPIKeySource,
-			"",
-			envGatewayKey,
-			maskAPIKey(
-				saved.GatewayAPIKey,
-			),
-			saved.GatewayAPIKey != "" && !sameKey(saved.GatewayAPIKey, res.GatewayAPIKey),
-			"",
-		),
+		whoamiRow(maskAPIKey(res.GatewayAPIKey), res.GatewayAPIKeySource, "", envGatewayKey, gatewayHidden, ""),
 	)
 	w.Printf("authenticated\t%s\n", chk.authenticatedCell())
 	w.Printf("organizations\t%s\n", orgListCell(chk.orgs))
@@ -264,7 +253,7 @@ func (app *App) whoamiTable(w *output.Writer, path string, res *config.Resolved,
 // check did not find is marked.
 func (app *App) whoamiOrganizationCell(res *config.Resolved, saved config.File, chk *whoamiCheck) string {
 	if res.Organization != "" && !app.looksLikeKey(res.Organization) && !validName(res.Organization) {
-		return fmt.Sprintf(
+		return fmt.Sprintf( //nolint:gocritic // shows the name as written; %q would escape it
 			`"%s"%s, not a valid organization name`,
 			res.Organization,
 			fromTag(originOf(res.OrganizationSource, "--org", envOrganization)),
@@ -274,13 +263,16 @@ func (app *App) whoamiOrganizationCell(res *config.Resolved, saved config.File, 
 	if chk.orgChecks && chk.found != nil && !*chk.found {
 		notFound = "not found"
 	}
+	hidden := ""
+	if saved.Organization != res.Organization {
+		hidden = app.shownName(saved.Organization)
+	}
 	return whoamiRow(
 		app.shownName(res.Organization),
 		res.OrganizationSource,
 		"--org",
 		envOrganization,
-		app.shownName(saved.Organization),
-		saved.Organization != res.Organization,
+		hidden,
 		notFound,
 	)
 }
@@ -299,18 +291,19 @@ func (chk *whoamiCheck) authenticatedCell() string {
 }
 
 // whoamiRow renders one whoami value: "not set", or the value with where it
-// came from, the saved value a variable or flag is hiding, and a note.
-func whoamiRow(value, source, flag, env, saved string, differs bool, note string) string {
+// came from, the saved value a variable or flag is hiding (hidden, as shown;
+// "" when it hides none), and a note.
+func whoamiRow(value, source, flag, env, hidden, note string) string {
 	if source == "" {
 		return "not set"
 	}
 	var parts []string
-	if source == "config" {
+	if source == settingFromConfig {
 		parts = append(parts, "from config")
 	} else {
 		parts = append(parts, "from "+originOf(source, flag, env))
-		if differs && saved != "" && saved != "(not set)" {
-			parts = append(parts, "saved: "+saved)
+		if hidden != "" && hidden != notSetLabel {
+			parts = append(parts, "saved: "+hidden)
 		}
 	}
 	if note != "" {

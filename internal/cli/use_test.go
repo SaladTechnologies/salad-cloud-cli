@@ -26,7 +26,8 @@ func TestParseUseTarget(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			org, project, err := parseUseTarget(tt.arg)
+			target, err := parseUseTarget(tt.arg)
+			org, project := target.org, target.project
 			code, wantCode := 0, 0 // an error is a usage error (2), and returns no names
 			if err != nil {
 				code = err.Code

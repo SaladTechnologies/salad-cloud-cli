@@ -14,19 +14,26 @@ import (
 )
 
 // tell writes one line of the exchange to the terminal device.
+//
+//nolint:goprintffuncname // AGENTS.md names tell as the prompt-exchange helper every prompting verb uses
 func (app *App) tell(format string, args ...any) {
 	fprintf(app.Console.Device(), format+"\n", args...)
 }
 
-// ask writes prompt to the terminal device and reads the answer, hidden when
-// asked. Ctrl-C returns errInterrupt and end of input [io.EOF]: both end the
-// exchange (answerEnded), and the terminal is already restored.
-func (app *App) ask(prompt string, hidden bool) (string, error) {
+// ask writes prompt to the terminal device and reads the answer. Ctrl-C
+// returns errInterrupt and end of input [io.EOF]: both end the exchange
+// (answerEnded), and the terminal is already restored.
+func (app *App) ask(prompt string) (string, error) { return app.askWith(prompt, app.Console.ReadLine) }
+
+// askHidden is ask with the answer hidden as it is typed: the key prompts.
+func (app *App) askHidden(prompt string) (string, error) {
+	return app.askWith(prompt, app.Console.ReadHidden)
+}
+
+// askWith writes prompt to the terminal device and reads the answer with read, a console read; ask and askHidden
+// say how it ends.
+func (app *App) askWith(prompt string, read func() (string, error)) (string, error) {
 	fprint(app.Console.Device(), prompt+" ")
-	read := app.Console.ReadLine
-	if hidden {
-		read = app.Console.ReadHidden
-	}
 	answer, err := read()
 	if err != nil {
 		return answer, fmt.Errorf("reading the answer: %w", err)
@@ -38,13 +45,9 @@ func (app *App) ask(prompt string, hidden bool) (string, error) {
 // or a line to show before asking again ("" asks again silently), or an
 // error that ends the exchange. A read error (Ctrl-C, end of input) is
 // returned as is, for the caller's cancel line.
-func (app *App) askUntil(
-	prompt string,
-	hidden bool,
-	check func(answer string) (bool, string, *clierr.Error),
-) (string, error) {
+func (app *App) askUntil(prompt string, check func(answer string) (bool, string, *clierr.Error)) (string, error) {
 	for {
-		answer, err := app.ask(prompt, hidden)
+		answer, err := app.ask(prompt)
 		if err != nil {
 			return "", err
 		}
@@ -97,9 +100,9 @@ func (app *App) openOffered(url string) {
 // opener is the command that opens url in the user's browser: the system's
 // opener, or under WSL Windows' own browser through cmd.exe, since a Linux
 // opener there often has no browser to start and still reports success.
-func opener(env config.Env, url string) (name string, args []string) {
+func opener(env config.Env, url string) (string, []string) {
 	switch {
-	case env.GOOS == "windows":
+	case env.GOOS == setupGOOSWindows:
 		return "rundll32", []string{"url.dll,FileProtocolHandler", url}
 	case env.GOOS == "darwin":
 		return "open", []string{url}
@@ -113,7 +116,8 @@ func opener(env config.Env, url string) (name string, args []string) {
 // non-fatal.
 func openBrowser(env config.Env, url string) error {
 	name, args := opener(env, url)
-	if err := exec.Command(name, args...).Start(); err != nil {
+	cmd := exec.Command(name, args...) //nolint:gosec,noctx // the system's URL opener; it must outlive the run
+	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting %s: %w", name, err)
 	}
 	return nil

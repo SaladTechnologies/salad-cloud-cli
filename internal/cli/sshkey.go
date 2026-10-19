@@ -18,11 +18,24 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 // sshDedicatedKeyName is the key pair 'ssh-key setup' generates (no
 // passphrase, so one-shot commands work), under ~/.ssh.
 const sshDedicatedKeyName = "saladcloud_ed25519"
+
+// sshDirMode is the mode ssh-key setup creates ~/.ssh with: OpenSSH refuses a key folder others can read.
+const sshDirMode = 0o700
+
+// The actions ssh-key setup reports: a local key found, or the CLI's own generated.
+const (
+	sshKeyActionFound     = "found"
+	sshKeyActionGenerated = "generated"
+)
+
+// setupVerbGet is the get verb's name under ssh-key.
+const setupVerbGet = "get"
 
 // sshPublicKeyCandidates are the public key files probed, in order, under
 // ~/.ssh. The CLI's own generated key comes first: when it exists it is the
@@ -68,14 +81,14 @@ func (app *App) resolveIdentity(flag string) string {
 // unreadable file). A passphrase-protected key matters because one-shot
 // 'ssh -- <cmd>' runs in BatchMode, which cannot prompt for it, so the key
 // fails exactly like an unregistered one.
-func keyHasPassphrase(path string) (encrypted, known bool) {
+func keyHasPassphrase(path string) (bool, bool) {
 	if _, err := exec.LookPath("ssh-keygen"); err != nil {
 		return false, false
 	}
 	if _, err := os.Stat(path); err != nil {
 		return false, false
 	}
-	cmd := exec.Command("ssh-keygen", "-y", "-P", "", "-f", path)
+	cmd := exec.Command("ssh-keygen", "-y", "-P", "", "-f", path) //nolint:gosec // path is the key the CLI is checking
 	if err := cmd.Run(); err != nil {
 		return true, true
 	}
@@ -94,6 +107,7 @@ const sshKeysPage = "https://portal.salad.com/ssh-keys"
 
 // sshKeygen runs ssh-keygen for a key without a passphrase at keyPath.
 func sshKeygen(keyPath string) error {
+	//nolint:gosec // keyPath is the CLI's own key under ~/.ssh
 	out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "", "-C", "saladcloud-cli").
 		CombinedOutput()
 	if err != nil {
@@ -137,9 +151,10 @@ type sshKeySetupResult struct {
 	OK            bool   `json:"ok"`
 }
 
-// passphraseOf is has_passphrase: whether the key has one, or null when
-// that could not be told.
-func passphraseOf(encrypted, known bool) *bool {
+// passphraseAt is has_passphrase for the private key at priv: whether it has
+// one, or null when that could not be told.
+func (app *App) passphraseAt(priv string) *bool {
+	encrypted, known := app.HasPassphrase(priv)
 	if !known {
 		return nil
 	}
@@ -148,7 +163,7 @@ func passphraseOf(encrypted, known bool) *bool {
 
 // readPublicKey loads and trims one public key file.
 func readPublicKey(path string) (string, *clierr.Error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // a public key file under ~/.ssh, which the command exists to show
 	if err != nil {
 		return "", clierr.New(
 			clierr.CodeGeneric,
@@ -168,7 +183,7 @@ type sshKeySetup struct {
 	app          *App   // the run
 }
 
-func (app *App) runSSHKeySetup(cmd *cobra.Command, _ []string, generate bool) error {
+func (app *App) runSSHKeySetup(generate bool) error {
 	home, err := config.HomeDir(app.Env)
 	if err != nil {
 		return clierr.New(
@@ -190,8 +205,8 @@ func (app *App) runSSHKeySetup(cmd *cobra.Command, _ []string, generate bool) er
 func (k sshKeySetup) useFound(path string) error {
 	app := k.app
 	priv := strings.TrimSuffix(path, ".pub")
-	enc, known := app.HasPassphrase(priv)
-	if known && enc {
+	passphrase := app.passphraseAt(priv)
+	if passphrase != nil && *passphrase {
 		app.warnPassphrase(priv)
 		replace, cerr := k.replaceWithDedicated(priv)
 		if cerr != nil {
@@ -201,7 +216,7 @@ func (k sshKeySetup) useFound(path string) error {
 			return k.generate()
 		}
 	}
-	return k.show(path, false, passphraseOf(enc, known))
+	return k.show(path, sshKeyActionFound, passphrase)
 }
 
 // replaceWithDedicated reports whether to generate the CLI's own key in place of priv, a key with a passphrase:
@@ -216,10 +231,10 @@ func (k sshKeySetup) replaceWithDedicated(priv string) (bool, *clierr.Error) {
 	case app.atTerminal():
 		answer, err := app.ask(
 			fmt.Sprintf(
-				"Generate a key without a passphrase at %s? The CLI will use it instead, and registering it replaces your account's current key. [y/N]:",
+				"Generate a key without a passphrase at %s? The CLI will use it instead, "+
+					"and registering it replaces your account's current key. [y/N]:",
 				k.keyPath,
 			),
-			false,
 		)
 		if err != nil {
 			return false, setupCanceled()
@@ -235,10 +250,13 @@ func (k sshKeySetup) setupMissing() error {
 	app := k.app
 	if !k.generateFlag {
 		if !app.atTerminal() {
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "no local SSH key found, and no terminal to ask whether to generate one").
-				WithHint("to generate one, run saladcloud ssh-key setup --generate")
+			return clierr.New(
+				clierr.CodeUsage,
+				clierr.KindUsage,
+				"no local SSH key found, and no terminal to ask whether to generate one",
+			).WithHint("to generate one, run saladcloud ssh-key setup --generate")
 		}
-		answer, err := app.ask(fmt.Sprintf("No SSH key found. Generate one at %s? [Y/n]:", k.keyPath), false)
+		answer, err := app.ask(fmt.Sprintf("No SSH key found. Generate one at %s? [Y/n]:", k.keyPath))
 		if err != nil || answer != "" && !yes(answer) {
 			return setupCanceled()
 		}
@@ -261,14 +279,18 @@ func setupCanceled() *clierr.Error {
 func (k sshKeySetup) generate() error {
 	app := k.app
 	if _, err := os.Stat(k.keyPath); err == nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot generate a key: %s already exists", k.keyPath).
-			WithHint("register %s.pub, or remove it to generate a new one", k.keyPath)
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot generate a key: %s already exists",
+			k.keyPath,
+		).WithHint("register %s.pub, or remove it to generate a new one", k.keyPath)
 	}
 	if _, err := app.LookPath("ssh-keygen"); err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "ssh-keygen not found").
 			WithHint("%s", app.sshMissingHint("ssh-keygen"))
 	}
-	if err := os.MkdirAll(filepath.Dir(k.keyPath), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(k.keyPath), sshDirMode); err != nil {
 		return clierr.New(
 			clierr.CodeGeneric,
 			clierr.KindAPIError,
@@ -280,20 +302,18 @@ func (k sshKeySetup) generate() error {
 	if err := app.GenerateKey(k.keyPath); err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "ssh-keygen failed: %v", err)
 	}
-	return k.show(k.keyPath+".pub", true, passphraseOf(false, true))
+	return k.show(k.keyPath+".pub", sshKeyActionGenerated, ptr.To(false))
 }
 
-// show prints the public key and where to register it.
-func (k sshKeySetup) show(path string, generated bool, passphrase *bool) error {
+// show prints the public key at path and where to register it; action is sshKeyActionFound or
+// sshKeyActionGenerated.
+func (k sshKeySetup) show(path, action string, passphrase *bool) error {
 	app := k.app
 	key, cerr := readPublicKey(path)
 	if cerr != nil {
 		return cerr
 	}
-	action := "found"
-	if generated {
-		action = "generated"
-	}
+	generated := action == sshKeyActionGenerated
 	v := sshKeySetupResult{
 		Path:          path,
 		PublicKey:     key,
@@ -316,7 +336,8 @@ func (k sshKeySetup) show(path string, generated bool, passphrase *bool) error {
 	if app.printer.Machine() {
 		fprintf(
 			app.errw(),
-			"note: register the public key at %s; your account holds one SSH key, so registering this one replaces any other\n",
+			"note: register the public key at %s; "+
+				"your account holds one SSH key, so registering this one replaces any other\n",
 			sshKeysPage,
 		)
 	}
@@ -343,11 +364,11 @@ func (app *App) runSSHKeyGet(_ *cobra.Command, _ []string) error {
 	if cerr != nil {
 		return cerr
 	}
-	enc, known := app.HasPassphrase(strings.TrimSuffix(path, ".pub"))
-	if known && enc {
+	passphrase := app.passphraseAt(strings.TrimSuffix(path, ".pub"))
+	if passphrase != nil && *passphrase {
 		app.warnPassphrase(strings.TrimSuffix(path, ".pub"))
 	}
-	v := sshKeyResult{Path: path, PublicKey: key, HasPassphrase: passphraseOf(enc, known), Generated: false}
+	v := sshKeyResult{Path: path, PublicKey: key, HasPassphrase: passphrase, Generated: false}
 	return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
 		w.Printf("%s\n%s\n", path, key)
 	}))
@@ -387,14 +408,18 @@ behave as if there is no terminal.`,
   # Scripts and CI: generate without asking when there is none
   saladcloud ssh-key setup --generate`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error { return app.runSSHKeySetup(cmd, args, generate) },
+		RunE: func(_ *cobra.Command, _ []string) error { return app.runSSHKeySetup(generate) },
 	}
-	setupCmd.Flags().
-		BoolVar(&generate, "generate", false, "generate ~/.ssh/saladcloud_ed25519 without asking when no usable key is found")
+	setupCmd.Flags().BoolVar(
+		&generate,
+		"generate",
+		false,
+		"generate ~/.ssh/saladcloud_ed25519 without asking when no usable key is found",
+	)
 	sshKeyCmd.AddCommand(setupCmd)
 
 	sshKeyCmd.AddCommand(&cobra.Command{
-		Use:   "get",
+		Use:   setupVerbGet,
 		Short: "Print the local SSH public key that would be used",
 		Long: `Print the local SSH public key (path and contents) the CLI would use, in the
 same search order as saladcloud ssh-key setup: ~/.ssh/saladcloud_ed25519.pub,

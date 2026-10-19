@@ -66,7 +66,7 @@ func TestUseBranches(t *testing.T) {
 		{
 			id:     "organization not found at a terminal",
 			status: 404,
-			s:      session{args: use("acme-stagng"), saved: saved, tty: []string{}},
+			s:      session{args: use("acme-stagng"), saved: saved, tty: ttyWithoutAnswers()},
 			code:   4,
 			kind:   "not_found",
 			stderr: errLines(`organization "acme-stagng" not found`, "your organizations: acme-prod, my-org"),
@@ -150,7 +150,7 @@ func TestUseBranches(t *testing.T) {
 			s: session{
 				args:  use("acme-prod/default"),
 				saved: saved,
-				tty:   []string{},
+				tty:   ttyWithoutAnswers(),
 				env:   map[string]string{"SALAD_ORGANIZATION": "my-org"},
 			},
 			stdout: "Switched to acme-prod/default\n",
@@ -297,7 +297,7 @@ func TestConfigSetUnsetBranches(t *testing.T) {
 		{
 			id: "unset, the variable still set, at a terminal",
 			s: session{
-				args: cfg("unset", "organization"), saved: saved, tty: []string{},
+				args: cfg("unset", "organization"), saved: saved, tty: ttyWithoutAnswers(),
 				env: map[string]string{"SALAD_ORGANIZATION": "acme-prod"},
 			},
 			stdout: "Unset organization\nConfig at: <path>\n",

@@ -253,7 +253,7 @@ func TestLogoutBranches(t *testing.T) {
 		},
 		{
 			id: "the variable still set, at a terminal", s: session{
-				args: logout, tty: []string{}, env: map[string]string{"SALAD_API_KEY": testOtherAPIKey},
+				args: logout, tty: ttyWithoutAnswers(), env: map[string]string{"SALAD_API_KEY": testOtherAPIKey},
 				saved: &config.File{APIKey: k, Organization: "my-org", Project: "default"},
 			},
 			stdout: removed + "Organization and project stay saved: my-org/default\n",

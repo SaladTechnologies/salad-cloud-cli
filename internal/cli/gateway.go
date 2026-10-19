@@ -59,8 +59,13 @@ func (app *App) newGateway() (*api.Gateway, *gatewayKey, *clierr.Error) {
 	res, err := config.Resolve(app.Env, "", "")
 	if err != nil {
 		path := app.configPath()
-		return nil, nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
-			WithHint("fix or delete it")
+		return nil, nil, clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot read the config file %s: %s",
+			path,
+			readReason(err),
+		).WithHint("fix or delete it")
 	}
 	from := originOf(res.GatewayAPIKeySource, "", envGatewayKey)
 	if res.GatewayAPIKey != "" {
@@ -89,12 +94,20 @@ func (k *gatewayKey) failed(cerr *clierr.Error) *clierr.Error {
 	case http.StatusUnauthorized:
 		return k.rejected()
 	case http.StatusForbidden:
-		return clierr.New(clierr.CodeAuth, clierr.KindAuth, "AI Gateway key %s%s has no AI Gateway access", maskAPIKey(k.key), fromTag(k.from)).
-			WithStatus(http.StatusForbidden).
+		return clierr.New(
+			clierr.CodeAuth,
+			clierr.KindAuth,
+			"AI Gateway key %s%s has no AI Gateway access",
+			maskAPIKey(k.key),
+			fromTag(k.from),
+		).WithStatus(http.StatusForbidden).
 			WithHint("check that you are still a member of its organization; if you are, contact support")
 	case http.StatusPaymentRequired:
-		return clierr.New(clierr.CodeNotAvailable, clierr.KindNotAvailable, "the AI Gateway key's organization is out of credits").
-			WithStatus(http.StatusPaymentRequired).
+		return clierr.New(
+			clierr.CodeNotAvailable,
+			clierr.KindNotAvailable,
+			"the AI Gateway key's organization is out of credits",
+		).WithStatus(http.StatusPaymentRequired).
 			WithHint("add credits from the organization's AI Gateway page: %s", gatewayKeyPage)
 	}
 	return cerr
@@ -102,8 +115,13 @@ func (k *gatewayKey) failed(cerr *clierr.Error) *clierr.Error {
 
 // rejected is the error for a key the gateway answered 401 to, with the fix for where the key came from.
 func (k *gatewayKey) rejected() *clierr.Error {
-	e := clierr.New(clierr.CodeAuth, clierr.KindAuth, "AI Gateway key %s%s was rejected", maskAPIKey(k.key), fromTag(k.from)).
-		WithStatus(http.StatusUnauthorized)
+	e := clierr.New(
+		clierr.CodeAuth,
+		clierr.KindAuth,
+		"AI Gateway key %s%s was rejected",
+		maskAPIKey(k.key),
+		fromTag(k.from),
+	).WithStatus(http.StatusUnauthorized)
 	switch {
 	case quotedKey(k.key):
 		return e.WithHint("remove the quotes around it")
@@ -179,7 +197,7 @@ func (app *App) gatewayModelsCmd() *cobra.Command {
 		Short:   "The models the AI Gateway serves",
 	}
 	modelsListCmd := &cobra.Command{
-		Use:   "list",
+		Use:   setupVerbList,
 		Short: "List the models the AI Gateway serves (no key needed)",
 		Long: `List the models the AI Gateway serves. The list is public and the same for
 every key, so no AI Gateway key is needed; with one set, it is sent.`,
@@ -204,14 +222,14 @@ func (app *App) runGatewayModelsList(cmd *cobra.Command) error {
 	if cerr != nil {
 		return cerr
 	}
-	if app.printer.Mode() == "table" {
+	if !app.printer.Machine() {
 		fprintf(app.errw(), "pricing and the subscription tier: %s\n", api.GatewayPricingURL)
 	}
 	// The list envelope every list has; each model stays the
 	// gateway's own object.
 	result := gatewayModelsResult{Items: models.Data}
 	if result.Items == nil {
-		result.Items = []map[string]any{}
+		result.Items = []map[string]any{} //nolint:revive // the JSON contract: no models is [], and nil would be null
 	}
 	return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
 		w.Println("MODEL\tOWNED BY")
@@ -260,10 +278,22 @@ budget then defaults to 1024).`,
 	testCmd.Flags().StringVar(&o.prompt, "prompt", "", "the one user message to send")
 	// The default depends on --thinking, so the flag's own default is 0 and
 	// the help states both: cobra would otherwise print a second default.
-	testCmd.Flags().
-		IntVar(&o.maxTokens, "max-tokens", 0, fmt.Sprintf("completion token budget (default %d, or %d with --thinking)", gatewayTestMaxTokens, gatewayTestMaxTokensThinking))
-	testCmd.Flags().
-		BoolVar(&o.thinking, "thinking", false, "let the model reason before answering (hundreds of tokens; off by default)")
+	testCmd.Flags().IntVar(
+		&o.maxTokens,
+		"max-tokens",
+		0,
+		fmt.Sprintf(
+			"completion token budget (default %d, or %d with --thinking)",
+			gatewayTestMaxTokens,
+			gatewayTestMaxTokensThinking,
+		),
+	)
+	testCmd.Flags().BoolVar(
+		&o.thinking,
+		"thinking",
+		false,
+		"let the model reason before answering (hundreds of tokens; off by default)",
+	)
 	return testCmd
 }
 

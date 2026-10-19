@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 
@@ -18,24 +19,38 @@ import (
 )
 
 const (
-	apiKeyPortalURL   = "https://portal.salad.com/api-key"
+	apiKeyPortalURL   = "https://portal.salad.com/api-key" //nolint:gosec // the portal page that issues keys, not a key
 	organizationsURL  = "https://portal.salad.com/organizations"
-	envAPIKey         = "SALAD_API_KEY"
+	envAPIKey         = "SALAD_API_KEY" //nolint:gosec // the variable's name, not a key
 	envOrganization   = "SALAD_ORGANIZATION"
 	envProject        = "SALAD_PROJECT"
 	keyFromStdin      = "stdin"
 	keyFromFlag       = "--api-key"
 	nothingSavedHint  = "nothing was saved; run saladcloud login again"
 	nothingSavedLater = "nothing was saved; run saladcloud login again in a minute"
-	invalidPastedKey  = "That API key is invalid. Check that you copied all of it, and that it isn't an AI Gateway key (those go in saladcloud ai-gateway login)."
-	quotedPastedKey   = "That API key is invalid. Remove the quotes around it and paste it again."
+	invalidPastedKey  = "That API key is invalid. Check that you copied all of it, " +
+		"and that it isn't an AI Gateway key (those go in saladcloud ai-gateway login)."
+	quotedPastedKey = "That API key is invalid. Remove the quotes around it and paste it again."
 )
+
+// loginCmdName is the login command's name, as its hints and the config file checks spell it.
+const loginCmdName = "login"
+
+// login's flag names, as cobra spells them.
+const (
+	loginFlagAPIKey  = "api-key"
+	loginFlagOrg     = "org"
+	loginFlagProject = "project"
+)
+
+// orgMenuDisplayGap is the room between the longest organization name and the display names in the numbered list.
+const orgMenuDisplayGap = 3
 
 // addLoginCommands adds login.go's commands to the tree.
 func (app *App) addLoginCommands(root *cobra.Command) {
 	var keyFlag string
 	cmd := &cobra.Command{
-		Use:   "login",
+		Use:   loginCmdName,
 		Short: "Save your API key, organization and project",
 		Long: `Save your API key, organization and project to the config file, each checked
 against the API first. Nothing is saved until all three are settled.
@@ -68,8 +83,12 @@ SALAD_API_KEY, SALAD_ORGANIZATION and SALAD_PROJECT instead.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error { return app.runLogin(cmd, args, keyFlag) },
 	}
-	cmd.Flags().
-		StringVar(&keyFlag, "api-key", "", "the API key; - reads it from the first line of stdin (a key typed here is exposed on the command line)")
+	cmd.Flags().StringVar(
+		&keyFlag,
+		loginFlagAPIKey,
+		"",
+		"the API key; - reads it from the first line of stdin (a key typed here is exposed on the command line)",
+	)
 	root.AddCommand(cmd)
 }
 
@@ -97,7 +116,6 @@ type loginResult struct {
 
 // login is one run of the command.
 type login struct {
-	ctx      context.Context
 	saved    config.File // the config file before login
 	terminal bool
 
@@ -126,20 +144,24 @@ func (app *App) runLogin(cmd *cobra.Command, _ []string, keyFlag string) error {
 	if cerr := loginCheckFlags(cmd, keyFlag, orgFlag, projectFlag); cerr != nil {
 		return cerr
 	}
-	l, cerr := app.newLogin(cmd, orgFlag, projectFlag)
+	l, cerr := app.newLogin(orgFlag, projectFlag)
 	if cerr != nil {
 		return cerr
 	}
-	if cerr := l.obtainKey(keyFlag); cerr != nil {
+	ctx := cmd.Context()
+	if cerr := l.obtainKey(ctx, keyFlag); cerr != nil {
 		return cerr
 	}
-	return l.pickAndSave()
+	return l.pickAndSave(ctx)
 }
 
 // loginCheckFlags rejects a login flag given empty, and an --org that names a project too, before anything else
 // is read.
 func loginCheckFlags(cmd *cobra.Command, keyFlag, orgFlag, projectFlag string) *clierr.Error {
-	for _, f := range []struct{ name, value string }{{"api-key", keyFlag}, {"org", orgFlag}, {"project", projectFlag}} {
+	flags := []struct{ name, value string }{
+		{loginFlagAPIKey, keyFlag}, {loginFlagOrg, orgFlag}, {loginFlagProject, projectFlag},
+	}
+	for _, f := range flags {
 		if cmd.Flags().Changed(f.name) && f.value == "" {
 			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s is empty", "--"+f.name).
 				WithHint("check that the variable you passed is set")
@@ -160,9 +182,8 @@ func loginCheckFlags(cmd *cobra.Command, keyFlag, orgFlag, projectFlag string) *
 
 // newLogin starts a run of login: the organization and project named by flag or variable, each checked, and the
 // config file as it was before login.
-func (app *App) newLogin(cmd *cobra.Command, orgFlag, projectFlag string) (*login, *clierr.Error) {
+func (app *App) newLogin(orgFlag, projectFlag string) (*login, *clierr.Error) {
 	l := &login{
-		ctx:               cmd.Context(),
 		terminal:          app.atTerminal(),
 		saved:             config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
 		key:               "",
@@ -175,16 +196,21 @@ func (app *App) newLogin(cmd *cobra.Command, orgFlag, projectFlag string) (*logi
 		savedProjectFound: nil,
 		app:               app,
 	}
-	l.orgName, l.orgFrom = app.namedValue(orgFlag, "--org", envOrganization)
-	l.projectName, l.projectFrom = app.namedValue(projectFlag, "--project", envProject)
-	for _, n := range []struct{ kind, name, from string }{{"organization", l.orgName, l.orgFrom}, {"project", l.projectName, l.projectFrom}} {
+	org := app.namedValue(orgFlag, "--org", envOrganization)
+	project := app.namedValue(projectFlag, projectFlagSpelling, envProject)
+	l.orgName, l.orgFrom = org.value, org.from
+	l.projectName, l.projectFrom = project.value, project.from
+	names := []struct{ kind, name, from string }{
+		{nameKindOrganization, l.orgName, l.orgFrom}, {nameKindProject, l.projectName, l.projectFrom},
+	}
+	for _, n := range names {
 		if n.name != "" {
 			if cerr := app.checkName(n.kind, n.name, n.from); cerr != nil {
 				return nil, cerr
 			}
 		}
 	}
-	if cerr := app.configReady("login"); cerr != nil {
+	if cerr := app.configReady(loginCmdName); cerr != nil {
 		return nil, cerr
 	}
 	l.saved = app.savedConfig() // configReady has read it
@@ -192,7 +218,7 @@ func (app *App) newLogin(cmd *cobra.Command, orgFlag, projectFlag string) (*logi
 }
 
 // obtainKey is step 1: where the key comes from, then step 2 or 3 for it (the prompt, or the check of a named key).
-func (l *login) obtainKey(keyFlag string) *clierr.Error {
+func (l *login) obtainKey(ctx context.Context, keyFlag string) *clierr.Error {
 	app := l.app
 	switch {
 	case keyFlag == "-":
@@ -203,7 +229,8 @@ func (l *login) obtainKey(keyFlag string) *clierr.Error {
 		fprintln(app.errw(), "warning: --api-key exposes the key on the command line; pipe it instead")
 		l.key, l.keyFrom = keyFlag, keyFromFlag
 	case l.terminal:
-		if cerr := l.askForKey(true); cerr != nil {
+		l.openKeyExchange()
+		if cerr := l.askForKey(ctx); cerr != nil {
 			return cerr
 		}
 	case app.Env.Getenv(envAPIKey) != "":
@@ -216,27 +243,27 @@ func (l *login) obtainKey(keyFlag string) *clierr.Error {
 			WithHint("run saladcloud login in a terminal, or set SALAD_API_KEY")
 	}
 	if l.keyFrom != "" {
-		return l.checkNamedKey()
+		return l.checkNamedKey(ctx)
 	}
 	return nil
 }
 
 // pickAndSave is steps 4 to 6: the organization, the project and the save, asking for the key again whenever the
 // organization check rejects a pasted one.
-func (l *login) pickAndSave() error {
+func (l *login) pickAndSave(ctx context.Context) error {
 	for {
-		org, cerr := l.pickOrganization()
+		org, cerr := l.pickOrganization(ctx)
 		if cerr == errKeyRejected {
 			l.tellPastedKeyInvalid(l.key)
-			if cerr = l.askForKey(false); cerr != nil {
-				return cerr
+			if askErr := l.askForKey(ctx); askErr != nil {
+				return askErr
 			}
 			continue
 		}
 		if cerr != nil {
 			return cerr
 		}
-		project, cerr := l.pickProject(org)
+		project, cerr := l.pickProject(ctx, org)
 		if cerr != nil {
 			return cerr
 		}
@@ -254,16 +281,20 @@ func (l *login) tellPastedKeyInvalid(key string) {
 	}
 }
 
+// loginNamed is a value the user named for login, and where it came from (the flag's spelling or the variable);
+// both are "" when none was named.
+type loginNamed struct{ value, from string }
+
 // namedValue is a value the user named for login: the flag, else the
 // variable, with where it came from.
-func (app *App) namedValue(flag, flagName, env string) (value, from string) {
+func (app *App) namedValue(flag, flagName, env string) loginNamed {
 	if flag = strings.TrimSpace(flag); flag != "" {
-		return flag, flagName
+		return loginNamed{value: flag, from: flagName}
 	}
 	if v := strings.TrimSpace(app.Env.Getenv(env)); v != "" {
-		return v, env
+		return loginNamed{value: v, from: env}
 	}
-	return "", ""
+	return loginNamed{value: "", from: ""}
 }
 
 // keyFromStdin reads --api-key -'s key: one line, hidden at a terminal.
@@ -328,19 +359,16 @@ func (l *login) failed(cerr *clierr.Error) *clierr.Error {
 
 // rejected reports whether the API rejected the key itself (401).
 func rejected(cerr *clierr.Error) bool {
-	return cerr != nil && cerr.HTTPStatus != nil && *cerr.HTTPStatus == 401
+	return cerr != nil && cerr.HTTPStatus != nil && *cerr.HTTPStatus == http.StatusUnauthorized
 }
 
 // askForKey is step 2: the key prompt at a terminal, until a key the API
 // accepts, Ctrl-C or end of input. A pasted key is read back before it is
-// checked. first prints the lines that open the exchange.
-func (l *login) askForKey(first bool) *clierr.Error {
+// checked. The first time, openKeyExchange prints the lines ahead of it.
+func (l *login) askForKey(ctx context.Context) *clierr.Error {
 	app := l.app
-	if first {
-		l.openKeyExchange()
-	}
 	for {
-		answer, err := app.ask(app.keyPrompt(), true)
+		answer, err := app.askHidden(app.keyPrompt())
 		if err != nil {
 			return l.canceled()
 		}
@@ -356,7 +384,7 @@ func (l *login) askForKey(first bool) *clierr.Error {
 			continue
 		}
 		app.say("API key: %s", maskAPIKey(key))
-		orgs, cerr := app.listOrganizations(l.ctx, key)
+		orgs, cerr := app.listOrganizations(ctx, key)
 		if rejected(cerr) {
 			l.tellPastedKeyInvalid(key)
 			continue
@@ -377,10 +405,10 @@ func (l *login) openKeyExchange() {
 	if v := app.Env.Getenv(envOrganization); v != "" && l.orgFrom == "--org" && l.orgName != v {
 		ovs = append(ovs, app.stillSupplied(envOrganization)...)
 	}
-	if v := app.Env.Getenv(envProject); v != "" && l.projectFrom == "--project" && l.projectName != v {
+	if v := app.Env.Getenv(envProject); v != "" && l.projectFrom == projectFlagSpelling && l.projectName != v {
 		ovs = append(ovs, app.stillSupplied(envProject)...)
 	}
-	if line := app.beforePrompt("login", ovs); line != "" {
+	if line := app.beforePrompt(loginCmdName, ovs); line != "" {
 		app.tell("%s", line)
 	}
 	if l.saved.APIKey != "" {
@@ -392,14 +420,14 @@ func (l *login) openKeyExchange() {
 
 // checkNamedKey is step 3 for a key from a flag, stdin or SALAD_API_KEY:
 // checked first, then read back with its source, or the error instead.
-func (l *login) checkNamedKey() *clierr.Error {
+func (l *login) checkNamedKey(ctx context.Context) *clierr.Error {
 	app := l.app
 	key, ok := normalizeKey(l.key)
 	if !ok {
 		return malformedKey(labelAPIKey, key, l.keyFrom)
 	}
 	l.key = key
-	orgs, cerr := app.listOrganizations(l.ctx, key)
+	orgs, cerr := app.listOrganizations(ctx, key)
 	if rejected(cerr) {
 		return l.keyInvalid()
 	}
@@ -422,7 +450,7 @@ func (l *login) checkNamedKey() *clierr.Error {
 // for where it came from.
 func (l *login) keyInvalid() *clierr.Error {
 	e := clierr.New(clierr.CodeAuth, clierr.KindAuth, "API key %s%s is invalid", maskAPIKey(l.key), fromTag(l.keyFrom)).
-		WithStatus(401)
+		WithStatus(http.StatusUnauthorized)
 	switch {
 	case quotedKey(l.key):
 		return e.WithHint("remove the quotes around it")
@@ -480,7 +508,7 @@ func (l *login) orgNames() []string {
 
 // checkOrganization is the organization check, which decides found or not
 // found: (true, nil) found, (false, nil) not found.
-func (l *login) checkOrganization(org string) (bool, *clierr.Error) {
+func (l *login) checkOrganization(ctx context.Context, org string) (bool, *clierr.Error) {
 	app := l.app
 	c, cerr := api.New(
 		config.Resolved{
@@ -500,7 +528,7 @@ func (l *login) checkOrganization(org string) (bool, *clierr.Error) {
 	if cerr != nil {
 		return false, cerr
 	}
-	cerr = c.CheckOrg(l.ctx)
+	cerr = c.CheckOrg(ctx)
 	switch {
 	case cerr == nil:
 		return true, nil
@@ -516,17 +544,17 @@ func (l *login) checkOrganization(org string) (bool, *clierr.Error) {
 
 // pickOrganization is step 4: --org, SALAD_ORGANIZATION, the saved one,
 // then the key's organizations.
-func (l *login) pickOrganization() (string, *clierr.Error) {
+func (l *login) pickOrganization(ctx context.Context) (string, *clierr.Error) {
 	if l.orgs != nil && len(l.orgs) == 0 {
 		return "", clierr.New(clierr.CodeNotFound, clierr.KindNotFound, "you have no organizations").
 			WithHint("create one, or accept an invitation, at %s", organizationsURL)
 	}
 	if l.orgName != "" {
-		return l.namedOrganization()
+		return l.namedOrganization(ctx)
 	}
 	def := ""
 	if saved := l.saved.Organization; saved != "" {
-		org, offer, cerr := l.savedOrganization(saved)
+		org, offer, cerr := l.savedOrganization(ctx, saved)
 		switch {
 		case cerr != nil:
 			return "", cerr
@@ -536,20 +564,25 @@ func (l *login) pickOrganization() (string, *clierr.Error) {
 			return org, nil
 		}
 	}
-	return l.chooseOrganization(def)
+	return l.chooseOrganization(ctx, def)
 }
 
 // namedOrganization is step 4 for the organization from --org or SALAD_ORGANIZATION: used when the organization
 // check finds it, an error when it does not.
-func (l *login) namedOrganization() (string, *clierr.Error) {
+func (l *login) namedOrganization(ctx context.Context) (string, *clierr.Error) {
 	app := l.app
-	found, cerr := l.checkOrganization(l.orgName)
+	found, cerr := l.checkOrganization(ctx, l.orgName)
 	if cerr != nil {
 		return "", cerr
 	}
 	if !found {
-		e := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `organization "%s"%s not found`, l.orgName, fromTag(l.orgFrom)).
-			WithStatus(404)
+		e := clierr.New(
+			clierr.CodeNotFound,
+			clierr.KindNotFound,
+			`organization "%s"%s not found`,
+			l.orgName,
+			fromTag(l.orgFrom),
+		).WithStatus(http.StatusNotFound)
 		if h := app.orgsClause(l.orgNames()); h != "" {
 			e = e.WithHint("%s", h)
 		}
@@ -567,11 +600,11 @@ func (l *login) checkableSavedName(name string) bool {
 
 // savedOrganization is step 4 for the saved organization: it returns the saved one when it was found ("" when not),
 // and whether it is only to be offered as the pick's default rather than used as it is.
-func (l *login) savedOrganization(saved string) (string, bool, *clierr.Error) {
+func (l *login) savedOrganization(ctx context.Context, saved string) (string, bool, *clierr.Error) {
 	found := false
 	if l.checkableSavedName(saved) {
 		var cerr *clierr.Error
-		if found, cerr = l.checkOrganization(saved); cerr != nil {
+		if found, cerr = l.checkOrganization(ctx, saved); cerr != nil {
 			return "", false, cerr
 		}
 	}
@@ -592,14 +625,14 @@ func (l *login) savedOrganizationMissing(saved string) *clierr.Error {
 	switch {
 	case !l.terminal && app.looksLikeKey(saved):
 		return keyLikeName(
-			"organization",
-			"config",
+			nameKindOrganization,
+			settingFromConfig,
 		).WithHint("pass --org or set SALAD_ORGANIZATION; to list yours, run saladcloud orgs list")
 	case !l.terminal:
 		e := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `saved organization "%s" not found`, saved).
 			WithHint("%s", hintClauses("pass --org or set SALAD_ORGANIZATION", app.orgsClause(nil)))
 		if validName(saved) { // the organization check answered 404
-			e = e.WithStatus(404)
+			e = e.WithStatus(http.StatusNotFound)
 		}
 		return e
 	case app.looksLikeKey(saved):
@@ -612,26 +645,26 @@ func (l *login) savedOrganizationMissing(saved string) *clierr.Error {
 
 // chooseOrganization is step 4 when nothing named or saved settled it: the only organization, else the pick at a
 // terminal, with def offered; an error without one.
-func (l *login) chooseOrganization(def string) (string, *clierr.Error) {
+func (l *login) chooseOrganization(ctx context.Context, def string) (string, *clierr.Error) {
 	app := l.app
 	if !l.terminal {
 		return "", clierr.New(clierr.CodeUsage, clierr.KindUsage, "no organization set").
 			WithHint("%s", hintClauses("pass --org or set SALAD_ORGANIZATION", app.orgsClause(nil)))
 	}
 	if l.orgs == nil {
-		return l.typeOrganization(def)
+		return l.typeOrganization(ctx, def)
 	}
 	if len(l.orgs) == 1 {
 		org := ptr.Deref(l.orgs[0].OrganizationName)
 		app.say("Organization: %s", org)
 		return org, nil
 	}
-	return l.selectOrganization(def)
+	return l.selectOrganization(ctx, def)
 }
 
 // selectOrganization shows the numbered list and asks for a number or a
 // name (4d, 4h, 4i).
-func (l *login) selectOrganization(def string) (string, *clierr.Error) {
+func (l *login) selectOrganization(ctx context.Context, def string) (string, *clierr.Error) {
 	app := l.app
 	for _, line := range orgMenu(l.orgs) {
 		app.tell("%s", line)
@@ -640,7 +673,6 @@ func (l *login) selectOrganization(def string) (string, *clierr.Error) {
 	var chosen string
 	_, err := app.askUntil(
 		"Select an organization by number or name"+bracketed(def)+":",
-		false,
 		func(answer string) (bool, string, *clierr.Error) {
 			switch {
 			case answer == "" && def != "":
@@ -653,11 +685,12 @@ func (l *login) selectOrganization(def string) (string, *clierr.Error) {
 			if !ok {
 				return false, name, nil // the line that asks again
 			}
-			found, cerr := l.checkOrganization(name)
+			found, cerr := l.checkOrganization(ctx, name)
 			if cerr != nil {
 				return false, "", cerr
 			}
 			if !found {
+				//nolint:gocritic // shows the name as typed; %q would escape it
 				return false, fmt.Sprintf(`"%s" not found; %s.`, name, choices), nil
 			}
 			chosen = name
@@ -676,23 +709,23 @@ func (l *login) selectOrganization(def string) (string, *clierr.Error) {
 func (l *login) orgMenuAnswer(answer, choices string) (string, bool) {
 	if n, err := strconv.Atoi(answer); err == nil {
 		if n < 1 || n > len(l.orgs) {
+			//nolint:gocritic // shows the answer as typed; %q would escape it
 			return fmt.Sprintf(`"%s" isn't on the list; %s.`, answer, choices), false
 		}
 		return ptr.Deref(l.orgs[n-1].OrganizationName), true
 	}
 	if !validName(answer) {
-		return nameRetry("organization", answer, l.key), false
+		return nameRetry(nameKindOrganization, answer, l.key), false
 	}
 	return answer, true
 }
 
 // typeOrganization asks for a name when there is no list to pick from (4j).
-func (l *login) typeOrganization(def string) (string, *clierr.Error) {
+func (l *login) typeOrganization(ctx context.Context, def string) (string, *clierr.Error) {
 	app := l.app
 	var chosen string
 	_, err := app.askUntil(
 		"Type an organization name"+bracketed(def)+":",
-		false,
 		func(answer string) (bool, string, *clierr.Error) {
 			switch {
 			case answer == "" && def != "":
@@ -701,15 +734,16 @@ func (l *login) typeOrganization(def string) (string, *clierr.Error) {
 			case answer == "":
 				return false, "", nil
 			case !validName(answer):
-				return false, nameRetry("organization", answer, l.key), nil
+				return false, nameRetry(nameKindOrganization, answer, l.key), nil
 			}
-			found, cerr := l.checkOrganization(answer)
+			found, cerr := l.checkOrganization(ctx, answer)
 			if cerr != nil {
 				return false, "", cerr
 			}
 			if !found {
 				return false, fmt.Sprintf(
-					`Organization "%s" not found. Visit %s to see your organizations, create one or accept an invitation.`,
+					`Organization "%s" not found. Visit %s to see your organizations, `+
+						`create one or accept an invitation.`,
 					answer,
 					organizationsURL,
 				), nil
@@ -750,7 +784,7 @@ func orgMenu(orgs []api.Organization) []string {
 			lines[i] = fmt.Sprintf("  %*d  %s", digits, i+1, name)
 			continue
 		}
-		lines[i] = fmt.Sprintf("  %*d  %-*s(%s)", digits, i+1, width+3, name, display)
+		lines[i] = fmt.Sprintf("  %*d  %-*s(%s)", digits, i+1, width+orgMenuDisplayGap, name, display)
 	}
 	return lines
 }
@@ -770,7 +804,7 @@ func projectCreateURL(org string) string {
 
 // checkProject is the project check: (true, nil) found, (false, nil) not
 // found.
-func (l *login) checkProject(org, project string) (bool, *clierr.Error) {
+func (l *login) checkProject(ctx context.Context, org, project string) (bool, *clierr.Error) {
 	app := l.app
 	c, cerr := api.New(
 		config.Resolved{
@@ -790,7 +824,7 @@ func (l *login) checkProject(org, project string) (bool, *clierr.Error) {
 	if cerr != nil {
 		return false, cerr
 	}
-	cerr = c.CheckProject(l.ctx)
+	cerr = c.CheckProject(ctx)
 	switch {
 	case cerr == nil:
 		return true, nil
@@ -803,44 +837,50 @@ func (l *login) checkProject(org, project string) (bool, *clierr.Error) {
 // pickProject is step 5: --project, SALAD_PROJECT, the one saved for the
 // same organization, then "default". "" is no project, which never fails
 // login.
-func (l *login) pickProject(org string) (string, *clierr.Error) {
+func (l *login) pickProject(ctx context.Context, org string) (string, *clierr.Error) {
 	app := l.app
 	if l.projectName != "" {
-		return l.namedProject(org)
+		return l.namedProject(ctx, org)
 	}
 	if saved := l.saved.Project; saved != "" && l.saved.Organization == org {
-		found, cerr := l.lookUpSavedProject(org, saved)
+		found, cerr := l.lookUpSavedProject(ctx, org, saved)
 		if cerr != nil {
 			return "", cerr
 		}
 		if found {
-			return l.offerProject(org, saved)
+			return l.offerProject(ctx, org, saved)
 		}
 	}
-	found, cerr := l.checkProject(org, config.DefaultProject)
+	found, cerr := l.checkProject(ctx, org, config.DefaultProject)
 	if cerr != nil {
 		return "", cerr
 	}
 	if found {
-		return l.offerProject(org, config.DefaultProject)
+		return l.offerProject(ctx, org, config.DefaultProject)
 	}
 	if !l.terminal {
 		return "", nil
 	}
 	app.tell(`Project "default" not found in %s. Create one later if needed.`, org)
-	return l.typeProject(org, "Type a project name, or press Enter to skip:", "")
+	return l.typeProject(ctx, org, "Type a project name, or press Enter to skip:", "")
 }
 
 // namedProject is step 5 for the project from --project or SALAD_PROJECT: used when the project check finds it in
 // org, an error when it does not.
-func (l *login) namedProject(org string) (string, *clierr.Error) {
-	found, cerr := l.checkProject(org, l.projectName)
+func (l *login) namedProject(ctx context.Context, org string) (string, *clierr.Error) {
+	found, cerr := l.checkProject(ctx, org, l.projectName)
 	if cerr != nil {
 		return "", cerr
 	}
 	if !found {
-		return "", clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `project "%s"%s not found in %s`, l.projectName, fromTag(l.projectFrom), org).
-			WithStatus(404).
+		return "", clierr.New(
+			clierr.CodeNotFound,
+			clierr.KindNotFound,
+			`project "%s"%s not found in %s`,
+			l.projectName,
+			fromTag(l.projectFrom),
+			org,
+		).WithStatus(http.StatusNotFound).
 			WithHint("create one at %s", projectCreateURL(org))
 	}
 	l.app.say("Project: %s%s", l.projectName, fromTag(l.projectFrom))
@@ -849,12 +889,12 @@ func (l *login) namedProject(org string) (string, *clierr.Error) {
 
 // lookUpSavedProject checks the project saved for org and records the answer for the result; one that was not
 // found, or looks like an API key, gets a line saying so before login falls back.
-func (l *login) lookUpSavedProject(org, saved string) (bool, *clierr.Error) {
+func (l *login) lookUpSavedProject(ctx context.Context, org, saved string) (bool, *clierr.Error) {
 	app := l.app
 	found := false
 	if l.checkableSavedName(saved) {
 		var cerr *clierr.Error
-		if found, cerr = l.checkProject(org, saved); cerr != nil {
+		if found, cerr = l.checkProject(ctx, org, saved); cerr != nil {
 			return false, cerr
 		}
 	}
@@ -862,6 +902,7 @@ func (l *login) lookUpSavedProject(org, saved string) (bool, *clierr.Error) {
 	if found {
 		return true, nil
 	}
+	//nolint:gocritic // shows the saved name as written; %q would escape it
 	line := fmt.Sprintf(`Saved project "%s" not found in %s. Create one at %s.`, saved, org, projectCreateURL(org))
 	if app.looksLikeKey(saved) {
 		line = "The saved project looks like an API key, not a project name."
@@ -876,34 +917,34 @@ func (l *login) lookUpSavedProject(org, saved string) (bool, *clierr.Error) {
 
 // offerProject uses a project that exists: offered in brackets at a
 // terminal, used as it is without one.
-func (l *login) offerProject(org, project string) (string, *clierr.Error) {
+func (l *login) offerProject(ctx context.Context, org, project string) (string, *clierr.Error) {
 	app := l.app
 	if !l.terminal {
 		app.say("Project: %s", project)
 		return project, nil
 	}
-	return l.typeProject(org, "Type a project name"+bracketed(project)+":", project)
+	return l.typeProject(ctx, org, "Type a project name"+bracketed(project)+":", project)
 }
 
 // typeProject asks for a project until one that exists, Enter (the default,
 // or no project when there is none), Ctrl-C or end of input.
-func (l *login) typeProject(org, prompt, def string) (string, *clierr.Error) {
+func (l *login) typeProject(ctx context.Context, org, prompt, def string) (string, *clierr.Error) {
 	app := l.app
 	chosen := ""
-	_, err := app.askUntil(prompt, false, func(answer string) (bool, string, *clierr.Error) {
+	_, err := app.askUntil(prompt, func(answer string) (bool, string, *clierr.Error) {
 		if answer == "" {
 			chosen = def
 			return true, "", nil
 		}
 		if !validName(answer) {
-			return false, nameRetry("project", answer, l.key), nil
+			return false, nameRetry(nameKindProject, answer, l.key), nil
 		}
-		found, cerr := l.checkProject(org, answer)
+		found, cerr := l.checkProject(ctx, org, answer)
 		if cerr != nil {
 			return false, "", cerr
 		}
 		if !found {
-			return false, fmt.Sprintf(
+			return false, fmt.Sprintf( //nolint:gocritic // shows the answer as typed; %q would escape it
 				`Project "%s" not found in %s. Create one at %s.`,
 				answer,
 				org,
@@ -933,7 +974,7 @@ func (l *login) save(org, project string) error {
 		f.APIKey = l.key
 	}
 	f.Organization, f.Project = org, project
-	path, cerr := app.saveContextConfig(f, "login")
+	path, cerr := app.saveContextConfig(f, loginCmdName)
 	if cerr != nil {
 		return cerr
 	}
@@ -942,9 +983,9 @@ func (l *login) save(org, project string) error {
 		vars = append([]string{envAPIKey}, vars...)
 	}
 	ovs := app.overridesOf(f, vars...)
-	source := "config"
+	source := settingFromConfig
 	if app.Env.Getenv(envAPIKey) != "" {
-		source = "env"
+		source = settingFromEnv
 	}
 	savedKey := f.APIKey // what commands use where SALAD_API_KEY is not set
 	result := loginResult{
@@ -960,14 +1001,15 @@ func (l *login) save(org, project string) error {
 		Action:            "logged_in",
 		OK:                true,
 	}
-	if err := app.printer.Emit(result, func(w *output.Writer) {
+	err := app.printer.Emit(result, func(w *output.Writer) {
 		if project == "" {
 			w.Printf("Logged in: %s, no project set\n", org)
 		} else {
 			w.Printf("Logged in: %s/%s\n", org, project)
 		}
 		w.Printf("Config at: %s\n", path)
-	}); err != nil {
+	})
+	if err != nil {
 		return wrapErr(err)
 	}
 	if !keySaved {
@@ -989,8 +1031,13 @@ func (app *App) saveContextConfig(f config.File, command string) (string, *clier
 		err = config.Save(app.Env, f)
 	}
 	if err != nil {
-		return path, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
-			WithHint("%s", unwritableHint(command))
+		return path, clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot write the config file %s: %s",
+			path,
+			config.Reason(err),
+		).WithHint("%s", unwritableHint(command))
 	}
 	return path, nil
 }
@@ -1001,7 +1048,10 @@ func (l *login) sayKeyNotSaved() {
 	app := l.app
 	app.say("The API key is not saved, so it works only where SALAD_API_KEY is set.")
 	if l.saved.APIKey != "" && l.saved.APIKey != l.key {
-		app.say("Where SALAD_API_KEY is not set, commands use the saved API key (%s).", maskAPIKey(l.saved.APIKey))
+		app.say(
+			"Where SALAD_API_KEY is not set, commands use the saved API key (%s).",
+			maskAPIKey(l.saved.APIKey),
+		)
 	}
 	app.hintLine("to save it, pipe it to saladcloud login --api-key -")
 }

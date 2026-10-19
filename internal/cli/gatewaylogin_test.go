@@ -11,7 +11,7 @@ import (
 // AI Gateway keys the fake answers with 402 (out of credits) and 403 (no
 // access); testGatewayKey works and testOtherGatewayKey is rejected.
 const (
-	keyNoCredits = "sk-gw-NoCreditsGatewayKey00CRDT" // ****...CRDT
+	keyNoCredits = "sk-gw-NoCreditsGatewayKey00CRDT" //nolint:gosec // a fixture the fake answers 402 to; ****...CRDT
 	keyNoAccess  = "sk-gw-NoAccessGatewayKey000NOAC" // ****...NOAC
 )
 
@@ -127,7 +127,8 @@ func TestGatewayLoginBranches(t *testing.T) {
 			},
 			device: "SALAD_AI_GATEWAY_API_KEY is set in this shell (****...WXYZ); commands will use it instead of " +
 				"what ai-gateway login saves.\n" +
-				"Saved AI Gateway key: ****...WXYZ (Ctrl-C to keep it)\n" + dGet + dPaste + "Opening https://portal.salad.com/ai-gateway in your browser.\n" + dPaste,
+				"Saved AI Gateway key: ****...WXYZ (Ctrl-C to keep it)\n" + dGet + dPaste +
+				"Opening https://portal.salad.com/ai-gateway in your browser.\n" + dPaste,
 			opened: 1,
 			stderr: "AI Gateway key: ****...EFGH\n" + eTry + eWarnW + ". To remove the variable:\n" +
 				"  PowerShell:  Remove-Item Env:SALAD_AI_GATEWAY_API_KEY\n  cmd:         set " +
@@ -301,7 +302,7 @@ func TestGatewayLogoutBranches(t *testing.T) {
 		},
 		{
 			id: "the variable set, at a terminal", s: session{
-				args: []string{"ai-gateway", "logout"}, saved: both, tty: []string{},
+				args: []string{"ai-gateway", "logout"}, saved: both, tty: ttyWithoutAnswers(),
 				env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": w},
 			},
 			stdout: "Logged out: removed the saved AI Gateway key (****...EFGH)\n",
