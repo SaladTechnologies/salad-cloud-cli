@@ -233,31 +233,9 @@ func redactBody(body []byte) string {
 func writeRedacted(buf *bytes.Buffer, v any, key, parent string) {
 	switch t := v.(type) {
 	case map[string]any:
-		keys := make([]string, 0, len(t))
-		for k := range t {
-			keys = append(keys, k)
-		}
-		slices.Sort(keys)
-		buf.WriteByte('{')
-		for i, k := range keys {
-			if i > 0 {
-				buf.WriteByte(',')
-			}
-			writeJSONString(buf, k)
-			buf.WriteByte(':')
-			writeRedacted(buf, t[k], k, key)
-		}
-		buf.WriteByte('}')
+		writeRedactedObject(buf, t, key)
 	case []any:
-		buf.WriteByte('[')
-		for i, e := range t {
-			if i > 0 {
-				buf.WriteByte(',')
-			}
-			// An element sits under the list's own field.
-			writeRedacted(buf, e, key, key)
-		}
-		buf.WriteByte(']')
+		writeRedactedArray(buf, t, key)
 	case string:
 		if secretString(key, parent) {
 			buf.WriteString(`"REDACTED"`)
@@ -271,6 +249,39 @@ func writeRedacted(buf *bytes.Buffer, v any, key, parent string) {
 		}
 		buf.Write(b)
 	}
+}
+
+// writeRedactedObject is writeRedacted for an object under key: its keys sorted, each value redacted by its own key
+// and this one.
+func writeRedactedObject(buf *bytes.Buffer, obj map[string]any, key string) {
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	buf.WriteByte('{')
+	for i, k := range keys {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		writeJSONString(buf, k)
+		buf.WriteByte(':')
+		writeRedacted(buf, obj[k], k, key)
+	}
+	buf.WriteByte('}')
+}
+
+// writeRedactedArray is writeRedacted for an array under key.
+func writeRedactedArray(buf *bytes.Buffer, arr []any, key string) {
+	buf.WriteByte('[')
+	for i, e := range arr {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		// An element sits under the list's own field.
+		writeRedacted(buf, e, key, key)
+	}
+	buf.WriteByte(']')
 }
 
 // SecretField reports whether a string value under key, inside a value
