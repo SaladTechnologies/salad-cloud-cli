@@ -126,8 +126,11 @@ func errDocCases() []errDocCase {
 		{name: "ssh-key setup, no terminal", s: session{args: []string{"ssh-key", "setup"}}},
 		{
 			name: "ssh-key setup at a terminal",
-			// tty: []string{} is a terminal with no answers; nil would be no terminal.
-			s: session{args: []string{"ssh-key", "setup"}, tty: []string{}, sshKey: true}, //nolint:revive // non-nil tty
+			s: session{
+				args:   []string{"ssh-key", "setup"},
+				tty:    []string{}, //nolint:revive // a terminal with no answers; nil would be no terminal
+				sshKey: true,
+			},
 		},
 	}
 }
