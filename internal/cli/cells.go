@@ -54,18 +54,22 @@ func jsonLogText(v any) string {
 	slices.Sort(keys)
 	parts := []string{msg}
 	for _, k := range keys {
-		val := m[k]
-		if s, isStr := val.(string); isStr {
-			parts = append(parts, k+"="+s)
-			continue
-		}
-		b, err := json.Marshal(val)
-		if err != nil {
-			b = []byte(fmt.Sprint(val))
-		}
-		parts = append(parts, k+"="+string(b))
+		parts = append(parts, k+"="+jsonLogFieldText(m[k]))
 	}
 	return strings.Join(parts, " ")
+}
+
+// jsonLogFieldText renders one field value of a JSON log entry for
+// jsonLogText: a string as is, anything else as compact JSON.
+func jsonLogFieldText(val any) string {
+	if s, isStr := val.(string); isStr {
+		return s
+	}
+	b, err := json.Marshal(val)
+	if err != nil {
+		return fmt.Sprint(val)
+	}
+	return string(b)
 }
 
 // asType returns v as a T, or T's zero value when v holds something else (a

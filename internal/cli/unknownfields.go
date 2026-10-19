@@ -155,75 +155,8 @@ func (app *App) rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
 	if len(unknowns) == 0 {
 		return nil
 	}
-	var novel, createOnly, responseOnly []string
-	var relocated, misplaced, explained []string
-	for _, u := range unknowns {
-		if u.Hint != "" {
-			continue // a typo: the description already carries the did-you-mean, and the hatch must not be offered
-		}
-		kind, at := classifyUnknown(u.Path)
-		switch kind {
-		case unknownCreateOnly:
-			if reason := createOnlyReason(u.Path); reason != "" {
-				explained = append(
-					explained,
-					fmt.Sprintf(`"%s" is not in this CLI's update schema; %s`, u.Path, reason),
-				)
-				continue
-			}
-			createOnly = append(createOnly, u.Path)
-		case unknownResponseOnly:
-			responseOnly = append(responseOnly, u.Path)
-		case unknownRelocated:
-			relocated = append(relocated, fmt.Sprintf(`"%s" belongs at "%s" in requests`, u.Path, at))
-		case unknownMisplaced:
-			misplaced = append(misplaced, fmt.Sprintf(`"%s" belongs at "%s"`, u.Path, at))
-		default:
-			novel = append(novel, u.Path)
-		}
-	}
-
-	single := len(unknowns) == 1
-	var clauses []string
-	if len(createOnly) > 0 {
-		if len(createOnly) == 1 {
-			clauses = append(clauses, fmt.Sprintf(
-				`"%s" is not in this CLI's update schema (create accepts it); recreate the group to change it`,
-				createOnly[0],
-			))
-		} else {
-			clauses = append(clauses, fmt.Sprintf(
-				"not in this CLI's update schema, though create accepts them (%s); recreate the group to change them",
-				joinPaths(createOnly),
-			))
-		}
-	}
-	if len(responseOnly) > 0 {
-		if len(responseOnly) == 1 {
-			clauses = append(
-				clauses,
-				fmt.Sprintf(`"%s" is response-only in this CLI's API model and cannot be sent`, responseOnly[0]),
-			)
-		} else {
-			clauses = append(clauses, fmt.Sprintf(
-				"response-only in this CLI's API model and cannot be sent (%s)", joinPaths(responseOnly),
-			))
-		}
-	}
-	clauses = append(clauses, explained...)
-	clauses = append(clauses, relocated...)
-	clauses = append(clauses, misplaced...)
-	if len(novel) > 0 {
-		if single {
-			// The description already names the one field; "unrecognized
-			// (x)" would say it a second time.
-			clauses = append(clauses, "re-run with --allow-unknown-fields to send it anyway")
-		} else {
-			clauses = append(clauses, fmt.Sprintf(
-				"unrecognized (%s); re-run with --allow-unknown-fields to send them anyway", joinPaths(novel),
-			))
-		}
-	}
+	groups := groupUnknowns(unknowns)
+	clauses := groups.clauses()
 
 	full := input.UnknownFieldsError("", unknowns, "")
 	if len(clauses) > 0 {
@@ -232,7 +165,7 @@ func (app *App) rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
 	// The commonest mistake, editing a `get` document and sending the whole
 	// thing back as a patch, gets only its diagnosis and the command to start
 	// from; the per-field list goes to --debug.
-	if len(responseOnly) >= 3 {
+	if responseOnly := groups.responseOnly; len(responseOnly) >= 3 {
 		if app.debugLevel != api.DebugOff {
 			fprintf(app.errw(), "debug: %s; %s\n", full.Message, full.HintText())
 		}
@@ -241,6 +174,93 @@ func (app *App) rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
 			WithHint("to get a document update -f accepts, run saladcloud container-groups get <group> --writable; --debug lists the fields")
 	}
 	return full
+}
+
+// unknownGroups are a rejected document's unknown fields, grouped by the
+// advice rejectUnknowns gives them. Typos (fields with a did-you-mean) are
+// in none of the groups: their description already carries the advice.
+type unknownGroups struct {
+	novel, createOnly, responseOnly []string // paths
+	relocated, misplaced, explained []string // one sentence per field
+	single                          bool     // the document has one unknown field
+}
+
+// groupUnknowns sorts unknowns into rejectUnknowns' advice groups.
+func groupUnknowns(unknowns []input.Unknown) unknownGroups {
+	var g unknownGroups
+	g.single = len(unknowns) == 1
+	for _, u := range unknowns {
+		if u.Hint != "" {
+			continue // a typo: the description already carries the did-you-mean, and the hatch must not be offered
+		}
+		kind, at := classifyUnknown(u.Path)
+		switch kind {
+		case unknownCreateOnly:
+			if reason := createOnlyReason(u.Path); reason != "" {
+				g.explained = append(
+					g.explained,
+					fmt.Sprintf(`"%s" is not in this CLI's update schema; %s`, u.Path, reason),
+				)
+				continue
+			}
+			g.createOnly = append(g.createOnly, u.Path)
+		case unknownResponseOnly:
+			g.responseOnly = append(g.responseOnly, u.Path)
+		case unknownRelocated:
+			g.relocated = append(g.relocated, fmt.Sprintf(`"%s" belongs at "%s" in requests`, u.Path, at))
+		case unknownMisplaced:
+			g.misplaced = append(g.misplaced, fmt.Sprintf(`"%s" belongs at "%s"`, u.Path, at))
+		default:
+			g.novel = append(g.novel, u.Path)
+		}
+	}
+	return g
+}
+
+// clauses is the rejection's hint, one clause per group in a fixed order;
+// the escape hatch is offered only for novel fields.
+func (g *unknownGroups) clauses() []string {
+	var clauses []string
+	if len(g.createOnly) > 0 {
+		if len(g.createOnly) == 1 {
+			clauses = append(clauses, fmt.Sprintf(
+				`"%s" is not in this CLI's update schema (create accepts it); recreate the group to change it`,
+				g.createOnly[0],
+			))
+		} else {
+			clauses = append(clauses, fmt.Sprintf(
+				"not in this CLI's update schema, though create accepts them (%s); recreate the group to change them",
+				joinPaths(g.createOnly),
+			))
+		}
+	}
+	if len(g.responseOnly) > 0 {
+		if len(g.responseOnly) == 1 {
+			clauses = append(
+				clauses,
+				fmt.Sprintf(`"%s" is response-only in this CLI's API model and cannot be sent`, g.responseOnly[0]),
+			)
+		} else {
+			clauses = append(clauses, fmt.Sprintf(
+				"response-only in this CLI's API model and cannot be sent (%s)", joinPaths(g.responseOnly),
+			))
+		}
+	}
+	clauses = append(clauses, g.explained...)
+	clauses = append(clauses, g.relocated...)
+	clauses = append(clauses, g.misplaced...)
+	if len(g.novel) > 0 {
+		if g.single {
+			// The description already names the one field; "unrecognized
+			// (x)" would say it a second time.
+			clauses = append(clauses, "re-run with --allow-unknown-fields to send it anyway")
+		} else {
+			clauses = append(clauses, fmt.Sprintf(
+				"unrecognized (%s); re-run with --allow-unknown-fields to send them anyway", joinPaths(g.novel),
+			))
+		}
+	}
+	return clauses
 }
 
 // namingGroup fills the group into a rejection's get <group> --writable

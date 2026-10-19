@@ -51,18 +51,8 @@ func (app *App) validateCommand(words []string, given bool) *clierr.Error {
 			"nothing after --").
 			WithHint("give the container command, for example -- python app.py; it replaces the image's ENTRYPOINT and CMD")
 	}
-	if app.underGitBash() {
-		for _, w := range words {
-			if !strings.ContainsAny(w, " \t\n") && msysCommandWord.MatchString(w) {
-				return clierr.New(
-					clierr.CodeUsage,
-					clierr.KindUsage,
-					`command word "%s" was rewritten by Git Bash, which turns a leading / into a Windows path (also after =)`,
-					w,
-				).
-					WithHint("run the command again with MSYS_NO_PATHCONV=1 in front of it, or from PowerShell or cmd")
-			}
-		}
+	if cerr := app.checkCommandRewrites(words); cerr != nil {
+		return cerr
 	}
 	if len(words) > maxCommandWords {
 		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
@@ -83,6 +73,26 @@ func (app *App) validateCommand(words []string, given bool) *clierr.Error {
 		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
 			`invalid command: it starts with "%s"`, words[0]).
 			WithHint("start it with a program, for example -- python app.py --port 8080; the command replaces the image's ENTRYPOINT and CMD")
+	}
+	return nil
+}
+
+// checkCommandRewrites rejects a command word Git Bash rewrote into a
+// Windows path; it checks only under Git Bash.
+func (app *App) checkCommandRewrites(words []string) *clierr.Error {
+	if !app.underGitBash() {
+		return nil
+	}
+	for _, w := range words {
+		if !strings.ContainsAny(w, " \t\n") && msysCommandWord.MatchString(w) {
+			return clierr.New(
+				clierr.CodeUsage,
+				clierr.KindUsage,
+				`command word "%s" was rewritten by Git Bash, which turns a leading / into a Windows path (also after =)`,
+				w,
+			).
+				WithHint("run the command again with MSYS_NO_PATHCONV=1 in front of it, or from PowerShell or cmd")
+		}
 	}
 	return nil
 }
