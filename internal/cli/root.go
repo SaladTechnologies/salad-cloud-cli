@@ -261,7 +261,7 @@ func commandPath(cmd *cobra.Command) string {
 func (app *App) prepareTree(root *cobra.Command) {
 	root.InitDefaultCompletionCmd()
 	for _, c := range root.Commands() {
-		if contextFreeCommands[c.Name()] {
+		if contextFreeCommands()[c.Name()] {
 			app.contextFree(c)
 		}
 	}
@@ -271,9 +271,11 @@ func (app *App) prepareTree(root *cobra.Command) {
 
 // contextFreeCommands are the top-level commands that read neither the
 // organization nor the project, with everything under them.
-var contextFreeCommands = map[string]bool{
-	"agent": true, "ai-gateway": true, "changelog": true, "completion": true, "config": true,
-	"logout": true, "orgs": true, "ssh-key": true, "use": true, "version": true,
+func contextFreeCommands() map[string]bool {
+	return map[string]bool{
+		"agent": true, "ai-gateway": true, "changelog": true, "completion": true, "config": true,
+		"logout": true, "orgs": true, "ssh-key": true, "use": true, "version": true,
+	}
 }
 
 // adoptOutputFlag sets the output mode from the --output value cobra parsed

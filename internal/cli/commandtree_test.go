@@ -417,7 +417,7 @@ func TestRepeatableFlagsAreRepeated(t *testing.T) {
 // exactly after an endpoint, never a reserved word.
 func TestInferencePorcelainNamesAreEndpoints(t *testing.T) {
 	reserved := map[string]bool{"list": true, "get": true, "jobs": true, "help": true, "completion": true}
-	for _, ep := range transcribeEndpoints {
+	for _, ep := range transcribeEndpoints() {
 		if reserved[ep.name] {
 			t.Errorf("porcelain %q takes a reserved name", ep.name)
 		}

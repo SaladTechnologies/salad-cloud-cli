@@ -48,10 +48,12 @@ const (
 )
 
 // Kinds lists every kind, in the guide table's order.
-var Kinds = []Kind{
-	KindUsage, KindInvalidInput, KindUnknownField, KindAuth, KindNotFound, KindRateLimited, KindNetwork,
-	KindNotAvailable, KindAPIError, KindInternal, KindInterrupted, KindWaitTimeout, KindGroupStopped,
-	KindGroupFailed, KindGroupSucceeded, KindJobFailed, KindJobCanceled, KindTranscriptionFailed, KindChildExit,
+func Kinds() []Kind {
+	return []Kind{
+		KindUsage, KindInvalidInput, KindUnknownField, KindAuth, KindNotFound, KindRateLimited, KindNetwork,
+		KindNotAvailable, KindAPIError, KindInternal, KindInterrupted, KindWaitTimeout, KindGroupStopped,
+		KindGroupFailed, KindGroupSucceeded, KindJobFailed, KindJobCanceled, KindTranscriptionFailed, KindChildExit,
+	}
 }
 
 // Error is the CLI's structured error. It marshals directly into the

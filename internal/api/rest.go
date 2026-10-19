@@ -34,7 +34,7 @@ func Probe(ctx context.Context, target string, opts Options) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("building the probe: %w", err)
 	}
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", userAgent())
 	dbg := opts.debugger()
 	resp, err := newHTTPClient(restTimeout, dbg).Do(req)
 	if err != nil {
@@ -101,7 +101,7 @@ func doRestJSON[T any](ctx context.Context, c *Client, method, path, contentType
 		}
 		req.Header.Set("Salad-Api-Key", c.apiKey)
 		req.Header.Set("Accept", "application/json")
-		req.Header.Set("User-Agent", UserAgent)
+		req.Header.Set("User-Agent", userAgent())
 		if payload != nil {
 			if contentType == "" {
 				contentType = "application/json"
@@ -178,9 +178,11 @@ func (c *Client) groupPath(parts ...string) string {
 
 // numericEnumNames maps the enum values some responses carry as raw
 // integers to their documented string forms, per field (docs/notes.md).
-var numericEnumNames = map[string]map[float64]string{
-	"restart_policy": {1: "always", 2: "on_failure", 3: "never"},
-	"priority":       {1: "high", 2: "medium", 3: "low", 4: "batch"},
+func numericEnumNames() map[string]map[float64]string {
+	return map[string]map[float64]string{
+		"restart_policy": {1: "always", 2: "on_failure", 3: "never"},
+		"priority":       {1: "high", 2: "medium", 3: "low", 4: "batch"},
+	}
 }
 
 // normalizeNumericEnums walks a JSON document and repairs known
@@ -198,7 +200,7 @@ func normalizeNumericEnums(raw []byte) ([]byte, bool) {
 	walk = func(v any) {
 		switch t := v.(type) {
 		case map[string]any:
-			for field, names := range numericEnumNames {
+			for field, names := range numericEnumNames() {
 				if n, ok := t[field].(float64); ok {
 					if name, ok := names[n]; ok {
 						t[field] = name

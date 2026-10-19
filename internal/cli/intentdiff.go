@@ -37,8 +37,10 @@ type ignoredField struct {
 //
 // Without this the diff would compare an absent path against an absent path
 // and report a *successful* GPU-group priority change as dropped.
-var requestToResponsePath = map[string]string{
-	"container.priority": "priority",
+func requestToResponsePath() map[string]string {
+	return map[string]string{
+		"container.priority": "priority",
+	}
 }
 
 // findIgnoredFields compares a merge patch against the group state before and
@@ -112,7 +114,7 @@ func findIgnoredFields(patch []byte, before, after *shared.ContainerGroup) []ign
 		afterVal, afterOK := lookupPath(afterTree, path)
 		// Fall back to the response's own spelling for known asymmetries.
 		if !beforeOK && !afterOK {
-			if alias, ok := requestToResponsePath[path]; ok {
+			if alias, ok := requestToResponsePath()[path]; ok {
 				beforeVal, beforeOK = lookupPath(beforeTree, alias)
 				afterVal, afterOK = lookupPath(afterTree, alias)
 			}
@@ -366,9 +368,11 @@ const maxReportedChanges = 8
 // there is a concrete fix. This is not a detection list — detection stays
 // fully dynamic — so if the API stops misbehaving the entry simply never
 // fires again.
-var remediation = map[string]string{
-	"scheduled-scaling-enabled":       "scheduled scaling is on hold (the flag is false; the actions are kept); to re-enable it, put " + reenableSchedule,
-	"container.environment_variables": "the API replaces the whole environment_variables map rather than merging it, so keys you did not mention are dropped; send the complete desired map",
+func remediation() map[string]string {
+	return map[string]string{
+		"scheduled-scaling-enabled":       "scheduled scaling is on hold (the flag is false; the actions are kept); to re-enable it, put " + reenableSchedule,
+		"container.environment_variables": "the API replaces the whole environment_variables map rather than merging it, so keys you did not mention are dropped; send the complete desired map",
+	}
 }
 
 // reenableSchedule is the fix for scheduled scaling left on hold, with no
@@ -564,7 +568,7 @@ func warnUnrequestedChanges(w io.Writer, changes []unrequestedChange) {
 // cause rather than once per affected key).
 func remediationFor(path string) (string, string) {
 	for p := path; p != ""; {
-		if hint, ok := remediation[p]; ok {
+		if hint, ok := remediation()[p]; ok {
 			return hint, p
 		}
 		i := strings.LastIndexByte(p, '.')
@@ -627,7 +631,7 @@ func findUnappliedCreateFields(request []byte, created *shared.ContainerGroup) [
 	for _, leaf := range leaves {
 		got, ok := lookupPath(createdTree, leaf.Path)
 		if !ok {
-			if alias, aliased := requestToResponsePath[leaf.Path]; aliased {
+			if alias, aliased := requestToResponsePath()[leaf.Path]; aliased {
 				got, ok = lookupPath(createdTree, alias)
 			}
 		}
@@ -662,22 +666,18 @@ func findUnappliedCreateFields(request []byte, created *shared.ContainerGroup) [
 	return out
 }
 
-// responseFields are the top-level keys a container group response can
-// carry, by the SDK's json tags.
-var responseFields = func() map[string]bool {
-	fields := make(map[string]bool)
+// responseHasField reports whether a container group response can carry
+// the top-level key, by the SDK's json tags, so its absence means the API
+// dropped it.
+func responseHasField(key string) bool {
 	t := reflect.TypeFor[shared.ContainerGroup]()
 	for i := range t.NumField() {
-		if name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ","); name != "" && name != "-" {
-			fields[name] = true
+		if name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ","); name != "" && name != "-" && name == key {
+			return true
 		}
 	}
-	return fields
-}()
-
-// responseHasField reports whether a container group response can carry
-// the top-level key, so its absence means the API dropped it.
-func responseHasField(key string) bool { return responseFields[key] }
+	return false
+}
 
 // warnUnappliedCreateFields is warnIgnoredFields with create's wording.
 func warnUnappliedCreateFields(w io.Writer, fields []ignoredField) {

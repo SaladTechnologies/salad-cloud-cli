@@ -28,7 +28,9 @@ const sshDedicatedKeyName = "saladcloud_ed25519"
 // ~/.ssh. The CLI's own generated key comes first: when it exists it is the
 // one 'ssh'/'cp'/'sftp' offer by default (see resolveIdentity), so it is
 // the one to show and register.
-var sshPublicKeyCandidates = []string{sshDedicatedKeyName + ".pub", "id_ed25519.pub", "id_rsa.pub"}
+func sshPublicKeyCandidates() []string {
+	return []string{sshDedicatedKeyName + ".pub", "id_ed25519.pub", "id_rsa.pub"}
+}
 
 // defaultIdentityPath returns the private half of the CLI's dedicated key
 // when it exists under home/.ssh.
@@ -103,7 +105,7 @@ func sshKeygen(keyPath string) error {
 // findLocalPublicKey returns the first existing candidate under
 // home/.ssh, or ("", false) when none exists.
 func findLocalPublicKey(home string) (string, bool) {
-	for _, name := range sshPublicKeyCandidates {
+	for _, name := range sshPublicKeyCandidates() {
 		path := filepath.Join(home, ".ssh", name)
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			return path, true

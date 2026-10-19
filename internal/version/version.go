@@ -6,13 +6,13 @@ import "runtime/debug"
 
 // Version is the CLI version, set at build time via
 // -ldflags "-X github.com/saladtechnologies/salad-cloud-cli/internal/version.Version=...".
-// A `go install …@<version>` build carries no ldflags; init falls back to
+// A `go install …@<version>` build carries no ldflags; String falls back to
 // the module version Go records in the binary.
-var Version = "dev"
+var Version = "dev" //nolint:gochecknoglobals // set by -ldflags -X, which needs a package variable
 
 // Commit is the git commit, set at build time via
 // -ldflags "-X github.com/saladtechnologies/salad-cloud-cli/internal/version.Commit=...".
-var Commit = "none"
+var Commit = "none" //nolint:gochecknoglobals // set by -ldflags -X, which needs a package variable
 
 // Stage is the release stage, shown by --help, version, and the block
 // agent init writes. Drop it when the CLI leaves beta.
@@ -21,13 +21,16 @@ const Stage = "beta"
 // IssuesURL is where bugs and unexpected behavior are reported.
 const IssuesURL = "https://github.com/SaladTechnologies/salad-cloud-cli/issues"
 
-func init() {
+// String is the CLI version: Version, or for a build without ldflags the
+// module version Go records in the binary.
+func String() string {
 	if Version != "dev" {
-		return
+		return Version
 	}
 	if bi, ok := debug.ReadBuildInfo(); ok {
-		Version = moduleVersion(bi.Main.Version, Version)
+		return moduleVersion(bi.Main.Version, Version)
 	}
+	return Version
 }
 
 // moduleVersion returns the module version from build info, or fallback

@@ -233,7 +233,7 @@ func gatewayJSON[T any](ctx context.Context, g *Gateway, method, path string, bo
 		req.Header.Set("Authorization", "Bearer "+g.key)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", userAgent())
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

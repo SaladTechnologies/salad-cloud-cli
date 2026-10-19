@@ -156,12 +156,14 @@ func decodeOrdered(dec *json.Decoder) (any, error) {
 	return tok, nil
 }
 
-var marshalerType = reflect.TypeFor[json.Marshaler]()
+func marshalerType() reflect.Type {
+	return reflect.TypeFor[json.Marshaler]()
+}
 
 // opaque reports whether t encodes itself, so its fields say nothing about
 // the document it produces.
 func opaque(t reflect.Type) bool {
-	return t.Implements(marshalerType) || reflect.PointerTo(t).Implements(marshalerType)
+	return t.Implements(marshalerType()) || reflect.PointerTo(t).Implements(marshalerType())
 }
 
 // nullableValue returns the index of the Value field when t is the SDK's

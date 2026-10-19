@@ -98,7 +98,7 @@ func copyDocument(g *shared.ContainerGroup, newName string, displayNameSet bool)
 	if !ok {
 		return nil, errUnexpectedGroupDocument
 	}
-	for reqPath, respPath := range requestToResponsePath {
+	for reqPath, respPath := range requestToResponsePath() {
 		if v, present := lookupPath(obj, respPath); present {
 			if _, already := lookupPath(obj, reqPath); !already {
 				setPath(obj, reqPath, v)
@@ -124,7 +124,9 @@ func copyDocument(g *shared.ContainerGroup, newName string, displayNameSet bool)
 
 // publicRegistries are the hosts whose images pull without credentials as
 // far as the CLI can tell; a copy of an image from one needs no note.
-var publicRegistries = map[string]bool{"docker.io": true, "ghcr.io": true, "public.ecr.aws": true, "quay.io": true}
+func publicRegistries() map[string]bool {
+	return map[string]bool{"docker.io": true, "ghcr.io": true, "public.ecr.aws": true, "quay.io": true}
+}
 
 // imageOnPublicRegistry reports whether image names one of the public
 // registries: an image with no registry host (busybox:1.36, library/x) is on
@@ -137,7 +139,7 @@ func imageOnPublicRegistry(image string) bool {
 	if !hasSlash || !strings.ContainsAny(first, ".:") && first != "localhost" {
 		return true // Docker Hub: no registry host in the reference
 	}
-	return publicRegistries[strings.ToLower(first)]
+	return publicRegistries()[strings.ToLower(first)]
 }
 
 // noteRegistryCredentials says that registry credentials do not come across,

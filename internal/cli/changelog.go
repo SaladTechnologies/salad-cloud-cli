@@ -52,7 +52,7 @@ never null.`,
 			if releases == nil {
 				releases = []changelog.Release{}
 			}
-			res := changelogResult{Version: version.Version, Items: releases, Since: nil}
+			res := changelogResult{Version: version.String(), Items: releases, Since: nil}
 			if since != "" {
 				res.Since = &since
 			}

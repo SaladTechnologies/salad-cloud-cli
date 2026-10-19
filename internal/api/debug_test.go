@@ -197,8 +197,8 @@ func TestUserAgentOnEveryClient(t *testing.T) {
 		t.Fatalf("saw %d requests, want 4", len(got))
 	}
 	for i, ua := range got {
-		if ua != UserAgent {
-			t.Errorf("request %d User-Agent = %q, want %q", i, ua, UserAgent)
+		if ua != userAgent() {
+			t.Errorf("request %d User-Agent = %q, want %q", i, ua, userAgent())
 		}
 	}
 }

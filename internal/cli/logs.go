@@ -120,7 +120,7 @@ func addLogsFlags(c *cobra.Command, o *logsOptions) {
 		StringVar(&o.until, "until", "", "end of the time range (same forms as --since; default now; conflicts with --follow)")
 	c.Flags().
 		StringVar(&o.instance, "instance", "", "only logs from this instance (full ID; a unique prefix also works when a container group is given)")
-	c.Flags().StringVar(&o.severity, "severity", "", "minimum severity: "+strings.Join(logsq.Severities, "|"))
+	c.Flags().StringVar(&o.severity, "severity", "", "minimum severity: "+strings.Join(logsq.Severities(), "|"))
 	c.Flags().StringVar(&o.filter, "filter", "", "only logs containing this substring (text or JSON)")
 	c.Flags().StringVar(&o.query, "query", "", "raw log query-language expression, ANDed onto the generated query")
 	c.Flags().BoolVarP(&o.follow, "follow", "f", false, "stream new log entries until interrupted")

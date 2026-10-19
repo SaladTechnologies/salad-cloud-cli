@@ -28,9 +28,11 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/version"
 )
 
-// UserAgent identifies the CLI on every request it makes: the API, the AI
+// userAgent identifies the CLI on every request it makes: the API, the AI
 // Gateway, and S4.
-var UserAgent = fmt.Sprintf("saladcloud/%s (%s/%s)", version.Version, runtime.GOOS, runtime.GOARCH)
+func userAgent() string {
+	return fmt.Sprintf("saladcloud/%s (%s/%s)", version.String(), runtime.GOOS, runtime.GOARCH)
+}
 
 // DefaultBaseURL is the production Public API base URL.
 const DefaultBaseURL = "https://api.salad.com/api/public"

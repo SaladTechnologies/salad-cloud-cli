@@ -74,8 +74,8 @@ func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			set := parsedTranscribeCmd(t, "transcribe", transcribeFields, tt.args...)
-			got, cerr := buildTranscribeInput("u", transcribeFields, set, tt.extra)
+			set := parsedTranscribeCmd(t, "transcribe", transcribeFields(), tt.args...)
+			got, cerr := buildTranscribeInput("u", transcribeFields(), set, tt.extra)
 			if cerr != nil {
 				t.Fatalf("buildTranscribeInput: %v", cerr)
 			}
@@ -87,9 +87,9 @@ func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
 }
 
 func TestBuildTranscribeInputRejectsBadExtra(t *testing.T) {
-	set := parsedTranscribeCmd(t, "transcribe", transcribeFields)
+	set := parsedTranscribeCmd(t, "transcribe", transcribeFields())
 	for _, extra := range []string{"{not json", `"a string"`, "[1,2]"} {
-		_, cerr := buildTranscribeInput("u", transcribeFields, set, extra)
+		_, cerr := buildTranscribeInput("u", transcribeFields(), set, extra)
 		if cerr == nil {
 			t.Fatalf("buildTranscribeInput(extra=%q) = nil error, want invalid_input", extra)
 		}
@@ -103,23 +103,23 @@ func TestBuildTranscribeInputRejectsBadExtra(t *testing.T) {
 // kebab-cased: lite rejects a full-only flag by itself, and the two never
 // spell one input differently.
 func TestTranscribeFlagsAreTheEndpointFields(t *testing.T) {
-	if len(transcribeFields)+1 != 20 || len(transcriptionLiteFields)+1 != 9 {
+	if len(transcribeFields())+1 != 20 || len(transcriptionLiteFields())+1 != 9 {
 		t.Errorf("fields with url: transcribe %d, transcription-lite %d; want 20 and 9",
-			len(transcribeFields)+1, len(transcriptionLiteFields)+1)
+			len(transcribeFields())+1, len(transcriptionLiteFields())+1)
 	}
 	full := make(map[string]inputField)
-	for _, f := range transcribeFields {
+	for _, f := range transcribeFields() {
 		full[f.name] = f
 		if f.flag() != strings.ReplaceAll(f.name, "_", "-") {
 			t.Errorf("flag %q is not the kebab-cased field %q", f.flag(), f.name)
 		}
 	}
-	for _, f := range transcriptionLiteFields {
+	for _, f := range transcriptionLiteFields() {
 		if g, ok := full[f.name]; !ok || g.kind != f.kind {
 			t.Errorf("lite field %q is not a full-tier field of the same type", f.name)
 		}
 	}
-	lite := app.newTranscribeCmd("transcription-lite", transcriptionLiteFields, "")
+	lite := app.newTranscribeCmd("transcription-lite", transcriptionLiteFields(), "")
 	if err := lite.ParseFlags([]string{"--summarize", "10"}); err == nil {
 		t.Error("transcription-lite accepted --summarize, a full-tier-only field")
 	}
@@ -249,7 +249,7 @@ func TestHumanSize(t *testing.T) {
 // TestListFieldsHelpNamesOnlyTheEndpointsFlags: each porcelain command's
 // help names the list flags its own endpoint takes, and no others.
 func TestListFieldsHelpNamesOnlyTheEndpointsFlags(t *testing.T) {
-	for _, ep := range transcribeEndpoints {
+	for _, ep := range transcribeEndpoints() {
 		help := listFieldsHelp(ep.fields)
 		isList := make(map[string]bool)
 		for _, f := range ep.fields {

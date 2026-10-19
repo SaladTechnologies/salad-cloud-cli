@@ -64,15 +64,17 @@ const (
 // createOnlyReasons explains create-only fields whose reason is not obvious,
 // keyed by the top-level field: the advice replaces the generic "recreate
 // the group".
-var createOnlyReasons = map[string]string{
-	"queue_connection": "a group's queue connection is fixed when the group is created; to change it, run " +
-		"saladcloud container-groups create <new-name> --from <group> --queue <queue> --queue-port <n> --queue-path <path>",
+func createOnlyReasons() map[string]string {
+	return map[string]string{
+		"queue_connection": "a group's queue connection is fixed when the group is created; to change it, run " +
+			"saladcloud container-groups create <new-name> --from <group> --queue <queue> --queue-port <n> --queue-path <path>",
+	}
 }
 
 // createOnlyReason returns the specific advice for a create-only path, or "".
 func createOnlyReason(path string) string {
 	top, _, _ := strings.Cut(path, ".")
-	return createOnlyReasons[top]
+	return createOnlyReasons()[top]
 }
 
 // maxListedPaths caps how many field paths one grouped clause names.

@@ -132,7 +132,7 @@ func messageFromBody(status int, body []byte) (msg, hint string) {
 		// or "Entitlement check failed.") with no actionable detail; translate
 		// the known ones into sentences. A real detail or field-error list
 		// always wins; the known type's fix applies either way.
-		if known, ok := typeHints[doc.Type]; ok {
+		if known, ok := typeHints()[doc.Type]; ok {
 			if doc.Detail == "" && flat == "" {
 				msg = known.msg
 			}
@@ -155,35 +155,37 @@ func messageFromBody(status int, body []byte) (msg, hint string) {
 // the fix (the payload is just "Bad Request", or "Entitlement check
 // failed.", plus the type). All three replica-quota variants (create,
 // start, and update/scale) are distinct types.
-var typeHints = map[string]struct{ msg, hint string }{
-	"no_credits_available": {
-		"the organization is out of credits",
-		"add credits at https://portal.salad.com; creating, starting or scaling workloads, inference and transcription all need them",
-	},
-	"created_replicas_quota_exceeded": {
-		"the requested replica count exceeds the organization's replica quota",
-		"to see the quota, run saladcloud quotas get",
-	},
-	"replicas_quota_exceeded": {
-		"cannot start the group: its replica count exceeds the organization's replica quota",
-		"to see the quota, run saladcloud quotas get",
-	},
-	"updated_replicas_quota_exceeded": {
-		"the new replica count exceeds the organization's replica quota",
-		"to see the quota, run saladcloud quotas get",
-	},
-	"name_conflict": {
-		"a container group with this name already exists in this project, or existed and was deleted",
-		"pick a different name; names are unique within the organization and project, and deleting a group does not release its name",
-	},
-	"queue_name_conflict": {
-		"a queue with this name already exists in this project",
-		"pick a different name, or delete that queue first; unlike a container group's, a deleted queue's name can be used again",
-	},
-	"pending_update_in_progress": {
-		"the group has a change still being applied (a new group's first deploy, or an earlier update)",
-		"wait for pending_change to clear and try again, which can take a long time under platform load; to watch it, run saladcloud container-groups get <name>",
-	},
+func typeHints() map[string]struct{ msg, hint string } {
+	return map[string]struct{ msg, hint string }{
+		"no_credits_available": {
+			"the organization is out of credits",
+			"add credits at https://portal.salad.com; creating, starting or scaling workloads, inference and transcription all need them",
+		},
+		"created_replicas_quota_exceeded": {
+			"the requested replica count exceeds the organization's replica quota",
+			"to see the quota, run saladcloud quotas get",
+		},
+		"replicas_quota_exceeded": {
+			"cannot start the group: its replica count exceeds the organization's replica quota",
+			"to see the quota, run saladcloud quotas get",
+		},
+		"updated_replicas_quota_exceeded": {
+			"the new replica count exceeds the organization's replica quota",
+			"to see the quota, run saladcloud quotas get",
+		},
+		"name_conflict": {
+			"a container group with this name already exists in this project, or existed and was deleted",
+			"pick a different name; names are unique within the organization and project, and deleting a group does not release its name",
+		},
+		"queue_name_conflict": {
+			"a queue with this name already exists in this project",
+			"pick a different name, or delete that queue first; unlike a container group's, a deleted queue's name can be used again",
+		},
+		"pending_update_in_progress": {
+			"the group has a change still being applied (a new group's first deploy, or an earlier update)",
+			"wait for pending_change to clear and try again, which can take a long time under platform load; to watch it, run saladcloud container-groups get <name>",
+		},
+	}
 }
 
 // isRFCTypeURL reports whether a problem document's type is a generic

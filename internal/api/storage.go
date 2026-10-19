@@ -74,7 +74,7 @@ func (c *Client) UploadFile(
 	}
 	req.Header.Set("Salad-Api-Key", c.apiKey)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", userAgent())
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 
 	resp, err := c.storageHTTP.Do(req)
@@ -119,7 +119,7 @@ func (c *Client) DeleteFile(ctx context.Context, remoteName string) *clierr.Erro
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot build the delete request: %v", err)
 	}
 	req.Header.Set("Salad-Api-Key", c.apiKey)
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", userAgent())
 	resp, err := c.storageHTTP.Do(req)
 	if err != nil {
 		return transportErr(ctx, "network error deleting from storage", err, c.now)

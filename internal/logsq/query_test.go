@@ -136,7 +136,7 @@ func TestCompileRawQueryNotEscaped(t *testing.T) {
 }
 
 func TestCompileAllSeveritiesAccepted(t *testing.T) {
-	for _, sev := range Severities {
+	for _, sev := range Severities() {
 		if _, err := Compile(Filters{Group: "g", MinSeverity: sev}); err != nil {
 			t.Errorf("severity %q rejected: %v", sev, err)
 		}
@@ -151,7 +151,7 @@ func TestCompileInvalidSeverity(t *testing.T) {
 	if err.Code != clierr.CodeInvalidInput {
 		t.Errorf("code = %d, want %d", err.Code, clierr.CodeInvalidInput)
 	}
-	for _, sev := range Severities {
+	for _, sev := range Severities() {
 		if !strings.Contains(err.Message+" "+err.HintText(), sev) {
 			t.Errorf("error message should list valid severity %q: %s", sev, err.Message)
 		}

@@ -129,7 +129,7 @@ func TestShouldReenableSchedule(t *testing.T) {
 	if shouldReenableSchedule(true, nil, off) || shouldReenableSchedule(true, on, nil) {
 		t.Error("missing state must not trigger a write")
 	}
-	if string(reenableSchedulePatch) != `{"scheduled-scaling-enabled":true}` {
-		t.Errorf("re-enable patch = %s", reenableSchedulePatch)
+	if string(reenableSchedulePatch()) != `{"scheduled-scaling-enabled":true}` {
+		t.Errorf("re-enable patch = %s", reenableSchedulePatch())
 	}
 }

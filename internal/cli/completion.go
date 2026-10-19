@@ -43,7 +43,7 @@ func (app *App) complete(f completer) func(*cobra.Command, []string, string) ([]
 		if cerr != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), completionTimeout)
+		ctx, cancel := context.WithTimeout(cmd.Context(), completionTimeout)
 		defer cancel()
 		return filterPrefix(f(ctx, client, cmd, args), toComplete), cobra.ShellCompDirectiveNoFileComp
 	}
@@ -195,7 +195,7 @@ func (app *App) registerCompletions(root *cobra.Command) {
 	enums := map[string][]string{
 		"priority":       {"high", "medium", "low", "batch"},
 		"restart-policy": {"always", "on_failure", "never"},
-		"severity":       logsq.Severities,
+		"severity":       logsq.Severities(),
 		"status":         {"pending", "running", "stopped", "succeeded", "failed", "deploying"},
 	}
 	app.noteTreeErr(root.RegisterFlagCompletionFunc("output", staticValues("table", "json", "yaml")))

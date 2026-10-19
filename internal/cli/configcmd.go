@@ -77,8 +77,13 @@ type configUnsetResult struct {
 
 // configKeyEnv is the variable that supplies each config key's value
 // instead of the config file.
-var configKeyEnv = map[string]string{
-	"api-key": envAPIKey, "organization": envOrganization, "project": envProject, "ai-gateway-api-key": envGatewayKey,
+func configKeyEnv() map[string]string {
+	return map[string]string{
+		"api-key":            envAPIKey,
+		"organization":       envOrganization,
+		"project":            envProject,
+		"ai-gateway-api-key": envGatewayKey,
+	}
 }
 
 // loadConfigFor reads the config file for a config command, with the fix
@@ -230,7 +235,7 @@ config set says so.`,
 			if isSecretKey(key) {
 				shown = maskAPIKey(value)
 			}
-			ovs := app.overridesOf(f, configKeyEnv[key])
+			ovs := app.overridesOf(f, configKeyEnv()[key])
 			result := configSetResult{key, shown, overrideNames(ovs), path, "set", true}
 			if err := app.printer.Emit(result, func(w *output.Writer) {
 				w.Printf("Set %s to %s\n", key, shown)
@@ -275,7 +280,7 @@ SALAD_AI_GATEWAY_API_KEY) is still used; config unset says so.`,
 			if cerr := app.saveConfigFor("config unset", path, f); cerr != nil {
 				return cerr
 			}
-			ovs := app.stillSupplied(configKeyEnv[key])
+			ovs := app.stillSupplied(configKeyEnv()[key])
 			result := configUnsetResult{key, overrideNames(ovs), path, "unset", true}
 			if err := app.printer.Emit(result, func(w *output.Writer) {
 				w.Printf("Unset %s\n", key)

@@ -39,7 +39,7 @@ func writableDocument(g *shared.ContainerGroup) (any, []string, error) {
 	// Relocate: a field that responses spell one way and requests another
 	// is moved to its request path before filtering, so it survives as the
 	// patch schema expects rather than being dropped as unknown.
-	for reqPath, respPath := range requestToResponsePath {
+	for reqPath, respPath := range requestToResponsePath() {
 		v, present := lookupPath(obj, respPath)
 		if !present {
 			continue

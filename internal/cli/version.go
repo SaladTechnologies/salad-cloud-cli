@@ -40,7 +40,7 @@ func (app *App) addVersionCommands(root *cobra.Command) {
 
 func (app *App) runVersion(_ *cobra.Command, _ []string) error {
 	v := versionInfo{
-		Version:   version.Version,
+		Version:   version.String(),
 		Commit:    version.Commit,
 		OS:        runtime.GOOS,
 		Arch:      runtime.GOARCH,

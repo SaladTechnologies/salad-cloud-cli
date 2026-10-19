@@ -43,7 +43,9 @@ func scalePatch(n int64) []byte {
 // reenableSchedulePatch switches scheduled scaling back on. It has to be a
 // second write: the API does not honor scheduled-scaling-enabled true in
 // the same patch as replicas.
-var reenableSchedulePatch = []byte(`{"scheduled-scaling-enabled":true}`)
+func reenableSchedulePatch() []byte {
+	return []byte(`{"scheduled-scaling-enabled":true}`)
+}
 
 // shouldReenableSchedule decides whether --keep-schedule has work to do:
 // the schedule was on before the replicas write and the write put it on
@@ -118,7 +120,7 @@ write (the API does not honor the flag in the same patch as replicas), for
 						cmd,
 						client,
 						args[0],
-						reenableSchedulePatch,
+						reenableSchedulePatch(),
 						nil,
 						wait,
 						timeout,

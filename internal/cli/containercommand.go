@@ -124,17 +124,19 @@ func warnCommand(w io.Writer, cmd *cobra.Command, words []string) {
 
 // saladcloudOnlyFlags are the create/update and global flags that no program
 // plausibly takes, so after -- they are almost surely misplaced.
-var saladcloudOnlyFlags = []string{
-	"output", "org", "project", "debug",
-	"wait", "no-wait", "timeout", "replicas", "image", "from",
-	"queue", "queue-port", "queue-path", "no-autostart", "no-auth", "allow-unknown-fields",
+func saladcloudOnlyFlags() []string {
+	return []string{
+		"output", "org", "project", "debug",
+		"wait", "no-wait", "timeout", "replicas", "image", "from",
+		"queue", "queue-port", "queue-path", "no-autostart", "no-auth", "allow-unknown-fields",
+	}
 }
 
 // commandFlagNames is every spelling (--name and, where it has one, -x) of
 // the saladcloudOnlyFlags cmd actually has, its own or inherited.
 func commandFlagNames(cmd *cobra.Command) map[string]bool {
 	names := make(map[string]bool)
-	for _, n := range saladcloudOnlyFlags {
+	for _, n := range saladcloudOnlyFlags() {
 		f := cmd.Flags().Lookup(n)
 		if f == nil {
 			f = cmd.InheritedFlags().Lookup(n)

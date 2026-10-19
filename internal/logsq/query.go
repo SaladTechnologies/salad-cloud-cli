@@ -15,9 +15,11 @@ import (
 // Severities is the log query language's ordered severity enum, lowest
 // first. The API treats severity as orderable, so `severity >= "warning"`
 // matches warning and everything above it.
-var Severities = []string{
-	"default", "debug", "info", "notice", "warning",
-	"error", "critical", "alert", "emergency",
+func Severities() []string {
+	return []string{
+		"default", "debug", "info", "notice", "warning",
+		"error", "critical", "alert", "emergency",
+	}
 }
 
 // Filters describes the clauses Compile assembles into a log query. The
@@ -75,7 +77,7 @@ func Compile(f Filters) (string, *clierr.Error) {
 		sev := strings.ToLower(f.MinSeverity)
 		if !validSeverity(sev) {
 			return "", clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, `invalid severity "%s"`, f.MinSeverity).
-				WithHint("use one of %s", strings.Join(Severities, ", "))
+				WithHint("use one of %s", strings.Join(Severities(), ", "))
 		}
 		b.WriteString(" and severity >= ")
 		b.WriteString(quoteValue(sev))
@@ -93,7 +95,7 @@ func Compile(f Filters) (string, *clierr.Error) {
 }
 
 func validSeverity(s string) bool {
-	return slices.Contains(Severities, s)
+	return slices.Contains(Severities(), s)
 }
 
 // quoteValue renders s as a double-quoted query-language string literal,

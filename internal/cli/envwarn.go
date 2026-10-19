@@ -24,11 +24,13 @@ type envSetting struct {
 	saved  func(config.File) string
 }
 
-var envSettings = []envSetting{
-	{"SALAD_API_KEY", labelAPIKey, true, func(f config.File) string { return f.APIKey }},
-	{"SALAD_ORGANIZATION", "organization", false, func(f config.File) string { return f.Organization }},
-	{"SALAD_PROJECT", "project", false, func(f config.File) string { return f.Project }},
-	{"SALAD_AI_GATEWAY_API_KEY", labelGatewayKey, true, func(f config.File) string { return f.GatewayAPIKey }},
+func envSettings() []envSetting {
+	return []envSetting{
+		{"SALAD_API_KEY", labelAPIKey, true, func(f config.File) string { return f.APIKey }},
+		{"SALAD_ORGANIZATION", "organization", false, func(f config.File) string { return f.Organization }},
+		{"SALAD_PROJECT", "project", false, func(f config.File) string { return f.Project }},
+		{"SALAD_AI_GATEWAY_API_KEY", labelGatewayKey, true, func(f config.File) string { return f.GatewayAPIKey }},
+	}
 }
 
 // show renders a value the way messages show it: keys masked, and a name
@@ -63,7 +65,7 @@ type override struct {
 // are what commands will use instead.
 func (app *App) overridesOf(f config.File, vars ...string) []override {
 	var out []override
-	for _, s := range envSettings {
+	for _, s := range envSettings() {
 		if !hasString(vars, s.env) {
 			continue
 		}
@@ -79,7 +81,7 @@ func (app *App) overridesOf(f config.File, vars ...string) []override {
 // them.
 func (app *App) stillSupplied(vars ...string) []override {
 	var out []override
-	for _, s := range envSettings {
+	for _, s := range envSettings() {
 		if !hasString(vars, s.env) {
 			continue
 		}

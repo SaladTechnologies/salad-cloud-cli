@@ -233,9 +233,11 @@ func (app *App) startStopRunE(
 }
 
 // validGroupStatuses is the set of --status values list accepts.
-var validGroupStatuses = map[string]bool{
-	"pending": true, "running": true, "stopped": true,
-	"succeeded": true, "failed": true, "deploying": true,
+func validGroupStatuses() map[string]bool {
+	return map[string]bool{
+		"pending": true, "running": true, "stopped": true,
+		"succeeded": true, "failed": true, "deploying": true,
+	}
 }
 
 // addGroupsCommands adds groups.go's commands to the tree.
@@ -257,7 +259,7 @@ the projects you want listed.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			statusFilter, projects := listOpts.status, listOpts.projects
-			if statusFilter != "" && !validGroupStatuses[statusFilter] {
+			if statusFilter != "" && !validGroupStatuses()[statusFilter] {
 				return clierr.New(
 					clierr.CodeUsage,
 					clierr.KindUsage,

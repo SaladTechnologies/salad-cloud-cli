@@ -161,10 +161,12 @@ func (d debugTransport) requestBodyForLog(req *http.Request) string {
 }
 
 // redactedHeaders carry credentials.
-var redactedHeaders = map[string]bool{"Salad-Api-Key": true, "Authorization": true}
+func redactedHeaders() map[string]bool {
+	return map[string]bool{"Salad-Api-Key": true, "Authorization": true}
+}
 
 func redactHeader(name, value string) string {
-	if redactedHeaders[http.CanonicalHeaderKey(name)] {
+	if redactedHeaders()[http.CanonicalHeaderKey(name)] {
 		return "REDACTED"
 	}
 	return value
@@ -200,10 +202,12 @@ func redactText(s string) string {
 }
 
 // credentialKeys are the JSON fields whose string value is a credential.
-var credentialKeys = map[string]bool{
-	"secret_key": true, "api_key": true, "password": true, "personal_access_token": true,
-	"secret_access_key": true, "access_key_id": true, "service_key": true, "api_token": true,
-	"ingestion_key": true, "token": true,
+func credentialKeys() map[string]bool {
+	return map[string]bool{
+		"secret_key": true, "api_key": true, "password": true, "personal_access_token": true,
+		"secret_access_key": true, "access_key_id": true, "service_key": true, "api_token": true,
+		"ingestion_key": true, "token": true,
+	}
 }
 
 // redactBody removes credentials from a request or response body. A JSON
@@ -278,7 +282,7 @@ func SecretField(key, parent string) bool { return secretString(key, parent) }
 // secretString reports whether a string under key, inside a value under
 // parent, is a credential.
 func secretString(key, parent string) bool {
-	return credentialKeys[key] ||
+	return credentialKeys()[key] ||
 		parent == "environment_variables" ||
 		parent == "headers" && key != "name"
 }

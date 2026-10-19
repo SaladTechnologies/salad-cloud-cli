@@ -204,7 +204,7 @@ func checkMachineStderr(t *testing.T, o outcome) {
 	}
 	kind := asType[string](doc["kind"])
 	known := false
-	for _, k := range clierr.Kinds {
+	for _, k := range clierr.Kinds() {
 		known = known || string(k) == kind
 	}
 	if !known {

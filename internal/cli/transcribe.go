@@ -57,20 +57,22 @@ func isHTTPURL(s string) bool {
 
 // transcribeMimeTypes maps audio/video file extensions to MIME types for the
 // S4 upload; unknown extensions fall back to application/octet-stream.
-var transcribeMimeTypes = map[string]string{
-	".mp3":  "audio/mpeg",
-	".wav":  "audio/wav",
-	".m4a":  "audio/x-m4a",
-	".mp4":  "video/mp4",
-	".ogg":  "audio/ogg",
-	".flac": "audio/flac",
-	".aac":  "audio/aac",
-	".webm": "video/webm",
+func transcribeMimeTypes() map[string]string {
+	return map[string]string{
+		".mp3":  "audio/mpeg",
+		".wav":  "audio/wav",
+		".m4a":  "audio/x-m4a",
+		".mp4":  "video/mp4",
+		".ogg":  "audio/ogg",
+		".flac": "audio/flac",
+		".aac":  "audio/aac",
+		".webm": "video/webm",
+	}
 }
 
 // transcribeMime returns the upload MIME type for a local file path.
 func transcribeMime(path string) string {
-	if m, ok := transcribeMimeTypes[strings.ToLower(filepath.Ext(path))]; ok {
+	if m, ok := transcribeMimeTypes()[strings.ToLower(filepath.Ext(path))]; ok {
 		return m
 	}
 	return "application/octet-stream"
@@ -102,7 +104,9 @@ func humanSize(n int64) string {
 
 // resultURLKeys are where a return_as_file job's output carries the result
 // URL: output.url, in place of the inline text.
-var resultURLKeys = []string{"url"}
+func resultURLKeys() []string {
+	return []string{"url"}
+}
 
 // transcriptText extracts the table-mode stdout payload from a succeeded
 // job's output: the SRT document when requested, else the text field, else
@@ -115,7 +119,7 @@ var resultURLKeys = []string{"url"}
 func transcriptText(out any, wantSRT, wantFile bool) (string, *clierr.Error) {
 	m, isMap := out.(map[string]any)
 	if isMap && wantFile {
-		for _, key := range resultURLKeys {
+		for _, key := range resultURLKeys() {
 			if s, ok := m[key].(string); ok && s != "" {
 				return s, nil
 			}
@@ -183,47 +187,55 @@ func (f inputField) flag() string { return strings.ReplaceAll(f.name, "_", "-") 
 
 // transcribeFields are the transcribe endpoint's input fields besides url
 // (the positional), from its published input schema.
-var transcribeFields = []inputField{
-	{
-		"language_code",
-		fieldString,
-		"language of the audio, for example en or de (omit to detect it automatically; setting it forces that language)",
-	},
-	{"audio_stream_index", fieldInt, "zero-based audio stream to transcribe in multitrack media"},
-	{"multichannel", fieldBool, "preserve audio channels for channel-based diarization"},
-	{"return_as_file", fieldBool, "return a temporary result URL instead of inline output (table mode prints the URL)"},
-	{"word_level_timestamps", fieldBool, "include word segments"},
-	{"sentence_level_timestamps", fieldBool, "include sentence-level timestamps"},
-	{"diarization", fieldBool, "add speaker labels to word segments"},
-	{"sentence_diarization", fieldBool, "add speaker labels to sentence segments"},
-	{"srt", fieldBool, "produce an SRT subtitle document (table mode prints it instead of the text)"},
-	{"translate", fieldString, "Whisper translation: to_eng translates to English"},
-	{
-		"llm_translation",
-		fieldList,
-		"a language to translate the transcript into, repeatable (--llm-translation german --llm-translation french)",
-	},
-	{"srt_translation", fieldList, "a language to translate the SRT into, repeatable"},
-	{"custom_prompt", fieldString, "an instruction for processing the transcript"},
-	{"custom_vocabulary", fieldList, "a domain term to improve accuracy, repeatable"},
-	{"summarize", fieldInt, "summarize the transcript in at most this many words (0-2000)"},
-	{"overall_classification", fieldBool, "classify the transcript (see --classification-labels)"},
-	{"classification_labels", fieldList, "a label for --overall-classification, repeatable"},
-	{"overall_sentiment_analysis", fieldBool, "classify the transcript's sentiment"},
-	{"enhanced_accuracy", fieldBool, "use a language-specific fine-tuned model when one is available"},
+func transcribeFields() []inputField {
+	return []inputField{
+		{
+			"language_code",
+			fieldString,
+			"language of the audio, for example en or de (omit to detect it automatically; setting it forces that language)",
+		},
+		{"audio_stream_index", fieldInt, "zero-based audio stream to transcribe in multitrack media"},
+		{"multichannel", fieldBool, "preserve audio channels for channel-based diarization"},
+		{
+			"return_as_file",
+			fieldBool,
+			"return a temporary result URL instead of inline output (table mode prints the URL)",
+		},
+		{"word_level_timestamps", fieldBool, "include word segments"},
+		{"sentence_level_timestamps", fieldBool, "include sentence-level timestamps"},
+		{"diarization", fieldBool, "add speaker labels to word segments"},
+		{"sentence_diarization", fieldBool, "add speaker labels to sentence segments"},
+		{"srt", fieldBool, "produce an SRT subtitle document (table mode prints it instead of the text)"},
+		{"translate", fieldString, "Whisper translation: to_eng translates to English"},
+		{
+			"llm_translation",
+			fieldList,
+			"a language to translate the transcript into, repeatable (--llm-translation german --llm-translation french)",
+		},
+		{"srt_translation", fieldList, "a language to translate the SRT into, repeatable"},
+		{"custom_prompt", fieldString, "an instruction for processing the transcript"},
+		{"custom_vocabulary", fieldList, "a domain term to improve accuracy, repeatable"},
+		{"summarize", fieldInt, "summarize the transcript in at most this many words (0-2000)"},
+		{"overall_classification", fieldBool, "classify the transcript (see --classification-labels)"},
+		{"classification_labels", fieldList, "a label for --overall-classification, repeatable"},
+		{"overall_sentiment_analysis", fieldBool, "classify the transcript's sentiment"},
+		{"enhanced_accuracy", fieldBool, "use a language-specific fine-tuned model when one is available"},
+	}
 }
 
 // transcriptionLiteFields are the transcription-lite endpoint's input
 // fields besides url, from its published input schema.
-var transcriptionLiteFields = []inputField{
-	{"language_code", fieldString, "language of the audio, for example en or de (endpoint default: en)"},
-	{"return_as_file", fieldBool, "return the result as a file (table mode prints the URL)"},
-	{"sentence_level_timestamps", fieldBool, "include sentence-level timestamps"},
-	{"word_level_timestamps", fieldBool, "include word-level timestamps"},
-	{"diarization", fieldBool, "separate speakers in multi-speaker audio"},
-	{"sentence_diarization", fieldBool, "sentence-level speaker diarization"},
-	{"srt", fieldBool, "produce an SRT subtitle document (table mode prints it instead of the text)"},
-	{"translate", fieldString, "translate the transcription to English"},
+func transcriptionLiteFields() []inputField {
+	return []inputField{
+		{"language_code", fieldString, "language of the audio, for example en or de (endpoint default: en)"},
+		{"return_as_file", fieldBool, "return the result as a file (table mode prints the URL)"},
+		{"sentence_level_timestamps", fieldBool, "include sentence-level timestamps"},
+		{"word_level_timestamps", fieldBool, "include word-level timestamps"},
+		{"diarization", fieldBool, "separate speakers in multi-speaker audio"},
+		{"sentence_diarization", fieldBool, "sentence-level speaker diarization"},
+		{"srt", fieldBool, "produce an SRT subtitle document (table mode prints it instead of the text)"},
+		{"translate", fieldString, "translate the transcription to English"},
+	}
 }
 
 // fieldValues are the input fields whose flags were given, by field name:
@@ -294,22 +306,28 @@ func buildTranscribeInput(
 
 // transcribeEndpoints are the endpoints with a transcription porcelain
 // command, each named exactly after its endpoint.
-var transcribeEndpoints = []struct {
+func transcribeEndpoints() []struct {
 	name   string
 	fields []inputField
 	short  string
-}{
-	{"transcribe", transcribeFields, "Transcribe an audio or video file on the transcribe endpoint"},
-	{
-		"transcription-lite",
-		transcriptionLiteFields,
-		"Transcribe an audio or video file on the cheaper transcription-lite endpoint",
-	},
+} {
+	return []struct {
+		name   string
+		fields []inputField
+		short  string
+	}{
+		{"transcribe", transcribeFields(), "Transcribe an audio or video file on the transcribe endpoint"},
+		{
+			"transcription-lite",
+			transcriptionLiteFields(),
+			"Transcribe an audio or video file on the cheaper transcription-lite endpoint",
+		},
+	}
 }
 
 // addTranscribeCommands adds transcribe.go's commands to the tree.
 func (app *App) addTranscribeCommands(inferenceCmd *cobra.Command) {
-	for _, ep := range transcribeEndpoints {
+	for _, ep := range transcribeEndpoints() {
 		inferenceCmd.AddCommand(app.newTranscribeCmd(ep.name, ep.fields, ep.short))
 	}
 }

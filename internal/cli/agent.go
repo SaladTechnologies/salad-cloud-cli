@@ -76,9 +76,9 @@ func (app *App) runAgentInit(cmd *cobra.Command, _ []string, o agentInitOptions)
 	file, dir, printOnly := o.file, o.dir, o.print
 
 	if printOnly {
-		res := agentInitResult{Action: "printed", OK: true, Reason: "--print", Version: version.Version, File: nil}
+		res := agentInitResult{Action: "printed", OK: true, Reason: "--print", Version: version.String(), File: nil}
 		return wrapErr(app.printer.Emit(res, func(w *output.Writer) {
-			w.Print(agentdoc.Block(version.Version))
+			w.Print(agentdoc.Block(version.String()))
 		}))
 	}
 
@@ -97,7 +97,7 @@ func (app *App) runAgentInit(cmd *cobra.Command, _ []string, o agentInitOptions)
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read %s: %v", target.Path, err)
 	}
 
-	out, changed, err := agentdoc.Apply(string(existing), version.Version)
+	out, changed, err := agentdoc.Apply(string(existing), version.String())
 	if err != nil {
 		if errors.Is(err, agentdoc.ErrMalformed) {
 			reason := strings.TrimPrefix(err.Error(), agentdoc.ErrMalformed.Error()+": ")
@@ -137,7 +137,7 @@ func (app *App) runAgentInit(cmd *cobra.Command, _ []string, o agentInitOptions)
 	if rel, rerr := filepath.Rel(".", target.Path); rerr == nil && dir == "." {
 		shown = rel
 	}
-	res := agentInitResult{File: &shown, Action: action, OK: true, Reason: target.Reason, Version: version.Version}
+	res := agentInitResult{File: &shown, Action: action, OK: true, Reason: target.Reason, Version: version.String()}
 	return wrapErr(app.printer.Emit(res, func(w *output.Writer) {
 		switch action {
 		case "created":

@@ -194,7 +194,7 @@ func TestFlagsACommandDoesNotRead(t *testing.T) {
 		for top.Parent() != nil && top.Parent() != rootCmd {
 			top = top.Parent()
 		}
-		if top == rootCmd || !contextFreeCommands[top.Name()] {
+		if top == rootCmd || !contextFreeCommands()[top.Name()] {
 			return
 		}
 		if readsOrg(c) || readsProject(c) {
