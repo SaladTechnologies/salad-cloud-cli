@@ -187,6 +187,32 @@ func checkTableError(t *testing.T, o outcome) {
 // error document as the last line when the command failed.
 func checkMachineStderr(t *testing.T, o outcome) {
 	t.Helper()
+	checkMachineStderrLines(t, &o)
+	if o.code == 0 {
+		return
+	}
+	doc, err := o.errorDocument()
+	if err != nil {
+		t.Fatalf("exit %d, but the last stderr line is not the error document (%v):\n%s", o.code, err, o.stderr)
+	}
+	checkErrorDocumentValues(t, &o, doc)
+	t.Run("five keys", func(t *testing.T) {
+		t.Parallel()
+		keys := make([]string, 0, len(doc))
+		for k := range doc {
+			keys = append(keys, k)
+		}
+		slices.Sort(keys)
+		if got, want := strings.Join(keys, ","), "exit_code,hint,http_status,kind,message"; got != want {
+			t.Errorf("error document keys = %s, want %s", got, want)
+		}
+	})
+}
+
+// checkMachineStderrLines checks that every stderr line of o is a warning: or a note:, except the last line of a
+// failed run, which may be the error document.
+func checkMachineStderrLines(t *testing.T, o *outcome) {
+	t.Helper()
 	ls := lines(o.stderr)
 	for i, l := range ls {
 		switch {
@@ -196,13 +222,12 @@ func checkMachineStderr(t *testing.T, o outcome) {
 			t.Errorf("stderr line %d is not a warning:, a note: or the error document: %q", i+1, l)
 		}
 	}
-	if o.code == 0 {
-		return
-	}
-	doc, err := o.errorDocument()
-	if err != nil {
-		t.Fatalf("exit %d, but the last stderr line is not the error document (%v):\n%s", o.code, err, o.stderr)
-	}
+}
+
+// checkErrorDocumentValues checks the error document of the failed run o: its exit_code is the process's, its kind
+// one of clierr.Kinds, and its message one non-empty line.
+func checkErrorDocumentValues(t *testing.T, o *outcome, doc map[string]any) {
+	t.Helper()
 	if code := asType[float64](doc["exit_code"]); int(code) != o.code {
 		t.Errorf("exit_code %v, process exited %d", doc["exit_code"], o.code)
 	}
@@ -217,17 +242,6 @@ func checkMachineStderr(t *testing.T, o outcome) {
 	if msg := asType[string](doc["message"]); msg == "" || strings.Contains(msg, "\n") {
 		t.Errorf("message %q: want one non-empty line", msg)
 	}
-	t.Run("five keys", func(t *testing.T) {
-		t.Parallel()
-		keys := make([]string, 0, len(doc))
-		for k := range doc {
-			keys = append(keys, k)
-		}
-		slices.Sort(keys)
-		if got, want := strings.Join(keys, ","), "exit_code,hint,http_status,kind,message"; got != want {
-			t.Errorf("error document keys = %s, want %s", got, want)
-		}
-	})
 }
 
 // checkNoPasteInHints: no hint asks for a key's value.
@@ -400,16 +414,7 @@ func TestCredentialsNeverPrinted(t *testing.T) {
 				s.args = append(append([]string(nil), s.args...), "-o", mode)
 				o := s.run(t)
 				all := o.all()
-				for _, k := range testSecrets() {
-					if strings.Contains(all, k[:len(k)-4]) {
-						t.Errorf("output holds the key %s:\n%s", k, all)
-					}
-				}
-				for _, w := range secretWords() {
-					if strings.Contains(all, w) {
-						t.Errorf("output holds part of a key (%s):\n%s", w, all)
-					}
-				}
+				checkNoCredentialIn(t, all)
 				checkNoPasteInHints(t, o)
 				t.Run("mask", func(t *testing.T) {
 					t.Parallel()
@@ -418,6 +423,22 @@ func TestCredentialsNeverPrinted(t *testing.T) {
 					}
 				})
 			})
+		}
+	}
+}
+
+// checkNoCredentialIn checks that all, everything a run showed, holds no test credential short of its last four
+// characters and none of their distinctive middles.
+func checkNoCredentialIn(t *testing.T, all string) {
+	t.Helper()
+	for _, k := range testSecrets() {
+		if strings.Contains(all, k[:len(k)-4]) {
+			t.Errorf("output holds the key %s:\n%s", k, all)
+		}
+	}
+	for _, w := range secretWords() {
+		if strings.Contains(all, w) {
+			t.Errorf("output holds part of a key (%s):\n%s", w, all)
 		}
 	}
 }
@@ -536,46 +557,66 @@ func TestConfigWritesNameOverridingVariables(t *testing.T) {
 				want := append([]string{}, tc.overrides...)
 				slices.Sort(want)
 				if mode == "json" {
-					raw, ok := o.document(t)["env_overrides"].([]any)
-					if !ok {
-						t.Fatalf("env_overrides missing or not a list:\n%s", o.stdout)
-					}
-					var got []string
-					for _, v := range raw {
-						s := asType[string](v)
-						got = append(got, s)
-					}
-					slices.Sort(got)
-					if strings.Join(got, ",") != strings.Join(want, ",") {
-						t.Errorf("env_overrides = %v, want %v", got, want)
-					}
+					checkEnvOverridesDocument(t, &o, want)
 				}
-				named, firsts := make(map[string]bool), 0
-				for _, l := range lines(o.stderr) {
-					if strings.HasPrefix(l, "warning: commands ") {
-						firsts++ // the warning's first line, with one variable or several
-					}
-					if !strings.HasPrefix(l, "warning: ") || !varName.MatchString(l) {
-						continue
-					}
-					for _, v := range varName.FindAllString(l, -1) {
-						named[v] = true
-					}
-				}
-				got := make([]string, 0, len(named))
-				for v := range named {
-					got = append(got, v)
-				}
-				slices.Sort(got)
-				if strings.Join(got, ",") != strings.Join(want, ",") {
-					t.Errorf("the warnings name %v, want %v:\n%s", got, want, o.stderr)
-				}
-				if wantFirsts := min(len(want), 1); firsts != wantFirsts {
-					t.Errorf("%d warnings open with \"warning: commands\", want %d:\n%s", firsts, wantFirsts, o.stderr)
-				}
+				checkOverrideWarning(t, o.stderr, want)
 			})
 		}
 	}
+}
+
+// checkEnvOverridesDocument checks that the json run o's env_overrides lists exactly the variables in want (sorted).
+func checkEnvOverridesDocument(t *testing.T, o *outcome, want []string) {
+	t.Helper()
+	raw, ok := o.document(t)["env_overrides"].([]any)
+	if !ok {
+		t.Fatalf("env_overrides missing or not a list:\n%s", o.stdout)
+	}
+	got := make([]string, 0, len(raw))
+	for _, v := range raw {
+		s := asType[string](v)
+		got = append(got, s)
+	}
+	slices.Sort(got)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("env_overrides = %v, want %v", got, want)
+	}
+}
+
+// checkOverrideWarning checks that the warning: lines in stderr name exactly the variables in want (sorted), under
+// one "warning: commands" line when there are any and none when there are not.
+func checkOverrideWarning(t *testing.T, stderr string, want []string) {
+	t.Helper()
+	got, firsts := overrideWarnings(stderr)
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("the warnings name %v, want %v:\n%s", got, want, stderr)
+	}
+	if wantFirsts := min(len(want), 1); firsts != wantFirsts {
+		t.Errorf("%d warnings open with \"warning: commands\", want %d:\n%s", firsts, wantFirsts, stderr)
+	}
+}
+
+// overrideWarnings reads the override warning in stderr: the variables its warning: lines name, sorted, and how
+// many lines open a warning ("warning: commands ...").
+func overrideWarnings(stderr string) ([]string, int) {
+	named, firsts := make(map[string]bool), 0
+	for _, l := range lines(stderr) {
+		if strings.HasPrefix(l, "warning: commands ") {
+			firsts++ // the warning's first line, with one variable or several
+		}
+		if !strings.HasPrefix(l, "warning: ") || !varName.MatchString(l) {
+			continue
+		}
+		for _, v := range varName.FindAllString(l, -1) {
+			named[v] = true
+		}
+	}
+	got := make([]string, 0, len(named))
+	for v := range named {
+		got = append(got, v)
+	}
+	slices.Sort(got)
+	return got, firsts
 }
 
 // stdinPatience is how long a run that must not read stdin gets before the
