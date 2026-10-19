@@ -150,73 +150,23 @@ func (app *App) addLogsCommands(root, cg *cobra.Command) {
 }
 
 func (app *App) runLogs(cmd *cobra.Command, args []string, o *logsOptions) error {
-	// The group is the subject of 'container-groups logs <group>' and a
-	// filter (-c) on the top-level query.
-	group := ""
-	if len(args) == 1 {
-		group = args[0]
-	} else if cmd.Annotations[annotationGroupIsArg] == "" { // logs -c; container-groups logs only hides its -c
-		group = app.flags.group
-	}
-	sinceStr, untilStr, instance := o.since, o.until, o.instance
-	severity, filter, rawQuery := o.severity, o.filter, o.query
-	follow, pollInterval, lookback, pageSize := o.follow, o.pollInterval, o.lookback, o.pageSize
-
+	group := logsGroup(cmd, args, app.flags.group)
 	// Pre-flight validation: everything below must fail with a usage error
 	// before any configuration or client work, so bad input exits 2 even
 	// when no API key is set (and never reaches the API).
-	if follow && cmd.Flags().Changed("until") {
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--until cannot be combined with --follow")
+	if cerr := logsValidateFlags(cmd, o, group); cerr != nil {
+		return cerr
 	}
-	if pollInterval < logsq.MinPoll {
-		return clierr.New(
-			clierr.CodeUsage,
-			clierr.KindUsage,
-			"--poll-interval must be at least %s (got %s)",
-			logsq.MinPoll,
-			pollInterval,
-		)
-	}
-	if cmd.Flags().Changed("lookback") && !follow {
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--lookback only applies with --follow")
-	}
-	if lookback <= 0 {
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--lookback must be positive (got %s)", lookback)
-	}
-	if pageSize < 1 || pageSize > 100 {
-		return clierr.New(
-			clierr.CodeUsage,
-			clierr.KindUsage,
-			"--page-size must be between 1 and 100 (got %d)",
-			pageSize,
-		)
-	}
-	if instance != "" && !isUUID(instance) && group == "" {
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage,
-			"--instance with an ID prefix needs a container group to resolve it against").
-			WithHint("pass -c <group>, or the full instance UUID")
-	}
-	now := time.Now().UTC()
-	since, cerr := logsq.ParseTimeRef(sinceStr, now)
+	window, cerr := logsValidateWindow(cmd, o)
 	if cerr != nil {
 		return cerr
 	}
-	until := now
-	if cmd.Flags().Changed("until") {
-		if until, cerr = logsq.ParseTimeRef(untilStr, now); cerr != nil {
-			return cerr
-		}
-	}
-	if !follow && !until.After(since) {
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--until (%s) must be after --since (%s)",
-			until.Format(time.RFC3339), since.Format(time.RFC3339))
-	}
 	baseFilters := logsq.Filters{
 		Group:       group,
-		Instance:    instance,
-		MinSeverity: severity,
-		Contains:    filter,
-		RawQuery:    rawQuery,
+		Instance:    o.instance,
+		MinSeverity: o.severity,
+		Contains:    o.filter,
+		RawQuery:    o.query,
 		Org:         "",
 		Project:     "",
 	}
@@ -232,53 +182,173 @@ func (app *App) runLogs(cmd *cobra.Command, args []string, o *logsOptions) error
 	if cerr != nil {
 		return cerr
 	}
-	if cerr = client.RequireOrg(); cerr != nil {
+	scope, cerr := logsScope(cmd, client, &res, &baseFilters)
+	if cerr != nil {
 		return cerr
 	}
+	if app.printer.Mode() == "table" {
+		fprintln(app.errw(), scopeLine(scope, client.Org(), res.Project))
+	}
+	if baseFilters.Instance, cerr = logsInstanceID(cmd.Context(), client, group, o.instance); cerr != nil {
+		return cerr
+	}
+
+	ctx := cmd.Context() // canceled by the one signal handler in Execute
+	if !o.follow {
+		cerr = app.logsOnce(ctx, o, client, scope, &baseFilters, window)
+	} else {
+		cerr = app.logsFollow(ctx, o, client, scope, &baseFilters, window.since)
+	}
+	// Returned directly, a nil *clierr.Error would be a non-nil error.
+	if cerr != nil {
+		return cerr
+	}
+	return nil
+}
+
+// logsGroup is the container group a logs command is about: the subject of 'container-groups logs <group>', or the
+// filter (-c, given as flagGroup) on the top-level query.
+func logsGroup(cmd *cobra.Command, args []string, flagGroup string) string {
+	if len(args) == 1 {
+		return args[0]
+	}
+	if cmd.Annotations[annotationGroupIsArg] == "" { // logs -c; container-groups logs only hides its -c
+		return flagGroup
+	}
+	return ""
+}
+
+// logsValidateFlags checks the logs flags against each other, in the order the checks are reported; the time range
+// is checked next, by logsValidateWindow.
+func logsValidateFlags(cmd *cobra.Command, o *logsOptions, group string) *clierr.Error {
+	if cerr := logsValidateFollowFlags(cmd, o); cerr != nil {
+		return cerr
+	}
+	if o.pageSize < 1 || o.pageSize > 100 {
+		return clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			"--page-size must be between 1 and 100 (got %d)",
+			o.pageSize,
+		)
+	}
+	if o.instance != "" && !isUUID(o.instance) && group == "" {
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage,
+			"--instance with an ID prefix needs a container group to resolve it against").
+			WithHint("pass -c <group>, or the full instance UUID")
+	}
+	return nil
+}
+
+// logsValidateFollowFlags checks --until, --poll-interval and --lookback against --follow.
+func logsValidateFollowFlags(cmd *cobra.Command, o *logsOptions) *clierr.Error {
+	if o.follow && cmd.Flags().Changed("until") {
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--until cannot be combined with --follow")
+	}
+	if o.pollInterval < logsq.MinPoll {
+		return clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			"--poll-interval must be at least %s (got %s)",
+			logsq.MinPoll,
+			o.pollInterval,
+		)
+	}
+	if cmd.Flags().Changed("lookback") && !o.follow {
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--lookback only applies with --follow")
+	}
+	if o.lookback <= 0 {
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--lookback must be positive (got %s)", o.lookback)
+	}
+	return nil
+}
+
+// logsWindow is the time range a logs query covers; --follow reads only since.
+type logsWindow struct {
+	since, until time.Time
+}
+
+// logsValidateWindow parses --since and --until (now when not given) and, for a one-shot query, checks that the
+// range is not empty.
+func logsValidateWindow(cmd *cobra.Command, o *logsOptions) (logsWindow, *clierr.Error) {
+	now := time.Now().UTC()
+	since, cerr := logsq.ParseTimeRef(o.since, now)
+	if cerr != nil {
+		return logsWindow{}, cerr
+	}
+	until := now
+	if cmd.Flags().Changed("until") {
+		if until, cerr = logsq.ParseTimeRef(o.until, now); cerr != nil {
+			return logsWindow{}, cerr
+		}
+	}
+	if !o.follow && !until.After(since) {
+		return logsWindow{}, clierr.New(clierr.CodeUsage, clierr.KindUsage, "--until (%s) must be after --since (%s)",
+			until.Format(time.RFC3339), since.Format(time.RFC3339))
+	}
+	return logsWindow{since: since, until: until}, nil
+}
+
+// logsScope checks that an organization is set, works out what a logs query covers, and fills its organization or
+// project into filters: a group is looked up in the resolved project; without a group, only an explicit --project
+// narrows the organization.
+func logsScope(
+	cmd *cobra.Command,
+	client *api.Client,
+	res *config.Resolved,
+	filters *logsq.Filters,
+) (logScope, *clierr.Error) {
+	if cerr := client.RequireOrg(); cerr != nil {
+		return logScope{}, cerr
+	}
+	group := filters.Group
 	// A group's logs are filtered by its project, which the log query never
 	// checks: on the assumed "default" project, confirm it exists first, so
 	// the command warns and a missing one is no valid project set (exit 2)
 	// rather than an empty result.
 	if group != "" && res.ProjectSource == config.SourceDefault {
-		if cerr = client.CheckProject(cmd.Context()); cerr != nil {
-			return cerr
+		if cerr := client.CheckProject(cmd.Context()); cerr != nil {
+			return logScope{}, cerr
 		}
 	}
-	// The scope: a group is looked up in the resolved project; without a
-	// group, only an explicit --project narrows the organization.
-	var scope logScope
 	switch {
 	case group != "":
-		baseFilters.Project = res.Project
-		scope = logScope{kind: scopeGroup, name: group}
+		filters.Project = res.Project
+		return logScope{kind: scopeGroup, name: group}, nil
 	case cmd.Flags().Changed("project"):
-		baseFilters.Project = res.Project
-		scope = logScope{kind: scopeProject, name: res.Project}
+		filters.Project = res.Project
+		return logScope{kind: scopeProject, name: res.Project}, nil
 	default:
-		baseFilters.Org = client.Org()
-		scope = logScope{kind: scopeOrg, name: client.Org()}
+		filters.Org = client.Org()
+		return logScope{kind: scopeOrg, name: client.Org()}, nil
 	}
+}
 
-	if app.printer.Mode() == "table" {
-		fprintln(app.errw(), scopeLine(scope, client.Org(), res.Project))
+// logsInstanceID is the exact instance ID to query for --instance. It accepts an ID prefix (like ssh/cp); the log
+// query language needs the exact instance_id, so a non-UUID value is resolved against the group's live instances
+// first. Full UUIDs, and no --instance at all, skip the extra call.
+func logsInstanceID(ctx context.Context, client *api.Client, group, instance string) (string, *clierr.Error) {
+	if instance == "" || isUUID(instance) {
+		return instance, nil
 	}
-
-	// --instance accepts an ID prefix (like ssh/cp); the log query language
-	// needs the exact instance_id, so a non-UUID value is resolved against
-	// the group's live instances first. Full UUIDs skip the extra call.
-	if instance != "" && !isUUID(instance) {
-		collection, lerr := client.ListInstances(cmd.Context(), group)
-		if lerr != nil {
-			return groupNotFound(lerr, group, client.Org(), client.Project())
-		}
-		inst, rerr := resolveSSHInstance(collection.Instances, group, instance)
-		if rerr != nil {
-			return rerr
-		}
-		baseFilters.Instance = ptr.Deref(inst.Id)
+	collection, lerr := client.ListInstances(ctx, group)
+	if lerr != nil {
+		return "", groupNotFound(lerr, group, client.Org(), client.Project())
 	}
+	inst, rerr := resolveSSHInstance(collection.Instances, group, instance)
+	if rerr != nil {
+		return "", rerr
+	}
+	return ptr.Deref(inst.Id), nil
+}
 
-	fetch := func(ctx context.Context, query, startRFC3339, endRFC3339 string, pageSize int) (*logsq.Page, *clierr.Error) {
+// logsFetcher is the logsq.Fetcher that pages through client's log entries, oldest first.
+func logsFetcher(client *api.Client) logsq.Fetcher {
+	return func(
+		ctx context.Context,
+		query, startRFC3339, endRFC3339 string,
+		pageSize int,
+	) (*logsq.Page, *clierr.Error) {
 		q := logs.LogEntryQuery{}
 		q.SetStartTime(startRFC3339)
 		q.SetEndTime(endRFC3339)
@@ -299,66 +369,85 @@ func (app *App) runLogs(cmd *cobra.Command, args []string, o *logsOptions) error
 		}
 		return page, nil
 	}
-	emit := func(e logsq.Entry) error {
+}
+
+// logsEmitter prints one log entry: its full API entry as NDJSON, or its table line for a query of scope.
+func (app *App) logsEmitter(scope logScope) func(logsq.Entry) error {
+	return func(e logsq.Entry) error {
 		return app.printer.Stream(e.Raw, formatLogLine(e, scope.kind))
 	}
+}
 
-	if !follow {
-		query, err := logsq.Compile(baseFilters)
-		if err != nil {
-			return err
-		}
-		emitted := 0
-		countingEmit := func(e logsq.Entry) error {
-			emitted++
-			return emit(e)
-		}
-		if err := logsq.FetchWindow(
-			cmd.Context(),
-			fetch,
-			query,
-			since,
-			until,
-			pageSize,
-			countingEmit,
-			app.stderrLine,
-		); err != nil {
-			return err
-		}
-		// An empty one-shot result is easy to misread as a hang or a bug;
-		// say so on stderr in table mode. JSON/NDJSON stays machine-clean,
-		// and --follow's silence correctly means "waiting".
-		if emitted == 0 && app.printer.Mode() == "table" {
-			fprintln(app.errw(), noMatchNote(scope, sinceStr, instance, severity, filter))
-		}
-		return nil
+// logsOnce runs a one-shot logs query over window and prints each entry.
+func (app *App) logsOnce(
+	ctx context.Context,
+	o *logsOptions,
+	client *api.Client,
+	scope logScope,
+	filters *logsq.Filters,
+	window logsWindow,
+) *clierr.Error {
+	query, cerr := logsq.Compile(*filters)
+	if cerr != nil {
+		return cerr
 	}
+	emit := app.logsEmitter(scope)
+	emitted := 0
+	countingEmit := func(e logsq.Entry) error {
+		emitted++
+		return emit(e)
+	}
+	cerr = logsq.FetchWindow(
+		ctx,
+		logsFetcher(client),
+		query,
+		window.since,
+		window.until,
+		o.pageSize,
+		countingEmit,
+		app.stderrLine,
+	)
+	if cerr != nil {
+		return cerr
+	}
+	// An empty one-shot result is easy to misread as a hang or a bug;
+	// say so on stderr in table mode. JSON/NDJSON stays machine-clean,
+	// and --follow's silence correctly means "waiting".
+	if emitted == 0 && app.printer.Mode() == "table" {
+		fprintln(app.errw(), noMatchNote(scope, o.since, o.instance, o.severity, o.filter))
+	}
+	return nil
+}
 
-	ctx := cmd.Context() // canceled by the one signal handler in Execute
-	if group != "" {
-		if note := followGroupNote(ctx, client, group); note != "" {
+// logsFollow prints new log entries from since on until ctx ends.
+func (app *App) logsFollow(
+	ctx context.Context,
+	o *logsOptions,
+	client *api.Client,
+	scope logScope,
+	filters *logsq.Filters,
+	since time.Time,
+) *clierr.Error {
+	if filters.Group != "" {
+		if note := followGroupNote(ctx, client, filters.Group); note != "" {
 			fprintln(app.errw(), note)
 		}
 	}
 	if app.printer.Mode() == "table" {
 		fprintln(app.errw(), "waiting for log entries (Ctrl-C to stop)")
 	}
-	query, cerr := logsq.Compile(baseFilters)
+	query, cerr := logsq.Compile(*filters)
 	if cerr != nil {
 		return cerr
 	}
 	follower := &logsq.Follower{
-		Poll:       pollInterval,
+		Poll:       o.pollInterval,
 		MaxBackoff: logsq.DefaultMaxBackoff,
-		Lookback:   lookback,
+		Lookback:   o.lookback,
 		Clock:      logsq.RealClock{},
 		Warn:       app.stderrLine,
 	}
-	//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
-	if cerr := follower.Run(ctx, query, fetch, since, pageSize, emit); cerr != nil {
-		return cerr
-	}
-	return nil
+	return follower.Run(ctx, query, logsFetcher(client), since, o.pageSize, app.logsEmitter(scope))
 }
 
 // followGroupNote is the stderr note for following a group that cannot log:
