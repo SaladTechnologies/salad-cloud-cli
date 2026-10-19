@@ -38,9 +38,9 @@ func annotate(c *cobra.Command, key, value string) {
 
 // addHiddenGroupFlag gives c the hidden -c that only ever produces the
 // corrected command: the group is c's argument (or part of cp's path).
-func addHiddenGroupFlag(c *cobra.Command) {
+func (app *App) addHiddenGroupFlag(c *cobra.Command) {
 	c.Flags().StringP("container-group", "c", "", "")
-	noteTreeErr(c.Flags().MarkHidden("container-group"))
+	app.noteTreeErr(c.Flags().MarkHidden("container-group"))
 	annotate(c, annotationGroupIsArg, "true")
 }
 

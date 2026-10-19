@@ -11,10 +11,6 @@ import (
 // own stderr, where the CLI's notes and warnings go.
 func runComplete(t *testing.T, args ...string) (stdout, stderr string) {
 	t.Helper()
-	// As Execute does: prepareTree first, or the completion walk merges the
-	// global --org/--project into commands before contextFree shadows them.
-	prepareTree()
-	registerCompletions(rootCmd)
 	var out, errBuf bytes.Buffer
 	rootCmd.SetOut(&out)
 	rootCmd.SetErr(&errBuf)

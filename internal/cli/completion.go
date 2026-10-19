@@ -14,7 +14,6 @@ import (
 	"context"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -34,7 +33,7 @@ type completer func(ctx context.Context, c *api.Client, cmd *cobra.Command, args
 // complete wraps a completer as a cobra completion function: it builds the
 // silent client from the root's --org/--project, and returns no candidates
 // (and no file completion) on any failure.
-func complete(f completer) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
+func (app *App) complete(f completer) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		fr := readFlags(cmd.Root().PersistentFlags())
 		org, project := fr.String("org"), fr.String("project")
@@ -45,7 +44,7 @@ func complete(f completer) func(*cobra.Command, []string, string) ([]string, cob
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		client, cerr := api.New(res, apiOptions())
+		client, cerr := api.New(res, app.apiOptions())
 		if cerr != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
@@ -164,73 +163,69 @@ func orgNames(ctx context.Context, c *api.Client, _ *cobra.Command, _ []string) 
 	return list.OrgNames()
 }
 
-var registerCompletionsOnce sync.Once
-
-// registerCompletions attaches the completion functions to the tree, once:
+// registerCompletions attaches the completion functions to the tree:
 // positional arguments by command path, flags by name wherever they occur.
-func registerCompletions(root *cobra.Command) {
-	registerCompletionsOnce.Do(func() {
-		positional := map[string]completer{
-			"container-groups get":                  groupNames,
-			"container-groups update":               groupNames,
-			"container-groups start":                groupNames,
-			"container-groups stop":                 groupNames,
-			"container-groups delete":               groupNames,
-			"container-groups scale":                groupNames,
-			"container-groups logs":                 groupNames,
-			"container-groups ssh":                  groupNames,
-			"container-groups sftp":                 groupNames,
-			"container-groups instances get":        instanceIDs,
-			"container-groups instances update":     instanceIDs,
-			"container-groups instances restart":    instanceIDs,
-			"container-groups instances recreate":   instanceIDs,
-			"container-groups instances reallocate": instanceIDs,
-			"inference get":                         endpointNames,
-			"queues get":                            queueNames,
-			"queues update":                         queueNames,
-			"queues delete":                         queueNames,
-			"gpus get":                              gpuClassNames,
-			"orgs get":                              orgNames,
-			"use":                                   orgNames,
-		}
-		flags := map[string]completer{
-			"container-group": groupNames,
-			"from":            groupNames,
-			"instance":        instanceIDs,
-			"endpoint":        endpointNames,
-			"queue":           queueNames,
-			"gpu":             gpuClassNames,
-		}
-		enums := map[string][]string{
-			"priority":       {"high", "medium", "low", "batch"},
-			"restart-policy": {"always", "on_failure", "never"},
-			"severity":       logsq.Severities,
-			"status":         {"pending", "running", "stopped", "succeeded", "failed", "deploying"},
-		}
-		noteTreeErr(root.RegisterFlagCompletionFunc("output", staticValues("table", "json", "yaml")))
-		noteTreeErr(root.RegisterFlagCompletionFunc("debug", staticValues("body")))
-		noteTreeErr(root.RegisterFlagCompletionFunc("org", complete(orgNames)))
+func (app *App) registerCompletions(root *cobra.Command) {
+	positional := map[string]completer{
+		"container-groups get":                  groupNames,
+		"container-groups update":               groupNames,
+		"container-groups start":                groupNames,
+		"container-groups stop":                 groupNames,
+		"container-groups delete":               groupNames,
+		"container-groups scale":                groupNames,
+		"container-groups logs":                 groupNames,
+		"container-groups ssh":                  groupNames,
+		"container-groups sftp":                 groupNames,
+		"container-groups instances get":        instanceIDs,
+		"container-groups instances update":     instanceIDs,
+		"container-groups instances restart":    instanceIDs,
+		"container-groups instances recreate":   instanceIDs,
+		"container-groups instances reallocate": instanceIDs,
+		"inference get":                         endpointNames,
+		"queues get":                            queueNames,
+		"queues update":                         queueNames,
+		"queues delete":                         queueNames,
+		"gpus get":                              gpuClassNames,
+		"orgs get":                              orgNames,
+		"use":                                   orgNames,
+	}
+	flags := map[string]completer{
+		"container-group": groupNames,
+		"from":            groupNames,
+		"instance":        instanceIDs,
+		"endpoint":        endpointNames,
+		"queue":           queueNames,
+		"gpu":             gpuClassNames,
+	}
+	enums := map[string][]string{
+		"priority":       {"high", "medium", "low", "batch"},
+		"restart-policy": {"always", "on_failure", "never"},
+		"severity":       logsq.Severities,
+		"status":         {"pending", "running", "stopped", "succeeded", "failed", "deploying"},
+	}
+	app.noteTreeErr(root.RegisterFlagCompletionFunc("output", staticValues("table", "json", "yaml")))
+	app.noteTreeErr(root.RegisterFlagCompletionFunc("debug", staticValues("body")))
+	app.noteTreeErr(root.RegisterFlagCompletionFunc("org", app.complete(orgNames)))
 
-		var walk func(c *cobra.Command)
-		walk = func(c *cobra.Command) {
-			path := strings.TrimPrefix(c.CommandPath(), root.Name()+" ")
-			if f, ok := positional[path]; ok && c.ValidArgsFunction == nil {
-				c.ValidArgsFunction = firstArgOnly(complete(f))
-			}
-			for name, f := range flags {
-				if c.LocalFlags().Lookup(name) != nil {
-					noteTreeErr(c.RegisterFlagCompletionFunc(name, complete(f)))
-				}
-			}
-			for name, values := range enums {
-				if c.LocalFlags().Lookup(name) != nil {
-					noteTreeErr(c.RegisterFlagCompletionFunc(name, staticValues(values...)))
-				}
-			}
-			for _, sub := range c.Commands() {
-				walk(sub)
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		path := strings.TrimPrefix(c.CommandPath(), root.Name()+" ")
+		if f, ok := positional[path]; ok && c.ValidArgsFunction == nil {
+			c.ValidArgsFunction = firstArgOnly(app.complete(f))
+		}
+		for name, f := range flags {
+			if c.LocalFlags().Lookup(name) != nil {
+				app.noteTreeErr(c.RegisterFlagCompletionFunc(name, app.complete(f)))
 			}
 		}
-		walk(root)
-	})
+		for name, values := range enums {
+			if c.LocalFlags().Lookup(name) != nil {
+				app.noteTreeErr(c.RegisterFlagCompletionFunc(name, staticValues(values...)))
+			}
+		}
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	walk(root)
 }

@@ -45,7 +45,8 @@ type doctorResult struct {
 // it probes it (tests point it at a stand-in).
 const apiHost = "https://api.salad.com"
 
-func init() {
+// addDoctorCommands adds doctor.go's commands to the tree.
+func (app *App) addDoctorCommands(root *cobra.Command) {
 	cmd := &cobra.Command{
 		Use:   "doctor",
 		Short: "Check the CLI's configuration and connectivity",
@@ -63,9 +64,9 @@ A variable that overrides a saved value is named after the table.
 
 Exits 0 when no row failed, and 1 naming the failed checks otherwise.`,
 		Args: cobra.NoArgs,
-		RunE: runDoctor,
+		RunE: app.runDoctor,
 	}
-	Register(cmd)
+	root.AddCommand(cmd)
 }
 
 // doctorRun is one run's findings, which later checks read.
@@ -79,9 +80,10 @@ type doctorRun struct {
 	orgs                  []string      // the key's organizations; nil: unknown
 	orgChecked            *clierr.Error // the organization check, once made
 	orgCheckMade, orgGood bool
+	app                   *App // the run
 }
 
-func runDoctor(cmd *cobra.Command, _ []string) error {
+func (app *App) runDoctor(cmd *cobra.Command, _ []string) error {
 	fr := readFlags(cmd.Flags())
 	orgFlag := fr.String("org")
 	projectFlag := fr.String("project")
@@ -111,6 +113,7 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 		orgChecked:   nil,
 		orgCheckMade: false,
 		orgGood:      false,
+		app:          app,
 	}
 	rows := []checkResult{
 		d.configRow(), d.reachableRow(), d.apiKeyRow(), d.organizationRow(), d.projectRow(), d.gatewayRow(), d.sshRow(),
@@ -125,7 +128,7 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	// The variables that hide a different saved value: the warning after
 	// the table, and env_overrides beside the rows.
 	var ovs []override
-	for _, o := range overridesOf(d.saved, envAPIKey, envOrganization, envProject, envGatewayKey) {
+	for _, o := range app.overridesOf(d.saved, envAPIKey, envOrganization, envProject, envGatewayKey) {
 		if o.saved != "" {
 			ovs = append(ovs, o)
 		}
@@ -141,10 +144,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	}
 	for _, r := range rows {
 		if r.Hint != nil {
-			hintLine("%s: %s", r.Name, *r.Hint)
+			app.hintLine("%s: %s", r.Name, *r.Hint)
 		}
 	}
-	warnOverrides(errw(), asSaved, ovs)
+	app.warnOverrides(app.errw(), asSaved, ovs)
 	if len(failed) == 0 {
 		return nil
 	}
@@ -171,6 +174,7 @@ func row(name, status, detail, hint string) checkResult {
 // configRow checks the config file; the run's settings resolve from it, or
 // from flags and the environment alone when it cannot be read.
 func (d *doctorRun) configRow() checkResult {
+	app := d.app
 	path, err := config.Path(app.Env)
 	if err != nil {
 		d.res = config.ResolveFrom(app.Env,
@@ -213,13 +217,14 @@ func (d *doctorRun) configRow() checkResult {
 
 // reachableRow checks the API answers at all (any HTTP status will do).
 func (d *doctorRun) reachableRow() checkResult {
+	app := d.app
 	base, shown, override := app.ProductionAPI, apiHost, app.Env.Getenv("SALAD_CLI_API_BASE_URL")
 	if override != "" {
 		base, shown = override, override
 	}
 	ctx, cancel := context.WithTimeout(d.ctx, 10*time.Second)
 	defer cancel()
-	if _, err := api.Probe(ctx, base+"/organizations/doctor-probe/gpu-classes", apiOptions()); err != nil {
+	if _, err := api.Probe(ctx, base+"/organizations/doctor-probe/gpu-classes", app.apiOptions()); err != nil {
 		var verr *tls.CertificateVerificationError
 		if errors.As(err, &verr) && len(verr.UnverifiedCertificates) > 0 &&
 			time.Now().Before(verr.UnverifiedCertificates[0].NotBefore) {
@@ -261,6 +266,7 @@ func unchecked(cerr *clierr.Error) string {
 // apiKeyRow checks the API accepts the key: through the organizations
 // listing, or the organization check when the listing cannot list.
 func (d *doctorRun) apiKeyRow() checkResult {
+	app := d.app
 	const name = "api-key"
 	res := d.res
 	if res.APIKey == "" {
@@ -304,7 +310,7 @@ func (d *doctorRun) apiKeyRow() checkResult {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
-		apiOptions(),
+		app.apiOptions(),
 	)
 	if cerr != nil {
 		return row(name, checkFail, cerr.Message, "")
@@ -356,6 +362,7 @@ func (d *doctorRun) keyFix(key string) string {
 
 // checkOrg is the organization check, made once.
 func (d *doctorRun) checkOrg() *clierr.Error {
+	app := d.app
 	if !d.orgCheckMade {
 		key, _ := normalizeKey(d.res.APIKey)
 		client, cerr := api.New(
@@ -371,7 +378,7 @@ func (d *doctorRun) checkOrg() *clierr.Error {
 				SkippedProject:      "",
 				SkippedProjectOrg:   "",
 			},
-			apiOptions(),
+			app.apiOptions(),
 		)
 		if cerr == nil {
 			cerr = client.CheckOrg(d.ctx)
@@ -382,11 +389,12 @@ func (d *doctorRun) checkOrg() *clierr.Error {
 }
 
 func (d *doctorRun) organizationRow() checkResult {
+	app := d.app
 	const name = "organization"
 	org := d.res.Organization
 	from := originOf(d.res.OrganizationSource, "--org", envOrganization)
 	switch {
-	case org != "" && looksLikeKey(org):
+	case org != "" && app.looksLikeKey(org):
 		return row(name, checkFail, keyLikeDetail("organization", from), keyLikeName("organization", from).HintText())
 	case org != "" && !validName(org):
 		return row(
@@ -403,7 +411,12 @@ func (d *doctorRun) organizationRow() checkResult {
 		return row(name, checkSkip, org+fromTag(from)+"; checking it needs an API key", "")
 	}
 	if org == "" {
-		return row(name, checkFail, "none set", hintClauses(orgsClause(d.orgs), "to set one, run saladcloud use <org>"))
+		return row(
+			name,
+			checkFail,
+			"none set",
+			hintClauses(app.orgsClause(d.orgs), "to set one, run saladcloud use <org>"),
+		)
 	}
 	cerr := d.checkOrg()
 	switch {
@@ -422,19 +435,20 @@ func (d *doctorRun) organizationRow() checkResult {
 			name,
 			checkFail,
 			fmt.Sprintf(`"%s"%s not found`, org, fromTag(from)),
-			hintClauses(orgsClause(d.orgs), fix),
+			hintClauses(app.orgsClause(d.orgs), fix),
 		)
 	}
 	return row(name, checkWarn, org+fromTag(from)+"; "+unchecked(cerr), "try again in a minute")
 }
 
 func (d *doctorRun) projectRow() checkResult {
+	app := d.app
 	const name = "project"
 	res := d.res
 	org, project := res.Organization, res.Project
 	from := originOf(res.ProjectSource, "--project", envProject)
 	fallback := res.ProjectSource == config.SourceDefault
-	if !fallback && looksLikeKey(project) {
+	if !fallback && app.looksLikeKey(project) {
 		return row(name, checkFail, keyLikeDetail("project", from), keyLikeName("project", from).HintText())
 	}
 	if !d.orgGood {
@@ -465,7 +479,7 @@ func (d *doctorRun) projectRow() checkResult {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
-		apiOptions(),
+		app.apiOptions(),
 	)
 	if cerr == nil {
 		cerr = client.CheckProject(d.ctx)
@@ -486,8 +500,8 @@ func (d *doctorRun) projectRow() checkResult {
 			fmt.Sprintf(
 				`none set for %s, using "default"; the saved project "%s" is for %s`,
 				org,
-				shownName(res.SkippedProject),
-				shownName(res.SkippedProjectOrg),
+				app.shownName(res.SkippedProject),
+				app.shownName(res.SkippedProjectOrg),
 			),
 			fmt.Sprintf("to choose one for %s, run saladcloud use %s/<project>", org, org),
 		)
@@ -534,7 +548,8 @@ func (d *doctorRun) gatewayRow() checkResult {
 	return row(name, checkPass, fmt.Sprintf("%s (from %s; not tested)", maskAPIKey(d.res.GatewayAPIKey), from), "")
 }
 
-func (*doctorRun) sshRow() checkResult {
+func (d *doctorRun) sshRow() checkResult {
+	app := d.app
 	const name = "local-ssh-key-present"
 	home, err := config.HomeDir(app.Env)
 	if err != nil {
@@ -550,7 +565,7 @@ func (*doctorRun) sshRow() checkResult {
 		)
 	}
 	if _, err := app.LookPath("ssh"); err != nil {
-		return row(name, checkWarn, "key found, but ssh is not installed", sshMissingHint("ssh"))
+		return row(name, checkWarn, "key found, but ssh is not installed", app.sshMissingHint("ssh"))
 	}
 	priv := strings.TrimSuffix(pub, ".pub")
 	if enc, known := app.HasPassphrase(priv); known && enc {

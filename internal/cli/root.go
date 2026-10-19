@@ -18,10 +18,12 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/version"
 )
 
-var rootCmd = &cobra.Command{
-	Use:   "saladcloud",
-	Short: "A thin command-line wrapper over the SaladCloud Public API",
-	Long: `saladcloud is a thin command-line wrapper over the SaladCloud Public API, built for people, scripts, CI and AI agents.
+// newRootCmd is the root command with the global flags.
+func (app *App) newRootCmd() *cobra.Command {
+	root := &cobra.Command{
+		Use:   "saladcloud",
+		Short: "A thin command-line wrapper over the SaladCloud Public API",
+		Long: `saladcloud is a thin command-line wrapper over the SaladCloud Public API, built for people, scripts, CI and AI agents.
 
 Get started:
   saladcloud login     save your API key, organization and project
@@ -53,89 +55,82 @@ stderr as a single-line JSON document: {"error": {...}}, in yaml mode too.
 
 --debug prints each API request (method, URL, status, duration) on stderr;
 --debug=body adds headers and bodies, with credentials redacted.`,
-	SilenceUsage:  true,
-	SilenceErrors: true,
-	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-		fr := readFlags(cmd.Flags())
-		m, err := cmd.Flags().GetString("output")
-		if err != nil {
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
-		}
-		if cerr := app.printer.SetMode(m); cerr != nil {
-			return cerr
-		}
-		d := fr.String("debug")
-		if cerr := fr.Err(); cerr != nil {
-			return cerr
-		}
-		switch d {
-		case "":
-			app.debugLevel = api.DebugOff
-		case "requests":
-			app.debugLevel = api.DebugRequests
-		case "body":
-			app.debugLevel = api.DebugBodies
-		default:
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --debug "%s"`, d).
-				WithHint("use --debug or --debug=body")
-		}
-		return rejectShadowed(cmd)
-	},
-}
-
-func init() {
-	rootCmd.AddCommand(containerGroupsCmd)
-	rootCmd.PersistentFlags().StringP("output", "o", "table", "output format: table|json|yaml")
-	rootCmd.PersistentFlags().
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			fr := readFlags(cmd.Flags())
+			m, err := cmd.Flags().GetString("output")
+			if err != nil {
+				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
+			}
+			if cerr := app.printer.SetMode(m); cerr != nil {
+				return cerr
+			}
+			d := fr.String("debug")
+			if cerr := fr.Err(); cerr != nil {
+				return cerr
+			}
+			switch d {
+			case "":
+				app.debugLevel = api.DebugOff
+			case "requests":
+				app.debugLevel = api.DebugRequests
+			case "body":
+				app.debugLevel = api.DebugBodies
+			default:
+				return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --debug "%s"`, d).
+					WithHint("use --debug or --debug=body")
+			}
+			return rejectShadowed(cmd)
+		},
+	}
+	root.PersistentFlags().StringP("output", "o", "table", "output format: table|json|yaml")
+	root.PersistentFlags().
 		String("org", "", "organization name as in the portal URL, not the display name (overrides SALAD_ORGANIZATION and the config file)")
-	rootCmd.PersistentFlags().
+	root.PersistentFlags().
 		String("debug", "", "print each API request (method, URL, status, duration) on stderr; --debug=body adds headers and bodies, credentials redacted")
-	rootCmd.PersistentFlags().Lookup("debug").NoOptDefVal = "requests"
-	rootCmd.PersistentFlags().
+	root.PersistentFlags().Lookup("debug").NoOptDefVal = "requests"
+	root.PersistentFlags().
 		String("project", "", "project name as in the portal URL, not the display name (overrides SALAD_PROJECT and the config file; with none set, \"default\" is used with a warning)")
-	rootCmd.SetFlagErrorFunc(flagError)
+	root.SetFlagErrorFunc(flagError)
 	// cobra's multi-line "Did you mean this?" block; withSuggestions gives
 	// the one-line form instead.
-	rootCmd.DisableSuggestions = true
+	root.DisableSuggestions = true
+	return root
 }
-
-// Root returns the root command so other files' init() can attach
-// subcommands (rootCmd.AddCommand) or inspect flags.
-func Root() *cobra.Command { return rootCmd }
-
-// Register attaches a subcommand to the root command.
-func Register(cmd *cobra.Command) { rootCmd.AddCommand(cmd) }
 
 // containerGroupsCmd is the parent of every command whose subject is a
 // container group, so a future compute primitive gets its own noun instead
 // of colliding with bare verbs. Plural like the CLI's other nouns (orgs,
 // gpus, quotas); the singular and cg are aliases so a guess never fails.
-var containerGroupsCmd = &cobra.Command{
-	Use:     "container-groups",
-	Aliases: []string{"container-group", "cg"},
-	Short:   "Create, inspect, and manage container groups and their instances",
-	Long: `Create, inspect, and manage container groups and their instances.
+func newContainerGroupsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "container-groups",
+		Aliases: []string{"container-group", "cg"},
+		Short:   "Create, inspect, and manage container groups and their instances",
+		Long: `Create, inspect, and manage container groups and their instances.
 
 cg is short for container-groups: saladcloud cg list lists your container
 groups. For logs across the organization or a project, run saladcloud logs.`,
+	}
 }
 
 // orgScoped marks c and the commands under it organization-scoped: nothing
 // there reads the project, so --project is neither offered nor accepted.
-func orgScoped(c *cobra.Command) { shadow(c, "project") }
+func (app *App) orgScoped(c *cobra.Command) { app.shadow(c, "project") }
 
 // contextFree marks c and the commands under it as reading neither the
 // organization nor the project: --org and --project are neither offered
 // nor accepted there.
-func contextFree(c *cobra.Command) { shadow(c, "org", "project") }
+func (app *App) contextFree(c *cobra.Command) { app.shadow(c, "org", "project") }
 
 // shadow gives c hidden flags of these names in place of the global ones,
 // so its help does not offer them; rejectShadowed refuses one that is set.
-func shadow(c *cobra.Command, names ...string) {
+func (app *App) shadow(c *cobra.Command, names ...string) {
 	for _, n := range names {
 		if c.PersistentFlags().Lookup(n) == nil {
 			c.PersistentFlags().String(n, "", "")
-			noteTreeErr(c.PersistentFlags().MarkHidden(n))
+			app.noteTreeErr(c.PersistentFlags().MarkHidden(n))
 		}
 	}
 }
@@ -156,36 +151,61 @@ func rejectShadowed(cmd *cobra.Command) error {
 	return nil
 }
 
-// RegisterContainerGroups adds cmd under 'saladcloud container-groups'.
-func RegisterContainerGroups(cmd *cobra.Command) { containerGroupsCmd.AddCommand(cmd) }
+// New builds the command tree for one run.
+func New(app *App) *cobra.Command {
+	root := app.newRootCmd()
+	cg := newContainerGroupsCmd()
+	root.AddCommand(cg)
+	app.addAgentCommands(root)
+	app.addAvailabilityCommands(root)
+	app.addChangelogCommands(root)
+	app.addConfigCommands(root)
+	app.addCpCommands(cg)
+	app.addCreateCommands(cg)
+	app.addDoctorCommands(root)
+	app.addGatewayCommands(root)
+	app.addGpusCommands(root)
+	app.addGroupsCommands(cg)
+	app.addInferenceCommands(root)
+	app.addInstancesCommands(cg)
+	app.addLoginCommands(root)
+	app.addLogoutCommands(root)
+	app.addLogsCommands(root, cg)
+	app.addOrgsCommands(root)
+	app.addQueuesCommands(root)
+	app.addQuotasCommands(root)
+	app.addScaleCommands(cg)
+	app.addSFTPCommands(cg)
+	app.addSSHCommands(cg)
+	app.addSSHKeyCommands(root)
+	app.addUseCommands(root)
+	app.addVersionCommands(root)
+	app.addWebhookSecretCommands(root)
+	app.addWhoamiCommands(root)
+	app.prepareTree(root)
+	app.registerCompletions(root)
+	return root
+}
 
-// Execute runs the CLI and returns the process exit code. Errors are
+// Run runs one command line and returns the process exit code. Errors are
 // printed to stderr: in json mode as a one-line {"error": {...}} document,
 // in table mode as "saladcloud: error: <message>" and, when the error has a
 // fix, "hint: <fix>" under it.
 func Run(ctx context.Context, d Deps) int {
-	prev := app
-	app = newApp(d)
-	defer func() { app = prev }()
-	prepareTree()
-	registerCompletions(rootCmd)
-	if err := errors.Join(treeErrs...); err != nil {
+	app := newApp(d)
+	rootCmd := New(app)
+	if err := errors.Join(app.treeErrs...); err != nil {
 		ce := clierr.New(clierr.CodeGeneric, clierr.KindInternal, "the command tree is incomplete: %v", err)
-		printError(ce)
+		app.printError(ce)
 		return ce.Code
 	}
 	rootCmd.SetArgs(app.Args)
 	cmd, err := rootCmd.ExecuteContextC(ctx)
-	// cobra keeps the context on every command it ran; clear it so a later
-	// in-process run (tests) does not inherit this run's canceled one.
-	for c := cmd; c != nil; c = c.Parent() {
-		c.SetContext(nil) //nolint:staticcheck // nil is what cobra checks for
-	}
 	if err == nil {
 		return clierr.CodeOK
 	}
-	adoptOutputFlag(cmd)
-	adoptOutputArg(app.Args)
+	app.adoptOutputFlag(cmd)
+	app.adoptOutputArg(app.Args)
 	var ce *clierr.Error
 	if !errors.As(err, &ce) {
 		// Anything that escapes without a *clierr.Error came from cobra's
@@ -197,26 +217,20 @@ func Run(ctx context.Context, d Deps) int {
 	if canceledByCtrlC(ctx, ce) {
 		ce = clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "%s canceled", commandPath(cmd))
 	}
-	printError(ce)
+	app.printError(ce)
 	return ce.Code
 }
 
-// treeErrs are the errors from building the command tree. Marking a flag
-// required or hidden, or giving it completion, fails only for a flag the
-// command does not define or completion given twice: a bug, which Execute
-// reports before it runs anything.
-var treeErrs []error
-
 // noteTreeErr records an error from building the command tree.
-func noteTreeErr(err error) {
+func (app *App) noteTreeErr(err error) {
 	if err != nil {
-		treeErrs = append(treeErrs, err)
+		app.treeErrs = append(app.treeErrs, err)
 	}
 }
 
 // apiOptions is how the run's API clients are built.
-func apiOptions() api.Options {
-	return api.Options{Getenv: app.Env.Getenv, Debug: app.debugLevel, DebugOut: errw(), Backoff: nil, Now: nil}
+func (app *App) apiOptions() api.Options {
+	return api.Options{Getenv: app.Env.Getenv, Debug: app.debugLevel, DebugOut: app.errw(), Backoff: nil, Now: nil}
 }
 
 // canceledByCtrlC reports whether ce is a request Ctrl-C stopped, or any
@@ -234,25 +248,25 @@ func canceledByCtrlC(ctx context.Context, ce *clierr.Error) bool {
 // commandPath is cmd's full path without the binary's name, for example
 // "container-groups list" (aliases resolve to the command's own name).
 func commandPath(cmd *cobra.Command) string {
-	if cmd == nil || cmd == rootCmd {
-		return rootCmd.Name()
+	if cmd == nil || !cmd.HasParent() {
+		return "saladcloud"
 	}
-	return strings.TrimPrefix(cmd.CommandPath(), rootCmd.Name()+" ")
+	return strings.TrimPrefix(cmd.CommandPath(), cmd.Root().Name()+" ")
 }
 
 // prepareTree finishes the command tree before a run. cobra adds its
 // completion command inside ExecuteC; adding it first lets requireVerbs make
 // a bare 'completion' a usage error like every other noun, and wrapArgs give
 // its verbs the CLI's usage messages.
-func prepareTree() {
-	rootCmd.InitDefaultCompletionCmd()
-	for _, c := range rootCmd.Commands() {
+func (app *App) prepareTree(root *cobra.Command) {
+	root.InitDefaultCompletionCmd()
+	for _, c := range root.Commands() {
 		if contextFreeCommands[c.Name()] {
-			contextFree(c)
+			app.contextFree(c)
 		}
 	}
-	requireVerbs(rootCmd)
-	wrapArgs(rootCmd)
+	requireVerbs(root)
+	wrapArgs(root)
 }
 
 // contextFreeCommands are the top-level commands that read neither the
@@ -268,7 +282,7 @@ var contextFreeCommands = map[string]bool{
 // report in table form under -o json. An invalid value is left alone, so
 // that error still reports in table form. Errors raised before the flag was
 // parsed are adoptOutputArg's.
-func adoptOutputFlag(cmd *cobra.Command) {
+func (app *App) adoptOutputFlag(cmd *cobra.Command) {
 	if cmd == nil || app.printer.Machine() {
 		return
 	}
@@ -285,7 +299,7 @@ func adoptOutputFlag(cmd *cobra.Command) {
 // ahead of -o. The last valid value wins, as with the flag itself; words
 // after "--" are arguments, not flags; an invalid value is ignored, so that
 // error reports in table form.
-func adoptOutputArg(args []string) {
+func (app *App) adoptOutputArg(args []string) {
 	if app.printer.Machine() {
 		return
 	}
@@ -321,7 +335,7 @@ func adoptOutputArg(args []string) {
 	}
 }
 
-func printError(e *clierr.Error) {
+func (app *App) printError(e *clierr.Error) {
 	// Errors are the one-line JSON document in every machine mode, yaml
 	// included, so a script parses one error shape.
 	if app.printer.Machine() {
@@ -352,7 +366,7 @@ func wrapErr(err error) error {
 // NewClient is the helper command files use to build an API client: it
 // reads the --org/--project flags, resolves configuration, and constructs
 // the client (which requires an API key but not org/project).
-func NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error) {
+func (app *App) NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error) {
 	fr := readFlags(cmd.Flags())
 	orgFlag := fr.String("org")
 	projectFlag := fr.String("project")
@@ -361,7 +375,7 @@ func NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error)
 	}
 	res, err := config.Resolve(app.Env, orgFlag, projectFlag)
 	if err != nil {
-		path := configPath()
+		path := app.configPath()
 		return nil, config.Resolved{}, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it")
 	}
@@ -378,10 +392,10 @@ func NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error)
 		switch {
 		case !n.reads || n.name == "":
 		case n.source == "flag" || n.source == "env":
-			if cerr := checkName(n.kind, n.name, originOf(n.source, n.flag, n.env)); cerr != nil {
+			if cerr := app.checkName(n.kind, n.name, originOf(n.source, n.flag, n.env)); cerr != nil {
 				return nil, res, cerr
 			}
-		case n.source == "config" && looksLikeKey(n.name):
+		case n.source == "config" && app.looksLikeKey(n.name):
 			return nil, res, keyLikeName(n.kind, "config")
 		}
 	}
@@ -394,15 +408,15 @@ func NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error)
 		res.APIKey = key
 	}
 	app.assumedWarned.Store(false)
-	client, cerr := api.New(res, apiOptions())
+	client, cerr := api.New(res, app.apiOptions())
 	if cerr != nil {
 		return nil, res, cerr
 	}
-	warnOnAssumedProject(client, res)
-	saved := savedConfig()
+	app.warnOnAssumedProject(client, res)
+	saved := app.savedConfig()
 	client.OnRejected = func() *clierr.Error { return keyRejected(res.APIKey, keyFrom, saved.APIKey) }
 	ctx := cmd.Context()
-	client.OnOrgGone = func() *clierr.Error { return organizationGone(ctx, res) }
+	client.OnOrgGone = func() *clierr.Error { return app.organizationGone(ctx, res) }
 	return client, res, nil
 }
 
@@ -443,12 +457,12 @@ func keyRejected(key, from, saved string) *clierr.Error {
 // see (a 404 under it, confirmed by the organization check): it names the
 // organization and its source, and the fix there; at a terminal the hint
 // lists your organizations.
-func organizationGone(ctx context.Context, res config.Resolved) *clierr.Error {
+func (app *App) organizationGone(ctx context.Context, res config.Resolved) *clierr.Error {
 	from := originOf(res.OrganizationSource, "--org", envOrganization)
 	e := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `organization "%s"%s not found`, res.Organization, fromTag(from)).
 		WithStatus(http.StatusNotFound)
 	var names []string
-	if atTerminal() {
+	if app.atTerminal() {
 		if c, cerr := api.New(
 			config.Resolved{
 				APIKey:              res.APIKey,
@@ -462,7 +476,7 @@ func organizationGone(ctx context.Context, res config.Resolved) *clierr.Error {
 				SkippedProject:      "",
 				SkippedProjectOrg:   "",
 			},
-			apiOptions(),
+			app.apiOptions(),
 		); cerr == nil {
 			if list, lerr := c.OrganizationListing(ctx); lerr == nil && list != nil {
 				names = list.OrgNames()
@@ -476,7 +490,7 @@ func organizationGone(ctx context.Context, res config.Resolved) *clierr.Error {
 	case "config":
 		fix = "to switch, run saladcloud use <org>"
 	}
-	if h := hintClauses(orgsClause(names), fix); h != "" {
+	if h := hintClauses(app.orgsClause(names), fix); h != "" {
 		e = e.WithHint("%s", h)
 	}
 	return e
@@ -484,24 +498,24 @@ func organizationGone(ctx context.Context, res config.Resolved) *clierr.Error {
 
 // warnOnAssumedProject makes c print the assumed-project warning, once per
 // command, the first time it uses an assumed project.
-func warnOnAssumedProject(c *api.Client, res config.Resolved) {
+func (app *App) warnOnAssumedProject(c *api.Client, res config.Resolved) {
 	c.OnAssumedProject = func() {
 		if app.assumedWarned.CompareAndSwap(false, true) {
-			fprintln(errw(), assumedProjectWarning(res))
+			fprintln(app.errw(), app.assumedProjectWarning(res))
 		}
 	}
 }
 
 // assumedProjectWarning is the stderr line a project-scoped command prints
 // when its project is the "default" fallback rather than one that was set.
-func assumedProjectWarning(res config.Resolved) string {
+func (app *App) assumedProjectWarning(res config.Resolved) string {
 	if res.SkippedProject != "" {
 		return fmt.Sprintf(
 			`warning: using project "%s": none was set for organization "%s" (the saved project "%s" is for "%s"); pass --project or set SALAD_PROJECT`,
 			res.Project,
 			res.Organization,
-			shownName(res.SkippedProject),
-			shownName(res.SkippedProjectOrg),
+			app.shownName(res.SkippedProject),
+			app.shownName(res.SkippedProjectOrg),
 		)
 	}
 	return fmt.Sprintf(

@@ -184,7 +184,7 @@ func writeGroupDetail(w *output.Writer, g *shared.ContainerGroup) {
 }
 
 // groupAction runs one bodiless group verb and emits its confirmation.
-func groupAction(name, pastTense string, call func() *clierr.Error) error {
+func (app *App) groupAction(name, pastTense string, call func() *clierr.Error) error {
 	if err := call(); err != nil {
 		return err
 	}
@@ -198,7 +198,7 @@ func groupAction(name, pastTense string, call func() *clierr.Error) error {
 // then — when --wait is set — hold the stdout confirmation until the group
 // reaches the target status, so a timed-out wait exits nonzero with stdout
 // still empty (the JSON contract) and the confirmation is never a lie.
-func startStopRunE(
+func (app *App) startStopRunE(
 	pastTense, target string,
 	verb func(*api.Client, context.Context, string) *clierr.Error,
 ) func(*cobra.Command, []string) error {
@@ -207,7 +207,7 @@ func startStopRunE(
 		if cerr != nil {
 			return cerr // pre-flight: a bad --timeout must not run the verb
 		}
-		client, _, cerr := NewClient(cmd)
+		client, _, cerr := app.NewClient(cmd)
 		if cerr != nil {
 			return cerr
 		}
@@ -220,7 +220,7 @@ func startStopRunE(
 			return err
 		}
 		if wait {
-			if _, err := runStatusWait(cmd, client, args[0], target, false, timeout); err != nil {
+			if _, err := app.runStatusWait(cmd, client, args[0], target, false, timeout); err != nil {
 				return err
 			}
 		}
@@ -237,7 +237,8 @@ var validGroupStatuses = map[string]bool{
 	"succeeded": true, "failed": true, "deploying": true,
 }
 
-func init() {
+// addGroupsCommands adds groups.go's commands to the tree.
+func (app *App) addGroupsCommands(cg *cobra.Command) {
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List container groups (current project, or --projects for several)",
@@ -263,25 +264,25 @@ the projects you want listed.`,
 					statusFilter,
 				).WithHint("use pending, running, stopped, succeeded, failed or deploying")
 			}
-			client, res, cerr := NewClient(cmd)
+			client, res, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
 			multi := len(projects) > 0
-			return runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
+			return app.runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
 				var items []shared.ContainerGroup
 				if multi {
 					for _, proj := range projects {
 						r := res
 						r.Project, r.ProjectSource = proj, "flag"
-						pc, cerr := api.New(r, apiOptions())
+						pc, cerr := api.New(r, app.apiOptions())
 						if cerr != nil {
 							return cerr
 						}
 						groups, lerr := pc.ListGroups(ctx)
 						if lerr != nil {
 							if lerr.Code == clierr.CodeNotFound {
-								fprintf(errw(), "warning: project \"%s\" not found, skipped\n", proj)
+								fprintf(app.errw(), "warning: project \"%s\" not found, skipped\n", proj)
 								continue
 							}
 							return lerr
@@ -335,17 +336,17 @@ the projects you want listed.`,
 				if len(items) == 0 && app.printer.Mode() == "table" {
 					switch {
 					case multi:
-						fprintln(errw(), "no container groups in the listed projects")
+						fprintln(app.errw(), "no container groups in the listed projects")
 					case statusFilter != "":
 						fprintf(
-							errw(),
+							app.errw(),
 							"no container groups in %s/%s matching --status %s\n",
 							res.Organization,
 							res.Project,
 							statusFilter,
 						)
 					default:
-						fprintf(errw(), "no container groups in %s/%s\n", res.Organization, res.Project)
+						fprintf(app.errw(), "no container groups in %s/%s\n", res.Organization, res.Project)
 					}
 				}
 				return nil
@@ -355,8 +356,8 @@ the projects you want listed.`,
 	listCmd.Flags().String("status", "", "filter by status: pending|running|stopped|succeeded|failed|deploying")
 	listCmd.Flags().
 		StringArray("projects", nil, "list this project instead of the current one, repeatable (--projects a --projects b); adds a PROJECT column")
-	addWatchFlags(listCmd)
-	RegisterContainerGroups(listCmd)
+	app.addWatchFlags(listCmd)
+	cg.AddCommand(listCmd)
 
 	getCmd := &cobra.Command{
 		Use:   "get <group>",
@@ -390,7 +391,7 @@ group has scheduled scaling enabled.`,
 			if watch && writable {
 				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--writable and --watch cannot be combined")
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -407,7 +408,7 @@ group has scheduled scaling enabled.`,
 					if asType[bool](m["scheduled-scaling-enabled"]) {
 						if _, has := m["replicas"]; has {
 							fprintln(
-								errw(),
+								app.errw(),
 								"note: replicas is included; writing it puts scheduled scaling on hold, so drop it unless you mean to change it",
 							)
 						}
@@ -415,7 +416,7 @@ group has scheduled scaling enabled.`,
 				}
 				if len(dropped) > 0 {
 					fprintf(
-						errw(),
+						app.errw(),
 						"note: %d field(s) update cannot write were omitted: %s\n",
 						len(dropped),
 						joinPaths(dropped),
@@ -429,7 +430,7 @@ group has scheduled scaling enabled.`,
 				_, err = fmt.Fprintln(app.printer.Out(), string(output.ASCII(data)))
 				return wrapErr(err)
 			}
-			return runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
+			return app.runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
 				group, cerr := client.GetGroup(ctx, args[0])
 				if cerr != nil {
 					return groupNotFound(cerr, args[0], client.Org(), client.Project())
@@ -443,8 +444,8 @@ group has scheduled scaling enabled.`,
 	}
 	getCmd.Flags().
 		Bool("writable", false, "emit a JSON patch document for update -f (response-only and create-only fields removed)")
-	addWatchFlags(getCmd)
-	RegisterContainerGroups(getCmd)
+	app.addWatchFlags(getCmd)
+	cg.AddCommand(getCmd)
 
 	updateCmd := &cobra.Command{
 		Use:   "update <group> [-f <file>] [flags] [-- <command>...]",
@@ -495,10 +496,10 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 				return cerr
 			}
 			args, command, commandGiven := splitCommand(cmd, args)
-			if cerr := validateCommand(command, commandGiven); cerr != nil {
+			if cerr := app.validateCommand(command, commandGiven); cerr != nil {
 				return cerr
 			}
-			warnCommand(errw(), cmd, command)
+			warnCommand(app.errw(), cmd, command)
 			wait, timeout, cerr := settleFlagValues(cmd)
 			if cerr != nil {
 				return cerr // pre-flight: a bad --timeout must not patch anything
@@ -533,7 +534,7 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 				if err != nil {
 					return err
 				}
-				warnUnknowns(errw(), unknowns, false)
+				warnUnknowns(app.errw(), unknowns, false)
 				raw = r
 			default:
 				// Strict: load leniently, then reject with per-field advice
@@ -545,12 +546,12 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 				if err != nil {
 					return err
 				}
-				if cerr = namingGroup(rejectUnknowns(u), args[0]); cerr != nil {
+				if cerr = namingGroup(app.rejectUnknowns(u), args[0]); cerr != nil {
 					return cerr
 				}
 				raw = r
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -569,7 +570,7 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 					return cerr
 				}
 			}
-			group, err := applyPatch(cmd, client, args[0], raw, intent, wait, timeout, "update settled")
+			group, err := app.applyPatch(cmd, client, args[0], raw, intent, wait, timeout, "update settled")
 			if err != nil {
 				return err
 			}
@@ -580,27 +581,27 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 	addUpdateFlags(updateCmd)
 	addAllowUnknownFlag(updateCmd)
 	addSettleFlags(updateCmd)
-	RegisterContainerGroups(updateCmd)
+	cg.AddCommand(updateCmd)
 
 	startCmd := &cobra.Command{
 		Use:   "start <group>",
 		Short: "Start a container group (--wait blocks until it is running)",
 		Args:  cobra.ExactArgs(1),
-		RunE:  startStopRunE("started", "running", (*api.Client).StartGroup),
+		RunE:  app.startStopRunE("started", "running", (*api.Client).StartGroup),
 	}
 	addWaitFlags(startCmd, "the group is running")
-	RegisterContainerGroups(startCmd)
+	cg.AddCommand(startCmd)
 
 	stopCmd := &cobra.Command{
 		Use:   "stop <group>",
 		Short: "Stop a container group (--wait blocks until it is stopped)",
 		Args:  cobra.ExactArgs(1),
-		RunE:  startStopRunE("stopped", "stopped", (*api.Client).StopGroup),
+		RunE:  app.startStopRunE("stopped", "stopped", (*api.Client).StopGroup),
 	}
 	addWaitFlags(stopCmd, "the group is stopped")
-	RegisterContainerGroups(stopCmd)
+	cg.AddCommand(stopCmd)
 
-	RegisterContainerGroups(&cobra.Command{
+	cg.AddCommand(&cobra.Command{
 		Use:   "delete <group>",
 		Short: "Delete a container group",
 		Long: `Delete a container group, at once and without confirmation.
@@ -610,11 +611,11 @@ take it, so 'delete' then 'create' with the same name fails with
 name_conflict. Pick a new name for the replacement.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
-			return groupAction(args[0], "deleted", func() *clierr.Error {
+			return app.groupAction(args[0], "deleted", func() *clierr.Error {
 				return groupNotFound(
 					client.DeleteGroup(cmd.Context(), args[0]),
 					args[0],
@@ -641,7 +642,7 @@ name_conflict. Pick a new name for the replacement.`,
 // intent, when non-nil, is what the caller asked for and is what the diffs
 // compare against; it differs from raw only when the wire patch must express
 // a request indirectly (update -e removing a variable by omission).
-func applyPatch(
+func (app *App) applyPatch(
 	cmd *cobra.Command,
 	client *api.Client,
 	name string,
@@ -662,7 +663,7 @@ func applyPatch(
 		return nil, groupNotFound(cerr, name, client.Org(), client.Project())
 	}
 	if wait {
-		final, err := runGroupWait(cmd, client, name, goalSettle, doneMsg,
+		final, err := app.runGroupWait(cmd, client, name, goalSettle, doneMsg,
 			func(g *shared.ContainerGroup) bool { return !ptr.Deref(g.PendingChange) }, nil, timeout)
 		if err != nil {
 			return nil, err
@@ -670,13 +671,13 @@ func applyPatch(
 		group = final
 	} else if ptr.Deref(group.PendingChange) {
 		fprintf(
-			errw(),
+			app.errw(),
 			"note: change accepted, still pending, not verified (--no-wait); to check it, run saladcloud container-groups get %s\n",
 			name,
 		)
 	}
 	// "Did what I asked for happen?" and "did anything else happen?".
-	warnIgnoredFields(errw(), findIgnoredFields(intent, before, group))
-	warnUnrequestedChanges(errw(), findUnrequestedChanges(intent, before, group))
+	warnIgnoredFields(app.errw(), findIgnoredFields(intent, before, group))
+	warnUnrequestedChanges(app.errw(), findUnrequestedChanges(intent, before, group))
 	return group, nil
 }

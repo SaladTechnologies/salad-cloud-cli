@@ -48,8 +48,12 @@ func TestContainerGroupVerbsLiveUnderTheNoun(t *testing.T) {
 			t.Errorf("container-groups %s: not found (got %v, err %v)", v, c.Name(), err)
 		}
 	}
+	containerGroups, _, err := rootCmd.Find([]string{"container-groups"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, alias := range []string{"cg", "container-group"} {
-		if c, _, err := rootCmd.Find([]string{alias, "list"}); err != nil || c.Parent() != containerGroupsCmd {
+		if c, _, err := rootCmd.Find([]string{alias, "list"}); err != nil || c.Parent() != containerGroups {
 			t.Errorf("alias %q does not reach container-groups list (err %v)", alias, err)
 		}
 	}
@@ -139,7 +143,6 @@ func walkTree(c *cobra.Command, fn func(*cobra.Command)) {
 }
 
 func TestAliasRule(t *testing.T) {
-	prepareTree()
 	// The rule itself, independent of the table: a plural noun (a command
 	// with subcommands whose name ends in s) answers to its singular.
 	walkTree(rootCmd, func(c *cobra.Command) {
@@ -166,10 +169,8 @@ func TestAliasRule(t *testing.T) {
 // TestCommandTreeBuildsCleanly: every flag the tree marks required or hidden,
 // or gives completion, exists on its command; Execute refuses to run otherwise.
 func TestCommandTreeBuildsCleanly(t *testing.T) {
-	prepareTree()
-	registerCompletions(rootCmd)
-	if len(treeErrs) != 0 {
-		t.Errorf("building the command tree failed: %v", treeErrs)
+	if len(app.treeErrs) != 0 {
+		t.Errorf("building the command tree failed: %v", app.treeErrs)
 	}
 }
 
@@ -193,7 +194,6 @@ func TestAIGatewayHasNoAliases(t *testing.T) {
 // Execute does, and returns stdout and the error.
 func runRoot(t *testing.T, args ...string) (string, error) {
 	t.Helper()
-	prepareTree()
 	var buf bytes.Buffer
 	old := app.printer
 	app.printer = output.NewPrinter(&buf)
@@ -235,7 +235,6 @@ func resetFlags(t *testing.T) {
 // with the error document when run bare, never help on stdout with exit 0
 // ('gpus -o json | jq' must fail loudly).
 func TestBareNounIsUsageError(t *testing.T) {
-	prepareTree()
 	var parents []*cobra.Command
 	walkTree(rootCmd, func(c *cobra.Command) {
 		if c != rootCmd && c.HasSubCommands() {

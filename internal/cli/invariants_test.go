@@ -416,7 +416,6 @@ func TestNoHelpAsksForAKey(t *testing.T) {
 	if strings.Contains(strings.ToLower(agentdoc.Body()), "paste") {
 		t.Error("the agent block mentions paste")
 	}
-	prepareTree()
 	var all []*cobra.Command
 	walkTree(rootCmd, func(c *cobra.Command) { all = append(all, c) })
 	for _, c := range all {

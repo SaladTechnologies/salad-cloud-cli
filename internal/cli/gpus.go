@@ -14,7 +14,8 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
-func init() {
+// addGpusCommands adds gpus.go's commands to the tree.
+func (app *App) addGpusCommands(root *cobra.Command) {
 	gpusCmd := &cobra.Command{
 		Use:     "gpus",
 		Aliases: []string{"gpu", "gpu-classes"},
@@ -39,7 +40,7 @@ column for.`,
   # Every price entry per class, as JSON
   saladcloud gpus list --all-prices -o json`,
 		Args: cobra.NoArgs,
-		RunE: runGpusList,
+		RunE: app.runGpusList,
 	}
 	listCmd.Flags().Bool("all-prices", false, "add a column listing every price entry verbatim")
 	gpusCmd.AddCommand(listCmd)
@@ -52,15 +53,15 @@ names resolve like container-groups create --gpu: case-insensitive exact
 match first, then a unique substring.`,
 		Example: `  saladcloud gpus get "RTX 4090 (24 GB)"`,
 		Args:    cobra.ExactArgs(1),
-		RunE:    runGpusGet,
+		RunE:    app.runGpusGet,
 	})
-	orgScoped(gpusCmd)
-	Register(gpusCmd)
+	app.orgScoped(gpusCmd)
+	root.AddCommand(gpusCmd)
 }
 
 // sortedGpuClasses lists the organization's GPU classes, sorted by name.
-func sortedGpuClasses(cmd *cobra.Command) ([]organizationdata.GpuClass, *clierr.Error) {
-	client, _, cerr := NewClient(cmd)
+func (app *App) sortedGpuClasses(cmd *cobra.Command) ([]organizationdata.GpuClass, *clierr.Error) {
+	client, _, cerr := app.NewClient(cmd)
 	if cerr != nil {
 		return nil, cerr
 	}
@@ -75,13 +76,13 @@ func sortedGpuClasses(cmd *cobra.Command) ([]organizationdata.GpuClass, *clierr.
 	return classes, nil
 }
 
-func runGpusList(cmd *cobra.Command, _ []string) error {
+func (app *App) runGpusList(cmd *cobra.Command, _ []string) error {
 	fr := readFlags(cmd.Flags())
 	allPrices := fr.Bool("all-prices")
 	if cerr := fr.Err(); cerr != nil {
 		return cerr
 	}
-	classes, cerr := sortedGpuClasses(cmd)
+	classes, cerr := app.sortedGpuClasses(cmd)
 	if cerr != nil {
 		return cerr
 	}
@@ -112,13 +113,13 @@ func runGpusList(cmd *cobra.Command, _ []string) error {
 		}
 	})
 	if emitErr == nil && app.printer.Mode() == "table" {
-		fprintln(errw(), gpusLegend)
+		fprintln(app.errw(), gpusLegend)
 	}
 	return wrapErr(emitErr)
 }
 
-func runGpusGet(cmd *cobra.Command, args []string) error {
-	classes, cerr := sortedGpuClasses(cmd)
+func (app *App) runGpusGet(cmd *cobra.Command, args []string) error {
+	classes, cerr := app.sortedGpuClasses(cmd)
 	if cerr != nil {
 		return cerr
 	}

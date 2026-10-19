@@ -20,19 +20,20 @@ type logoutResult struct {
 	OK           bool     `json:"ok"`
 }
 
-func init() {
-	Register(&cobra.Command{
+// addLogoutCommands adds logout.go's commands to the tree.
+func (app *App) addLogoutCommands(root *cobra.Command) {
+	root.AddCommand(&cobra.Command{
 		Use:   "logout",
 		Short: "Remove the saved API key (the organization and project stay)",
 		Long: `Remove the SaladCloud API key from the config file. The saved organization and
 project stay, so a later saladcloud login only needs the key again. When
 SALAD_API_KEY is set, commands still use it, and logout says so.`,
 		Args: cobra.NoArgs,
-		RunE: runLogout,
+		RunE: app.runLogout,
 	})
 }
 
-func runLogout(_ *cobra.Command, _ []string) error {
+func (app *App) runLogout(_ *cobra.Command, _ []string) error {
 	path, err := config.Path(app.Env)
 	if err != nil {
 		return clierr.New(
@@ -49,8 +50,8 @@ func runLogout(_ *cobra.Command, _ []string) error {
 	}
 	old := f.APIKey
 	// Decided before the key is removed: a name equal to it is a key.
-	orgJSON, projectJSON := nameOrNil(f.Organization), nameOrNil(f.Project)
-	orgShown, projectShown := shownName(f.Organization), shownName(f.Project)
+	orgJSON, projectJSON := app.nameOrNil(f.Organization), app.nameOrNil(f.Project)
+	orgShown, projectShown := app.shownName(f.Organization), app.shownName(f.Project)
 	if old != "" {
 		f.APIKey = ""
 		if err := config.Save(app.Env, f); err != nil {
@@ -58,7 +59,7 @@ func runLogout(_ *cobra.Command, _ []string) error {
 				WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud logout again")
 		}
 	}
-	ovs := stillSupplied(envAPIKey)
+	ovs := app.stillSupplied(envAPIKey)
 	result := logoutResult{
 		Removed: old != "", Organization: orgJSON, Project: projectJSON,
 		EnvOverrides: overrideNames(ovs), Action: "logged_out", OK: true,
@@ -78,6 +79,6 @@ func runLogout(_ *cobra.Command, _ []string) error {
 	}); err != nil {
 		return wrapErr(err)
 	}
-	warnOverrides(errw(), afterRemove, ovs)
+	app.warnOverrides(app.errw(), afterRemove, ovs)
 	return nil
 }

@@ -55,7 +55,7 @@ func TestWaitForJobTerminalSucceeded(t *testing.T) {
 		inferenceendpoints.STATUS_RUNNING,
 		inferenceendpoints.STATUS_SUCCEEDED,
 	}, &progress)
-	job, cerr := waitForJobTerminal(t.Context(), d, "job-1", time.Minute, time.Second)
+	job, cerr := waitForJobTerminal(t.Context(), app, d, "job-1", time.Minute, time.Second)
 	if cerr != nil {
 		t.Fatalf("waitForJobTerminal: %v", cerr)
 	}
@@ -81,7 +81,7 @@ func TestWaitForJobTerminalFailed(t *testing.T) {
 		inferenceendpoints.STATUS_PENDING,
 		inferenceendpoints.STATUS_FAILED,
 	}, &progress)
-	job, cerr := waitForJobTerminal(t.Context(), d, "job-1", time.Minute, time.Second)
+	job, cerr := waitForJobTerminal(t.Context(), app, d, "job-1", time.Minute, time.Second)
 	if cerr == nil {
 		t.Fatal("waitForJobTerminal = nil error, want a failure naming the status")
 	}
@@ -101,7 +101,7 @@ func TestWaitForJobTerminalTimeout(t *testing.T) {
 	d := scriptedJobWaitDeps([]inferenceendpoints.Status{
 		inferenceendpoints.STATUS_RUNNING,
 	}, &progress)
-	_, cerr := waitForJobTerminal(t.Context(), d, "job-1", 10*time.Second, 5*time.Second)
+	_, cerr := waitForJobTerminal(t.Context(), app, d, "job-1", 10*time.Second, 5*time.Second)
 	if cerr == nil {
 		t.Fatal("waitForJobTerminal = nil error, want wait_timeout")
 	}
@@ -136,7 +136,7 @@ func TestWaitForJobTransientErrorsKeepPolling(t *testing.T) {
 		progress: &progress,
 		label:    "waiting",
 	}
-	job, cerr := waitForJobTerminal(t.Context(), d, "job-1", time.Minute, time.Second)
+	job, cerr := waitForJobTerminal(t.Context(), app, d, "job-1", time.Minute, time.Second)
 	if cerr != nil {
 		t.Fatalf("waitForJobTerminal: %v", cerr)
 	}
@@ -160,7 +160,7 @@ func TestWaitForJobFatalErrorAborts(t *testing.T) {
 		sleep: func(_ context.Context, _ time.Duration) error { return nil },
 		label: "waiting",
 	}
-	_, cerr := waitForJobTerminal(t.Context(), d, "job-1", time.Minute, time.Second)
+	_, cerr := waitForJobTerminal(t.Context(), app, d, "job-1", time.Minute, time.Second)
 	if cerr == nil || cerr.Code != clierr.CodeNotFound {
 		t.Fatalf("error = %v, want the not_found error passed through", cerr)
 	}
@@ -205,7 +205,7 @@ func TestJobsLimitNote(t *testing.T) {
 			t.Fatal(err)
 		}
 		var buf bytes.Buffer
-		jobsLimitNote(&buf, tc.shown, tc.limit, 10000, tc.more)
+		app.jobsLimitNote(&buf, tc.shown, tc.limit, 10000, tc.more)
 		if buf.String() != tc.want {
 			t.Errorf(
 				"%s, shown %d, limit %d, more %v: note %q, want %q",

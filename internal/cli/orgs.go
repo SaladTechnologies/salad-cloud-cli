@@ -17,7 +17,8 @@ const orgsLong = `This uses an organizations endpoint that is not part of the do
 so it may change without notice; if it does, this command may fail until the
 CLI catches up. The documented commands do not depend on it.`
 
-func init() {
+// addOrgsCommands adds orgs.go's commands to the tree.
+func (app *App) addOrgsCommands(root *cobra.Command) {
 	orgsCmd := &cobra.Command{
 		Use:     "orgs",
 		Aliases: []string{"org", "organizations"},
@@ -31,11 +32,11 @@ func init() {
 		Long:  "List the organizations the API key's account is a member of.\n\n" + orgsLong,
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
-			return runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
+			return app.runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
 				orgs, cerr := client.ListOrganizations(ctx)
 				if cerr == nil {
 					cerr = unreadableListing(orgs)
@@ -62,7 +63,7 @@ func init() {
 			})
 		},
 	}
-	addWatchFlags(listCmd)
+	app.addWatchFlags(listCmd)
 	orgsCmd.AddCommand(listCmd)
 
 	orgsCmd.AddCommand(&cobra.Command{
@@ -74,7 +75,7 @@ name. It is looked up in the same listing orgs list prints.
 ` + orgsLong,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -100,7 +101,7 @@ name. It is looked up in the same listing orgs list prints.
 			}))
 		},
 	})
-	Register(orgsCmd)
+	root.AddCommand(orgsCmd)
 }
 
 // findOrganization returns the listed organization with the given URL

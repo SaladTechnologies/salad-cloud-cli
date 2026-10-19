@@ -228,7 +228,8 @@ func countCell(v *int64) string {
 	return strconv.FormatInt(*v, 10)
 }
 
-func init() {
+// addAvailabilityCommands adds availabilitycmd.go's commands to the tree.
+func (app *App) addAvailabilityCommands(root *cobra.Command) {
 	cmd := &cobra.Command{
 		Use:   "availability [--gpu <class>]... [--cpu <n>] [--memory <mb>] [--storage <gb>] [--country <cc>]...",
 		Short: "Ask how many nodes could take one replica with these requirements right now",
@@ -276,7 +277,7 @@ class can be all zeros while others answer).`,
   # CPU-only nodes
   saladcloud availability --cpu 4 --memory 8192`,
 		Args: cobra.NoArgs,
-		RunE: runAvailability,
+		RunE: app.runAvailability,
 	}
 	f := cmd.Flags()
 	f.StringArray("gpu", nil, "GPU class UUID or name, repeatable (one query per class, plus one for all of them)")
@@ -287,10 +288,10 @@ class can be all zeros while others answer).`,
 	f.String("from", "", "take the requirements of an existing group: <group> or <project>/<group>")
 	cmd.Flags().
 		String("project", "", "the project --from <group> looks in (overrides SALAD_PROJECT and the config file; --from <project>/<group> also names it)")
-	Register(cmd)
+	root.AddCommand(cmd)
 }
 
-func runAvailability(cmd *cobra.Command, _ []string) error {
+func (app *App) runAvailability(cmd *cobra.Command, _ []string) error {
 	fl := readFlags(cmd.Flags())
 	var af availabilityFlags
 	af.Gpus = fl.StringArray("gpu")
@@ -314,7 +315,7 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	client, res, cerr := NewClient(cmd)
+	client, res, cerr := app.NewClient(cmd)
 	if cerr != nil {
 		return cerr
 	}
@@ -328,11 +329,11 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 		if fromProject != "" {
 			r.Project, r.ProjectSource = fromProject, "flag"
 		}
-		src, err := api.New(r, apiOptions())
+		src, err := api.New(r, app.apiOptions())
 		if err != nil {
 			return err
 		}
-		warnOnAssumedProject(src, r)
+		app.warnOnAssumedProject(src, r)
 		g, err := src.GetGroup(cmd.Context(), fromGroup)
 		if err != nil {
 			return groupNotFound(err, fromGroup, src.Org(), src.Project())
@@ -377,7 +378,7 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 			return cerr
 		}
 		if w := overloadWarning("CPU", allZeroCPU(avail)); w != "" {
-			fprintln(errw(), w)
+			fprintln(app.errw(), w)
 		}
 		result := cpuAvailabilityResult{Items: []organizations.CpuAvailability{*avail}, Combined: nil}
 		return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
@@ -403,7 +404,7 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 		}
 		row := gpuAvailabilityRow{GpuClass: id, GpuClassName: className(id), GpuAvailability: *avail}
 		if w := overloadWarning(row.GpuClassName, allZeroGpu(avail)); w != "" {
-			fprintln(errw(), w)
+			fprintln(app.errw(), w)
 		}
 		result.Items = append(result.Items, row)
 	}
@@ -415,7 +416,7 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 			return cerr
 		}
 		if w := overloadWarning("the combined query", allZeroGpu(avail)); w != "" {
-			fprintln(errw(), w)
+			fprintln(app.errw(), w)
 		}
 		result.Combined = &gpuCombinedRow{GpuClasses: req.GpuClasses, GpuAvailability: *avail}
 	}

@@ -159,7 +159,7 @@ func sshTargetOf(inst *containergroups.ContainerGroupInstance, group string) (ss
 // ssh reads the value as a list of files and a Windows profile path can
 // hold a space), and file it under the instance rather than the relay's
 // ip:port, which a later instance can be given.
-func hostKeyOptions(instanceID string) []string {
+func (app *App) hostKeyOptions(instanceID string) []string {
 	opts := []string{"-o", "StrictHostKeyChecking=accept-new"}
 	if app.printer.Machine() {
 		// OpenSSH logs "Permanently added ..." at INFO; in json and yaml mode
@@ -193,8 +193,8 @@ func remoteCommand(words []string) string {
 
 // buildSSHArgs builds the argv (after the "ssh" program name) for an
 // interactive session (command empty) or a one-shot command.
-func buildSSHArgs(t sshTarget, user, identity string, command []string) []string {
-	args := append([]string{"-p", strconv.FormatInt(t.Port, 10)}, hostKeyOptions(t.InstanceID)...)
+func (app *App) buildSSHArgs(t sshTarget, user, identity string, command []string) []string {
+	args := append([]string{"-p", strconv.FormatInt(t.Port, 10)}, app.hostKeyOptions(t.InstanceID)...)
 	if identity != "" {
 		args = append(args, "-i", identity)
 	}
@@ -221,14 +221,18 @@ func sshConfigAlias(group, instanceID string) string {
 // renderSSHConfig renders ssh_config Host blocks for every running,
 // SSH-ready instance of the group, plus a usage header. It returns the
 // text and the number of Host blocks rendered.
-func renderSSHConfig(group string, instances []containergroups.ContainerGroupInstance, user string) (string, int) {
-	return renderSSHConfigIdentity(group, instances, user, "")
+func (app *App) renderSSHConfig(
+	group string,
+	instances []containergroups.ContainerGroupInstance,
+	user string,
+) (string, int) {
+	return app.renderSSHConfigIdentity(group, instances, user, "")
 }
 
 // renderSSHConfigIdentity is renderSSHConfig with an IdentityFile line in
 // every block when identity is non-empty, so a config written for the
 // CLI's dedicated key works from plain ssh and VS Code too.
-func renderSSHConfigIdentity(
+func (app *App) renderSSHConfigIdentity(
 	group string,
 	instances []containergroups.ContainerGroupInstance,
 	user, identity string,
@@ -272,23 +276,23 @@ func sshConfigQuote(v string) string {
 // passthrough works because ssh talks to the inherited terminal directly)
 // and maps the outcome onto the CLI's exit-code contract: the child's own
 // exit code is propagated.
-func runChild(name string, args []string) *clierr.Error {
-	return runChildTo(app.Stdout, name, args)
+func (app *App) runChild(name string, args []string) *clierr.Error {
+	return app.runChildTo(app.Stdout, name, args)
 }
 
 // runChildTo is runChild with the child's stdout sent to stdout: cp sends
 // sftp's batch echo to stderr, so its own stdout carries one result.
-func runChildTo(stdout io.Writer, name string, args []string) *clierr.Error {
-	return runChildWith(stdout, errw(), name, args)
+func (app *App) runChildTo(stdout io.Writer, name string, args []string) *clierr.Error {
+	return app.runChildWith(stdout, app.errw(), name, args)
 }
 
 // runChildQuiet runs a child with its stdout and stderr held back, for cp
 // in json and yaml mode, where stderr carries only warnings, notes and the
 // error document. When the child fails, its last line of output ends the
 // error's message, after "; ".
-func runChildQuiet(name string, args []string) *clierr.Error {
+func (app *App) runChildQuiet(name string, args []string) *clierr.Error {
 	var out bytes.Buffer
-	cerr := runChildWith(&out, &out, name, args)
+	cerr := app.runChildWith(&out, &out, name, args)
 	if cerr != nil && cerr.Kind == clierr.KindChildExit {
 		if last := lastLine(out.String()); last != "" {
 			cerr.Message += "; " + last
@@ -308,7 +312,7 @@ func lastLine(s string) string {
 	return ""
 }
 
-func runChildWith(stdout, stderr io.Writer, name string, args []string) *clierr.Error {
+func (app *App) runChildWith(stdout, stderr io.Writer, name string, args []string) *clierr.Error {
 	child := exec.Command(name, args...)
 	child.Stdin = app.Stdin
 	child.Stdout = stdout
@@ -331,12 +335,13 @@ func runChildWith(stdout, stderr io.Writer, name string, args []string) *clierr.
 	}
 	if errors.Is(err, exec.ErrNotFound) {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%s not found", filepath.Base(name)).
-			WithHint("%s", sshMissingHint(filepath.Base(name)))
+			WithHint("%s", app.sshMissingHint(filepath.Base(name)))
 	}
 	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot run %s: %v", name, err)
 }
 
-func init() {
+// addSSHCommands adds ssh.go's commands to the tree.
+func (app *App) addSSHCommands(cg *cobra.Command) {
 	var (
 		user      string
 		identity  string
@@ -410,7 +415,7 @@ Host alias.`,
 				)
 			}
 
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -428,7 +433,7 @@ Host alias.`,
 					}
 					instances = []containergroups.ContainerGroupInstance{*inst}
 				}
-				text, n := renderSSHConfigIdentity(group, instances, user, resolveIdentity(identity))
+				text, n := app.renderSSHConfigIdentity(group, instances, user, app.resolveIdentity(identity))
 				if n == 0 {
 					return clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
 						"no running SSH-ready instances in container group %s", group).
@@ -438,7 +443,7 @@ Host alias.`,
 				return wrapErr(err)
 			}
 
-			inst, cerr := pickInstance(errw(), collection.Instances, group, instance)
+			inst, cerr := pickInstance(app.errw(), collection.Instances, group, instance)
 			if cerr != nil {
 				return cerr
 			}
@@ -447,11 +452,11 @@ Host alias.`,
 				return cerr
 			}
 
-			sshArgs := buildSSHArgs(target, user, resolveIdentity(identity), command)
-			runErr := runChild("ssh", sshArgs)
+			sshArgs := app.buildSSHArgs(target, user, app.resolveIdentity(identity), command)
+			runErr := app.runChild("ssh", sshArgs)
 			if len(command) > 0 {
 				if note := oneShotExitNote(childExitCode(runErr)); note != "" {
-					fprintln(errw(), note)
+					fprintln(app.errw(), note)
 				}
 			}
 			if runErr != nil {
@@ -468,7 +473,7 @@ Host alias.`,
 		StringVarP(&identity, "identity", "i", "", "identity (private key) file for ssh -i (default: ~/.ssh/saladcloud_ed25519 when present)")
 	sshCmd.Flags().
 		BoolVar(&useConfig, "config", false, "print ssh_config Host blocks for the group's running instances (or only --instance) instead of connecting")
-	addHiddenGroupFlag(sshCmd)
+	app.addHiddenGroupFlag(sshCmd)
 	annotate(sshCmd, annotationFlagForArg, "instance")
-	RegisterContainerGroups(sshCmd)
+	cg.AddCommand(sshCmd)
 }

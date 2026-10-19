@@ -149,7 +149,7 @@ func joinPaths(paths []string) string {
 // API — the model is a pinned snapshot and the API may have moved. And when
 // the document looks like a `get` response, that diagnosis is the whole
 // message, because it is the one sentence the reader needs.
-func rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
+func (app *App) rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
 	if len(unknowns) == 0 {
 		return nil
 	}
@@ -232,7 +232,7 @@ func rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
 	// from; the per-field list goes to --debug.
 	if len(responseOnly) >= 3 {
 		if app.debugLevel != api.DebugOff {
-			fprintf(errw(), "debug: %s; %s\n", full.Message, full.HintText())
+			fprintf(app.errw(), "debug: %s; %s\n", full.Message, full.HintText())
 		}
 		return clierr.New(clierr.CodeInvalidInput, clierr.KindUnknownField,
 			"this document is a get response, not a patch (%d of its fields only responses carry)", len(responseOnly)).

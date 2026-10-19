@@ -151,7 +151,7 @@ func TestCopyDocumentBuildsARequest(t *testing.T) {
 	if err := json.Unmarshal(raw, &base); err != nil {
 		t.Fatalf("copy does not unmarshal into a creation request: %v", err)
 	}
-	req, cerr := buildCreateRequest(base, createFlags{Name: "my-copy", HasBase: true})
+	req, cerr := app.buildCreateRequest(base, createFlags{Name: "my-copy", HasBase: true})
 	if cerr != nil {
 		t.Fatalf("buildCreateRequest: %v", cerr)
 	}

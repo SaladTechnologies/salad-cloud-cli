@@ -19,7 +19,7 @@ import (
 // about this build.
 
 func TestRejectUnknownsNoHatchForTypos(t *testing.T) {
-	cerr := rejectUnknowns([]input.Unknown{
+	cerr := app.rejectUnknowns([]input.Unknown{
 		{
 			Desc: `unknown field "replica" at the top level (did you mean "replicas"?)`,
 			Path: "replica",
@@ -41,7 +41,7 @@ func TestRejectUnknownsNoHatchForTypos(t *testing.T) {
 }
 
 func TestRejectUnknownsHatchNamesOnlyNovelFields(t *testing.T) {
-	cerr := rejectUnknowns([]input.Unknown{
+	cerr := app.rejectUnknowns([]input.Unknown{
 		{
 			Desc: `unknown field "replica" at the top level (did you mean "replicas"?)`,
 			Path: "replica",
@@ -61,7 +61,7 @@ func TestRejectUnknownsHatchNamesOnlyNovelFields(t *testing.T) {
 }
 
 func TestRejectUnknownsSingleNovelDoesNotRepeat(t *testing.T) {
-	cerr := rejectUnknowns([]input.Unknown{
+	cerr := app.rejectUnknowns([]input.Unknown{
 		{Desc: `unknown field "gpu_sharing" in "container"`, Path: "container.gpu_sharing"},
 	})
 	if cerr == nil {
@@ -85,7 +85,7 @@ func TestRejectUnknownsGetResponseTellLeads(t *testing.T) {
 		us = append(us, input.Unknown{Desc: `unknown field "` + p + `"`, Path: p})
 	}
 	// The diagnosis and the command to start from are the whole message.
-	cerr := rejectUnknowns(us)
+	cerr := app.rejectUnknowns(us)
 	if cerr == nil {
 		t.Fatal("nil")
 	}
@@ -100,7 +100,7 @@ func TestRejectUnknownsGetResponseTellLeads(t *testing.T) {
 	app.debugLevel = api.DebugRequests
 	t.Cleanup(func() { app.debugLevel = api.DebugOff })
 	stderr := captureStderr(t, func() {
-		if rejectUnknowns(us) == nil {
+		if app.rejectUnknowns(us) == nil {
 			t.Error("the unknown fields were not rejected")
 		}
 	})
@@ -138,7 +138,7 @@ func TestRejectUnknownsHedgesSchemaFacts(t *testing.T) {
 		{"restart_policy", "not in this CLI's update schema (create accepts it)", "cannot be changed by update"},
 		{"readme", "response-only in this CLI's API model", "is a response-only field and"},
 	} {
-		cerr := rejectUnknowns(
+		cerr := app.rejectUnknowns(
 			[]input.Unknown{{Desc: `unknown field "` + tt.path + `" at the top level`, Path: tt.path}},
 		)
 		if cerr == nil || !strings.Contains(errText(cerr), tt.want) {
@@ -172,7 +172,7 @@ func TestWarnUnknownsLenientTypo(t *testing.T) {
 // queue_connection is create-only, and update says why and what to do
 // instead of offering the escape hatch.
 func TestRejectUnknownsExplainsQueueConnection(t *testing.T) {
-	cerr := rejectUnknowns([]input.Unknown{
+	cerr := app.rejectUnknowns([]input.Unknown{
 		{Desc: `unknown field "queue_connection" at the top level`, Path: "queue_connection"},
 	})
 	if cerr == nil {

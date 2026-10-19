@@ -9,7 +9,6 @@ import (
 // commands take --project but never read it, so their help does not offer
 // it; logs and availability say what it means there.
 func TestProjectFlagHiddenWhereNothingReadsIt(t *testing.T) {
-	prepareTree()
 	for _, path := range [][]string{
 		{"inference", "list"},
 		{"inference", "jobs", "list"},

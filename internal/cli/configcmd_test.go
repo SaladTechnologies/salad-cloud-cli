@@ -40,7 +40,7 @@ func TestStrOrNil(t *testing.T) {
 // other, {"items": [...]} with the path beside it; every config key has an
 // entry, and an unset value is null, never a missing entry.
 func TestConfigListResultStableJSONShape(t *testing.T) {
-	data, err := json.Marshal(configListOf(config.File{}, "/tmp/config.json"))
+	data, err := json.Marshal(app.configListOf(config.File{}, "/tmp/config.json"))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}

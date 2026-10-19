@@ -94,7 +94,7 @@ func runWaitFrom(
 		allowedSleeps: allowedSleeps,
 		cancel:        cancel,
 	}
-	final, cerr := waitForGroupStatus(ctx, h.deps(), "demo", "running", fromActive, timeout, 5*time.Second)
+	final, cerr := app.waitForGroupStatus(ctx, h.deps(), "demo", "running", fromActive, timeout, 5*time.Second)
 	h.final = final
 	return cerr, h
 }
@@ -359,7 +359,7 @@ func TestWaitForGroupSettlePredicate(t *testing.T) {
 		allowedSleeps: 10,
 		cancel:        cancel,
 	}
-	final, cerr := waitForGroup(ctx, h.deps(), "demo", "settle",
+	final, cerr := app.waitForGroup(ctx, h.deps(), "demo", "settle",
 		func(g *shared.ContainerGroup) bool { return !ptr.Deref(g.PendingChange) }, nil,
 		time.Hour, 5*time.Second)
 	if cerr != nil {
@@ -406,7 +406,7 @@ func TestSettleTimeoutSaysPatchAccepted(t *testing.T) {
 		allowedSleeps: 10,
 		cancel:        cancel,
 	}
-	_, cerr := waitForGroup(ctx, h.deps(), "demo", goalSettle,
+	_, cerr := app.waitForGroup(ctx, h.deps(), "demo", goalSettle,
 		func(g *shared.ContainerGroup) bool { return !ptr.Deref(g.PendingChange) }, nil,
 		10*time.Second, 5*time.Second)
 	if cerr == nil {

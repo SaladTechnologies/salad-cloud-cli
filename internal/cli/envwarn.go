@@ -33,11 +33,11 @@ var envSettings = []envSetting{
 
 // show renders a value the way messages show it: keys masked, and a name
 // that looks like a key hidden.
-func (s envSetting) show(v string) string {
+func (s envSetting) show(app *App, v string) string {
 	if s.secret {
 		return maskAPIKey(v)
 	}
-	return shownName(strings.TrimSpace(v))
+	return app.shownName(strings.TrimSpace(v))
 }
 
 // used is the value as commands use it: a key normalized, a name trimmed,
@@ -61,7 +61,7 @@ type override struct {
 // overridesOf lists the variables among vars (in envSettings' order) that
 // are set and differ from what f holds: once a command has saved f, these
 // are what commands will use instead.
-func overridesOf(f config.File, vars ...string) []override {
+func (app *App) overridesOf(f config.File, vars ...string) []override {
 	var out []override
 	for _, s := range envSettings {
 		if !hasString(vars, s.env) {
@@ -77,7 +77,7 @@ func overridesOf(f config.File, vars ...string) []override {
 // stillSupplied lists the variables among vars that are set at all: once a
 // command has removed their values from the config file, commands still use
 // them.
-func stillSupplied(vars ...string) []override {
+func (app *App) stillSupplied(vars ...string) []override {
 	var out []override
 	for _, s := range envSettings {
 		if !hasString(vars, s.env) {
@@ -112,32 +112,32 @@ const (
 // warnOverrides writes the warning for ovs to w, one warning: line per
 // row; at a terminal in table mode it is followed by the commands that
 // remove the variables on this OS. It writes nothing for none.
-func warnOverrides(w io.Writer, when overrideWhen, ovs []override) {
+func (app *App) warnOverrides(w io.Writer, when overrideWhen, ovs []override) {
 	if len(ovs) == 0 {
 		return
 	}
-	steps := app.printer.Mode() == "table" && atTerminal()
+	steps := app.printer.Mode() == "table" && app.atTerminal()
 	if len(ovs) == 1 {
 		o := ovs[0]
 		var line string
 		switch {
 		case when == afterRemove || o.saved == "" && when == afterSave:
-			line = fmt.Sprintf("warning: commands still use %s (%s)", o.setting.env, o.setting.show(o.value))
+			line = fmt.Sprintf("warning: commands still use %s (%s)", o.setting.env, o.setting.show(app, o.value))
 		case when == asSaved:
 			line = fmt.Sprintf(
 				"warning: commands use %s (%s) instead of the saved %s (%s)",
 				o.setting.env,
-				o.setting.show(o.value),
+				o.setting.show(app, o.value),
 				o.setting.what,
-				o.setting.show(o.saved),
+				o.setting.show(app, o.saved),
 			)
 		default:
 			line = fmt.Sprintf(
 				"warning: commands will use %s (%s) instead of the %s you just saved (%s)",
 				o.setting.env,
-				o.setting.show(o.value),
+				o.setting.show(app, o.value),
 				o.setting.what,
-				o.setting.show(o.saved),
+				o.setting.show(app, o.saved),
 			)
 		}
 		if !steps {
@@ -145,7 +145,7 @@ func warnOverrides(w io.Writer, when overrideWhen, ovs []override) {
 			return
 		}
 		fprintln(w, line+". To remove the variable:")
-		fprint(w, removalSteps(ovs))
+		fprint(w, app.removalSteps(ovs))
 		return
 	}
 	switch when {
@@ -159,28 +159,28 @@ func warnOverrides(w io.Writer, when overrideWhen, ovs []override) {
 	nameWidth, valueWidth := 0, 0
 	for _, o := range ovs {
 		nameWidth = max(nameWidth, len(o.setting.env))
-		valueWidth = max(valueWidth, len(o.setting.show(o.value)))
+		valueWidth = max(valueWidth, len(o.setting.show(app, o.value)))
 	}
 	for _, o := range ovs {
-		row := fmt.Sprintf("warning:   %-*s  %-*s", nameWidth, o.setting.env, valueWidth, o.setting.show(o.value))
+		row := fmt.Sprintf("warning:   %-*s  %-*s", nameWidth, o.setting.env, valueWidth, o.setting.show(app, o.value))
 		switch {
 		case when == afterRemove:
 		case o.saved == "":
 			row += "  (none saved)"
 		default:
-			row += "  (saved: " + o.setting.show(o.saved) + ")"
+			row += "  (saved: " + o.setting.show(app, o.saved) + ")"
 		}
 		fprintln(w, strings.TrimRight(row, " "))
 	}
 	if steps {
 		fprintln(w, "To remove the variables:")
-		fprint(w, removalSteps(ovs))
+		fprint(w, app.removalSteps(ovs))
 	}
 }
 
 // removalSteps are the lines that remove the variables on this OS: from the
 // current shell, then for good.
-func removalSteps(ovs []override) string {
+func (app *App) removalSteps(ovs []override) string {
 	names := overrideNames(ovs)
 	one := len(names) == 1
 	it, comes := "it", "it comes"
@@ -222,7 +222,7 @@ func removalSteps(ovs []override) string {
 // beforePrompt is the line a login prints at a terminal before its first
 // prompt, naming the set variables that would override what it saves;
 // command is "login" or "ai-gateway login". "" for none.
-func beforePrompt(command string, ovs []override) string {
+func (app *App) beforePrompt(command string, ovs []override) string {
 	switch len(ovs) {
 	case 0:
 		return ""
@@ -231,13 +231,13 @@ func beforePrompt(command string, ovs []override) string {
 		return fmt.Sprintf(
 			"%s is set in this shell (%s); commands will use it instead of what %s saves.",
 			o.setting.env,
-			o.setting.show(o.value),
+			o.setting.show(app, o.value),
 			command,
 		)
 	}
 	parts := make([]string, len(ovs))
 	for i, o := range ovs {
-		parts[i] = fmt.Sprintf("%s (%s)", o.setting.env, o.setting.show(o.value))
+		parts[i] = fmt.Sprintf("%s (%s)", o.setting.env, o.setting.show(app, o.value))
 	}
 	list := strings.Join(parts[:len(parts)-1], ", ") + " and " + parts[len(parts)-1]
 	return fmt.Sprintf("%s are set in this shell; commands will use them instead of what %s saves.", list, command)

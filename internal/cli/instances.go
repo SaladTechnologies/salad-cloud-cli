@@ -157,7 +157,7 @@ func emptyInstancesNote(counts *shared.ContainerGroupInstanceStatusCount) string
 }
 
 // instanceAction runs one bodiless instance verb and emits its confirmation.
-func instanceAction(group, id, pastTense string, call func() *clierr.Error) error {
+func (app *App) instanceAction(group, id, pastTense string, call func() *clierr.Error) error {
 	if err := call(); err != nil {
 		return instanceNotFound(err, group, id)
 	}
@@ -170,9 +170,9 @@ func instanceAction(group, id, pastTense string, call func() *clierr.Error) erro
 // addGroupFlag registers the required -c/--container-group flag on a
 // command whose subject lives inside a container group: the leaf is the
 // positional, its ancestor a named flag.
-func addGroupFlag(cmd *cobra.Command) {
+func (app *App) addGroupFlag(cmd *cobra.Command) {
 	cmd.Flags().StringP("container-group", "c", "", "the container group (required)")
-	noteTreeErr(cmd.MarkFlagRequired("container-group"))
+	app.noteTreeErr(cmd.MarkFlagRequired("container-group"))
 	annotate(cmd, annotationFlagForArg, "container-group")
 }
 
@@ -188,7 +188,7 @@ const maxDeletionCost = 100000
 
 // instanceVerb builds one bodiless instance verb (restart, recreate,
 // reallocate): <id> positional, -c for the group.
-func instanceVerb(
+func (app *App) instanceVerb(
 	use, short, pastTense string,
 	call func(client *api.Client, cmd *cobra.Command, group, id string) *clierr.Error,
 ) *cobra.Command {
@@ -201,7 +201,7 @@ func instanceVerb(
 			if cerr != nil {
 				return cerr
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -209,16 +209,17 @@ func instanceVerb(
 			if cerr != nil {
 				return cerr
 			}
-			return instanceAction(group, id, pastTense, func() *clierr.Error {
+			return app.instanceAction(group, id, pastTense, func() *clierr.Error {
 				return call(client, cmd, group, id)
 			})
 		},
 	}
-	addGroupFlag(cmd)
+	app.addGroupFlag(cmd)
 	return cmd
 }
 
-func init() {
+// addInstancesCommands adds instances.go's commands to the tree.
+func (app *App) addInstancesCommands(cg *cobra.Command) {
 	instancesCmd := &cobra.Command{
 		Use:     "instances",
 		Aliases: []string{"instance"},
@@ -240,11 +241,11 @@ positional argument (its ID, or a unique prefix of it) and the group is
 			if cerr != nil {
 				return cerr
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
-			return runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
+			return app.runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
 				instances, cerr := client.ListInstances(ctx, group)
 				if cerr != nil {
 					return cerr
@@ -279,7 +280,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 							counts = cg.CurrentState.InstanceStatusCounts
 						}
 						if note := emptyInstancesNote(counts); note != "" {
-							fprintln(errw(), note)
+							fprintln(app.errw(), note)
 						}
 					}
 				}
@@ -287,8 +288,8 @@ positional argument (its ID, or a unique prefix of it) and the group is
 			})
 		},
 	}
-	addGroupFlag(instancesListCmd)
-	addWatchFlags(instancesListCmd)
+	app.addGroupFlag(instancesListCmd)
+	app.addWatchFlags(instancesListCmd)
 	instancesCmd.AddCommand(instancesListCmd)
 
 	getCmd := &cobra.Command{
@@ -300,7 +301,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 			if cerr != nil {
 				return cerr
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -315,7 +316,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 			return wrapErr(app.printer.Emit(inst, func(w *output.Writer) { writeInstanceDetail(w, inst) }))
 		},
 	}
-	addGroupFlag(getCmd)
+	app.addGroupFlag(getCmd)
 	instancesCmd.AddCommand(getCmd)
 
 	updateCmd := &cobra.Command{
@@ -341,7 +342,7 @@ so raising it protects an instance doing long work. 0-100000.`,
 			if cerr != nil {
 				return cerr
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -362,18 +363,18 @@ so raising it protects an instance doing long work. 0-100000.`,
 			return wrapErr(app.printer.Emit(inst, func(w *output.Writer) { writeInstanceDetail(w, inst) }))
 		},
 	}
-	addGroupFlag(updateCmd)
+	app.addGroupFlag(updateCmd)
 	updateCmd.Flags().
 		Int64("deletion-cost", 0, "deletion cost, 0-100000 (required); lower is removed first on scale-down")
-	noteTreeErr(updateCmd.MarkFlagRequired("deletion-cost"))
+	app.noteTreeErr(updateCmd.MarkFlagRequired("deletion-cost"))
 	instancesCmd.AddCommand(updateCmd)
 
-	instancesCmd.AddCommand(instanceVerb("restart",
+	instancesCmd.AddCommand(app.instanceVerb("restart",
 		"Restart the container on an instance (same machine; the ID may be a unique prefix)", "restarted",
 		func(client *api.Client, cmd *cobra.Command, group, id string) *clierr.Error {
 			return client.RestartInstance(cmd.Context(), group, id)
 		}))
-	instancesCmd.AddCommand(instanceVerb(
+	instancesCmd.AddCommand(app.instanceVerb(
 		"recreate",
 		"Recreate the container on an instance (same machine, fresh container; the ID may be a unique prefix)",
 		"recreated",
@@ -381,11 +382,11 @@ so raising it protects an instance doing long work. 0-100000.`,
 			return client.RecreateInstance(cmd.Context(), group, id)
 		},
 	))
-	instancesCmd.AddCommand(instanceVerb("reallocate",
+	instancesCmd.AddCommand(app.instanceVerb("reallocate",
 		"Move an instance to a different machine (the ID may be a unique prefix)", "reallocated",
 		func(client *api.Client, cmd *cobra.Command, group, id string) *clierr.Error {
 			return client.ReallocateInstance(cmd.Context(), group, id)
 		}))
 
-	RegisterContainerGroups(instancesCmd)
+	cg.AddCommand(instancesCmd)
 }

@@ -107,7 +107,7 @@ func validateResourceName(noun, name string) *clierr.Error {
 // buildCreateRequest applies create's flags on top of a base request
 // (from -f or empty), then fills defaults into fields that are
 // still unset. It is pure: GPU name resolution goes through opts.ResolveGpu.
-func buildCreateRequest(
+func (app *App) buildCreateRequest(
 	base containergroups.ContainerGroupCreationRequest,
 	opts createFlags,
 ) (containergroups.ContainerGroupCreationRequest, *clierr.Error) {
@@ -186,7 +186,7 @@ func buildCreateRequest(
 		}
 		// The API takes any string as the path, so a rewritten one would be
 		// stored and every job posted to it.
-		if underGitBash() && msysDrivePath.MatchString(opts.QueuePath) {
+		if app.underGitBash() && msysDrivePath.MatchString(opts.QueuePath) {
 			return req, clierr.New(
 				clierr.CodeUsage,
 				clierr.KindUsage,
@@ -466,7 +466,7 @@ func collectCreateFlags(cmd *cobra.Command, name string, hasBase bool) (createFl
 // struct cannot carry. Those fields are grafted back by deep-merging the
 // built request (flags + defaults, which always win) over baseRaw and
 // sending the merged document raw.
-func runCreate(
+func (app *App) runCreate(
 	cmd *cobra.Command,
 	base containergroups.ContainerGroupCreationRequest,
 	hasBase bool,
@@ -480,7 +480,7 @@ func runCreate(
 		if client != nil {
 			return client, nil
 		}
-		c, _, cerr := NewClient(cmd)
+		c, _, cerr := app.NewClient(cmd)
 		if cerr != nil {
 			return nil, cerr
 		}
@@ -509,7 +509,7 @@ func runCreate(
 		return resolveGpuClassName(value, classes)
 	}
 
-	req, cerr := buildCreateRequest(base, opts)
+	req, cerr := app.buildCreateRequest(base, opts)
 	if cerr != nil {
 		return cerr
 	}
@@ -538,7 +538,7 @@ func runCreate(
 		return clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot marshal request: %v", err)
 	}
 	if len(unknowns) > 0 {
-		warnUnknowns(errw(), unknowns, true)
+		warnUnknowns(app.errw(), unknowns, true)
 		if sent, cerr = input.MergeJSON(baseRaw, sent); cerr != nil {
 			return cerr
 		}
@@ -548,12 +548,12 @@ func runCreate(
 		return cerr
 	}
 	if q := req.QueueConnection; q != nil {
-		noteQueueWorker(errw(), ptr.Deref(q.QueueName))
+		noteQueueWorker(app.errw(), ptr.Deref(q.QueueName))
 	}
 	// Same "did it actually happen?" check the update path runs: the API
 	// accepts some fields and silently drops them (container.image_caching),
 	// returning 201 either way.
-	warnUnappliedCreateFields(errw(), findUnappliedCreateFields(sent, group))
+	warnUnappliedCreateFields(app.errw(), findUnappliedCreateFields(sent, group))
 	// --wait (validated pre-flight in RunE): block until the new group runs,
 	// and only then emit — the document must describe the settled state, and
 	// stdout must stay empty if the wait fails (timeout, interrupt). Without
@@ -569,7 +569,7 @@ func runCreate(
 		}
 		// fromActive: the create response is pending with autostart on, so a
 		// stopped group from here on was never started, not merely slow.
-		final, err := runStatusWait(cmd, c, name, "running", true, timeout)
+		final, err := app.runStatusWait(cmd, c, name, "running", true, timeout)
 		if err != nil {
 			return err
 		}
@@ -578,7 +578,8 @@ func runCreate(
 	return wrapErr(app.printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
 }
 
-func init() {
+// addCreateCommands adds create.go's commands to the tree.
+func (app *App) addCreateCommands(cg *cobra.Command) {
 	createCmd := &cobra.Command{
 		Use:   "create [<group>] [-- <command>...]",
 		Short: "Create a container group from flags, a definition file, or an existing group",
@@ -654,10 +655,10 @@ together, so it starts with the program: -- python app.py --port 8080, not
 				return cerr
 			}
 			args, command, commandGiven := splitCommand(cmd, args)
-			if cerr := validateCommand(command, commandGiven); cerr != nil {
+			if cerr := app.validateCommand(command, commandGiven); cerr != nil {
 				return cerr
 			}
-			warnCommand(errw(), cmd, command)
+			warnCommand(app.errw(), cmd, command)
 			// Pre-flight flag validation, before any file or API work.
 			wait, _, cerr := waitFlagValues(cmd)
 			if cerr != nil {
@@ -675,11 +676,11 @@ together, so it starts with the program: -- python app.py --port 8080, not
 				name = args[0]
 			}
 			if from != "" {
-				base, baseRaw, unknowns, cerr = loadFromBase(cmd, from, file, allowUnknown, name, errw())
+				base, baseRaw, unknowns, cerr = app.loadFromBase(cmd, from, file, allowUnknown, name, app.errw())
 				if cerr != nil {
 					return cerr
 				}
-				return runCreate(cmd, base, true, name, command, baseRaw, unknowns)
+				return app.runCreate(cmd, base, true, name, command, baseRaw, unknowns)
 			}
 			if file != "" {
 				if allowUnknown {
@@ -696,13 +697,13 @@ together, so it starts with the program: -- python app.py --port 8080, not
 					if err != nil {
 						return err
 					}
-					if cerr := rejectUnknowns(u); cerr != nil {
+					if cerr := app.rejectUnknowns(u); cerr != nil {
 						return cerr
 					}
 				}
 				hasBase = true
 			}
-			return runCreate(cmd, base, hasBase, name, command, baseRaw, unknowns)
+			return app.runCreate(cmd, base, hasBase, name, command, baseRaw, unknowns)
 		},
 	}
 	createCmd.Flags().StringP("file", "f", "", "container group definition file (.json/.yaml; \"-\" reads stdin)")
@@ -710,5 +711,5 @@ together, so it starts with the program: -- python app.py --port 8080, not
 	addCreateOverrideFlags(createCmd)
 	addAllowUnknownFlag(createCmd)
 	addWaitFlags(createCmd, "the group is running")
-	RegisterContainerGroups(createCmd)
+	cg.AddCommand(createCmd)
 }

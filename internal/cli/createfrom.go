@@ -166,14 +166,14 @@ func noteRegistryCredentials(w io.Writer, fileRaw json.RawMessage, image string)
 // loadFromBase builds create's base request for --from: the source group,
 // copied, with the -f document (if any) deep-merged over it. baseRaw and
 // unknowns are set only on the --allow-unknown-fields path, as for -f alone.
-func loadFromBase(cmd *cobra.Command, ref, file string, allowUnknown bool, name string, notes io.Writer) (
+func (app *App) loadFromBase(cmd *cobra.Command, ref, file string, allowUnknown bool, name string, notes io.Writer) (
 	base containergroups.ContainerGroupCreationRequest, baseRaw []byte, unknowns []input.Unknown, cerr *clierr.Error,
 ) {
 	project, group, cerr := parseFromRef(ref)
 	if cerr != nil {
 		return base, nil, nil, cerr
 	}
-	client, res, cerr := NewClient(cmd)
+	client, res, cerr := app.NewClient(cmd)
 	if cerr != nil {
 		return base, nil, nil, cerr
 	}
@@ -196,7 +196,7 @@ func loadFromBase(cmd *cobra.Command, ref, file string, allowUnknown bool, name 
 			return base, nil, nil, lerr
 		}
 		if !allowUnknown {
-			if cerr = rejectUnknowns(u); cerr != nil {
+			if cerr = app.rejectUnknowns(u); cerr != nil {
 				return base, nil, nil, cerr
 			}
 		}
@@ -208,11 +208,11 @@ func loadFromBase(cmd *cobra.Command, ref, file string, allowUnknown bool, name 
 	if explicitProject {
 		r.ProjectSource = "flag"
 	}
-	src, cerr := api.New(r, apiOptions())
+	src, cerr := api.New(r, app.apiOptions())
 	if cerr != nil {
 		return base, nil, nil, cerr
 	}
-	warnOnAssumedProject(src, r)
+	app.warnOnAssumedProject(src, r)
 	g, cerr := src.GetGroup(cmd.Context(), group)
 	if cerr != nil {
 		return base, nil, nil, groupNotFound(cerr, group, src.Org(), src.Project())

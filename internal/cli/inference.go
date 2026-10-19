@@ -181,13 +181,14 @@ func inferenceJobView(j *inferenceendpoints.InferenceEndpointJob) (string, strin
 // does not.
 func waitForJobTerminal[J any](
 	ctx context.Context,
+	app *App,
 	d jobWaitDeps[J],
 	id string,
 	timeout, poll time.Duration,
 ) (*J, *clierr.Error) {
 	stderr := d.progress
 	if stderr == nil {
-		stderr = errw()
+		stderr = app.errw()
 	}
 	start := d.now()
 	deadline := start.Add(timeout)
@@ -298,10 +299,11 @@ func liveJobWaitDeps(
 // what 'inference list' lists, so it is the one singular noun that takes
 // list/get. Porcelain verbs (transcribe.go) are added under it, each named
 // exactly after the endpoint it drives.
-var inferenceCmd = &cobra.Command{
-	Use:   "inference",
-	Short: "List managed inference endpoints and run jobs on them (transcription and others)",
-	Long: `Interact with the organization's managed inference endpoints.
+func newInferenceCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "inference",
+		Short: "List managed inference endpoints and run jobs on them (transcription and others)",
+		Long: `Interact with the organization's managed inference endpoints.
 
   saladcloud inference list | get <endpoint>          the endpoints
   saladcloud inference jobs ... --endpoint <endpoint> jobs on any endpoint
@@ -316,6 +318,7 @@ Each endpoint the CLI knows has a porcelain command named exactly after it
 endpoint's input fields. An endpoint newer than this CLI, or one whose name
 is reserved here (list, get, jobs, help, completion), has no porcelain
 command and is reached with inference jobs create --endpoint <name>.`,
+	}
 }
 
 // endpointInputFields returns the property names of an endpoint's input
@@ -340,9 +343,9 @@ func endpointInputFields(schema *string) []string {
 }
 
 // addEndpointFlag registers the required --endpoint flag on a jobs verb.
-func addEndpointFlag(cmd *cobra.Command) {
+func (app *App) addEndpointFlag(cmd *cobra.Command) {
 	cmd.Flags().String("endpoint", "", "the inference endpoint (required; saladcloud inference list shows them)")
-	noteTreeErr(cmd.MarkFlagRequired("endpoint"))
+	app.noteTreeErr(cmd.MarkFlagRequired("endpoint"))
 	annotate(cmd, annotationFlagForArg, "endpoint")
 }
 
@@ -353,13 +356,15 @@ func endpointFlag(cmd *cobra.Command) (string, *clierr.Error) {
 	return e, fr.Err()
 }
 
-func init() {
+// addInferenceCommands adds inference.go's commands to the tree.
+func (app *App) addInferenceCommands(root *cobra.Command) {
+	inferenceCmd := newInferenceCmd()
 	inferenceCmd.AddCommand(&cobra.Command{
 		Use:   "list",
 		Short: "List the available inference endpoints",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -392,7 +397,7 @@ func init() {
 		Short: "Show one inference endpoint, its price and its input fields",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -455,7 +460,7 @@ older jobs were left out.`,
 					limit,
 				)
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -479,13 +484,13 @@ older jobs were left out.`,
 				return err
 			}
 			if len(jobs) == 0 && app.printer.Mode() == "table" {
-				fprintf(errw(), "no jobs on endpoint %s\n", endpoint)
+				fprintf(app.errw(), "no jobs on endpoint %s\n", endpoint)
 			}
-			jobsLimitNote(errw(), len(jobs), limit, api.InferenceJobsCap, more)
+			app.jobsLimitNote(app.errw(), len(jobs), limit, api.InferenceJobsCap, more)
 			return nil
 		},
 	}
-	addEndpointFlag(jobsListCmd)
+	app.addEndpointFlag(jobsListCmd)
 	jobsListCmd.Flags().
 		Int("limit", 100, fmt.Sprintf("how many of the newest jobs to list (0 = all, up to %d)", api.InferenceJobsCap))
 	jobsCmd.AddCommand(jobsListCmd)
@@ -502,7 +507,7 @@ older jobs were left out.`,
 			if cerr = requireJobUUID(args[0], "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
 				return cerr
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -513,7 +518,7 @@ older jobs were left out.`,
 			return wrapErr(app.printer.Emit(job, func(w *output.Writer) { writeJobDetail(w, job) }))
 		},
 	}
-	addEndpointFlag(jobsGetCmd)
+	app.addEndpointFlag(jobsGetCmd)
 	jobsCmd.AddCommand(jobsGetCmd)
 
 	jobsCreateCmd := &cobra.Command{
@@ -560,7 +565,7 @@ canceled exits 1 with the job's status and last event. --timeout (default
 			}
 			var proto inferenceendpoints.InferenceEndpointJobPrototype
 			if file != "" {
-				if cerr = loadJobFile(file, &proto); cerr != nil {
+				if cerr = app.loadJobFile(file, &proto); cerr != nil {
 					return cerr
 				}
 				if proto.Input == nil {
@@ -576,7 +581,7 @@ canceled exits 1 with the job's status and last event. --timeout (default
 				proto.Input = json.RawMessage(inputJSON)
 			}
 
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -590,14 +595,14 @@ canceled exits 1 with the job's status and last event. --timeout (default
 			ctx := cmd.Context() // canceled by the one signal handler in Execute
 			id := ptr.Deref(job.Id)
 			d := liveJobWaitDeps(client, endpoint, id, "waiting for job "+id)
-			final, cerr := waitForJobTerminal(ctx, d, id, timeout, waitPoll)
+			final, cerr := waitForJobTerminal(ctx, app, d, id, timeout, waitPoll)
 			if cerr != nil {
 				return cerr
 			}
 			return wrapErr(app.printer.Emit(final, func(w *output.Writer) { writeJobDetail(w, final) }))
 		},
 	}
-	addEndpointFlag(jobsCreateCmd)
+	app.addEndpointFlag(jobsCreateCmd)
 	jobsCreateCmd.Flags().
 		StringP("file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
 	jobsCreateCmd.Flags().String("input", "", "the job input object as inline JSON (wrapped into the prototype)")
@@ -619,7 +624,7 @@ saladcloud inference jobs get <id> --endpoint <endpoint>.`,
 			if cerr = requireJobUUID(args[0], "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
 				return cerr
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -632,19 +637,20 @@ saladcloud inference jobs get <id> --endpoint <endpoint>.`,
 			}))
 		},
 	}
-	addEndpointFlag(jobsCancelCmd)
+	app.addEndpointFlag(jobsCancelCmd)
 	jobsCmd.AddCommand(jobsCancelCmd)
 	inferenceCmd.AddCommand(jobsCmd)
 
-	orgScoped(inferenceCmd)
-	Register(inferenceCmd)
+	app.addTranscribeCommands(inferenceCmd)
+	app.orgScoped(inferenceCmd)
+	root.AddCommand(inferenceCmd)
 }
 
 // jobsLimitNote writes the stderr note for a job listing that left older
 // jobs out: at the ceiling, the most one listing returns, in every mode (with no
 // limit, or a limit above the ceiling, the caller asked for more than it got);
 // below it, in table mode, when --limit kept the newest and more exist.
-func jobsLimitNote(w io.Writer, shown, limit, ceiling int, more bool) {
+func (app *App) jobsLimitNote(w io.Writer, shown, limit, ceiling int, more bool) {
 	switch {
 	case !more:
 	case (limit == 0 || limit > ceiling) && shown >= ceiling:

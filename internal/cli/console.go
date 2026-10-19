@@ -34,8 +34,8 @@ type console interface {
 // Otherwise the CLI behaves as if there were no terminal: no prompts, no
 // single-choice pick, no browser offer, no organization names in hints, no
 // removal steps under a variable warning.
-func atTerminal() bool {
-	if app.Env.Getenv("SALAD_CLI_NO_PROMPT") != "" || inCI() {
+func (app *App) atTerminal() bool {
+	if app.Env.Getenv("SALAD_CLI_NO_PROMPT") != "" || app.inCI() {
 		return false
 	}
 	return app.Console.Terminal()
@@ -43,7 +43,7 @@ func atTerminal() bool {
 
 // inCI reports whether CI is set to anything but empty, false or 0, as
 // GitHub Actions, GitLab and most CI systems set it.
-func inCI() bool {
+func (app *App) inCI() bool {
 	v := app.Env.Getenv("CI")
 	return v != "" && v != "0" && !strings.EqualFold(v, "false")
 }
@@ -95,7 +95,7 @@ func (c *stdConsole) read(hidden bool) (string, error) {
 	}
 	defer func() {
 		if restoreErr := term.Restore(fd, state); restoreErr != nil {
-			fprintf(errw(), "warning: could not restore the terminal: %v\n", restoreErr)
+			fprintf(os.Stderr, "warning: could not restore the terminal: %v\n", restoreErr)
 		}
 	}()
 	echo := c.Device()

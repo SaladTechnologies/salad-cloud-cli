@@ -15,7 +15,7 @@ import (
 // parsed into its flags.
 func parsedTranscribeCmd(t *testing.T, endpoint string, fields []inputField, args ...string) *cobra.Command {
 	t.Helper()
-	cmd := newTranscribeCmd(endpoint, fields, "")
+	cmd := app.newTranscribeCmd(endpoint, fields, "")
 	if err := cmd.ParseFlags(args); err != nil {
 		t.Fatalf("parse %v: %v", args, err)
 	}
@@ -121,7 +121,7 @@ func TestTranscribeFlagsAreTheEndpointFields(t *testing.T) {
 			t.Errorf("lite field %q is not a full-tier field of the same type", f.name)
 		}
 	}
-	lite := newTranscribeCmd("transcription-lite", transcriptionLiteFields, "")
+	lite := app.newTranscribeCmd("transcription-lite", transcriptionLiteFields, "")
 	if err := lite.ParseFlags([]string{"--summarize", "10"}); err == nil {
 		t.Error("transcription-lite accepted --summarize, a full-tier-only field")
 	}

@@ -22,7 +22,7 @@ const (
 	quotedPastedGatewayKey  = "That AI Gateway key is invalid. Remove the quotes around it and paste it again."
 )
 
-func gatewayLoginCmd() *cobra.Command {
+func (app *App) gatewayLoginCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Save an AI Gateway key",
@@ -52,7 +52,7 @@ behave as if there is no terminal.`,
   # Scripted, PowerShell
   $env:GATEWAY_KEY | saladcloud ai-gateway login --api-key -`,
 		Args: cobra.NoArgs,
-		RunE: runGatewayLogin,
+		RunE: app.runGatewayLogin,
 	}
 	cmd.Flags().
 		String("api-key", "", "the AI Gateway key; - reads it from the first line of stdin (a key typed here is exposed on the command line)")
@@ -83,9 +83,10 @@ type gatewayLogin struct {
 	keyFrom  string // keyFromFlag, keyFromStdin, envGatewayKey, or "" (pasted)
 	models   int
 	credits  bool // false after a 402
+	app      *App // the run
 }
 
-func runGatewayLogin(cmd *cobra.Command, _ []string) error {
+func (app *App) runGatewayLogin(cmd *cobra.Command, _ []string) error {
 	fr := readFlags(cmd.Flags())
 	keyFlag := fr.String("api-key")
 	if cerr := fr.Err(); cerr != nil {
@@ -95,19 +96,20 @@ func runGatewayLogin(cmd *cobra.Command, _ []string) error {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s is empty", "--api-key").
 			WithHint("check that the variable you passed is set")
 	}
-	if cerr := configReady("ai-gateway login"); cerr != nil {
+	if cerr := app.configReady("ai-gateway login"); cerr != nil {
 		return cerr
 	}
 	g := &gatewayLogin{
 		ctx:      cmd.Context(),
-		terminal: atTerminal(),
+		terminal: app.atTerminal(),
 		credits:  true,
 		saved:    config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
 		key:      "",
 		keyFrom:  "",
 		models:   0,
+		app:      app,
 	}
-	g.saved = savedConfig() // configReady has read it
+	g.saved = app.savedConfig() // configReady has read it
 
 	switch {
 	case keyFlag == "-":
@@ -130,7 +132,7 @@ func runGatewayLogin(cmd *cobra.Command, _ []string) error {
 		}
 		g.key, g.keyFrom = line, keyFromStdin
 	case keyFlag != "":
-		fprintln(errw(), "warning: --api-key exposes the key on the command line; pipe it instead")
+		fprintln(app.errw(), "warning: --api-key exposes the key on the command line; pipe it instead")
 		g.key, g.keyFrom = keyFlag, keyFromFlag
 	case g.terminal:
 		if cerr := g.askForKey(); cerr != nil {
@@ -159,9 +161,9 @@ func runGatewayLogin(cmd *cobra.Command, _ []string) error {
 		return g.reportUnsaved()
 	}
 	if g.keyFrom == keyFromStdin {
-		say("AI Gateway key: %s", maskAPIKey(g.key)) // a piped key's source shows only in its error
+		app.say("AI Gateway key: %s", maskAPIKey(g.key)) // a piped key's source shows only in its error
 	} else {
-		say("AI Gateway key: %s%s", maskAPIKey(g.key), fromTag(g.keyFrom))
+		app.say("AI Gateway key: %s%s", maskAPIKey(g.key), fromTag(g.keyFrom))
 	}
 	return g.save()
 }
@@ -201,6 +203,7 @@ func (g *gatewayLogin) failed(cerr *clierr.Error) *clierr.Error {
 // 402 is a working key whose organization is out of credits, which is
 // saved.
 func (g *gatewayLogin) check() *clierr.Error {
+	app := g.app
 	gw, cerr := api.NewGateway(
 		config.Resolved{
 			GatewayAPIKey:       g.key,
@@ -214,7 +217,7 @@ func (g *gatewayLogin) check() *clierr.Error {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
-		apiOptions(),
+		app.apiOptions(),
 	)
 	if cerr != nil {
 		return cerr
@@ -253,37 +256,38 @@ func (g *gatewayLogin) keyInvalid() *clierr.Error {
 // accepts, Ctrl-C or end of input; a pasted key is read back before it is
 // checked.
 func (g *gatewayLogin) askForKey() *clierr.Error {
-	if line := beforePrompt("ai-gateway login", stillSupplied(envGatewayKey)); line != "" {
-		tell("%s", line)
+	app := g.app
+	if line := app.beforePrompt("ai-gateway login", app.stillSupplied(envGatewayKey)); line != "" {
+		app.tell("%s", line)
 	}
 	if g.saved.GatewayAPIKey != "" {
-		tell("Saved AI Gateway key: %s (Ctrl-C to keep it)", maskAPIKey(g.saved.GatewayAPIKey))
+		app.tell("Saved AI Gateway key: %s (Ctrl-C to keep it)", maskAPIKey(g.saved.GatewayAPIKey))
 	}
-	tell("Get your AI Gateway key at %s", gatewayKeyPage)
+	app.tell("Get your AI Gateway key at %s", gatewayKeyPage)
 	for {
-		answer, err := ask(keyPrompt(), true)
+		answer, err := app.ask(app.keyPrompt(), true)
 		if err != nil {
 			return g.canceled()
 		}
 		if answer == "" {
-			if browserVisible() {
-				openOffered(gatewayKeyPage)
+			if app.browserVisible() {
+				app.openOffered(gatewayKeyPage)
 			}
 			continue
 		}
 		key, ok := normalizeKey(answer)
 		if !ok {
-			tell("%s", malformedKeyRetry(labelGatewayKey))
+			app.tell("%s", malformedKeyRetry(labelGatewayKey))
 			continue
 		}
-		say("AI Gateway key: %s", maskAPIKey(key))
+		app.say("AI Gateway key: %s", maskAPIKey(key))
 		g.key, g.keyFrom = key, ""
 		cerr := g.check()
 		if rejected(cerr) {
 			if quotedKey(key) {
-				tell("%s", quotedPastedGatewayKey)
+				app.tell("%s", quotedPastedGatewayKey)
 			} else {
-				tell("%s", invalidPastedGatewayKey)
+				app.tell("%s", invalidPastedGatewayKey)
 			}
 			continue
 		}
@@ -296,6 +300,7 @@ func (g *gatewayLogin) askForKey() *clierr.Error {
 
 // result is the JSON document for this run.
 func (g *gatewayLogin) result(saved bool, path string, ovs []override) gatewayLoginResult {
+	app := g.app
 	source := "config"
 	if app.Env.Getenv(envGatewayKey) != "" {
 		source = "env"
@@ -315,16 +320,18 @@ func (g *gatewayLogin) result(saved bool, path string, ovs []override) gatewayLo
 
 // warnNoCredits is the warning and hint for a working key whose
 // organization is out of credits; it replaces the try-it hint.
-func (*gatewayLogin) warnNoCredits() {
+func (g *gatewayLogin) warnNoCredits() {
+	app := g.app
 	fprintln(
-		errw(),
+		app.errw(),
 		"warning: the key's organization is out of credits, so AI Gateway requests are rejected until you add some",
 	)
-	hintLine("add credits from the organization's AI Gateway page: %s", gatewayKeyPage)
+	app.hintLine("add credits from the organization's AI Gateway page: %s", gatewayKeyPage)
 }
 
 // save writes the key and reports it.
 func (g *gatewayLogin) save() error {
+	app := g.app
 	f := g.saved
 	f.GatewayAPIKey = g.key
 	path, err := config.Path(app.Env)
@@ -335,7 +342,7 @@ func (g *gatewayLogin) save() error {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
 			WithHint("%s", unwritableHint("ai-gateway login"))
 	}
-	ovs := overridesOf(f, envGatewayKey)
+	ovs := app.overridesOf(f, envGatewayKey)
 	if err := app.printer.Emit(g.result(true, path, ovs), func(w *output.Writer) {
 		w.Println("AI Gateway key saved")
 		w.Printf("Config at: %s\n", path)
@@ -343,9 +350,9 @@ func (g *gatewayLogin) save() error {
 		return wrapErr(err)
 	}
 	if g.credits {
-		hintLine("to try it, run saladcloud ai-gateway test (sends one billed request)")
+		app.hintLine("to try it, run saladcloud ai-gateway test (sends one billed request)")
 	}
-	warnOverrides(errw(), afterSave, ovs)
+	app.warnOverrides(app.errw(), afterSave, ovs)
 	if !g.credits {
 		g.warnNoCredits()
 	}
@@ -355,8 +362,9 @@ func (g *gatewayLogin) save() error {
 // reportUnsaved is the result for a key from SALAD_AI_GATEWAY_API_KEY with
 // no terminal: checked, not saved.
 func (g *gatewayLogin) reportUnsaved() error {
-	path := configPath()
-	say("No AI Gateway key provided, using SALAD_AI_GATEWAY_API_KEY (%s).", maskAPIKey(g.key))
+	app := g.app
+	path := app.configPath()
+	app.say("No AI Gateway key provided, using SALAD_AI_GATEWAY_API_KEY (%s).", maskAPIKey(g.key))
 	err := app.printer.Emit(g.result(false, path, nil), func(w *output.Writer) {
 		fprintln(
 			w,
@@ -366,21 +374,21 @@ func (g *gatewayLogin) reportUnsaved() error {
 	if err != nil {
 		return wrapErr(err)
 	}
-	hintLine("to save it, pipe it to saladcloud ai-gateway login --api-key -")
+	app.hintLine("to save it, pipe it to saladcloud ai-gateway login --api-key -")
 	if !g.credits {
 		g.warnNoCredits()
 	}
 	return nil
 }
 
-func gatewayLogoutCmd() *cobra.Command {
+func (app *App) gatewayLogoutCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
 		Short: "Remove the saved AI Gateway key",
 		Long: `Remove the AI Gateway key from the config file. When SALAD_AI_GATEWAY_API_KEY
 is set, commands still use it, and logout says so.`,
 		Args: cobra.NoArgs,
-		RunE: runGatewayLogout,
+		RunE: app.runGatewayLogout,
 	}
 }
 
@@ -393,7 +401,7 @@ type gatewayLogoutResult struct {
 	OK           bool     `json:"ok"`
 }
 
-func runGatewayLogout(_ *cobra.Command, _ []string) error {
+func (app *App) runGatewayLogout(_ *cobra.Command, _ []string) error {
 	path, err := config.Path(app.Env)
 	if err != nil {
 		return clierr.New(
@@ -416,7 +424,7 @@ func runGatewayLogout(_ *cobra.Command, _ []string) error {
 				WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud ai-gateway logout again")
 		}
 	}
-	ovs := stillSupplied(envGatewayKey)
+	ovs := app.stillSupplied(envGatewayKey)
 	result := gatewayLogoutResult{Removed: old != "", EnvOverrides: overrideNames(ovs), Action: "logged_out", OK: true}
 	if err := app.printer.Emit(result, func(w *output.Writer) {
 		if old == "" {
@@ -427,6 +435,6 @@ func runGatewayLogout(_ *cobra.Command, _ []string) error {
 	}); err != nil {
 		return wrapErr(err)
 	}
-	warnOverrides(errw(), afterRemove, ovs)
+	app.warnOverrides(app.errw(), afterRemove, ovs)
 	return nil
 }

@@ -21,7 +21,8 @@ type changelogResult struct {
 	Items   []changelog.Release `json:"items"`
 }
 
-func init() {
+// addChangelogCommands adds changelog.go's commands to the tree.
+func (app *App) addChangelogCommands(root *cobra.Command) {
 	cmd := &cobra.Command{
 		Use:   "changelog",
 		Short: "Print the CLI changelog, optionally only what is newer than a date or version",
@@ -69,5 +70,5 @@ never null.`,
 		},
 	}
 	cmd.Flags().String("since", "", "only releases newer than this date (YYYY-MM-DD) or version (X.Y.Z)")
-	Register(cmd)
+	root.AddCommand(cmd)
 }

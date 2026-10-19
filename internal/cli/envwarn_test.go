@@ -38,7 +38,7 @@ func setEnv(t *testing.T, kv ...string) {
 
 func warned(when overrideWhen, ovs []override) string {
 	var b strings.Builder
-	warnOverrides(&b, when, ovs)
+	app.warnOverrides(&b, when, ovs)
 	return b.String()
 }
 
@@ -175,7 +175,7 @@ Then open a new terminal (restart VS Code if you use its terminal).
 		t.Run(tc.name, func(t *testing.T) {
 			atATerminal(t, tc.terminal, tc.os, tc.mode)
 			setEnv(t, tc.env...)
-			if got := warned(tc.when, overridesOf(tc.file, tc.vars...)); got != tc.want {
+			if got := warned(tc.when, app.overridesOf(tc.file, tc.vars...)); got != tc.want {
 				t.Errorf("got:\n%s\nwant:\n%s", got, tc.want)
 			}
 		})
@@ -219,7 +219,7 @@ Then open a new terminal (restart VS Code if you use its terminal).
 		t.Run(tc.name, func(t *testing.T) {
 			atATerminal(t, tc.terminal, tc.os, tc.mode)
 			setEnv(t, tc.env...)
-			ovs := stillSupplied(tc.vars...)
+			ovs := app.stillSupplied(tc.vars...)
 			if got := warned(afterRemove, ovs); got != tc.want {
 				t.Errorf("got:\n%s\nwant:\n%s", got, tc.want)
 			}
@@ -239,7 +239,7 @@ func TestNoPromptAndCIDropTheSteps(t *testing.T) {
 		t.Setenv(v, "1")
 		got := warned(
 			afterRemove,
-			stillSupplied("SALAD_API_KEY"),
+			app.stillSupplied("SALAD_API_KEY"),
 		)
 		if got != "warning: commands still use SALAD_API_KEY (****...ABCD)\n" {
 			t.Errorf("%s=1: got %q", v, got)
@@ -272,12 +272,12 @@ func TestBeforePrompt(t *testing.T) {
 			"(****...EFGH); commands will use it instead of what ai-gateway login saves."},
 		{"login", []string{"SALAD_PROJECT"}, ""},
 	} {
-		if got := beforePrompt(tc.command, overridesOf(empty, tc.vars...)); got != tc.want {
+		if got := app.beforePrompt(tc.command, app.overridesOf(empty, tc.vars...)); got != tc.want {
 			t.Errorf("%s %v:\n got %q\nwant %q", tc.command, tc.vars, got, tc.want)
 		}
 	}
-	three := overridesOf(empty, "SALAD_API_KEY", "SALAD_ORGANIZATION", "SALAD_AI_GATEWAY_API_KEY")
-	if got := beforePrompt(
+	three := app.overridesOf(empty, "SALAD_API_KEY", "SALAD_ORGANIZATION", "SALAD_AI_GATEWAY_API_KEY")
+	if got := app.beforePrompt(
 		"login",
 		three,
 	); !strings.HasPrefix(
@@ -292,13 +292,13 @@ func TestBeforePrompt(t *testing.T) {
 func TestOverrideNames(t *testing.T) {
 	setEnv(t, "SALAD_ORGANIZATION", "my-org")
 	if got := overrideNames(
-		overridesOf(config.File{Organization: "my-org"}, "SALAD_ORGANIZATION"),
+		app.overridesOf(config.File{Organization: "my-org"}, "SALAD_ORGANIZATION"),
 	); got == nil ||
 		len(got) != 0 {
 		t.Errorf("equal values: %#v, want []", got)
 	}
 	if got := overrideNames(
-		overridesOf(config.File{Organization: "acme-prod"}, "SALAD_ORGANIZATION", "SALAD_API_KEY"),
+		app.overridesOf(config.File{Organization: "acme-prod"}, "SALAD_ORGANIZATION", "SALAD_API_KEY"),
 	); len(got) != 1 ||
 		got[0] != "SALAD_ORGANIZATION" {
 		t.Errorf("one differing: %#v", got)

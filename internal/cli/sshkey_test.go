@@ -69,10 +69,10 @@ func TestResolveIdentity(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
-	if got := resolveIdentity("/explicit/key"); got != "/explicit/key" {
+	if got := app.resolveIdentity("/explicit/key"); got != "/explicit/key" {
 		t.Errorf("flag = %q", got)
 	}
-	if got := resolveIdentity(""); got != "" {
+	if got := app.resolveIdentity(""); got != "" {
 		t.Errorf("no dedicated key: %q, want empty", got)
 	}
 	priv := filepath.Join(home, ".ssh", sshDedicatedKeyName)
@@ -82,10 +82,10 @@ func TestResolveIdentity(t *testing.T) {
 	if err := os.WriteFile(priv, []byte("key"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := resolveIdentity(""); got != priv {
+	if got := app.resolveIdentity(""); got != priv {
 		t.Errorf("dedicated key present: %q, want %q", got, priv)
 	}
-	if got := resolveIdentity("/explicit/key"); got != "/explicit/key" {
+	if got := app.resolveIdentity("/explicit/key"); got != "/explicit/key" {
 		t.Errorf("flag must still win: %q", got)
 	}
 }

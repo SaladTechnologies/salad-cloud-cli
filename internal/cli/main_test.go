@@ -2,18 +2,23 @@ package cli
 
 import (
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
-// TestMain prepares the command tree once before any test, as Execute does
-// before any run. Reading a command's local or inherited flags makes cobra
-// copy the global --org and --project into it, so a test that did so first
-// would leave contextFree's and orgScoped's hidden shadows too late for every
-// test after it.
+// app and rootCmd are the run and tree the package's tests share.
+var (
+	app     *App
+	rootCmd *cobra.Command
+)
+
+// TestMain builds the tests' run and its command tree, as Run does for each
+// run.
 func TestMain(m *testing.M) {
 	app = newApp(ProcessDeps())
 	// The relay argv tests compare exact argument lists, so the CLI's
 	// known_hosts path is fixed for the whole package.
 	app.KnownHostsPath = func() string { return "/cfg/known_hosts" }
-	prepareTree()
+	rootCmd = New(app)
 	m.Run()
 }

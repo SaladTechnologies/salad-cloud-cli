@@ -16,7 +16,7 @@ import (
 const watchMinInterval = 2 * time.Second
 
 // addWatchFlags registers -w/--watch and --interval on a read command.
-func addWatchFlags(cmd *cobra.Command) {
+func (app *App) addWatchFlags(cmd *cobra.Command) {
 	cmd.Flags().
 		BoolP("watch", "w", false, "poll and re-render the table until interrupted (Windows-friendly watch(1); table mode only)")
 	cmd.Flags().Duration("interval", 5*time.Second, "poll interval for --watch (minimum 2s)")
@@ -24,7 +24,7 @@ func addWatchFlags(cmd *cobra.Command) {
 	// combination is a usage error even with no API key set.
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
 		//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
-		if cerr := validateWatchFlags(cmd); cerr != nil {
+		if cerr := app.validateWatchFlags(cmd); cerr != nil {
 			return cerr
 		}
 		return nil
@@ -33,7 +33,7 @@ func addWatchFlags(cmd *cobra.Command) {
 
 // validateWatchFlags rejects --watch outside table mode and an --interval
 // below the minimum.
-func validateWatchFlags(cmd *cobra.Command) *clierr.Error {
+func (app *App) validateWatchFlags(cmd *cobra.Command) *clierr.Error {
 	fr := readFlags(cmd.Flags())
 	watch := fr.Bool("watch")
 	interval := fr.Duration("interval")
@@ -57,7 +57,7 @@ func validateWatchFlags(cmd *cobra.Command) *clierr.Error {
 // Ctrl-C (clean exit 0). --watch is for people watching a table: any other
 // output mode is a usage error, because a stream of documents is not one
 // document; scripts poll with --wait or a loop over 'get -o json'.
-func runMaybeWatch(cmd *cobra.Command, render func(ctx context.Context) *clierr.Error) error {
+func (app *App) runMaybeWatch(cmd *cobra.Command, render func(ctx context.Context) *clierr.Error) error {
 	fr := readFlags(cmd.Flags())
 	watch := fr.Bool("watch")
 	interval := fr.Duration("interval")
@@ -71,12 +71,12 @@ func runMaybeWatch(cmd *cobra.Command, render func(ctx context.Context) *clierr.
 		}
 		return nil
 	}
-	if cerr := validateWatchFlags(cmd); cerr != nil {
+	if cerr := app.validateWatchFlags(cmd); cerr != nil {
 		return cerr
 	}
 	return watchLoop(cmd.Context(), watchDeps{
 		out:     app.printer.Out(),
-		errOut:  errw(),
+		errOut:  app.errw(),
 		tty:     isTerminal(app.printer.Out()),
 		now:     time.Now,
 		after:   time.After,

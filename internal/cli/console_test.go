@@ -32,7 +32,7 @@ func TestAtTerminal(t *testing.T) {
 		t.Setenv("SALAD_CLI_NO_PROMPT", tc.noPrompt)
 		t.Setenv("CI", tc.ci)
 		app.Console = &fakeConsole{terminal: tc.terminal}
-		if got := atTerminal(); got != tc.want {
+		if got := app.atTerminal(); got != tc.want {
 			t.Errorf(
 				"terminal=%t SALAD_CLI_NO_PROMPT=%q CI=%q: atTerminal() = %t, want %t",
 				tc.terminal,
@@ -54,14 +54,14 @@ func TestErrorHint(t *testing.T) {
 	t.Cleanup(func() { app.Stderr = old; setOutputMode(t, "table") })
 	e := clierr.New(clierr.CodeUsage, clierr.KindUsage, "invalid organization name %q", "Café").
 		WithHint("did you mean %q?", "cafe")
-	printError(e)
+	app.printError(e)
 	if got, want := buf.String(), "saladcloud: error: invalid organization name \"Café\"\nhint: did you mean "+
 		"\"cafe\"?\n"; got != want {
 		t.Errorf("table mode:\n%q\nwant\n%q", got, want)
 	}
 	buf.Reset()
 	setOutputMode(t, "json")
-	printError(e)
+	app.printError(e)
 	want := `{"error":{"exit_code":2,"kind":"usage","message":"invalid organization name \"Caf\u00e9\"","hint":"did ` +
 		`you mean \"cafe\"?","http_status":null}}` + "\n"
 	if got := buf.String(); got != want {

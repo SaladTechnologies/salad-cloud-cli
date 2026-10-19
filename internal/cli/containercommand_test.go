@@ -35,7 +35,7 @@ func TestValidateCommand(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cerr := validateCommand(tt.words, tt.given)
+			cerr := app.validateCommand(tt.words, tt.given)
 			if tt.wantCode == 0 {
 				if cerr != nil {
 					t.Fatalf("rejected: %v", cerr)
@@ -54,12 +54,12 @@ func TestValidateCommand(t *testing.T) {
 func TestValidateCommandGitBash(t *testing.T) {
 	rewritten := []string{"C:/Program-Files/Git/usr/bin/bash", "-c", "x"}
 	t.Setenv("MSYSTEM", "")
-	if cerr := validateCommand(rewritten, true); cerr != nil {
+	if cerr := app.validateCommand(rewritten, true); cerr != nil {
 		t.Errorf("outside Git Bash: %v", cerr)
 	}
 	t.Setenv("MSYSTEM", "MINGW64")
 	for _, words := range [][]string{rewritten, {"configure", "--prefix=C:/Program-Files/Git/usr"}} {
-		if cerr := validateCommand(
+		if cerr := app.validateCommand(
 			words,
 			true,
 		); cerr == nil || cerr.Code != clierr.CodeUsage ||
@@ -67,7 +67,7 @@ func TestValidateCommandGitBash(t *testing.T) {
 			t.Errorf("%q under Git Bash: %v", words, cerr)
 		}
 	}
-	if cerr := validateCommand([]string{"bash", "-c", "P=a:/opt; ls $P"}, true); cerr != nil {
+	if cerr := app.validateCommand([]string{"bash", "-c", "P=a:/opt; ls $P"}, true); cerr != nil {
 		t.Errorf("a script word was checked: %v", cerr)
 	}
 }
@@ -75,7 +75,6 @@ func TestValidateCommandGitBash(t *testing.T) {
 // TestWarnCommand: a spaced first word and saladcloud's own flags after --
 // draw a warning; ordinary commands do not.
 func TestWarnCommand(t *testing.T) {
-	prepareTree()
 	create, _, err := rootCmd.Find([]string{"container-groups", "create"})
 	if err != nil {
 		t.Fatal(err)

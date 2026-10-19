@@ -15,7 +15,7 @@ import (
 // --storage is GB on the command line and bytes on the wire; --country is
 // normalized to the API's lowercase two-letter codes.
 func TestCreateStorageAndCountry(t *testing.T) {
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Name: "web", Image: "busybox",
 		Storage: 10, StorageSet: true,
 		Countries: []string{"US", " de "},
@@ -33,7 +33,7 @@ func TestCreateStorageAndCountry(t *testing.T) {
 		{Name: "web", Image: "busybox", Storage: 0, StorageSet: true},
 		{Name: "web", Image: "busybox", Countries: []string{"usa"}},
 	} {
-		if _, cerr := buildCreateRequest(
+		if _, cerr := app.buildCreateRequest(
 			containergroups.ContainerGroupCreationRequest{},
 			bad,
 		); cerr == nil ||

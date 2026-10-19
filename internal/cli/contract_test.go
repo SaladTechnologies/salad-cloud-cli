@@ -80,7 +80,6 @@ func TestShadowedFlagSaysWhy(t *testing.T) {
 // commands offer exactly the flags they read; a new command must be added
 // here, so it cannot offer a flag it ignores by default.
 func TestEveryCommandIsClassified(t *testing.T) {
-	prepareTree()
 	classes := map[string]string{
 		"availability": "both", "container-groups": "both", "doctor": "both", "login": "both",
 		"logs": "both", "queues": "both", "whoami": "both",
@@ -181,7 +180,7 @@ func TestSSHQuietInMachineMode(t *testing.T) {
 	t.Cleanup(func() { setOutputMode(t, "table") })
 	for _, mode := range []string{"table", "json", "yaml"} {
 		setOutputMode(t, mode)
-		got := slices.Contains(hostKeyOptions("8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37"), "LogLevel=ERROR")
+		got := slices.Contains(app.hostKeyOptions("8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37"), "LogLevel=ERROR")
 		if want := mode != "table"; got != want {
 			t.Errorf("%s mode: LogLevel=ERROR %t, want %t", mode, got, want)
 		}

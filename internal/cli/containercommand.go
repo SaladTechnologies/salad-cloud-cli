@@ -19,7 +19,7 @@ const maxCommandWords = 100
 // rewritten into a Windows path before the CLI sees it, so the rewrite checks
 // (cp, --queue-path, command words) run only there and cannot misfire on
 // Linux, macOS, PowerShell or cmd.
-func underGitBash() bool { return app.Env.Getenv("MSYSTEM") != "" }
+func (app *App) underGitBash() bool { return app.Env.Getenv("MSYSTEM") != "" }
 
 // msysCommandWord matches a command word Git Bash rewrote before the CLI saw
 // it: a leading /path, or one after "=" (--prefix=/usr), becomes a Windows
@@ -42,7 +42,7 @@ func splitCommand(cmd *cobra.Command, args []string) (pos, command []string, giv
 // empty words and trims the spaces around each (docs/notes.md): a dropped
 // word shifts the ones after it, so an empty word is rejected, while trimming
 // is left alone (harmless for the usual bash -c '<script>').
-func validateCommand(words []string, given bool) *clierr.Error {
+func (app *App) validateCommand(words []string, given bool) *clierr.Error {
 	if !given {
 		return nil
 	}
@@ -51,7 +51,7 @@ func validateCommand(words []string, given bool) *clierr.Error {
 			"nothing after --").
 			WithHint("give the container command, for example -- python app.py; it replaces the image's ENTRYPOINT and CMD")
 	}
-	if underGitBash() {
+	if app.underGitBash() {
 		for _, w := range words {
 			if !strings.ContainsAny(w, " \t\n") && msysCommandWord.MatchString(w) {
 				return clierr.New(

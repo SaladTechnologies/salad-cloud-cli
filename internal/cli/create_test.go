@@ -204,7 +204,7 @@ func fileBase() containergroups.ContainerGroupCreationRequest {
 }
 
 func TestBuildCreateRequestFlagsOnlyMinimal(t *testing.T) {
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Name:  "web",
 		Image: "ghcr.io/me/app:latest",
 	})
@@ -246,7 +246,7 @@ func TestBuildCreateRequestFlagsOnlyMinimal(t *testing.T) {
 
 func TestBuildCreateRequestDefaultsOnlyWhenUnset(t *testing.T) {
 	// A fully-specified base with no flags must come through untouched.
-	req, cerr := buildCreateRequest(fileBase(), createFlags{HasBase: true})
+	req, cerr := app.buildCreateRequest(fileBase(), createFlags{HasBase: true})
 	if cerr != nil {
 		t.Fatalf("buildCreateRequest error: %v", cerr)
 	}
@@ -271,7 +271,7 @@ func TestBuildCreateRequestDefaultsOnlyWhenUnset(t *testing.T) {
 }
 
 func TestBuildCreateRequestFileWithOverrides(t *testing.T) {
-	req, cerr := buildCreateRequest(fileBase(), createFlags{
+	req, cerr := app.buildCreateRequest(fileBase(), createFlags{
 		HasBase:          true,
 		Name:             "renamed",
 		Image:            "ghcr.io/me/other:2",
@@ -315,7 +315,7 @@ func TestBuildCreateRequestFileWithOverrides(t *testing.T) {
 }
 
 func TestBuildCreateRequestEnvMerge(t *testing.T) {
-	req, cerr := buildCreateRequest(fileBase(), createFlags{
+	req, cerr := app.buildCreateRequest(fileBase(), createFlags{
 		HasBase: true,
 		Env:     []string{"B=flag-b", "C=flag-c", "D=has=equals"},
 	})
@@ -340,7 +340,7 @@ func TestBuildCreateRequestEnvMerge(t *testing.T) {
 }
 
 func TestBuildCreateRequestPortAndAuth(t *testing.T) {
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Image:   "ghcr.io/me/app",
 		Port:    8080,
 		PortSet: true,
@@ -363,7 +363,7 @@ func TestBuildCreateRequestPortAndAuth(t *testing.T) {
 	}
 
 	// --no-auth with --port flips auth off.
-	req, cerr = buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr = app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Image:   "ghcr.io/me/app",
 		Port:    8080,
 		PortSet: true,
@@ -382,7 +382,7 @@ func TestBuildCreateRequestPortAndAuth(t *testing.T) {
 	base.Networking = &containergroups.CreateContainerGroupNetworking{
 		Protocol: &proto, Port: ptr.To(int64(80)), Auth: ptr.To(true),
 	}
-	req, cerr = buildCreateRequest(base, createFlags{HasBase: true, NoAuth: true})
+	req, cerr = app.buildCreateRequest(base, createFlags{HasBase: true, NoAuth: true})
 	if cerr != nil {
 		t.Fatalf("buildCreateRequest error: %v", cerr)
 	}
@@ -396,7 +396,7 @@ func TestBuildCreateRequestPortAndAuth(t *testing.T) {
 
 func TestBuildCreateRequestGpuFlag(t *testing.T) {
 	uuid := "ed563892-aacd-40f5-80b7-90c9be6c759b"
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Image: "ghcr.io/me/app",
 		Gpus:  []string{uuid, "RTX 3060 (12 GB)"},
 		ResolveGpu: func(value string) (string, *clierr.Error) {
@@ -418,7 +418,7 @@ func TestBuildCreateRequestGpuFlag(t *testing.T) {
 
 func TestBuildCreateRequestGpuResolverErrors(t *testing.T) {
 	for _, value := range []string{"3060", "H100"} {
-		_, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+		_, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 			Image:      "ghcr.io/me/app",
 			Gpus:       []string{value},
 			ResolveGpu: testResolver(t),
@@ -433,7 +433,7 @@ func TestBuildCreateRequestGpuResolverErrors(t *testing.T) {
 }
 
 func TestBuildCreateRequestNoAutostart(t *testing.T) {
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Image:       "ghcr.io/me/app",
 		NoAutostart: true,
 	})
@@ -511,7 +511,7 @@ func TestBuildCreateRequestValidationFailures(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, cerr := buildCreateRequest(tt.base, tt.opts)
+			_, cerr := app.buildCreateRequest(tt.base, tt.opts)
 			if cerr == nil {
 				t.Fatal("buildCreateRequest returned nil error")
 			}
@@ -527,7 +527,7 @@ func TestBuildCreateRequestValidationFailures(t *testing.T) {
 
 func TestBuildCreateRequestPriorityNullable(t *testing.T) {
 	// The priority flag must land as a non-null Nullable on the container.
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Image:    "x",
 		Priority: "high",
 	})
@@ -557,7 +557,7 @@ func TestIsUUID(t *testing.T) {
 // keys within the flag slice, as opposed to TestBuildCreateRequestEnvMerge's
 // file-vs-flag precedence. Verified live: the last occurrence wins.
 func TestBuildCreateRequestEnvLastFlagWins(t *testing.T) {
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Image: "x",
 		Env:   []string{"A=1", "B=keep", "A=2"},
 	})
@@ -582,7 +582,7 @@ func TestBuildCreateRequestEnvLastFlagWins(t *testing.T) {
 // "helpfully" replaced by the default of 1. A refactor to
 // `if req.Replicas == nil || *req.Replicas == 0` would silently break this.
 func TestBuildCreateRequestReplicasZeroSurvivesDefaulting(t *testing.T) {
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Image:       "x",
 		Replicas:    0,
 		ReplicasSet: true,
@@ -601,7 +601,7 @@ func TestBuildCreateRequestReplicasZeroSurvivesDefaulting(t *testing.T) {
 // TestBuildCreateRequestReplicasDefaultsWhenUnset is the other half: with
 // the flag untouched, the default of 1 still applies.
 func TestBuildCreateRequestReplicasDefaultsWhenUnset(t *testing.T) {
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{Image: "x"})
+	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{Image: "x"})
 	if cerr != nil {
 		t.Fatalf("buildCreateRequest error: %v", cerr)
 	}
@@ -728,7 +728,7 @@ func TestRejectUnknownsOffersHatchOnlyForNovelFields(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cerr := rejectUnknowns([]input.Unknown{
+			cerr := app.rejectUnknowns([]input.Unknown{
 				{Desc: `unknown field "x"`, Path: tt.path},
 			})
 			if cerr == nil {
@@ -753,7 +753,7 @@ func TestRejectUnknownsOffersHatchOnlyForNovelFields(t *testing.T) {
 // only the first offender used to be named, so cleaning a document piped
 // from `get -o json` took one round-trip per field.
 func TestRejectUnknownsListsEveryField(t *testing.T) {
-	cerr := rejectUnknowns([]input.Unknown{
+	cerr := app.rejectUnknowns([]input.Unknown{
 		{Desc: `unknown field "id" at the top level`, Path: "id"},
 		{Desc: `unknown field "create_time" at the top level`, Path: "create_time"},
 		{Desc: `unknown field "gpu_sharing" in "container"`, Path: "container.gpu_sharing"},
@@ -772,7 +772,7 @@ func TestRejectUnknownsListsEveryField(t *testing.T) {
 	}
 	// Three or more response-only fields is the get-round-trip tell, which
 	// replaces the list.
-	tell := rejectUnknowns([]input.Unknown{
+	tell := app.rejectUnknowns([]input.Unknown{
 		{Desc: `unknown field "id" at the top level`, Path: "id"},
 		{Desc: `unknown field "create_time" at the top level`, Path: "create_time"},
 		{Desc: `unknown field "version" at the top level`, Path: "version"},
@@ -781,7 +781,7 @@ func TestRejectUnknownsListsEveryField(t *testing.T) {
 		strings.Contains(tell.Message, "unknown fields:") {
 		t.Errorf("get-round-trip message = %q", tell.Message)
 	}
-	if rejectUnknowns(nil) != nil {
+	if app.rejectUnknowns(nil) != nil {
 		t.Error("rejectUnknowns(nil) should be nil")
 	}
 }
@@ -831,7 +831,7 @@ func TestWarnUnknowns(t *testing.T) {
 func TestBuildCreateRequestAutostartTrueBaseSurvives(t *testing.T) {
 	base := fileBase()
 	base.AutostartPolicy = ptr.To(true) // file said autostart: true
-	req, cerr := buildCreateRequest(base, createFlags{
+	req, cerr := app.buildCreateRequest(base, createFlags{
 		HasBase:  true,
 		Gpus:     []string{"11111111-1111-1111-1111-111111111111"},
 		Priority: "high",

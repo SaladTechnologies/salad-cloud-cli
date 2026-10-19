@@ -742,13 +742,13 @@ func TestDoctorReachable(t *testing.T) {
 	)
 	defer srv.Close()
 	app.ProductionAPI = srv.URL
-	d := &doctorRun{ctx: t.Context()}
+	d := &doctorRun{ctx: t.Context(), app: app}
 	if r := d.reachableRow(); r.Status != checkPass || r.Detail != "https://api.salad.com" || r.Hint != nil ||
 		!d.reachable {
 		t.Errorf("reachable: %+v", r)
 	}
 	app.ProductionAPI = "http://127.0.0.1:1"
-	d = &doctorRun{ctx: t.Context()}
+	d = &doctorRun{ctx: t.Context(), app: app}
 	if r := d.reachableRow(); r.Status != checkFail || !strings.HasPrefix(r.Detail, "https://api.salad.com: ") ||
 		r.Hint == nil ||
 		*r.Hint != "check your network or proxy settings" ||

@@ -8,7 +8,8 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
-func init() {
+// addQuotasCommands adds quotascmd.go's commands to the tree.
+func (app *App) addQuotasCommands(root *cobra.Command) {
 	// quotas is a singleton (one per organization): it takes get, never
 	// list, keeps the API's plural spelling, and has no singular alias.
 	quotasCmd := &cobra.Command{
@@ -20,7 +21,7 @@ func init() {
 		Short: "Show the organization's container group quotas",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -49,8 +50,8 @@ func init() {
 		},
 	}
 	quotasCmd.AddCommand(cmd)
-	orgScoped(quotasCmd)
-	Register(quotasCmd)
+	app.orgScoped(quotasCmd)
+	root.AddCommand(quotasCmd)
 }
 
 func int64Cell(v *int64) string {

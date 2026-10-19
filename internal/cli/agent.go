@@ -24,7 +24,8 @@ type agentInitResult struct {
 	Version string  `json:"version"`
 }
 
-func init() {
+// addAgentCommands adds agent.go's commands to the tree.
+func (app *App) addAgentCommands(root *cobra.Command) {
 	agentCmd := &cobra.Command{
 		Use:   "agent",
 		Short: "Set up AI coding agents to work with SaladCloud",
@@ -54,17 +55,17 @@ The block carries only stable facts about the CLI and the platform. Detailed
 guidance lives in the SaladCloud skills, which the block tells the agent to
 install (npx skills add https://docs.salad.com).`,
 		Args: cobra.NoArgs,
-		RunE: runAgentInit,
+		RunE: app.runAgentInit,
 	}
 	initCmd.Flags().String("file", "", "file to write (default: AGENTS.md, or CLAUDE.md under Claude Code)")
 	initCmd.Flags().String("dir", ".", "project directory")
 	initCmd.Flags().Bool("print", false, "print the block to stdout instead of writing a file")
 
 	agentCmd.AddCommand(initCmd)
-	Register(agentCmd)
+	root.AddCommand(agentCmd)
 }
 
-func runAgentInit(cmd *cobra.Command, _ []string) error {
+func (app *App) runAgentInit(cmd *cobra.Command, _ []string) error {
 	fr := readFlags(cmd.Flags())
 	file := fr.String("file")
 	dir := fr.String("dir")

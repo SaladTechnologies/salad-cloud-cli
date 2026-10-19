@@ -170,7 +170,7 @@ func TestRemoteCommand(t *testing.T) {
 
 func TestBuildSSHArgsInteractive(t *testing.T) {
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
-	got := buildSSHArgs(target, "root", "", nil)
+	got := app.buildSSHArgs(target, "root", "", nil)
 	want := []string{
 		"-p",
 		"30123",
@@ -189,7 +189,7 @@ func TestBuildSSHArgsInteractive(t *testing.T) {
 
 func TestBuildSSHArgsCommandWithIdentityAndUser(t *testing.T) {
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
-	got := buildSSHArgs(target, "worker", "/home/me/.ssh/key", []string{"nvidia-smi", "-L"})
+	got := app.buildSSHArgs(target, "worker", "/home/me/.ssh/key", []string{"nvidia-smi", "-L"})
 	want := []string{
 		"-p", "30123",
 		"-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=/cfg/known_hosts",
@@ -208,7 +208,7 @@ func TestBuildSSHArgsCommandIsSingleArg(t *testing.T) {
 	// The whole remote command must be ONE argv element (the relay execs
 	// raw argv without a shell — fact verified live).
 	target := sshTarget{IP: "203.0.113.7", Port: 22}
-	args := buildSSHArgs(target, "root", "", []string{"uname", "-a", ";", "whoami"})
+	args := app.buildSSHArgs(target, "root", "", []string{"uname", "-a", ";", "whoami"})
 	last := args[len(args)-1]
 	if last != `sh -c 'uname -a ; whoami'` {
 		t.Errorf("final arg = %q, want the whole command wrapped in one sh -c string", last)
@@ -222,7 +222,7 @@ func TestRenderSSHConfig(t *testing.T) {
 		testInstance("cccc3333", "running", "", 0),     // running but not SSH-ready: excluded
 		testInstance("dddd4444-5555", "running", "198.51.100.9", 30124),
 	}
-	text, n := renderSSHConfig("my-app", instances, "root")
+	text, n := app.renderSSHConfig("my-app", instances, "root")
 	if n != 2 {
 		t.Fatalf("blocks = %d, want 2:\n%s", n, text)
 	}
@@ -286,7 +286,7 @@ func TestChildExitCode(t *testing.T) {
 }
 
 func TestRenderSSHConfigEmpty(t *testing.T) {
-	_, n := renderSSHConfig("my-app", nil, "root")
+	_, n := app.renderSSHConfig("my-app", nil, "root")
 	if n != 0 {
 		t.Errorf("blocks = %d, want 0", n)
 	}
@@ -323,11 +323,11 @@ func TestRenderSSHConfigIdentity(t *testing.T) {
 	instances := []containergroups.ContainerGroupInstance{
 		testInstance("8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37", "running", "203.0.113.7", 30123),
 	}
-	text, n := renderSSHConfigIdentity("my-app", instances, "root", "/home/me/.ssh/saladcloud_ed25519")
+	text, n := app.renderSSHConfigIdentity("my-app", instances, "root", "/home/me/.ssh/saladcloud_ed25519")
 	if n != 1 || !strings.Contains(text, "    IdentityFile /home/me/.ssh/saladcloud_ed25519\n") {
 		t.Errorf("IdentityFile missing:\n%s", text)
 	}
-	plain, _ := renderSSHConfig("my-app", instances, "root")
+	plain, _ := app.renderSSHConfig("my-app", instances, "root")
 	if strings.Contains(plain, "IdentityFile") {
 		t.Errorf("no identity given but IdentityFile rendered:\n%s", plain)
 	}
@@ -339,7 +339,7 @@ func TestHostKeyOptionsQuoteASpacedPath(t *testing.T) {
 	old := app.KnownHostsPath
 	app.KnownHostsPath = func() string { return `C:\Users\Jane Doe\AppData\Roaming\saladcloud\known_hosts` }
 	t.Cleanup(func() { app.KnownHostsPath = old })
-	got := hostKeyOptions("aaaa1111")
+	got := app.hostKeyOptions("aaaa1111")
 	want := []string{
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", `UserKnownHostsFile="C:\Users\Jane Doe\AppData\Roaming\saladcloud\known_hosts"`,
@@ -364,14 +364,14 @@ func TestHelperExit255(t *testing.T) {
 // the per-OS install hint.
 func TestRunChildHints(t *testing.T) {
 	t.Setenv("SALAD_CLI_TEST_HELPER_EXIT", "1")
-	cerr := runChildTo(io.Discard, os.Args[0], []string{"-test.run=^TestHelperExit255$"})
+	cerr := app.runChildTo(io.Discard, os.Args[0], []string{"-test.run=^TestHelperExit255$"})
 	if cerr == nil || cerr.Code != 255 || cerr.Kind != clierr.KindChildExit || cerr.HintText() != sessionFailedHint {
 		t.Errorf("exit 255: %+v hint %q", cerr, cerr.HintText())
 	}
 	old := app.Env.GOOS
 	t.Cleanup(func() { app.Env.GOOS = old })
 	app.Env.GOOS = "darwin"
-	cerr = runChild("saladcloud-test-no-such-ssh", nil)
+	cerr = app.runChild("saladcloud-test-no-such-ssh", nil)
 	if cerr == nil || cerr.Message != "saladcloud-test-no-such-ssh not found" ||
 		cerr.HintText() != "macOS includes it at /usr/bin/saladcloud-test-no-such-ssh; check that /usr/bin is on "+
 			"your PATH" {

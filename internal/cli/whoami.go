@@ -39,7 +39,8 @@ type whoamiResult struct {
 	ConfigPath          string   `json:"config_path"`
 }
 
-func init() {
+// addWhoamiCommands adds whoami.go's commands to the tree.
+func (app *App) addWhoamiCommands(root *cobra.Command) {
 	cmd := &cobra.Command{
 		Use: "whoami",
 		// gh's habit is 'gh auth status'; 'status' anywhere suggests this.
@@ -59,12 +60,12 @@ In JSON every key is always present: null means not set or not known.
 organizations comes from an endpoint that is not part of the documented API;
 it is null whenever that list is unavailable.`,
 		Args: cobra.NoArgs,
-		RunE: runWhoami,
+		RunE: app.runWhoami,
 	}
-	Register(cmd)
+	root.AddCommand(cmd)
 }
 
-func runWhoami(cmd *cobra.Command, _ []string) error {
+func (app *App) runWhoami(cmd *cobra.Command, _ []string) error {
 	fr := readFlags(cmd.Flags())
 	orgFlag := fr.String("org")
 	projectFlag := fr.String("project")
@@ -85,13 +86,13 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it")
 	}
-	saved := savedConfig()
+	saved := app.savedConfig()
 
 	var authenticated, found *bool
 	var orgs []string
 	malformed := false
 	// An organization that cannot be a URL name is reported, not sent.
-	orgChecks := res.Organization != "" && validName(res.Organization) && !looksLikeKey(res.Organization)
+	orgChecks := res.Organization != "" && validName(res.Organization) && !app.looksLikeKey(res.Organization)
 	if res.Organization != "" && !orgChecks {
 		no := false
 		found = &no
@@ -115,7 +116,7 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 					SkippedProject:      "",
 					SkippedProjectOrg:   "",
 				},
-				apiOptions(),
+				app.apiOptions(),
 			)
 			if cerr != nil {
 				return cerr
@@ -150,15 +151,15 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 		),
 		APIKeySource:       strOrNil(res.APIKeySource),
 		SavedAPIKey:        maskedOrNil(saved.APIKey),
-		Organization:       nameOrNil(res.Organization),
+		Organization:       app.nameOrNil(res.Organization),
 		OrganizationSource: strOrNil(res.OrganizationSource),
-		SavedOrganization:  nameOrNil(saved.Organization),
+		SavedOrganization:  app.nameOrNil(saved.Organization),
 		OrganizationFound:  found,
-		Project: nameOrNil(
+		Project: app.nameOrNil(
 			res.Project,
 		),
 		ProjectSource:       strOrNil(res.ProjectSource),
-		SavedProject:        nameOrNil(saved.Project),
+		SavedProject:        app.nameOrNil(saved.Project),
 		GatewayAPIKey:       maskedOrNil(res.GatewayAPIKey),
 		GatewayAPIKeySource: strOrNil(res.GatewayAPIKeySource),
 		SavedGatewayAPIKey:  maskedOrNil(saved.GatewayAPIKey),
@@ -181,7 +182,7 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 			),
 		)
 		var organization string
-		if res.Organization != "" && !looksLikeKey(res.Organization) && !validName(res.Organization) {
+		if res.Organization != "" && !app.looksLikeKey(res.Organization) && !validName(res.Organization) {
 			organization = fmt.Sprintf(
 				`"%s"%s, not a valid organization name`,
 				res.Organization,
@@ -193,22 +194,22 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 				notFound = "not found"
 			}
 			organization = whoamiRow(
-				shownName(res.Organization),
+				app.shownName(res.Organization),
 				res.OrganizationSource,
 				"--org",
 				envOrganization,
-				shownName(saved.Organization),
+				app.shownName(saved.Organization),
 				saved.Organization != res.Organization,
 				notFound,
 			)
 		}
 		w.Printf("organization\t%s\n", organization)
 		project := whoamiRow(
-			shownName(res.Project),
+			app.shownName(res.Project),
 			res.ProjectSource,
 			"--project",
 			envProject,
-			shownName(saved.Project),
+			app.shownName(saved.Project),
 			saved.Project != res.Project,
 			"",
 		)
@@ -283,8 +284,8 @@ func orgListCell(names []string) string {
 
 // nameOrNil is a name for whoami's JSON: null when unset, masked when it
 // looks like a key.
-func nameOrNil(v string) *string {
-	if looksLikeKey(v) {
+func (app *App) nameOrNil(v string) *string {
+	if app.looksLikeKey(v) {
 		return maskedOrNil(v)
 	}
 	return strOrNil(v)

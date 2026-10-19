@@ -64,7 +64,8 @@ func replicas(n int64) string {
 	return fmt.Sprintf("%d replicas", n)
 }
 
-func init() {
+// addScaleCommands adds scale.go's commands to the tree.
+func (app *App) addScaleCommands(cg *cobra.Command) {
 	scaleCmd := &cobra.Command{
 		Use:   "scale <group> --replicas <n>",
 		Short: "Set the replica count of a container group (waits for the change to settle; --no-wait returns at once)",
@@ -97,7 +98,7 @@ write (the API does not honor the flag in the same patch as replicas), for
 			if cerr = validateScaleReplicas(n); cerr != nil {
 				return cerr
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -108,14 +109,14 @@ write (the API does not honor the flag in the same patch as replicas), for
 				}
 			}
 			// No settle line: the one success line below says it.
-			group, err := applyPatch(cmd, client, args[0], scalePatch(n), nil, wait, timeout, "")
+			group, err := app.applyPatch(cmd, client, args[0], scalePatch(n), nil, wait, timeout, "")
 			if err != nil {
 				return err
 			}
 			if keep {
 				switch {
 				case shouldReenableSchedule(keep, before, group):
-					if _, err := applyPatch(
+					if _, err := app.applyPatch(
 						cmd,
 						client,
 						args[0],
@@ -127,9 +128,9 @@ write (the API does not honor the flag in the same patch as replicas), for
 					); err != nil {
 						return err
 					}
-					fprintln(errw(), "note: scheduled scaling re-enabled (--keep-schedule)")
+					fprintln(app.errw(), "note: scheduled scaling re-enabled (--keep-schedule)")
 				case before != nil && !ptr.Deref(before.ScheduledScalingEnabled):
-					fprintln(errw(), "note: --keep-schedule: scheduled scaling was not enabled, nothing to keep")
+					fprintln(app.errw(), "note: --keep-schedule: scheduled scaling was not enabled, nothing to keep")
 				}
 			}
 			v := scaleResult{Name: args[0], Action: "scaled", Replicas: n, OK: true}
@@ -142,5 +143,5 @@ write (the API does not honor the flag in the same patch as replicas), for
 	scaleCmd.Flags().
 		Bool("keep-schedule", false, "re-enable scheduled scaling after the write (setting replicas puts it on hold)")
 	addSettleFlags(scaleCmd)
-	RegisterContainerGroups(scaleCmd)
+	cg.AddCommand(scaleCmd)
 }

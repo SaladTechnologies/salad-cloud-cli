@@ -47,7 +47,7 @@ func ProcessDeps() Deps {
 		Stderr:         os.Stderr,
 		Env:            env,
 		Console:        &stdConsole{device: nil, keys: nil, in: nil},
-		OpenPage:       openBrowser,
+		OpenPage:       func(url string) error { return openBrowser(env, url) },
 		SFTPProgram:    "sftp",
 		KnownHostsPath: func() string { return defaultKnownHostsPath(env) },
 		GenerateKey:    sshKeygen,
@@ -64,17 +64,23 @@ type App struct {
 	printer       *output.Printer
 	debugLevel    api.DebugLevel
 	assumedWarned atomic.Bool
+	// treeErrs are the errors from building the command tree. Marking a flag
+	// required or hidden, or giving it completion, fails only for a flag the
+	// command does not define or completion given twice: a bug, which Run
+	// reports before it runs anything.
+	treeErrs []error
 }
 
 // newApp is a run with dependencies d.
 func newApp(d Deps) *App {
-	return &App{Deps: d, printer: output.NewPrinter(d.Stdout), debugLevel: api.DebugOff, assumedWarned: atomic.Bool{}}
+	return &App{
+		Deps:          d,
+		printer:       output.NewPrinter(d.Stdout),
+		debugLevel:    api.DebugOff,
+		assumedWarned: atomic.Bool{},
+		treeErrs:      nil,
+	}
 }
-
-// app is the run in progress, set by Run. The commands are still registered
-// on the package's tree, and reach their run through this until they are
-// built per run.
-var app *App
 
 // defaultKnownHostsPath is the CLI's own known_hosts, beside the config file,
 // so a relay port reused by another instance never touches the user's

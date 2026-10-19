@@ -133,7 +133,7 @@ const progressRepeat = time.Minute
 // cannot fix them. In table mode a progress line is written whenever the
 // observed status or instance counts change, and repeated every
 // progressRepeat while they do not; json mode prints no progress.
-func waitForGroup(
+func (app *App) waitForGroup(
 	ctx context.Context,
 	d waitDeps,
 	group, goal string,
@@ -143,7 +143,7 @@ func waitForGroup(
 ) (*shared.ContainerGroup, *clierr.Error) {
 	stderr := d.progress
 	if stderr == nil {
-		stderr = errw()
+		stderr = app.errw()
 	}
 	start := d.now()
 	deadline := start.Add(timeout)
@@ -205,14 +205,14 @@ func waitForGroup(
 
 // waitForGroupStatus is waitForGroup with the goal "status == target",
 // aborting early per abortUnreachable.
-func waitForGroupStatus(
+func (app *App) waitForGroupStatus(
 	ctx context.Context,
 	d waitDeps,
 	group, target string,
 	fromActive bool,
 	timeout, poll time.Duration,
 ) (*shared.ContainerGroup, *clierr.Error) {
-	return waitForGroup(ctx, d, group, "be "+target,
+	return app.waitForGroup(ctx, d, group, "be "+target,
 		func(g *shared.ContainerGroup) bool { return groupStatus(g) == target },
 		abortUnreachable(group, target, fromActive), timeout, poll)
 }
@@ -322,7 +322,7 @@ func liveWaitDeps(client *api.Client, group string) waitDeps {
 // stdout line says it); abort (may be nil) ends the wait early.
 // The caller emits its stdout payload only after this returns nil error —
 // see the package comment for why.
-func runGroupWait(
+func (app *App) runGroupWait(
 	cmd *cobra.Command,
 	client *api.Client,
 	group, goal, doneMsg string,
@@ -332,26 +332,26 @@ func runGroupWait(
 ) (*shared.ContainerGroup, error) {
 	ctx := cmd.Context() // canceled by the one signal handler in Execute
 	start := time.Now()
-	final, cerr := waitForGroup(ctx, liveWaitDeps(client, group), group, goal, done, abort, timeout, waitPoll)
+	final, cerr := app.waitForGroup(ctx, liveWaitDeps(client, group), group, goal, done, abort, timeout, waitPoll)
 	if cerr != nil {
 		return nil, cerr
 	}
 	if app.printer.Mode() == "table" && doneMsg != "" {
-		fprintf(errw(), "%s %s (waited %s)\n", group, doneMsg, time.Since(start).Round(time.Second))
+		fprintf(app.errw(), "%s %s (waited %s)\n", group, doneMsg, time.Since(start).Round(time.Second))
 	}
 	return final, nil
 }
 
 // runStatusWait is runGroupWait for the common "status == target" goal,
 // aborting early per abortUnreachable.
-func runStatusWait(
+func (app *App) runStatusWait(
 	cmd *cobra.Command,
 	client *api.Client,
 	group, target string,
 	fromActive bool,
 	timeout time.Duration,
 ) (*shared.ContainerGroup, error) {
-	final, err := runGroupWait(cmd, client, group, "be "+target, "is "+target,
+	final, err := app.runGroupWait(cmd, client, group, "be "+target, "is "+target,
 		func(g *shared.ContainerGroup) bool { return groupStatus(g) == target },
 		abortUnreachable(group, target, fromActive), timeout)
 	if err != nil {
@@ -363,7 +363,7 @@ func runStatusWait(
 		// instances call; if it fails, the note is skipped, not the wait.
 		if col, cerr := client.ListInstances(cmd.Context(), group); cerr == nil {
 			if note := readinessNote(group, col.Instances); note != "" {
-				fprintln(errw(), note)
+				fprintln(app.errw(), note)
 			}
 		}
 	}

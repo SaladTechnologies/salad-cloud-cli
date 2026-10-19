@@ -55,10 +55,10 @@ type gatewayTestResult struct {
 
 // newGateway resolves configuration and builds the gateway client. Its
 // errors from the gateway go through gatewayFailed.
-func newGateway() (*api.Gateway, *gatewayKey, *clierr.Error) {
+func (app *App) newGateway() (*api.Gateway, *gatewayKey, *clierr.Error) {
 	res, err := config.Resolve(app.Env, "", "")
 	if err != nil {
-		path := configPath()
+		path := app.configPath()
 		return nil, nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it")
 	}
@@ -70,8 +70,8 @@ func newGateway() (*api.Gateway, *gatewayKey, *clierr.Error) {
 		}
 		res.GatewayAPIKey = key
 	}
-	saved := savedConfig()
-	g, cerr := api.NewGateway(res, apiOptions())
+	saved := app.savedConfig()
+	g, cerr := api.NewGateway(res, app.apiOptions())
 	return g, &gatewayKey{res.GatewayAPIKey, from, saved.GatewayAPIKey}, cerr
 }
 
@@ -144,7 +144,8 @@ func pickModel(flag string, ids []string) (string, *clierr.Error) {
 	return model, nil
 }
 
-func init() {
+// addGatewayCommands adds gateway.go's commands to the tree.
+func (app *App) addGatewayCommands(root *cobra.Command) {
 	gatewayCmd := &cobra.Command{
 		Use:   "ai-gateway",
 		Short: "AI Gateway: list models and verify the gateway key",
@@ -173,9 +174,9 @@ To see which key is in effect and where it came from, run saladcloud whoami.`,
 every key, so no AI Gateway key is needed; with one set, it is sent.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			g, _, cerr := newGateway()
+			g, _, cerr := app.newGateway()
 			if cerr != nil && cerr.Code == clierr.CodeAuth {
-				g, cerr = api.NewPublicGateway(apiOptions()), nil
+				g, cerr = api.NewPublicGateway(app.apiOptions()), nil
 			}
 			if cerr != nil {
 				return cerr
@@ -185,7 +186,7 @@ every key, so no AI Gateway key is needed; with one set, it is sent.`,
 				return cerr
 			}
 			if app.printer.Mode() == "table" {
-				fprintf(errw(), "pricing and the subscription tier: %s\n", api.GatewayPricingURL)
+				fprintf(app.errw(), "pricing and the subscription tier: %s\n", api.GatewayPricingURL)
 			}
 			// The list envelope every list has; each model stays the
 			// gateway's own object.
@@ -232,7 +233,7 @@ budget then defaults to 1024).`,
   saladcloud ai-gateway test --model <model-id> -o json   # ids: saladcloud ai-gateway models list`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			g, key, cerr := newGateway()
+			g, key, cerr := app.newGateway()
 			if cerr != nil {
 				return cerr
 			}
@@ -273,7 +274,7 @@ budget then defaults to 1024).`,
 			v := gatewayTestResult{Model: chosen, Prompt: prompt, Reply: reply, Usage: c.Usage, OK: true}
 			return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
 				w.Printf("%s\n", reply)
-				fprintf(errw(), "AI Gateway key works: model %s answered (%s)\n", chosen, usageSummary(c.Usage))
+				fprintf(app.errw(), "AI Gateway key works: model %s answered (%s)\n", chosen, usageSummary(c.Usage))
 			}))
 		},
 	}
@@ -286,8 +287,8 @@ budget then defaults to 1024).`,
 	testCmd.Flags().
 		BoolVar(&thinking, "thinking", false, "let the model reason before answering (hundreds of tokens; off by default)")
 
-	gatewayCmd.AddCommand(gatewayLoginCmd(), gatewayLogoutCmd(), modelsCmd, testCmd)
-	Register(gatewayCmd)
+	gatewayCmd.AddCommand(app.gatewayLoginCmd(), app.gatewayLogoutCmd(), modelsCmd, testCmd)
+	root.AddCommand(gatewayCmd)
 }
 
 // usageSummary renders token usage compactly, in a stable key order.

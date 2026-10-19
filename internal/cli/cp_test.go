@@ -35,7 +35,7 @@ func TestParseRemoteSpec(t *testing.T) {
 		{"my-app:/path:with:colons", &remoteSpec{Group: "my-app", Path: "/path:with:colons"}},
 	}
 	for _, c := range cases {
-		got, err := parseRemoteSpec(c.in)
+		got, err := app.parseRemoteSpec(c.in)
 		if err != nil {
 			t.Errorf("parseRemoteSpec(%q) unexpected error: %v", c.in, err)
 			continue
@@ -54,7 +54,7 @@ func TestParseRemoteSpecErrors(t *testing.T) {
 		"/my-app/inst:/path", // leading slash: empty first segment
 		"a/b/c:/path",        // too many segments
 	} {
-		_, err := parseRemoteSpec(in)
+		_, err := app.parseRemoteSpec(in)
 		if err == nil {
 			t.Errorf("parseRemoteSpec(%q): want usage error, got nil", in)
 			continue
@@ -74,7 +74,7 @@ func TestParseRemoteSpecGitBashRewrite(t *testing.T) {
 		`sr-ex2\0521ee78;C:\Program Files\Git\etc\hostname`,
 		`my-app\8a2f13ba;D:\msys64\data;D:\msys64\more`,
 	} {
-		_, err := parseRemoteSpec(in)
+		_, err := app.parseRemoteSpec(in)
 		if err == nil {
 			t.Errorf("parseRemoteSpec(%q): want usage error, got nil", in)
 			continue
@@ -211,7 +211,7 @@ func TestBuildSFTPBatchQuoting(t *testing.T) {
 
 func TestBuildSFTPArgs(t *testing.T) {
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
-	got := buildSFTPArgs(target, "root", "", "/tmp/batch")
+	got := app.buildSFTPArgs(target, "root", "", "/tmp/batch")
 	want := []string{
 		"-P",
 		"30123",
@@ -233,7 +233,7 @@ func TestBuildSFTPArgs(t *testing.T) {
 func TestBuildSFTPArgsInteractive(t *testing.T) {
 	// Empty batchPath = interactive 'saladcloud container-groups sftp' session: no -b flag.
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
-	got := buildSFTPArgs(target, "root", "", "")
+	got := app.buildSFTPArgs(target, "root", "", "")
 	want := []string{
 		"-P",
 		"30123",
@@ -252,7 +252,7 @@ func TestBuildSFTPArgsInteractive(t *testing.T) {
 
 func TestBuildSFTPArgsInteractiveIdentity(t *testing.T) {
 	target := sshTarget{IP: "203.0.113.7", Port: 22}
-	got := buildSFTPArgs(target, "worker", "/home/me/.ssh/key", "")
+	got := app.buildSFTPArgs(target, "worker", "/home/me/.ssh/key", "")
 	want := []string{
 		"-P", "22",
 		"-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=/cfg/known_hosts",
@@ -266,7 +266,7 @@ func TestBuildSFTPArgsInteractiveIdentity(t *testing.T) {
 
 func TestBuildSFTPArgsIdentity(t *testing.T) {
 	target := sshTarget{IP: "203.0.113.7", Port: 22}
-	got := buildSFTPArgs(target, "worker", "/home/me/.ssh/key", "/tmp/batch")
+	got := app.buildSFTPArgs(target, "worker", "/home/me/.ssh/key", "/tmp/batch")
 	want := []string{
 		"-P", "22",
 		"-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=/cfg/known_hosts",

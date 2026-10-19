@@ -9,7 +9,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func init() {
+// addSFTPCommands adds sftp.go's commands to the tree.
+func (app *App) addSFTPCommands(cg *cobra.Command) {
 	var (
 		user     string
 		identity string
@@ -36,7 +37,7 @@ ssh-key setup.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			group := args[0]
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -44,7 +45,7 @@ ssh-key setup.`,
 			if cerr != nil {
 				return groupNotFound(cerr, group, client.Org(), client.Project())
 			}
-			inst, cerr := pickInstance(errw(), collection.Instances, group, instance)
+			inst, cerr := pickInstance(app.errw(), collection.Instances, group, instance)
 			if cerr != nil {
 				return cerr
 			}
@@ -54,7 +55,10 @@ ssh-key setup.`,
 			}
 
 			//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
-			if runErr := runChild("sftp", buildSFTPArgs(target, user, resolveIdentity(identity), "")); runErr != nil {
+			if runErr := app.runChild(
+				"sftp",
+				app.buildSFTPArgs(target, user, app.resolveIdentity(identity), ""),
+			); runErr != nil {
 				return runErr
 			}
 			return nil
@@ -65,7 +69,7 @@ ssh-key setup.`,
 	sftpCmd.Flags().
 		StringVar(&user, "user", "root", "SSH username; selects the container user, which the image must define (root always exists)")
 	sftpCmd.Flags().StringVarP(&identity, "identity", "i", "", "identity (private key) file, passed through to sftp -i")
-	addHiddenGroupFlag(sftpCmd)
+	app.addHiddenGroupFlag(sftpCmd)
 	annotate(sftpCmd, annotationFlagForArg, "instance")
-	RegisterContainerGroups(sftpCmd)
+	cg.AddCommand(sftpCmd)
 }

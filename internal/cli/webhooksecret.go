@@ -14,7 +14,8 @@ import (
 // rotate action, never list. Both print secret_key whole: returning it is
 // the command's purpose, like 'gh auth token'; masking applies to stored
 // credentials, not to this.
-func init() {
+// addWebhookSecretCommands adds webhooksecret.go's commands to the tree.
+func (app *App) addWebhookSecretCommands(root *cobra.Command) {
 	wsCmd := &cobra.Command{
 		Use:   "webhook-secret",
 		Short: "The key that signs the organization's webhook deliveries (get, rotate)",
@@ -32,7 +33,7 @@ Both commands print the key itself; keep their output out of logs.`,
 	}
 	run := func(call func(c *api.Client, cmd *cobra.Command) (*webhooksecretkey.WebhookSecretKey, *clierr.Error)) func(*cobra.Command, []string) error {
 		return func(cmd *cobra.Command, _ []string) error {
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -63,6 +64,6 @@ verify with the old one start rejecting them until they are updated.`,
 			return c.RotateWebhookSecret(cmd.Context())
 		}),
 	})
-	orgScoped(wsCmd)
-	Register(wsCmd)
+	app.orgScoped(wsCmd)
+	root.AddCommand(wsCmd)
 }

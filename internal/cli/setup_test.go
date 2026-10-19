@@ -97,7 +97,7 @@ func TestNameCheck(t *testing.T) {
 			`--project)`, `did you mean "staging"?`, ""},
 	} {
 		t.Run(tc.kind+" "+tc.name, func(t *testing.T) {
-			err := checkName(tc.kind, tc.name, tc.origin)
+			err := app.checkName(tc.kind, tc.name, tc.origin)
 			if tc.msg == "" {
 				if err != nil {
 					t.Fatalf("valid name rejected: %v", err)
@@ -218,20 +218,20 @@ func TestOrgsClause(t *testing.T) {
 		{nil, ""},
 		{[]string{}, ""},
 	} {
-		if got := orgsClause(tc.names); got != tc.want {
+		if got := app.orgsClause(tc.names); got != tc.want {
 			t.Errorf("%d names at a terminal:\n got %q\nwant %q", len(tc.names), got, tc.want)
 		}
 	}
 	for _, mode := range []string{"table", "json"} {
 		atATerminal(t, false, "linux", mode)
 		for _, n := range [][]string{names(2), names(22), nil} {
-			if got := orgsClause(n); got != "to list yours, run saladcloud orgs list" {
+			if got := app.orgsClause(n); got != "to list yours, run saladcloud orgs list" {
 				t.Errorf("no terminal, %s mode, %d names: %q", mode, len(n), got)
 			}
 		}
 	}
 	if got := hintClauses(
-		orgsClause([]string{"my-org"}),
+		app.orgsClause([]string{"my-org"}),
 		"fix or remove SALAD_ORGANIZATION",
 	); got != "to list yours, run saladcloud orgs list; fix or remove SALAD_ORGANIZATION" {
 		t.Errorf("hintClauses: %q", got)
@@ -241,7 +241,7 @@ func TestOrgsClause(t *testing.T) {
 func TestConfigReady(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SALAD_CLI_CONFIG_DIR", dir)
-	if err := configReady("login"); err != nil {
+	if err := app.configReady("login"); err != nil {
 		t.Fatalf("no file yet: %v", err)
 	}
 	if entries := must(os.ReadDir(dir))(t); len(entries) != 0 {
@@ -256,7 +256,7 @@ func TestConfigReady(t *testing.T) {
 		{"use", "fix or delete it, then run saladcloud use again"},
 		{"ai-gateway login", "fix or delete it, then run saladcloud ai-gateway login again"},
 	} {
-		err := configReady(tc.command)
+		err := app.configReady(tc.command)
 		if err == nil || err.Code != clierr.CodeGeneric || err.Kind != clierr.KindAPIError ||
 			!strings.HasPrefix(
 				err.Message,
@@ -287,7 +287,7 @@ func TestConfigReady(t *testing.T) {
 			"of logging in"},
 		{"use", "set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud use again"},
 	} {
-		err := configReady(tc.command)
+		err := app.configReady(tc.command)
 		want := "cannot write the config file " + filepath.Join(ro, "config.json") + ": permission denied"
 		if err == nil || err.Message != want || err.HintText() != tc.hint {
 			t.Errorf("read-only, %s: %+v hint %q", tc.command, err, err.HintText())
@@ -372,8 +372,8 @@ func TestBrowserOffer(t *testing.T) {
 		if tc.ok {
 			want = "Paste it here, hidden (press Enter to open the page in a browser):"
 		}
-		if got := keyPrompt(); browserVisible() != tc.ok || got != want {
-			t.Errorf("%s %v: visible %t, prompt %q", tc.os, tc.env, browserVisible(), got)
+		if got := app.keyPrompt(); app.browserVisible() != tc.ok || got != want {
+			t.Errorf("%s %v: visible %t, prompt %q", tc.os, tc.env, app.browserVisible(), got)
 		}
 		app.Env.GOOS = old
 	}
@@ -394,7 +394,7 @@ func TestOpener(t *testing.T) {
 	} {
 		app.Env.GOOS = tc.os
 		t.Setenv("WSL_DISTRO_NAME", tc.wsl)
-		name, args := opener(url)
+		name, args := opener(app.Env, url)
 		if got := name + " " + strings.Join(args, " "); got != tc.want {
 			t.Errorf("%s (WSL %q): %q, want %q", tc.os, tc.wsl, got, tc.want)
 		}
@@ -408,9 +408,9 @@ func TestOpenOffered(t *testing.T) {
 	t.Cleanup(func() { app.Console, app.OpenPage = oldCon, oldOpen })
 	app.Console = fc
 	app.OpenPage = func(string) error { return nil }
-	openOffered(url)
+	app.openOffered(url)
 	app.OpenPage = func(string) error { return errors.New("no opener") }
-	openOffered(url)
+	app.openOffered(url)
 	want := "Opening https://portal.salad.com/api-key in your browser.\nCould not open a browser; open " +
 		"https://portal.salad.com/api-key yourself.\n"
 	if got := fc.device.String(); got != want {
@@ -425,7 +425,7 @@ func TestAskUntil(t *testing.T) {
 	t.Cleanup(func() { app.Console = old })
 	fc := &fakeConsole{terminal: true, answers: []string{"Acme Prod", "my-org"}}
 	app.Console = fc
-	got, err := askUntil("Type an organization name:", false, func(a string) (bool, string, *clierr.Error) {
+	got, err := app.askUntil("Type an organization name:", false, func(a string) (bool, string, *clierr.Error) {
 		if !validName(a) {
 			return false, nameRetry("organization", a, ""), nil
 		}
@@ -442,7 +442,7 @@ func TestAskUntil(t *testing.T) {
 	}
 	for _, end := range []string{keyCtrlC, keyEOF} {
 		app.Console = &fakeConsole{terminal: true, answers: []string{end}}
-		if _, err := askUntil(
+		if _, err := app.askUntil(
 			"Paste it here, hidden:",
 			true,
 			func(string) (bool, string, *clierr.Error) { return true, "", nil },

@@ -17,10 +17,11 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
-var logsCmd = &cobra.Command{
-	Use:   "logs [-c <group>] [--project <p>] [--instance <id>]",
-	Short: "Query or follow logs for the organization, a project, or a container group",
-	Long: `Query or follow logs, including system events.
+func (app *App) newLogsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "logs [-c <group>] [--project <p>] [--instance <id>]",
+		Short: "Query or follow logs for the organization, a project, or a container group",
+		Long: `Query or follow logs, including system events.
 
 The scope is the narrowest one you give:
 
@@ -59,7 +60,7 @@ appends a raw log query-language expression, for example
 
 With --output json each entry is printed as one NDJSON line containing the
 full API entry (both timestamps, resource labels, span/trace IDs).`,
-	Example: `  # Last 15 minutes of logs across the whole organization
+		Example: `  # Last 15 minutes of logs across the whole organization
   saladcloud logs
 
   # Errors and worse in one project over the last day
@@ -70,20 +71,22 @@ full API entry (both timestamps, resource labels, span/trace IDs).`,
 
   # One group's system events only (resource.type "container" is the app's own output)
   saladcloud logs -c my-cg --since 1h --query 'resource.type != "container"'`,
-	Args: cobra.NoArgs,
-	RunE: runLogs,
+		Args: cobra.NoArgs,
+		RunE: app.runLogs,
+	}
 }
 
 // containerGroupLogsCmd is 'saladcloud container-groups logs <group>': the
 // query with the group as its subject, found from 'container-groups --help'.
 // Both logs commands share addLogsFlags.
-var containerGroupLogsCmd = &cobra.Command{
-	Use:   "logs <group> [--instance <id>]",
-	Short: "Query or follow one container group's logs",
-	Long: `Query or follow the logs and system events of one container group, in the
+func (app *App) newContainerGroupLogsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "logs <group> [--instance <id>]",
+		Short: "Query or follow one container group's logs",
+		Long: `Query or follow the logs and system events of one container group, in the
 current project. saladcloud logs --help covers the organization- and
 project-wide forms and how --since, --until and --follow behave.`,
-	Example: `  # Last 15 minutes of logs for my-cg
+		Example: `  # Last 15 minutes of logs for my-cg
   saladcloud container-groups logs my-cg
 
   # Warnings and worse from the last 2 hours that mention "timeout"
@@ -95,8 +98,9 @@ project-wide forms and how --since, --until and --follow behave.`,
 
   # Follow one instance's logs as NDJSON
   saladcloud container-groups logs my-cg --instance 8a2f13ba --follow -o json`,
-	Args: cobra.ExactArgs(1),
-	RunE: runLogs,
+		Args: cobra.ExactArgs(1),
+		RunE: app.runLogs,
+	}
 }
 
 // addLogsFlags registers the logs flags on c; both logs commands use it.
@@ -115,20 +119,23 @@ func addLogsFlags(c *cobra.Command) {
 	c.Flags().Int("page-size", 100, "entries per API request (1-100)")
 }
 
-func init() {
+// addLogsCommands adds logs.go's commands to the tree.
+func (app *App) addLogsCommands(root, cg *cobra.Command) {
+	logsCmd := app.newLogsCmd()
+	containerGroupLogsCmd := app.newContainerGroupLogsCmd()
 	addLogsFlags(logsCmd)
 	logsCmd.Flags().StringP("container-group", "c", "", "only this container group's logs (in the current project)")
 	logsCmd.Flags().
 		String("project", "", "only this project's logs; unlike other commands, the saved project and SALAD_PROJECT do not narrow logs")
 	annotate(logsCmd, annotationFlagForArg, "container-group")
 	addLogsFlags(containerGroupLogsCmd)
-	addHiddenGroupFlag(containerGroupLogsCmd)
+	app.addHiddenGroupFlag(containerGroupLogsCmd)
 	annotate(containerGroupLogsCmd, annotationFlagForArg, "instance")
-	Register(logsCmd)
-	RegisterContainerGroups(containerGroupLogsCmd)
+	root.AddCommand(logsCmd)
+	cg.AddCommand(containerGroupLogsCmd)
 }
 
-func runLogs(cmd *cobra.Command, args []string) error {
+func (app *App) runLogs(cmd *cobra.Command, args []string) error {
 	fr := readFlags(cmd.Flags())
 	// The group is the subject of 'container-groups logs <group>' and a
 	// filter (-c) on the top-level query.
@@ -218,7 +225,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		return cerr
 	}
 
-	client, res, cerr := NewClient(cmd)
+	client, res, cerr := app.NewClient(cmd)
 	if cerr != nil {
 		return cerr
 	}
@@ -250,7 +257,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	}
 
 	if app.printer.Mode() == "table" {
-		fprintln(errw(), scopeLine(scope, client.Org(), res.Project))
+		fprintln(app.errw(), scopeLine(scope, client.Org(), res.Project))
 	}
 
 	// --instance accepts an ID prefix (like ssh/cp); the log query language
@@ -311,7 +318,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 			until,
 			pageSize,
 			countingEmit,
-			stderrLine,
+			app.stderrLine,
 		); err != nil {
 			return err
 		}
@@ -319,7 +326,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		// say so on stderr in table mode. JSON/NDJSON stays machine-clean,
 		// and --follow's silence correctly means "waiting".
 		if emitted == 0 && app.printer.Mode() == "table" {
-			fprintln(errw(), noMatchNote(scope, sinceStr, instance, severity, filter))
+			fprintln(app.errw(), noMatchNote(scope, sinceStr, instance, severity, filter))
 		}
 		return nil
 	}
@@ -327,11 +334,11 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context() // canceled by the one signal handler in Execute
 	if group != "" {
 		if note := followGroupNote(ctx, client, group); note != "" {
-			fprintln(errw(), note)
+			fprintln(app.errw(), note)
 		}
 	}
 	if app.printer.Mode() == "table" {
-		fprintln(errw(), "waiting for log entries (Ctrl-C to stop)")
+		fprintln(app.errw(), "waiting for log entries (Ctrl-C to stop)")
 	}
 	query, cerr := logsq.Compile(baseFilters)
 	if cerr != nil {
@@ -342,7 +349,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		MaxBackoff: logsq.DefaultMaxBackoff,
 		Lookback:   lookback,
 		Clock:      logsq.RealClock{},
-		Warn:       stderrLine,
+		Warn:       app.stderrLine,
 	}
 	//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
 	if cerr := follower.Run(ctx, query, fetch, since, pageSize, emit); cerr != nil {

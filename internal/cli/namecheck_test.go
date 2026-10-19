@@ -189,7 +189,6 @@ func TestFlagsACommandDoesNotRead(t *testing.T) {
 	if o := (session{args: []string{"quotas", "get", "--org", "my-org"}, saved: saved}).run(t); o.code != 0 {
 		t.Errorf("quotas get --org: exit %d\n%s", o.code, o.stderr)
 	}
-	prepareTree()
 	walkTree(rootCmd, func(c *cobra.Command) {
 		top := c
 		for top.Parent() != nil && top.Parent() != rootCmd {

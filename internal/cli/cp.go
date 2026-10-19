@@ -47,8 +47,8 @@ var msysPathList = regexp.MustCompile(`;[A-Za-z]:\\`)
 
 // msysRewritten reports an argument Git Bash rewrote as a Windows path list.
 // No real path takes that shape: a Windows file name cannot hold a colon.
-func msysRewritten(arg string) *clierr.Error {
-	if !underGitBash() || !msysPathList.MatchString(arg) {
+func (app *App) msysRewritten(arg string) *clierr.Error {
+	if !app.underGitBash() || !msysPathList.MatchString(arg) {
 		return nil
 	}
 	return clierr.New(clierr.CodeUsage, clierr.KindUsage,
@@ -60,8 +60,8 @@ func msysRewritten(arg string) *clierr.Error {
 // local path. Mirroring scp's heuristics, a Windows drive-letter path
 // (C:\x or C:/x) or anything with a backslash before the first colon is
 // local; otherwise a colon marks the argument as remote.
-func parseRemoteSpec(arg string) (*remoteSpec, *clierr.Error) {
-	if cerr := msysRewritten(arg); cerr != nil {
+func (app *App) parseRemoteSpec(arg string) (*remoteSpec, *clierr.Error) {
+	if cerr := app.msysRewritten(arg); cerr != nil {
 		return nil, cerr
 	}
 	head, path, ok := strings.Cut(arg, ":")
@@ -132,8 +132,8 @@ func buildSFTPBatch(upload, recursive bool, localPath, remotePath string) string
 // buildSFTPArgs builds the argv (after the "sftp" program name). An empty
 // batchPath means an interactive session (no -b flag) — 'saladcloud container-groups sftp';
 // cp always passes its one-command batch file.
-func buildSFTPArgs(t sshTarget, user, identity, batchPath string) []string {
-	args := append([]string{"-P", strconv.FormatInt(t.Port, 10)}, hostKeyOptions(t.InstanceID)...)
+func (app *App) buildSFTPArgs(t sshTarget, user, identity, batchPath string) []string {
+	args := append([]string{"-P", strconv.FormatInt(t.Port, 10)}, app.hostKeyOptions(t.InstanceID)...)
 	if identity != "" {
 		args = append(args, "-i", identity)
 	}
@@ -143,7 +143,8 @@ func buildSFTPArgs(t sshTarget, user, identity, batchPath string) []string {
 	return append(args, user+"@"+t.IP)
 }
 
-func init() {
+// addCpCommands adds cp.go's commands to the tree.
+func (app *App) addCpCommands(cg *cobra.Command) {
 	var (
 		user      string
 		identity  string
@@ -189,11 +190,11 @@ set it up, run saladcloud ssh-key setup.`,
   saladcloud container-groups cp -r my-app:/outputs/. ./results`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			srcSpec, cerr := parseRemoteSpec(args[0])
+			srcSpec, cerr := app.parseRemoteSpec(args[0])
 			if cerr != nil {
 				return cerr
 			}
-			dstSpec, cerr := parseRemoteSpec(args[1])
+			dstSpec, cerr := app.parseRemoteSpec(args[1])
 			if cerr != nil {
 				return cerr
 			}
@@ -211,7 +212,7 @@ set it up, run saladcloud ssh-key setup.`,
 				spec, local = srcSpec, args[1]
 			}
 
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -219,7 +220,7 @@ set it up, run saladcloud ssh-key setup.`,
 			if cerr != nil {
 				return groupNotFound(cerr, spec.Group, client.Org(), client.Project())
 			}
-			inst, cerr := pickInstance(errw(), collection.Instances, spec.Group, spec.InstancePrefix)
+			inst, cerr := pickInstance(app.errw(), collection.Instances, spec.Group, spec.InstancePrefix)
 			if cerr != nil {
 				return cerr
 			}
@@ -234,7 +235,7 @@ set it up, run saladcloud ssh-key setup.`,
 			}
 			defer func() {
 				if err := os.Remove(batch.Name()); err != nil {
-					fprintf(errw(), "warning: could not remove the sftp batch file %s: %v\n", batch.Name(), err)
+					fprintf(app.errw(), "warning: could not remove the sftp batch file %s: %v\n", batch.Name(), err)
 				}
 			}()
 			if _, err := batch.WriteString(buildSFTPBatch(upload, recursive, local, spec.Path)); err != nil {
@@ -250,12 +251,12 @@ set it up, run saladcloud ssh-key setup.`,
 			// the one result. In json and yaml mode stderr carries only
 			// warnings, notes and the error document, so sftp's output is
 			// held back, and its last line ends the error when it fails.
-			sftpArgs := buildSFTPArgs(target, user, resolveIdentity(identity), batch.Name())
+			sftpArgs := app.buildSFTPArgs(target, user, app.resolveIdentity(identity), batch.Name())
 			var runErr *clierr.Error
 			if app.printer.Machine() {
-				runErr = runChildQuiet(app.SFTPProgram, sftpArgs)
+				runErr = app.runChildQuiet(app.SFTPProgram, sftpArgs)
 			} else {
-				runErr = runChildTo(errw(), app.SFTPProgram, sftpArgs)
+				runErr = app.runChildTo(app.errw(), app.SFTPProgram, sftpArgs)
 			}
 			if runErr != nil {
 				return runErr
@@ -277,6 +278,6 @@ set it up, run saladcloud ssh-key setup.`,
 		StringVar(&user, "user", "root", "SSH username; selects the container user, which the image must define (root always exists)")
 	cpCmd.Flags().StringVarP(&identity, "identity", "i", "", "identity (private key) file, passed through to sftp -i")
 	cpCmd.Flags().BoolVarP(&recursive, "recursive", "r", false, "copy directories recursively")
-	addHiddenGroupFlag(cpCmd)
-	RegisterContainerGroups(cpCmd)
+	app.addHiddenGroupFlag(cpCmd)
+	cg.AddCommand(cpCmd)
 }

@@ -134,9 +134,9 @@ func writeQueueJobDetail(w *output.Writer, j *queues.QueueJob) {
 }
 
 // addQueueFlag registers the required --queue flag on a queue jobs verb.
-func addQueueFlag(cmd *cobra.Command) {
+func (app *App) addQueueFlag(cmd *cobra.Command) {
 	cmd.Flags().String("queue", "", "the queue (required; saladcloud queues list shows them)")
-	noteTreeErr(cmd.MarkFlagRequired("queue"))
+	app.noteTreeErr(cmd.MarkFlagRequired("queue"))
 	annotate(cmd, annotationFlagForArg, "queue")
 }
 
@@ -166,7 +166,8 @@ func addQueueFieldFlags(cmd *cobra.Command) {
 	cmd.Flags().String("description", "", "notes about the queue (up to 500 characters)")
 }
 
-func init() {
+// addQueuesCommands adds queues.go's commands to the tree.
+func (app *App) addQueuesCommands(root *cobra.Command) {
 	queuesCmd := &cobra.Command{
 		Use:     "queues",
 		Aliases: []string{"queue"},
@@ -196,7 +197,7 @@ is whatever your container returns.`,
 			if cerr := fr.Err(); cerr != nil {
 				return cerr
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -217,7 +218,7 @@ is whatever your container returns.`,
 		Short: "List the current project's job queues",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -244,7 +245,7 @@ is whatever your container returns.`,
 			}
 			if len(payload.Items) == 0 && app.printer.Mode() == "table" {
 				fprintf(
-					errw(),
+					app.errw(),
 					"no queues in %s/%s\nhint: to create one, run saladcloud queues create <name>\n",
 					client.Org(),
 					client.Project(),
@@ -259,7 +260,7 @@ is whatever your container returns.`,
 		Short: "Show one job queue",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -295,7 +296,7 @@ is whatever your container returns.`,
 			if description != nil {
 				patch.Description = &util.Nullable[string]{Value: *description}
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -314,7 +315,7 @@ is whatever your container returns.`,
 		Short: "Delete a job queue",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -328,13 +329,13 @@ is whatever your container returns.`,
 		},
 	})
 
-	queuesCmd.AddCommand(newQueueJobsCmd())
-	Register(queuesCmd)
+	queuesCmd.AddCommand(app.newQueueJobsCmd())
+	root.AddCommand(queuesCmd)
 }
 
 // newQueueJobsCmd builds 'queues jobs': the job is the positional, the
 // queue is --queue.
-func newQueueJobsCmd() *cobra.Command {
+func (app *App) newQueueJobsCmd() *cobra.Command {
 	jobsCmd := &cobra.Command{
 		Use:     "jobs",
 		Aliases: []string{"job"},
@@ -375,7 +376,7 @@ every job, up to 10,000.`,
 					limit,
 				)
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -404,12 +405,12 @@ every job, up to 10,000.`,
 				return err
 			}
 			if len(jobs) == 0 && app.printer.Mode() == "table" {
-				fprintf(errw(), "no jobs in queue %s\n", queue)
+				fprintf(app.errw(), "no jobs in queue %s\n", queue)
 			}
-			jobsLimitNote(errw(), len(jobs), limit, api.QueueJobsCap, more)
+			app.jobsLimitNote(app.errw(), len(jobs), limit, api.QueueJobsCap, more)
 			if partial {
 				fprintf(
-					errw(),
+					app.errw(),
 					"note: read the first %d jobs only; the queue may hold more, and the API lists jobs in no time order, so these are the newest of those read; --limit 0 reads all (up to %d)\n",
 					max(limit, api.QueueJobsBudget),
 					api.QueueJobsCap,
@@ -418,7 +419,7 @@ every job, up to 10,000.`,
 			return nil
 		},
 	}
-	addQueueFlag(listCmd)
+	app.addQueueFlag(listCmd)
 	listCmd.Flags().
 		Int("limit", 100, fmt.Sprintf("how many of the newest jobs to list; a limit reads at most %d jobs (or the limit), 0 reads all, up to %d", api.QueueJobsBudget, api.QueueJobsCap))
 	jobsCmd.AddCommand(listCmd)
@@ -435,7 +436,7 @@ every job, up to 10,000.`,
 			if cerr = requireJobUUID(args[0], "saladcloud queues jobs list --queue "+queue); cerr != nil {
 				return cerr
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -446,7 +447,7 @@ every job, up to 10,000.`,
 			return wrapErr(app.printer.Emit(job, func(w *output.Writer) { writeQueueJobDetail(w, job) }))
 		},
 	}
-	addQueueFlag(getCmd)
+	app.addQueueFlag(getCmd)
 	jobsCmd.AddCommand(getCmd)
 
 	createCmd := &cobra.Command{
@@ -474,9 +475,9 @@ canceled exits 1 with the job's status and last event. --timeout (default
   # Full prototype from a file, with a webhook
   saladcloud queues jobs create --queue my-queue -f job.yaml --webhook https://example.com/hook`,
 		Args: cobra.NoArgs,
-		RunE: runQueueJobCreate,
+		RunE: app.runQueueJobCreate,
 	}
-	addQueueFlag(createCmd)
+	app.addQueueFlag(createCmd)
 	createCmd.Flags().
 		StringP("file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
 	createCmd.Flags().String("input", "", "the job input as inline JSON (wrapped into the prototype)")
@@ -500,7 +501,7 @@ that has finished cannot be canceled (exit 1).`,
 			if cerr = requireJobUUID(args[0], "saladcloud queues jobs list --queue "+queue); cerr != nil {
 				return cerr
 			}
-			client, _, cerr := NewClient(cmd)
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -516,7 +517,7 @@ that has finished cannot be canceled (exit 1).`,
 			}))
 		},
 	}
-	addQueueFlag(cancelCmd)
+	app.addQueueFlag(cancelCmd)
 	jobsCmd.AddCommand(cancelCmd)
 	return jobsCmd
 }
@@ -532,7 +533,7 @@ func queueGroupsCell(groups []shared.ContainerGroup) string {
 	return strconv.Itoa(len(groups))
 }
 
-func runQueueJobCreate(cmd *cobra.Command, _ []string) error {
+func (app *App) runQueueJobCreate(cmd *cobra.Command, _ []string) error {
 	fr := readFlags(cmd.Flags())
 	queue, cerr := queueFlag(cmd)
 	if cerr != nil {
@@ -557,7 +558,7 @@ func runQueueJobCreate(cmd *cobra.Command, _ []string) error {
 	}
 	var proto queues.QueueJobPrototype
 	if file != "" {
-		if cerr = loadJobFile(file, &proto); cerr != nil {
+		if cerr = app.loadJobFile(file, &proto); cerr != nil {
 			return cerr
 		}
 		if proto.Input == nil {
@@ -577,7 +578,7 @@ func runQueueJobCreate(cmd *cobra.Command, _ []string) error {
 		proto.Webhook = &wh
 	}
 
-	client, _, cerr := NewClient(cmd)
+	client, _, cerr := app.NewClient(cmd)
 	if cerr != nil {
 		return cerr
 	}
@@ -603,7 +604,7 @@ func runQueueJobCreate(cmd *cobra.Command, _ []string) error {
 		check:    fmt.Sprintf("saladcloud queues jobs get %s --queue %s", id, queue),
 		progress: nil,
 	}
-	final, cerr := waitForJobTerminal(ctx, d, id, timeout, waitPoll)
+	final, cerr := waitForJobTerminal(ctx, app, d, id, timeout, waitPoll)
 	if cerr != nil {
 		return cerr
 	}

@@ -18,14 +18,14 @@ import (
 )
 
 // errw is where a command's stderr lines go: the run's stderr.
-func errw() io.Writer { return app.Stderr }
+func (app *App) errw() io.Writer { return app.Stderr }
 
 // say writes a readback or status line to stderr, in table mode only: in
 // json and yaml mode stderr carries only warnings, notes and the error
 // document, and the JSON document holds the fact.
-func say(format string, args ...any) {
+func (app *App) say(format string, args ...any) {
 	if app.printer.Mode() == "table" {
-		fprintf(errw(), format+"\n", args...)
+		fprintf(app.errw(), format+"\n", args...)
 	}
 }
 
@@ -39,7 +39,7 @@ func writeUnreported(w io.Writer, s string) {
 
 // stderrLine writes line to the run's stderr: a warning a package reports
 // through a callback.
-func stderrLine(line string) { fprintln(errw(), line) }
+func (app *App) stderrLine(line string) { fprintln(app.errw(), line) }
 
 // fprintf is [fmt.Fprintf] for a stream writeUnreported covers.
 func fprintf(w io.Writer, format string, args ...any) {
@@ -54,12 +54,12 @@ func fprint(w io.Writer, args ...any) { writeUnreported(w, fmt.Sprint(args...)) 
 
 // hintLine writes a suggested next step after a success as a hint: line on
 // stderr, in table mode only.
-func hintLine(format string, args ...any) { say("hint: "+format, args...) }
+func (app *App) hintLine(format string, args ...any) { app.say("hint: "+format, args...) }
 
 // savedConfig is the config file's contents for a command that has already
 // checked it can be read (configReady) or reported that it cannot; a file
 // that cannot be read reads as empty, as it does to Load's caller anyway.
-func savedConfig() config.File {
+func (app *App) savedConfig() config.File {
 	f, err := config.Load(app.Env)
 	if err != nil {
 		return config.File{}
@@ -69,7 +69,7 @@ func savedConfig() config.File {
 
 // configPath is the config file's location for a message, or "" when the
 // location itself is unknown (no user config directory).
-func configPath() string {
+func (app *App) configPath() string {
 	p, err := config.Path(app.Env)
 	if err != nil {
 		return ""
@@ -161,14 +161,14 @@ func nameGuess(kind, name, verb string) string {
 // may be a key put there by mistake: longer than any name can be, or equal
 // to the API key or AI Gateway key in effect or saved. Such a value is
 // never shown.
-func looksLikeKey(v string) bool {
+func (app *App) looksLikeKey(v string) bool {
 	if len(v) > 63 {
 		return true
 	}
 	if v == "" {
 		return false
 	}
-	saved := savedConfig()
+	saved := app.savedConfig()
 	for _, k := range []string{app.Env.Getenv(envAPIKey), app.Env.Getenv(envGatewayKey), saved.APIKey, saved.GatewayAPIKey} {
 		if key, _ := normalizeKey(k); key != "" && key == v {
 			return true
@@ -179,8 +179,8 @@ func looksLikeKey(v string) bool {
 
 // shownName is a name as messages show it: the name, or "hidden, looks
 // like an API key" for a value that may be a key.
-func shownName(v string) string {
-	if looksLikeKey(v) {
+func (app *App) shownName(v string) string {
+	if app.looksLikeKey(v) {
 		return "hidden, looks like an API key"
 	}
 	return v
@@ -216,8 +216,8 @@ func keyLikeName(kind, origin string) *clierr.Error {
 // nil when it fits; a value that looks like a key gets keyLikeName's error
 // instead, which does not show it. It runs before any request: the API
 // would reject the name on every route.
-func checkName(kind, name, origin string) *clierr.Error {
-	if looksLikeKey(name) {
+func (app *App) checkName(kind, name, origin string) *clierr.Error {
+	if app.looksLikeKey(name) {
 		return keyLikeName(kind, origin)
 	}
 	if validName(name) {
@@ -313,8 +313,8 @@ const orgListShown = 10
 // the reader is a log or an agent, it never lists them: "to list yours, run
 // saladcloud orgs list", whatever names holds, so callers there need not
 // fetch the listing for it.
-func orgsClause(names []string) string {
-	if !atTerminal() {
+func (app *App) orgsClause(names []string) string {
+	if !app.atTerminal() {
 		return "to list yours, run saladcloud orgs list"
 	}
 	if len(names) == 0 {
@@ -342,7 +342,7 @@ func hintClauses(clauses ...string) string {
 // be read and saved, so a setup command never asks for what it cannot keep
 // and never overwrites a corrupt file. command is the one the hint says to
 // run again: "login", "ai-gateway login" or "use".
-func configReady(command string) *clierr.Error {
+func (app *App) configReady(command string) *clierr.Error {
 	path, err := config.Path(app.Env)
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err)).
@@ -382,7 +382,7 @@ func unwritableHint(command string) string {
 
 // sshMissingHint says how to get an OpenSSH client tool (ssh, ssh-keygen)
 // on this OS.
-func sshMissingHint(tool string) string {
+func (app *App) sshMissingHint(tool string) string {
 	switch app.Env.GOOS {
 	case "windows":
 		return "add the OpenSSH Client optional feature in Windows Settings, then open a new terminal"

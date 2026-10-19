@@ -83,7 +83,7 @@ var configKeyEnv = map[string]string{
 
 // loadConfigFor reads the config file for a config command, with the fix
 // when it cannot be read.
-func loadConfigFor(command string) (config.File, string, *clierr.Error) {
+func (app *App) loadConfigFor(command string) (config.File, string, *clierr.Error) {
 	path, err := config.Path(app.Env)
 	if err != nil {
 		return config.File{}, "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err)).
@@ -98,7 +98,7 @@ func loadConfigFor(command string) (config.File, string, *clierr.Error) {
 }
 
 // saveConfigFor writes the config file for a config command.
-func saveConfigFor(command, path string, f config.File) *clierr.Error {
+func (app *App) saveConfigFor(command, path string, f config.File) *clierr.Error {
 	if err := config.Save(app.Env, f); err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
 			WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud %s again", command)
@@ -119,12 +119,12 @@ type configPathResult struct {
 }
 
 // configListOf builds config list's entries from a config file.
-func configListOf(f config.File, path string) configListResult {
+func (app *App) configListOf(f config.File, path string) configListResult {
 	return configListResult{
 		Items: []configEntry{
 			{"api-key", maskedOrNil(f.APIKey)},
-			{"organization", nameOrNil(f.Organization)},
-			{"project", nameOrNil(f.Project)},
+			{"organization", app.nameOrNil(f.Organization)},
+			{"project", app.nameOrNil(f.Project)},
 			{"ai-gateway-api-key", maskedOrNil(f.GatewayAPIKey)},
 		},
 		ConfigPath: path,
@@ -147,7 +147,8 @@ func getField(f *config.File, key string) (*string, *clierr.Error) {
 	}
 }
 
-func init() {
+// addConfigCommands adds configcmd.go's commands to the tree.
+func (app *App) addConfigCommands(root *cobra.Command) {
 	configCmd := &cobra.Command{
 		Use:   "config",
 		Short: "Manage the saladcloud config file",
@@ -176,7 +177,7 @@ config set says so.`,
 			key, value := args[0], args[1]
 			if isSecretKey(key) && value != "-" {
 				fprintf(
-					errw(),
+					app.errw(),
 					"warning: a key passed as an argument is exposed on the command line; pipe it to saladcloud config set %s - instead\n",
 					key,
 				)
@@ -204,11 +205,11 @@ config set says so.`,
 				}
 				value = line
 			}
-			if (key == "organization" || key == "project") && looksLikeKey(value) {
+			if (key == "organization" || key == "project") && app.looksLikeKey(value) {
 				return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "that looks like an API key, not %s %s name", article(key), key).
 					WithHint("to save an API key, pipe it to saladcloud config set api-key -")
 			}
-			f, path, cerr := loadConfigFor("config set")
+			f, path, cerr := app.loadConfigFor("config set")
 			if cerr != nil {
 				return cerr
 			}
@@ -222,14 +223,14 @@ config set says so.`,
 			carried := key == "organization" && f.Project != "" && value != f.Organization
 			oldOrg := f.Organization
 			*field = value
-			if cerr := saveConfigFor("config set", path, f); cerr != nil {
+			if cerr := app.saveConfigFor("config set", path, f); cerr != nil {
 				return cerr
 			}
 			shown := value
 			if isSecretKey(key) {
 				shown = maskAPIKey(value)
 			}
-			ovs := overridesOf(f, configKeyEnv[key])
+			ovs := app.overridesOf(f, configKeyEnv[key])
 			result := configSetResult{key, shown, overrideNames(ovs), path, "set", true}
 			if err := app.printer.Emit(result, func(w *output.Writer) {
 				w.Printf("Set %s to %s\n", key, shown)
@@ -239,15 +240,15 @@ config set says so.`,
 			}
 			if carried {
 				fprintf(
-					errw(),
+					app.errw(),
 					"warning: the saved project \"%s\" was saved with %s and now applies to %s\n",
-					shownName(f.Project),
-					shownName(oldOrg),
+					app.shownName(f.Project),
+					app.shownName(oldOrg),
 					value,
 				)
-				hintLine("to switch both, run saladcloud use %s/<project>", value)
+				app.hintLine("to switch both, run saladcloud use %s/<project>", value)
 			}
-			warnOverrides(errw(), afterSave, ovs)
+			app.warnOverrides(app.errw(), afterSave, ovs)
 			return nil
 		},
 	}
@@ -262,7 +263,7 @@ SALAD_AI_GATEWAY_API_KEY) is still used; config unset says so.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			key := args[0]
-			f, path, cerr := loadConfigFor("config unset")
+			f, path, cerr := app.loadConfigFor("config unset")
 			if cerr != nil {
 				return cerr
 			}
@@ -271,10 +272,10 @@ SALAD_AI_GATEWAY_API_KEY) is still used; config unset says so.`,
 				return cerr
 			}
 			*field = ""
-			if cerr := saveConfigFor("config unset", path, f); cerr != nil {
+			if cerr := app.saveConfigFor("config unset", path, f); cerr != nil {
 				return cerr
 			}
-			ovs := stillSupplied(configKeyEnv[key])
+			ovs := app.stillSupplied(configKeyEnv[key])
 			result := configUnsetResult{key, overrideNames(ovs), path, "unset", true}
 			if err := app.printer.Emit(result, func(w *output.Writer) {
 				w.Printf("Unset %s\n", key)
@@ -282,7 +283,7 @@ SALAD_AI_GATEWAY_API_KEY) is still used; config unset says so.`,
 			}); err != nil {
 				return wrapErr(err)
 			}
-			warnOverrides(errw(), afterRemove, ovs)
+			app.warnOverrides(app.errw(), afterRemove, ovs)
 			return nil
 		},
 	}
@@ -296,7 +297,7 @@ Keys: ` + configKeys + `.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			key := args[0]
-			f, _, cerr := loadConfigFor("config get")
+			f, _, cerr := app.loadConfigFor("config get")
 			if cerr != nil {
 				return cerr
 			}
@@ -324,15 +325,15 @@ Keys: ` + configKeys + `.`,
 		Short: "Print all config values (both keys masked) and the config path",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			f, path, cerr := loadConfigFor("config list")
+			f, path, cerr := app.loadConfigFor("config list")
 			if cerr != nil {
 				return cerr
 			}
-			result := configListOf(f, path)
+			result := app.configListOf(f, path)
 			return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
 				w.Printf("api-key\t%s\n", maskAPIKey(f.APIKey))
-				w.Printf("organization\t%s\n", orNotSet(shownName(f.Organization)))
-				w.Printf("project\t%s\n", orNotSet(shownName(f.Project)))
+				w.Printf("organization\t%s\n", orNotSet(app.shownName(f.Organization)))
+				w.Printf("project\t%s\n", orNotSet(app.shownName(f.Project)))
 				w.Printf("ai-gateway-api-key\t%s\n", maskAPIKey(f.GatewayAPIKey))
 				w.Printf("config-path\t%s\n", path)
 			}))
@@ -357,5 +358,5 @@ Keys: ` + configKeys + `.`,
 	}
 
 	configCmd.AddCommand(setCmd, unsetCmd, getCmd, listCmd, pathCmd)
-	Register(configCmd)
+	root.AddCommand(configCmd)
 }

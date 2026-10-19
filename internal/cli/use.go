@@ -11,7 +11,8 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
-func init() {
+// addUseCommands adds use.go's commands to the tree.
+func (app *App) addUseCommands(root *cobra.Command) {
 	cmd := &cobra.Command{
 		Use:   "use <org>[/<project>]",
 		Short: "Switch the saved organization and project",
@@ -34,9 +35,9 @@ saves; use says so.`,
   # Switch organization and project together
   saladcloud use my-org/staging`,
 		Args: cobra.ExactArgs(1),
-		RunE: runUse,
+		RunE: app.runUse,
 	}
-	Register(cmd)
+	root.AddCommand(cmd)
 }
 
 // useResult is use's JSON contract: the context saved (project null when
@@ -62,27 +63,27 @@ func parseUseTarget(arg string) (org, project string, err *clierr.Error) {
 	return org, project, nil
 }
 
-func runUse(cmd *cobra.Command, args []string) error {
+func (app *App) runUse(cmd *cobra.Command, args []string) error {
 	org, project, perr := parseUseTarget(args[0])
 	if perr != nil {
 		return perr
 	}
-	if cerr := checkName("organization", org, ""); cerr != nil {
+	if cerr := app.checkName("organization", org, ""); cerr != nil {
 		return cerr
 	}
 	if project != "" {
-		if cerr := checkName("project", project, ""); cerr != nil {
+		if cerr := app.checkName("project", project, ""); cerr != nil {
 			return cerr
 		}
 	}
-	if cerr := configReady("use"); cerr != nil {
+	if cerr := app.configReady("use"); cerr != nil {
 		return cerr
 	}
 	res, err := config.Resolve(app.Env, "", "")
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file: %v", err)
 	}
-	saved := savedConfig() // configReady has read it
+	saved := app.savedConfig() // configReady has read it
 	if res.APIKey == "" {
 		return clierr.New(clierr.CodeAuth, clierr.KindAuth, "no API key set").
 			WithHint("run saladcloud login in a terminal, or set SALAD_API_KEY")
@@ -107,7 +108,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
-		apiOptions(),
+		app.apiOptions(),
 	)
 	if cerr != nil {
 		return cerr
@@ -118,14 +119,14 @@ func runUse(cmd *cobra.Command, args []string) error {
 		}
 		e := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `organization "%s" not found`, org).WithStatus(404)
 		names := []string(nil)
-		if atTerminal() {
+		if app.atTerminal() {
 			if list, lerr := client.OrganizationListing(cmd.Context()); lerr == nil && list != nil {
 				names = list.OrgNames()
 			} else if lerr != nil && lerr.IsCancel() {
 				return u.canceled()
 			}
 		}
-		if h := orgsClause(names); h != "" {
+		if h := app.orgsClause(names); h != "" {
 			e = e.WithHint("%s", h)
 		}
 		return e
@@ -148,7 +149,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
-		apiOptions(),
+		app.apiOptions(),
 	)
 	if cerr != nil {
 		return cerr
@@ -161,7 +162,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 			return clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `project "%s" not found in %s`, project, org).
 				WithStatus(404).WithHint("create one at %s", projectCreateURL(org))
 		}
-		say(`Project "default" not found in %s. Create one later if needed.`, org)
+		app.say(`Project "default" not found in %s. Create one later if needed.`, org)
 		project = ""
 	}
 
@@ -175,7 +176,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
 			WithHint("%s", unwritableHint("use"))
 	}
-	ovs := overridesOf(f, envOrganization, envProject)
+	ovs := app.overridesOf(f, envOrganization, envProject)
 	result := useResult{
 		Organization: org,
 		Project:      strOrNil(project),
@@ -193,9 +194,9 @@ func runUse(cmd *cobra.Command, args []string) error {
 		return wrapErr(err)
 	}
 	if defaulted && project != "" {
-		hintLine(`no project named, so "default" is used; for another, run saladcloud use %s/<project>`, org)
+		app.hintLine(`no project named, so "default" is used; for another, run saladcloud use %s/<project>`, org)
 	}
-	warnOverrides(errw(), afterSave, ovs)
+	app.warnOverrides(app.errw(), afterSave, ovs)
 	return nil
 }
 

@@ -30,9 +30,9 @@ const (
 )
 
 // keptUploadNote says, on stderr, that a failed job's upload stays in S4.
-func keptUploadNote(remote string) {
+func (app *App) keptUploadNote(remote string) {
 	if remote != "" {
-		fprintf(errw(), "note: the upload stays in S4 as %s for inspection\n", remote)
+		fprintf(app.errw(), "note: the upload stays in S4 as %s for inspection\n", remote)
 	}
 }
 
@@ -286,9 +286,10 @@ var transcribeEndpoints = []struct {
 	},
 }
 
-func init() {
+// addTranscribeCommands adds transcribe.go's commands to the tree.
+func (app *App) addTranscribeCommands(inferenceCmd *cobra.Command) {
 	for _, ep := range transcribeEndpoints {
-		inferenceCmd.AddCommand(newTranscribeCmd(ep.name, ep.fields, ep.short))
+		inferenceCmd.AddCommand(app.newTranscribeCmd(ep.name, ep.fields, ep.short))
 	}
 }
 
@@ -333,7 +334,7 @@ func listFieldsHelp(fields []inputField) string {
 // newTranscribeCmd builds the porcelain command for one transcription
 // endpoint: the same implementation, with that endpoint's input fields as
 // flags, so a flag the endpoint does not take is rejected by cobra itself.
-func newTranscribeCmd(endpoint string, fields []inputField, short string) *cobra.Command {
+func (app *App) newTranscribeCmd(endpoint string, fields []inputField, short string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   endpoint + " <file-or-url>",
 		Short: short,
@@ -374,7 +375,7 @@ endpoint's price row, run saladcloud inference get ` + endpoint + `.`,
   saladcloud inference jobs get <job-id> --endpoint ` + endpoint,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runTranscribe(cmd, args[0], endpoint, fields)
+			return app.runTranscribe(cmd, args[0], endpoint, fields)
 		},
 	}
 	f := cmd.Flags()
@@ -401,7 +402,7 @@ endpoint's price row, run saladcloud inference get ` + endpoint + `.`,
 	return cmd
 }
 
-func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputField) error {
+func (app *App) runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputField) error {
 	flags := readFlags(cmd.Flags())
 	inputExtra := flags.String("input-extra")
 	noWait := flags.Bool("no-wait")
@@ -457,7 +458,7 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		fileSize = fi.Size()
 	}
 
-	client, _, cerr := NewClient(cmd)
+	client, _, cerr := app.NewClient(cmd)
 	if cerr != nil {
 		return cerr
 	}
@@ -482,13 +483,13 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 			transcribeSignedURLExp,
 		)
 		if err := fh.Close(); err != nil {
-			fprintf(errw(), "warning: could not close %s: %v\n", source, err) // read only: nothing is lost
+			fprintf(app.errw(), "warning: could not close %s: %v\n", source, err) // read only: nothing is lost
 		}
 		if cerr != nil {
 			return cerr
 		}
 		if app.printer.Mode() == "table" {
-			fprintf(errw(), "uploaded %s (%s) to S4\n", source, humanSize(fileSize))
+			fprintf(app.errw(), "uploaded %s (%s) to S4\n", source, humanSize(fileSize))
 		}
 	}
 
@@ -502,7 +503,7 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		// No job will read the upload: delete it, unless asked to keep it
 		// or the delete fails, and then say where it is.
 		if remote != "" && (keepUpload || client.DeleteFile(cmd.Context(), remote) != nil) {
-			keptUploadNote(remote)
+			app.keptUploadNote(remote)
 		}
 		return endpointNotFound(cerr, endpoint, client.Org())
 	}
@@ -513,15 +514,15 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 	}
 	if noWait {
 		if remote != "" && app.printer.Mode() == "table" {
-			fprintf(errw(), "note: the upload stays in S4 as %s; the queued job reads it\n", remote)
+			fprintf(app.errw(), "note: the upload stays in S4 as %s; the queued job reads it\n", remote)
 		}
 		return wrapErr(app.printer.Emit(job, func(w *output.Writer) {
 			w.Printf("Job %s queued on endpoint %s (status: %s)\n", id, endpoint, jobStatusString(job))
 			if remote != "" {
-				fprintf(errw(), "note: %s\n", signedLinkNote)
+				fprintf(app.errw(), "note: %s\n", signedLinkNote)
 			}
 			fprintf(
-				errw(),
+				app.errw(),
 				"hint: to check on it, run saladcloud inference jobs get %s --endpoint %s\n",
 				id,
 				endpoint,
@@ -531,9 +532,9 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 
 	ctx := cmd.Context() // canceled by the one signal handler in Execute
 	d := liveJobWaitDeps(client, endpoint, id, "transcribing")
-	final, cerr := waitForJobTerminal(ctx, d, id, timeout, waitPoll)
+	final, cerr := waitForJobTerminal(ctx, app, d, id, timeout, waitPoll)
 	if cerr != nil {
-		keptUploadNote(remote)
+		app.keptUploadNote(remote)
 		return transcriptionKind(cerr)
 	}
 	if remote != "" && !keepUpload {
@@ -550,7 +551,7 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		if errCode != "" {
 			detail = fmt.Sprintf("%s (error_code: %s)", detail, errCode)
 		}
-		keptUploadNote(remote)
+		app.keptUploadNote(remote)
 		if remote != "" {
 			detail += " (" + signedLinkNote + ")"
 		}
@@ -563,12 +564,12 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 	}
 	text, cerr := transcriptText(final.Output, srt, asFile)
 	if cerr != nil {
-		keptUploadNote(remote)
+		app.keptUploadNote(remote)
 		return cerr
 	}
 	if remote != "" && !keepUpload {
 		if derr := client.DeleteFile(cmd.Context(), remote); derr != nil {
-			fprintf(errw(), "warning: could not delete the S4 upload %s: %s\n", remote, derr.Message)
+			fprintf(app.errw(), "warning: could not delete the S4 upload %s: %s\n", remote, derr.Message)
 		}
 	}
 	// Table mode prints the transcript itself; -o json emits the full job.
