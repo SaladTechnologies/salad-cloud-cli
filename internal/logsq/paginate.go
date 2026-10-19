@@ -87,16 +87,9 @@ func FetchWindow(
 		if cerr != nil {
 			return cerr
 		}
-		dups := 0
-		for i := range page.Items {
-			e := page.Items[i]
-			if _, seen := boundary[DedupKey(e)]; seen {
-				dups++
-				continue
-			}
-			if err := emit(e); err != nil {
-				return asCliErr(err)
-			}
+		dups, cerr := emitNew(page.Items, boundary, emit)
+		if cerr != nil {
+			return cerr
 		}
 		if len(page.Items) < pageSize {
 			return nil // partial page: the window is drained
@@ -107,47 +100,77 @@ func FetchWindow(
 				"could not parse the time of any log entry on a full page returned by the API")
 		}
 		next := maxT.Truncate(time.Millisecond)
-		// Carry forward every already-emitted entry the next request
-		// (starting at the floored millisecond) can re-return: this page's
-		// entries at or after next, plus previous carries still at or after
-		// next (relevant when the window fails to advance).
-		newBoundary := make(map[string]time.Time)
-		for i := range page.Items {
-			t, perr := time.Parse(time.RFC3339Nano, page.Items[i].Time)
-			if perr != nil {
-				continue // unparseable Time cannot be placed on the boundary
-			}
-			if t = t.UTC(); !t.Before(next) {
-				newBoundary[DedupKey(page.Items[i])] = t
-			}
-		}
-		for k, t := range boundary {
-			if !t.Before(next) {
-				newBoundary[k] = t
-			}
-		}
+		newBoundary := carryBoundary(page.Items, boundary, next)
 		if !next.After(cur) {
+			next = cur // re-fetch the same start; newBoundary now covers what was emitted
 			if dups == len(page.Items) {
-				// Pathological: more than pageSize entries share one
-				// millisecond, so the boundary cannot advance. Skip 1ms
-				// rather than loop forever, and say so.
-				warn(warnLine, fmt.Sprintf(
-					"warning: more than %d log entries share the millisecond at %s; skipping ahead 1ms (some entries in that millisecond may be missed)",
-					pageSize,
-					FormatRequestTime(cur),
-				))
-				next = cur.Add(time.Millisecond)
-				for k, t := range newBoundary {
-					if t.Before(next) {
-						delete(newBoundary, k)
-					}
-				}
-			} else {
-				next = cur // re-fetch the same start; newBoundary now covers what was emitted
+				next = skipStalledMillisecond(cur, newBoundary, pageSize, warnLine)
 			}
 		}
 		boundary, cur = newBoundary, next
 	}
+}
+
+// emitNew emits a page's entries in order, skipping the ones boundary holds (emitted already, from the millisecond
+// the request started at), and returns how many it skipped.
+func emitNew(items []Entry, boundary map[string]time.Time, emit func(Entry) error) (int, *clierr.Error) {
+	dups := 0
+	for i := range items {
+		e := items[i]
+		if _, seen := boundary[DedupKey(e)]; seen {
+			dups++
+			continue
+		}
+		if err := emit(e); err != nil {
+			return dups, asCliErr(err)
+		}
+	}
+	return dups, nil
+}
+
+// carryBoundary is the boundary set for a request starting at next: every already-emitted entry it can re-return,
+// which is this page's entries at or after next plus the previous carries still at or after next (relevant when the
+// window fails to advance).
+func carryBoundary(items []Entry, boundary map[string]time.Time, next time.Time) map[string]time.Time {
+	newBoundary := make(map[string]time.Time)
+	for i := range items {
+		t, perr := time.Parse(time.RFC3339Nano, items[i].Time)
+		if perr != nil {
+			continue // unparseable Time cannot be placed on the boundary
+		}
+		if t = t.UTC(); !t.Before(next) {
+			newBoundary[DedupKey(items[i])] = t
+		}
+	}
+	for k, t := range boundary {
+		if !t.Before(next) {
+			newBoundary[k] = t
+		}
+	}
+	return newBoundary
+}
+
+// skipStalledMillisecond is the next request's start when a full page held nothing new and did not move the window
+// past cur. Pathological: more than pageSize entries share one millisecond, so the boundary cannot advance. Rather
+// than loop forever it skips 1ms, says so, and drops the boundary entries before the new start.
+func skipStalledMillisecond(
+	cur time.Time,
+	boundary map[string]time.Time,
+	pageSize int,
+	warnLine func(string),
+) time.Time {
+	warn(warnLine, fmt.Sprintf(
+		"warning: more than %d log entries share the millisecond at %s; skipping ahead 1ms (some entries in that millisecond may be missed)",
+		pageSize,
+		FormatRequestTime(cur),
+	))
+	next := cur.Add(time.Millisecond)
+	for k, t := range boundary {
+		if t.Before(next) {
+			delete(boundary, k)
+		}
+	}
+	return next
 }
 
 // newestEntryTime returns the latest parseable emission Time among items,
