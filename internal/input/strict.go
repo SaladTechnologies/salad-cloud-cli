@@ -196,7 +196,10 @@ func collectUnknown(data json.RawMessage, t reflect.Type, path string, out *[]Un
 		collectUnknownItems(data, t, path, out)
 	case reflect.Map:
 		collectUnknownValues(data, t, path, out)
-	default:
+	case reflect.Invalid, reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Float32,
+		reflect.Float64, reflect.Complex64, reflect.Complex128, reflect.Chan, reflect.Func, reflect.Interface,
+		reflect.Pointer, reflect.String, reflect.UnsafePointer:
 		// scalars
 	}
 }
@@ -339,20 +342,23 @@ func childPath(path, key string) string {
 func describeUnknown(key, path string, fields map[string]reflect.Type) Unknown {
 	where := "at the top level"
 	if path != "" {
-		where = fmt.Sprintf(`in "%s"`, path)
+		where = fmt.Sprintf(`in "%s"`, path) //nolint:gocritic // shows the path as typed; %q would escape it
 	}
 	hint := suggestField(key, fields)
 	suffix := ""
 	if hint != "" {
-		suffix = fmt.Sprintf(` (did you mean "%s"?)`, hint)
+		suffix = fmt.Sprintf(` (did you mean "%s"?)`, hint) //nolint:gocritic // a field name; %q would escape it
 	}
 	return Unknown{
-		Desc:    fmt.Sprintf(`unknown field "%s" %s%s`, key, where, suffix),
+		Desc:    fmt.Sprintf(`unknown field "%s" %s%s`, key, where, suffix), //nolint:gocritic // the key as typed
 		Path:    childPath(path, key),
 		Hint:    hint,
 		InArray: strings.Contains(path, "["),
 	}
 }
+
+// shortKeyRunes is the longest key, in runes, that suggestField allows only one edit for.
+const shortKeyRunes = 4
 
 // suggestField returns the known field name key most plausibly meant, or
 // "". Exact kebab/snake swaps win outright. Otherwise the closest field by
@@ -371,7 +377,7 @@ func suggestField(key string, fields map[string]reflect.Type) string {
 		}
 	}
 	budget := 2
-	if len([]rune(key)) <= 4 {
+	if len([]rune(key)) <= shortKeyRunes {
 		budget = 1
 	}
 	lower := strings.ToLower(key)
@@ -466,7 +472,10 @@ func FilterTree(v any, t reflect.Type, path string, dropped *[]string) any {
 		if obj, ok := v.(map[string]any); ok {
 			return filterValues(obj, t, path, dropped)
 		}
-	default:
+	case reflect.Invalid, reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Float32,
+		reflect.Float64, reflect.Complex64, reflect.Complex128, reflect.Chan, reflect.Func, reflect.Interface,
+		reflect.Pointer, reflect.String, reflect.UnsafePointer:
 		// scalars pass through
 	}
 	return v // also a value whose shape is not t's

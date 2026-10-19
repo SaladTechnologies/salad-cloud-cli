@@ -234,17 +234,8 @@ func TestFilterTree(t *testing.T) {
 	var dropped []string
 	out := assertAs[map[string]any](t, FilterTree(doc, patchT, "", &dropped))
 	slices.Sort(dropped)
-	if want := []string{
-		"container.hash",
-		"id",
-		"scaling-actions[0].when",
-	}; strings.Join(
-		dropped,
-		",",
-	) != strings.Join(
-		want,
-		",",
-	) {
+	want := []string{"container.hash", "id", "scaling-actions[0].when"}
+	if strings.Join(dropped, ",") != strings.Join(want, ",") {
 		t.Errorf("dropped = %v, want %v", dropped, want)
 	}
 	if out["replicas"] != float64(2) {
@@ -316,7 +307,7 @@ func TestEditDistance(t *testing.T) {
 }
 
 // assertAs returns v as a T and fails the test when it holds something else.
-func assertAs[T any](t *testing.T, v any) T {
+func assertAs[T any](t *testing.T, v any) T { //nolint:ireturn // returns the caller's type parameter
 	t.Helper()
 	x, ok := v.(T)
 	if !ok {
