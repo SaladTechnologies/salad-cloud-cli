@@ -18,8 +18,8 @@ type Env struct {
 // ProcessEnv is the running process's environment.
 func ProcessEnv() Env { return Env{Getenv: os.Getenv, GOOS: runtime.GOOS} }
 
-// The errors ConfigDir and HomeDir return, worded as os.UserConfigDir and
-// os.UserHomeDir word theirs.
+// The errors ConfigDir and HomeDir return, worded as [os.UserConfigDir] and
+// [os.UserHomeDir] word theirs.
 var (
 	errNoAppData       = errors.New("%AppData% is not defined")
 	errNoHome          = errors.New("$HOME is not defined")

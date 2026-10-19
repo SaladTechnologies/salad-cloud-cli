@@ -82,7 +82,7 @@ func Load(env Env) (File, error) {
 	if err != nil {
 		return f, err
 	}
-	data, err := os.ReadFile(p)
+	data, err := os.ReadFile(p) //nolint:gosec // the config file's own path, from Path
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return File{}, nil
@@ -109,8 +109,8 @@ func Writable(env Env) error {
 	if err != nil {
 		return err
 	}
-	if err = opensForWriting(p); err != nil {
-		return err
+	if openErr := opensForWriting(p); openErr != nil {
+		return openErr
 	}
 	dir, err := nearestFolder(filepath.Dir(p))
 	if err != nil {
@@ -132,7 +132,7 @@ func Writable(env Env) error {
 
 // opensForWriting reports why the config file at p, when it exists, does not open for writing, or nil.
 func opensForWriting(p string) error {
-	f, err := os.OpenFile(p, os.O_WRONLY, 0)
+	f, err := os.OpenFile(p, os.O_WRONLY, 0) //nolint:gosec // the config file's own path, from Path
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -164,6 +164,12 @@ func nearestFolder(dir string) (string, error) {
 	}
 }
 
+// The config folder's and the config file's permissions: the file holds the API key, so only its owner reads it.
+const (
+	dirMode  = 0o700
+	fileMode = 0o600
+)
+
 // Save writes the config file, creating its directory (0700) if needed.
 // The file itself is written with permission 0600.
 func Save(env Env, f File) error {
@@ -171,10 +177,10 @@ func Save(env Env, f File) error {
 	if err != nil {
 		return err
 	}
-	if err = os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+	if err = os.MkdirAll(filepath.Dir(p), dirMode); err != nil {
 		return fmt.Errorf("creating the config folder: %w", err)
 	}
-	data, err := json.MarshalIndent(f, "", "  ")
+	data, err := json.MarshalIndent(f, "", "  ") //nolint:gosec // the config file is where the API key is kept
 	if err != nil {
 		return fmt.Errorf("encoding the config: %w", err)
 	}
@@ -189,7 +195,7 @@ func Save(env Env, f File) error {
 	// On any failure the temp file goes; errors.Join keeps the failure's
 	// message as it is unless the removal fails too.
 	name := tmp.Name()
-	if err := tmp.Chmod(0o600); err != nil && !errors.Is(err, errors.ErrUnsupported) {
+	if err := tmp.Chmod(fileMode); err != nil && !errors.Is(err, errors.ErrUnsupported) {
 		return errors.Join(fmt.Errorf("setting the temp file's mode: %w", err), tmp.Close(), os.Remove(name))
 	}
 	if _, err := tmp.Write(data); err != nil {

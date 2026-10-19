@@ -49,7 +49,7 @@ func TestPathHonorsConfigDirOverride(t *testing.T) {
 
 func TestLoadMissingFile(t *testing.T) {
 	t.Parallel()
-	env := testEnv(t, map[string]string{})
+	env := testEnv(t, make(map[string]string))
 	f, err := Load(env)
 	if err != nil {
 		t.Fatalf("Load(env) on missing file: %v", err)
@@ -120,7 +120,7 @@ func TestResolvePrecedence(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			vars := map[string]string{}
+			vars := make(map[string]string)
 			if tt.envOrg != "" {
 				vars["SALAD_ORGANIZATION"] = tt.envOrg
 			}
@@ -139,12 +139,10 @@ func TestResolvePrecedence(t *testing.T) {
 
 func TestResolveAllFields(t *testing.T) {
 	t.Parallel()
-	vars := map[string]string{}
+	vars := make(map[string]string)
 	env := testEnv(t, vars)
-	if err := Save(
-		env,
-		File{APIKey: "file-key", Organization: "file-org", Project: "file-project"},
-	); err != nil {
+	err := Save(env, File{APIKey: "file-key", Organization: "file-org", Project: "file-project"})
+	if err != nil {
 		t.Fatal(err)
 	}
 	vars["SALAD_API_KEY"] = "env-key"
@@ -168,7 +166,7 @@ func TestResolveAllFields(t *testing.T) {
 
 func TestResolveMissingEverything(t *testing.T) {
 	t.Parallel()
-	vars := map[string]string{}
+	vars := make(map[string]string)
 	env := testEnv(t, vars)
 
 	r, err := Resolve(env, "", "")
@@ -216,7 +214,7 @@ func TestResolveProjectFallback(t *testing.T) {
 // through the file, honors the docs' env var name, env beats config.
 func TestGatewayKey(t *testing.T) {
 	t.Parallel()
-	vars := map[string]string{}
+	vars := make(map[string]string)
 	env := testEnv(t, vars)
 	if err := Save(env, File{GatewayAPIKey: "file-gw"}); err != nil {
 		t.Fatal(err)
@@ -262,7 +260,7 @@ func TestSaveReplacesAtomically(t *testing.T) {
 	if got, err := Load(env); err != nil || got != want {
 		t.Errorf("Load after Save = %+v, %v; want %+v", got, err, want)
 	}
-	data := must(os.ReadFile(p))(t)
+	data := must(os.ReadFile(p))(t) //nolint:gosec // a path under t.TempDir()
 	if strings.Contains(string(data), "old") {
 		t.Errorf("the old content survived: %s", data)
 	}
@@ -275,11 +273,8 @@ func TestSaveReplacesAtomically(t *testing.T) {
 // writeOldConfig writes TestSaveReplacesAtomically's old config file at p and returns its file info.
 func writeOldConfig(t *testing.T, p string) os.FileInfo {
 	t.Helper()
-	if err := os.WriteFile(
-		p,
-		[]byte(`{"api_key":"old-key","organization":"old-org","project":"a-much-longer-old-project-name"}`),
-		0o600,
-	); err != nil {
+	old := []byte(`{"api_key":"old-key","organization":"old-org","project":"a-much-longer-old-project-name"}`)
+	if err := os.WriteFile(p, old, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return must(os.Stat(p))(t)
@@ -303,10 +298,11 @@ func checkMode0600(t *testing.T, p string) {
 func TestResolveSavedProjectBelongsToItsOrg(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	if err := Save(
+	err := Save(
 		testEnv(t, map[string]string{"SALAD_CLI_CONFIG_DIR": dir}),
 		File{Organization: "org-a", Project: "prod"},
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
 	cases := []struct {

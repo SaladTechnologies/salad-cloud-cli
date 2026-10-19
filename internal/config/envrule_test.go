@@ -39,7 +39,7 @@ func TestEnvironmentVariableRule(t *testing.T) {
 		if !ruleCovers(filepath.Base(path)) {
 			continue
 		}
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) //nolint:gosec // a file git tracks in this repository
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,7 +87,8 @@ func ruleFiles(t *testing.T, root string) []string {
 // missing, or tracks nothing).
 func trackedFiles(t *testing.T, root string) ([]string, bool) {
 	t.Helper()
-	out, err := exec.CommandContext(t.Context(), "git", "-C", root, "ls-files").Output()
+	cmd := exec.CommandContext(t.Context(), "git", "-C", root, "ls-files") //nolint:gosec // root is the module root
+	out, err := cmd.Output()
 	if err != nil || len(out) == 0 {
 		return nil, false
 	}
@@ -160,7 +161,7 @@ func TestEveryVariableTheCodeNamesFollowsTheRule(t *testing.T) {
 		if filepath.Ext(path) != ".go" || filepath.Base(path) == "envrule_test.go" {
 			continue
 		}
-		data, err := os.ReadFile(path)
+		data, err := os.ReadFile(path) //nolint:gosec // a file git tracks in this repository
 		if err != nil {
 			t.Fatal(err)
 		}
