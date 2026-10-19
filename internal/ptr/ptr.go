@@ -5,7 +5,7 @@ package ptr
 func To[T any](v T) *T { return &v }
 
 // Deref returns *p, or the zero value of T if p is nil.
-func Deref[T any](p *T) T {
+func Deref[T any](p *T) T { //nolint:ireturn // returns the caller's type parameter, not an interface
 	if p == nil {
 		var zero T
 		return zero
@@ -14,7 +14,7 @@ func Deref[T any](p *T) T {
 }
 
 // DerefOr returns *p, or def if p is nil.
-func DerefOr[T any](p *T, def T) T {
+func DerefOr[T any](p *T, def T) T { //nolint:ireturn // returns the caller's type parameter, not an interface
 	if p == nil {
 		return def
 	}
