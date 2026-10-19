@@ -107,40 +107,42 @@ func keyPaths(typ reflect.Type, prefix string, open map[reflect.Type]bool, out *
 		}
 		open[typ] = true
 		defer delete(open, typ)
-		var fields func(reflect.Type)
-		fields = func(st reflect.Type) {
-			for i := range st.NumField() {
-				f := st.Field(i)
-				tag := f.Tag.Get("json")
-				name, _, _ := strings.Cut(tag, ",")
-				if tag == "-" {
-					continue
-				}
-				if f.Anonymous && name == "" {
-					fields(f.Type)
-					continue
-				}
-				if !f.IsExported() {
-					continue
-				}
-				if name == "" {
-					name = f.Name
-				}
-				p := name
-				if prefix != "" {
-					p = prefix + "." + name
-				}
-				*out = append(*out, p)
-				keyPaths(f.Type, p, open, out)
-			}
-		}
-		fields(typ)
+		keyPathFields(typ, prefix, open, out)
 	case reflect.Slice, reflect.Array:
 		if typ.Elem().Kind() != reflect.Uint8 {
 			keyPaths(typ.Elem(), prefix+"[]", open, out)
 		}
 	case reflect.Map:
 		keyPaths(typ.Elem(), prefix+"{}", open, out)
+	}
+}
+
+// keyPathFields appends the key path of every exported field of struct st not tagged "-", and the paths under it,
+// taking the fields of an untagged embedded struct as st's own.
+func keyPathFields(st reflect.Type, prefix string, open map[reflect.Type]bool, out *[]string) {
+	for i := range st.NumField() {
+		f := st.Field(i)
+		tag := f.Tag.Get("json")
+		name, _, _ := strings.Cut(tag, ",")
+		if tag == "-" {
+			continue
+		}
+		if f.Anonymous && name == "" {
+			keyPathFields(f.Type, prefix, open, out)
+			continue
+		}
+		if !f.IsExported() {
+			continue
+		}
+		if name == "" {
+			name = f.Name
+		}
+		p := name
+		if prefix != "" {
+			p = prefix + "." + name
+		}
+		*out = append(*out, p)
+		keyPaths(f.Type, p, open, out)
 	}
 }
 

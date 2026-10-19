@@ -67,38 +67,52 @@ func TestActionResultsShareActionAndOK(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			b, err := json.Marshal(tt.payload)
-			if err != nil {
-				t.Fatalf("marshal: %v", err)
-			}
-			var got map[string]any
-			if err := json.Unmarshal(b, &got); err != nil {
-				t.Fatalf("unmarshal: %v", err)
-			}
-
-			action, ok := got["action"]
-			if !ok {
-				t.Fatalf("%s is missing the \"action\" key: %s", tt.name, b)
-			}
-			if s, isStr := action.(string); !isStr || s == "" {
-				t.Errorf("action = %v, want a non-empty string", action)
-			}
-
-			okVal, present := got["ok"]
-			if !present {
-				t.Fatalf("%s is missing the \"ok\" key: %s", tt.name, b)
-			}
-			if _, isBool := okVal.(bool); !isBool {
-				t.Errorf("ok = %v, want a bool", okVal)
-			}
-
-			for _, key := range tt.identity {
-				if v, present := got[key]; !present || v == "" {
-					t.Errorf("%s is missing identity key %q: %s", tt.name, key, b)
-				}
-			}
+			checkActionDocument(t, tt.name, tt.payload, tt.identity)
 		})
 	}
+}
+
+// checkActionDocument encodes payload, the result named name, and checks the document: a non-empty string action, a
+// bool ok, and every identity key present and not empty.
+func checkActionDocument(t *testing.T, name string, payload any, identity []string) {
+	t.Helper()
+	b, got := encodeActionDocument(t, payload)
+
+	action, ok := got["action"]
+	if !ok {
+		t.Fatalf("%s is missing the \"action\" key: %s", name, b)
+	}
+	if s, isStr := action.(string); !isStr || s == "" {
+		t.Errorf("action = %v, want a non-empty string", action)
+	}
+
+	okVal, present := got["ok"]
+	if !present {
+		t.Fatalf("%s is missing the \"ok\" key: %s", name, b)
+	}
+	if _, isBool := okVal.(bool); !isBool {
+		t.Errorf("ok = %v, want a bool", okVal)
+	}
+
+	for _, key := range identity {
+		if v, present := got[key]; !present || v == "" {
+			t.Errorf("%s is missing identity key %q: %s", name, key, b)
+		}
+	}
+}
+
+// encodeActionDocument encodes payload as JSON and decodes it back, returning both the bytes and the document.
+func encodeActionDocument(t *testing.T, payload any) ([]byte, map[string]any) {
+	t.Helper()
+	b, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	return b, got
 }
 
 // TestActionResultJSONTags audits the struct tags by reflection rather than
@@ -133,26 +147,30 @@ func TestActionResultJSONTags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			tags := make(map[string]string) // json name -> full tag
-			for i := range tt.typ.NumField() {
-				raw := tt.typ.Field(i).Tag.Get("json")
-				if raw == "" || raw == "-" {
-					continue
-				}
-				tags[strings.Split(raw, ",")[0]] = raw
-			}
+			tags := actionResultTags(tt.typ)
 			for _, required := range append([]string{"action", "ok"}, tt.identity...) {
 				full, present := tags[required]
 				if !present {
 					t.Errorf("%s has no field tagged json:%q (tags: %v)", tt.name, required, tags)
 					continue
 				}
-				if required == "action" || required == "ok" {
-					if strings.Contains(full, "omitempty") {
-						t.Errorf("%s tags %q omitempty; it must always serialize", tt.name, required)
-					}
+				if (required == "action" || required == "ok") && strings.Contains(full, "omitempty") {
+					t.Errorf("%s tags %q omitempty; it must always serialize", tt.name, required)
 				}
 			}
 		})
 	}
+}
+
+// actionResultTags maps the json name of each tagged field of struct typ to its full json tag.
+func actionResultTags(typ reflect.Type) map[string]string {
+	tags := make(map[string]string) // json name -> full tag
+	for i := range typ.NumField() {
+		raw := typ.Field(i).Tag.Get("json")
+		if raw == "" || raw == "-" {
+			continue
+		}
+		tags[strings.Split(raw, ",")[0]] = raw
+	}
+	return tags
 }

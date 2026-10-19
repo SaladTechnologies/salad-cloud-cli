@@ -83,55 +83,59 @@ func assertShape(t *testing.T, path string, typ reflect.Type, doc any) {
 			}
 			return
 		}
-		var fields func(reflect.Type)
-		fields = func(st reflect.Type) {
-			for i := range st.NumField() {
-				f := st.Field(i)
-				tag := f.Tag.Get("json")
-				name, _, _ := strings.Cut(tag, ",")
-				if tag == "-" {
-					continue
-				}
-				if f.Anonymous && name == "" {
-					fields(f.Type)
-					continue
-				}
-				if !f.IsExported() {
-					continue
-				}
-				if name == "" {
-					name = f.Name
-				}
-				val, ok := obj[name]
-				if !ok {
-					t.Errorf("%s.%s: key missing", path, name)
-					continue
-				}
-				ft := f.Type
-				for ft.Kind() == reflect.Pointer {
-					ft = ft.Elem()
-				}
-				switch val {
-				case nil:
-					if f.Type.Kind() == reflect.Slice && f.Type.Elem().Kind() != reflect.Uint8 &&
-						strings.Contains(tag, "omitempty") {
-						t.Errorf("%s.%s: absent array rendered null, want []", path, name)
-					}
-					if f.Type.Kind() == reflect.Map && strings.Contains(tag, "omitempty") {
-						t.Errorf("%s.%s: absent map rendered null, want {}", path, name)
-					}
-				default:
-					assertShape(t, path+"."+name, f.Type, val)
-				}
-			}
-		}
-		fields(typ)
+		assertShapeFields(t, path, typ, obj)
 	case reflect.Slice, reflect.Array:
 		if arr, ok := doc.([]any); ok {
 			for _, el := range arr {
 				assertShape(t, path+"[]", typ.Elem(), el)
 			}
 		}
+	}
+}
+
+// assertShapeFields checks obj, the object at path, against the json tags of struct st's fields: the key of every
+// exported field not tagged "-" present, the fields of an untagged embedded struct taken as st's own.
+func assertShapeFields(t *testing.T, path string, st reflect.Type, obj map[string]any) {
+	t.Helper()
+	for i := range st.NumField() {
+		f := st.Field(i)
+		tag := f.Tag.Get("json")
+		name, _, _ := strings.Cut(tag, ",")
+		if tag == "-" {
+			continue
+		}
+		if f.Anonymous && name == "" {
+			assertShapeFields(t, path, f.Type, obj)
+			continue
+		}
+		if !f.IsExported() {
+			continue
+		}
+		if name == "" {
+			name = f.Name
+		}
+		val, ok := obj[name]
+		if !ok {
+			t.Errorf("%s.%s: key missing", path, name)
+			continue
+		}
+		assertShapeValue(t, path+"."+name, f.Type, tag, val)
+	}
+}
+
+// assertShapeValue checks val, the value of a field of type typ tagged tag at path: a null omitempty slice (other
+// than bytes) or map is an absent array or map the fill missed; anything else non-null is checked by assertShape.
+func assertShapeValue(t *testing.T, path string, typ reflect.Type, tag string, val any) {
+	t.Helper()
+	if val != nil {
+		assertShape(t, path, typ, val)
+		return
+	}
+	if typ.Kind() == reflect.Slice && typ.Elem().Kind() != reflect.Uint8 && strings.Contains(tag, "omitempty") {
+		t.Errorf("%s: absent array rendered null, want []", path)
+	}
+	if typ.Kind() == reflect.Map && strings.Contains(tag, "omitempty") {
+		t.Errorf("%s: absent map rendered null, want {}", path)
 	}
 }
 
