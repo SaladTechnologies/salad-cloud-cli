@@ -183,53 +183,64 @@ func TestStreamYAML(t *testing.T) {
 func TestJSONIsASCII(t *testing.T) {
 	t.Parallel()
 	doc := map[string]any{"name": "Café 東京", "emoji": "🎉 ok", "Größe": "ü", "plain": "<a&b>"}
-	check := func(t *testing.T, out []byte) {
-		t.Helper()
-		for i, b := range out {
-			if b >= 0x80 {
-				t.Fatalf("byte %d is not ASCII: %q", i, out)
+	isASCIIDoc := func(t *testing.T, out []byte) { t.Helper(); checkASCIIDoc(t, out, doc) }
+	for _, tc := range []struct {
+		name, mode string
+		render     func(p *Printer) error
+		check      func(t *testing.T, out []byte)
+	}{
+		{"json Emit", "json", func(p *Printer) error { return p.Emit(doc, nil) }, isASCIIDoc},
+		{"json Stream", "json", func(p *Printer) error { return p.Stream(doc, "") }, isASCIIDoc},
+		{"yaml Emit", "yaml", func(p *Printer) error { return p.Emit(doc, nil) }, checkYAMLKeepsCharacters},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			p, buf := capture(t)
+			if err := p.SetMode(tc.mode); err != nil {
+				t.Fatal(err)
 			}
-		}
-		var got map[string]any
-		if err := json.Unmarshal(out, &got); err != nil {
-			t.Fatal(err)
-		}
-		if fmt.Sprint(got) != fmt.Sprint(doc) {
-			t.Errorf("decoded %v, want %v", got, doc)
-		}
-		if !strings.Contains(string(out), "<a&b>") {
-			t.Errorf("ASCII escaped an ASCII character: %s", out)
-		}
+			if err := tc.render(p); err != nil {
+				t.Fatal(err)
+			}
+			tc.check(t, buf.Bytes())
+		})
 	}
-	for _, stream := range []bool{false, true} {
-		p, buf := capture(t)
-		if err := p.SetMode("json"); err != nil {
-			t.Fatal(err)
-		}
-		var err error
-		if stream {
-			err = p.Stream(doc, "")
-		} else {
-			err = p.Emit(doc, nil)
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		check(t, buf.Bytes())
-	}
-	p, buf := capture(t)
-	if err := p.SetMode("yaml"); err != nil {
-		t.Fatal(err)
-	}
-	if err := p.Emit(doc, nil); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(buf.String(), "Café 東京") || !strings.Contains(buf.String(), "ü") {
-		t.Errorf("yaml changed the characters:\n%s", buf.String())
-	}
+}
+
+// TestASCIISurrogatePair: a character above U+FFFF is escaped as its UTF-16 surrogate pair.
+func TestASCIISurrogatePair(t *testing.T) {
+	t.Parallel()
 	bs := string(rune(92)) // a backslash
 	if got, want := string(ASCII([]byte(`"🎉"`))), `"`+bs+`ud83c`+bs+`udf89"`; got != want {
 		t.Errorf("ASCII = %s, want the surrogate pair %s", got, want)
+	}
+}
+
+// checkASCIIDoc checks that out is plain ASCII, decodes to doc, and leaves ASCII characters as they are.
+func checkASCIIDoc(t *testing.T, out []byte, doc map[string]any) {
+	t.Helper()
+	for i, b := range out {
+		if b >= 0x80 {
+			t.Fatalf("byte %d is not ASCII: %q", i, out)
+		}
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(got) != fmt.Sprint(doc) {
+		t.Errorf("decoded %v, want %v", got, doc)
+	}
+	if !strings.Contains(string(out), "<a&b>") {
+		t.Errorf("ASCII escaped an ASCII character: %s", out)
+	}
+}
+
+// checkYAMLKeepsCharacters checks that TestJSONIsASCII's yaml output keeps its non-ASCII characters as they are.
+func checkYAMLKeepsCharacters(t *testing.T, out []byte) {
+	t.Helper()
+	if !strings.Contains(string(out), "Café 東京") || !strings.Contains(string(out), "ü") {
+		t.Errorf("yaml changed the characters:\n%s", out)
 	}
 }
 

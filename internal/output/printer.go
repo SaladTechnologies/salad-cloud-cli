@@ -56,44 +56,13 @@ func (p *Printer) Mode() string { return p.mode }
 // In table mode it calls table with a Writer over a tabwriter that Emit
 // flushes afterward, and returns the first write error.
 func (p *Printer) Emit(v any, table func(w *Writer)) error {
-	if p.mode == "yaml" {
-		data, err := encodeFilled(v)
-		if err != nil {
-			return err
-		}
-		y, err := yaml.JSONToYAML(data)
-		if err != nil {
-			return fmt.Errorf("converting the document to YAML: %w", err)
-		}
-		if _, err = p.w.Write(y); err != nil {
-			return fmt.Errorf("writing the document: %w", err)
-		}
-		return nil
+	switch p.mode {
+	case "yaml":
+		return p.emitYAML(v)
+	case "json":
+		return p.emitJSON(v)
 	}
-	if p.mode == "json" {
-		data, err := encodeFilled(v)
-		if err != nil {
-			return err
-		}
-		var buf bytes.Buffer
-		if err = json.Indent(&buf, ASCII(data), "", "  "); err != nil {
-			return fmt.Errorf("indenting the document: %w", err)
-		}
-		if _, err = fmt.Fprintln(p.w, buf.String()); err != nil {
-			return fmt.Errorf("writing the document: %w", err)
-		}
-		return nil
-	}
-	tw := newTabWriter(p.w)
-	w := NewWriter(tw)
-	table(w)
-	if err := tw.Flush(); w.err == nil {
-		w.err = err
-	}
-	if w.err != nil {
-		return fmt.Errorf("writing the table: %w", w.err)
-	}
-	return nil
+	return p.emitTable(table)
 }
 
 // Stream renders one streamed record (e.g. a log line) and flushes
@@ -130,6 +99,52 @@ func (p *Printer) Stream(v any, line string) error {
 		}
 	}
 	return flush(p.w)
+}
+
+// emitYAML is Emit in yaml mode.
+func (p *Printer) emitYAML(v any) error {
+	data, err := encodeFilled(v)
+	if err != nil {
+		return err
+	}
+	y, err := yaml.JSONToYAML(data)
+	if err != nil {
+		return fmt.Errorf("converting the document to YAML: %w", err)
+	}
+	if _, err = p.w.Write(y); err != nil {
+		return fmt.Errorf("writing the document: %w", err)
+	}
+	return nil
+}
+
+// emitJSON is Emit in json mode.
+func (p *Printer) emitJSON(v any) error {
+	data, err := encodeFilled(v)
+	if err != nil {
+		return err
+	}
+	var buf bytes.Buffer
+	if err = json.Indent(&buf, ASCII(data), "", "  "); err != nil {
+		return fmt.Errorf("indenting the document: %w", err)
+	}
+	if _, err = fmt.Fprintln(p.w, buf.String()); err != nil {
+		return fmt.Errorf("writing the document: %w", err)
+	}
+	return nil
+}
+
+// emitTable is Emit in table mode.
+func (p *Printer) emitTable(table func(w *Writer)) error {
+	tw := newTabWriter(p.w)
+	w := NewWriter(tw)
+	table(w)
+	if err := tw.Flush(); w.err == nil {
+		w.err = err
+	}
+	if w.err != nil {
+		return fmt.Errorf("writing the table: %w", w.err)
+	}
+	return nil
 }
 
 // flush pushes buffered bytes through if the writer supports it.
