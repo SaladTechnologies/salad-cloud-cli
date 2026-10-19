@@ -3,7 +3,7 @@ package config
 import (
 	"errors"
 	"os"
-	"path/filepath"
+	"path"
 	"runtime"
 )
 
@@ -61,7 +61,7 @@ func ConfigDir(e Env) (string, error) {
 			}
 			return home + "/.config", nil
 		}
-		if !filepath.IsAbs(dir) {
+		if !path.IsAbs(dir) { // a Unix path, whatever the host (tests simulate other systems)
 			return "", errRelativeXDGHome
 		}
 		return dir, nil
