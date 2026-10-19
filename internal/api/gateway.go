@@ -46,7 +46,7 @@ type Gateway struct {
 // NewGateway builds a Gateway from resolved configuration. It needs the
 // gateway key (not the SaladCloud API key). SALAD_CLI_AI_GATEWAY_BASE_URL overrides
 // the base URL (for tests).
-func NewGateway(res config.Resolved, opts Options) (*Gateway, *clierr.Error) {
+func NewGateway(res *config.Resolved, opts Options) (*Gateway, *clierr.Error) {
 	if res.GatewayAPIKey == "" {
 		return nil, clierr.New(clierr.CodeAuth, clierr.KindAuth, "no AI Gateway key set").
 			WithHint("run saladcloud ai-gateway login in a terminal, or set SALAD_AI_GATEWAY_API_KEY")
@@ -127,7 +127,8 @@ func (g *Gateway) CheckKey(ctx context.Context) (*GatewayModels, *clierr.Error) 
 			"the AI Gateway listed no models; cannot check the key",
 		)
 	}
-	if _, cerr := g.Complete(ctx, model, "ping", 1, false); cerr != nil {
+	ping := GatewayRequest{Model: model, Prompt: "ping", MaxTokens: 1, Thinking: false}
+	if _, cerr := g.Complete(ctx, ping); cerr != nil {
 		return models, cerr
 	}
 	return models, nil
@@ -191,27 +192,29 @@ func (c *GatewayCompletion) Reply() string {
 	return strings.TrimSpace(c.Choices[0].Message.Content)
 }
 
+// GatewayRequest is one completion request: a single user message to a model, within a token budget.
+type GatewayRequest struct {
+	Model     string
+	Prompt    string
+	MaxTokens int
+	// Thinking leaves the models' reasoning phase on. Off, it is disabled via
+	// chat_template_kwargs.enable_thinking, the one switch the gateway honors
+	// (reasoning_effort, a top-level enable_thinking, a reasoning object and a
+	// /no_think suffix are ignored). With thinking on, the hosted models spend
+	// hundreds of tokens before the first word of the answer.
+	Thinking bool
+}
+
 // Complete sends one user message and returns the completion. No history,
 // no streaming, no system prompt: this exists to prove a key works against
 // a model, not to chat.
-//
-// thinking=false disables the models' reasoning phase via
-// chat_template_kwargs.enable_thinking, the one switch the gateway honors
-// (reasoning_effort, a top-level enable_thinking, a reasoning object and a
-// /no_think suffix are ignored). With thinking on, the hosted models spend
-// hundreds of tokens before the first word of the answer.
-func (g *Gateway) Complete(
-	ctx context.Context,
-	model, prompt string,
-	maxTokens int,
-	thinking bool,
-) (*GatewayCompletion, *clierr.Error) {
+func (g *Gateway) Complete(ctx context.Context, req GatewayRequest) (*GatewayCompletion, *clierr.Error) {
 	body := map[string]any{
-		"model":      model,
-		"messages":   []map[string]string{{"role": "user", "content": prompt}},
-		"max_tokens": maxTokens,
+		"model":      req.Model,
+		"messages":   []map[string]string{{"role": "user", "content": req.Prompt}},
+		"max_tokens": req.MaxTokens,
 	}
-	if !thinking {
+	if !req.Thinking {
 		body["chat_template_kwargs"] = map[string]any{"enable_thinking": false}
 	}
 	return gatewayJSON[GatewayCompletion](ctx, g, http.MethodPost, "/chat/completions", body)

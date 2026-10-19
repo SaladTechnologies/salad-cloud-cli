@@ -163,10 +163,11 @@ func TestListQueueJobsNewestFirst(t *testing.T) {
 	} {
 		var n int32
 		c := newRestTestClient(t, jobServer(t, tc.total, queueListing, &n).URL)
-		jobs, more, _, cerr := c.ListQueueJobs(t.Context(), "q", tc.limit)
+		listing, cerr := c.ListQueueJobs(t.Context(), "q", tc.limit)
 		if cerr != nil {
 			t.Fatal(cerr)
 		}
+		jobs, more := listing.Jobs, listing.More
 		got := make([]int, len(jobs))
 		for i, j := range jobs {
 			got[i] = int(assertAs[float64](t, assertAs[map[string]any](t, j.Input)["n"]))
@@ -204,10 +205,11 @@ func TestListQueueJobsReadBudget(t *testing.T) {
 	} {
 		var n int32
 		c := newRestTestClient(t, jobServer(t, tc.total, queueListing, &n).URL)
-		jobs, _, partial, cerr := c.ListQueueJobs(t.Context(), "q", tc.limit)
+		listing, cerr := c.ListQueueJobs(t.Context(), "q", tc.limit)
 		if cerr != nil {
 			t.Fatal(cerr)
 		}
+		jobs, partial := listing.Jobs, listing.Partial
 		if int(n) != tc.requests || partial != tc.partial {
 			t.Errorf(
 				"%d jobs, limit %d: %d requests (partial %v), want %d (partial %v)",

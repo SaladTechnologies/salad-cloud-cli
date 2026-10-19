@@ -192,7 +192,7 @@ func (u *useRun) checkProject(ctx context.Context, org, project string) (string,
 // client is an API client for use's checks: the key in use, with org and project.
 func (u *useRun) client(org, project string) (*api.Client, *clierr.Error) {
 	return api.New(
-		config.Resolved{
+		&config.Resolved{
 			APIKey:              u.key,
 			Organization:        org,
 			Project:             project,

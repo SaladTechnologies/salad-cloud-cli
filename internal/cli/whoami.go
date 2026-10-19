@@ -160,7 +160,7 @@ func (app *App) whoamiCheckKey(ctx context.Context, res *config.Resolved) (whoam
 		return chk, nil
 	}
 	client, cerr := api.New(
-		config.Resolved{
+		&config.Resolved{
 			APIKey:              key,
 			Organization:        res.Organization,
 			APIKeySource:        "",

@@ -40,7 +40,7 @@ func (app *App) complete(f completer) func(*cobra.Command, []string, string) ([]
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		client, cerr := api.New(res, app.apiOptions())
+		client, cerr := api.New(&res, app.apiOptions())
 		if cerr != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}

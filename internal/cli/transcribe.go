@@ -612,7 +612,7 @@ func (app *App) transcribeUpload(
 	if err != nil {
 		return "", clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, `cannot read "%s": %v`, source, err)
 	}
-	url, cerr := client.UploadFile(ctx, remote, fh, transcribeMime(source), true, transcribeSignedURLExp)
+	url, cerr := client.UploadFile(ctx, remote, fh, transcribeMime(source), transcribeSignedURLExp)
 	if err := fh.Close(); err != nil {
 		fprintf(app.errw(), "warning: could not close %s: %v\n", source, err) // read only: nothing is lost
 	}

@@ -22,7 +22,7 @@ func newTestClient(t *testing.T, baseURL string, opts ...Options) *Client {
 		o = opts[0]
 	}
 	o.Getenv = getenvOf(baseURLs(baseURL))
-	c, cerr := New(config.Resolved{APIKey: "test-key", Organization: "test org"}, o)
+	c, cerr := New(&config.Resolved{APIKey: "test-key", Organization: "test org"}, o)
 	if cerr != nil {
 		t.Fatalf("New: %v", cerr)
 	}

@@ -303,7 +303,7 @@ func (d *doctorRun) apiKeyRow(ctx context.Context) checkResult {
 	}
 	key, _ := normalizeKey(res.APIKey)
 	client, cerr := api.New(
-		config.Resolved{
+		&config.Resolved{
 			APIKey:              key,
 			Organization:        res.Organization,
 			APIKeySource:        "",
@@ -406,7 +406,7 @@ func (d *doctorRun) checkOrg(ctx context.Context) *clierr.Error {
 	if !d.orgCheckMade {
 		key, _ := normalizeKey(d.res.APIKey)
 		client, cerr := api.New(
-			config.Resolved{
+			&config.Resolved{
 				APIKey:              key,
 				Organization:        d.res.Organization,
 				APIKeySource:        "",
@@ -572,7 +572,7 @@ func (d *doctorRun) projectCheckedRow(ctx context.Context, p *doctorProject) che
 func (d *doctorRun) checkProject(ctx context.Context, org, project string) *clierr.Error {
 	key, _ := normalizeKey(d.res.APIKey)
 	client, cerr := api.New(
-		config.Resolved{
+		&config.Resolved{
 			APIKey:              key,
 			Organization:        org,
 			Project:             project,

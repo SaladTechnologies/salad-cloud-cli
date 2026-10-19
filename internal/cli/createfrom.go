@@ -277,7 +277,7 @@ func (app *App) fromFetchSource(
 	source *config.Resolved,
 	group string,
 ) (*shared.ContainerGroup, *clierr.Error) {
-	src, cerr := api.New(*source, app.apiOptions())
+	src, cerr := api.New(source, app.apiOptions())
 	if cerr != nil {
 		return nil, cerr
 	}

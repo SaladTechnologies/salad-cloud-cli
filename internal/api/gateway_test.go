@@ -19,7 +19,7 @@ func newTestGateway(t *testing.T, url string, opts ...Options) *Gateway {
 		o = opts[0]
 	}
 	o.Getenv = getenvOf(map[string]string{"SALAD_CLI_AI_GATEWAY_BASE_URL": url})
-	g, cerr := NewGateway(config.Resolved{GatewayAPIKey: "gw-key"}, o)
+	g, cerr := NewGateway(&config.Resolved{GatewayAPIKey: "gw-key"}, o)
 	if cerr != nil {
 		t.Fatalf("NewGateway: %v", cerr)
 	}
@@ -28,7 +28,7 @@ func newTestGateway(t *testing.T, url string, opts ...Options) *Gateway {
 
 func TestNewGatewayNeedsItsOwnKey(t *testing.T) {
 	t.Parallel()
-	_, cerr := NewGateway(config.Resolved{APIKey: "salad-api-key"}, testOptions(nil)) //nolint:gosec // a test value
+	_, cerr := NewGateway(&config.Resolved{APIKey: "salad-api-key"}, testOptions(nil)) //nolint:gosec // a test value
 	if cerr == nil || cerr.Code != clierr.CodeAuth {
 		t.Fatalf("NewGateway without a gateway key = %v, want an auth error", cerr)
 	}
@@ -49,7 +49,10 @@ func TestGatewayListModelsAndComplete(t *testing.T) {
 	if ids := models.IDs(); len(ids) != 2 || ids[0] != "qwen3.6-35b-a3b" {
 		t.Errorf("IDs = %v", ids)
 	}
-	c, cerr := g.Complete(t.Context(), "qwen3.6-35b-a3b", "say hi", 16, false)
+	c, cerr := g.Complete(
+		t.Context(),
+		GatewayRequest{Model: "qwen3.6-35b-a3b", Prompt: "say hi", MaxTokens: 16, Thinking: false},
+	)
 	if cerr != nil {
 		t.Fatalf("Complete: %v", cerr)
 	}

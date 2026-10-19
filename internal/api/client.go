@@ -76,7 +76,7 @@ type Client struct {
 // commands don't need them; use RequireOrg/RequireProject in those that do.
 // The base URL can be overridden via the SALAD_CLI_API_BASE_URL environment
 // variable (for testing).
-func New(res config.Resolved, opts Options) (*Client, *clierr.Error) {
+func New(res *config.Resolved, opts Options) (*Client, *clierr.Error) {
 	if res.APIKey == "" {
 		return nil, clierr.New(clierr.CodeAuth, clierr.KindAuth, "no API key set").
 			WithHint("run saladcloud login in a terminal, or set SALAD_API_KEY")
@@ -167,7 +167,7 @@ func (c *Client) GetGroup(ctx context.Context, name string) (*shared.ContainerGr
 // CreateGroup creates a container group.
 func (c *Client) CreateGroup(
 	ctx context.Context,
-	req containergroups.ContainerGroupCreationRequest,
+	req *containergroups.ContainerGroupCreationRequest,
 ) (*shared.ContainerGroup, *clierr.Error) {
 	if err := c.requireOrgProject(); err != nil {
 		return nil, err
@@ -189,7 +189,7 @@ func (c *Client) CreateGroupRaw(ctx context.Context, req json.RawMessage) (*shar
 func (c *Client) UpdateGroup(
 	ctx context.Context,
 	name string,
-	patch containergroups.ContainerGroupPatch,
+	patch *containergroups.ContainerGroupPatch,
 ) (*shared.ContainerGroup, *clierr.Error) {
 	if err := c.requireOrgProject(); err != nil {
 		return nil, err

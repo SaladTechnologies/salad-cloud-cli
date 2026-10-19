@@ -358,7 +358,7 @@ func (app *App) availabilityFrom(
 	if fromProject != "" {
 		r.Project, r.ProjectSource = fromProject, resolveSourceFlag
 	}
-	src, err := api.New(r, app.apiOptions())
+	src, err := api.New(&r, app.apiOptions())
 	if err != nil {
 		return api.AvailabilityRequest{}, err
 	}

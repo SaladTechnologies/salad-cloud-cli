@@ -53,8 +53,10 @@ func TestFlagHelpShowsOneDefault(t *testing.T) {
 	if f.DefValue != "0" || f.Usage != "completion token budget (default 64, or 1024 with --thinking)" {
 		t.Errorf("--max-tokens default %q, usage %q", f.DefValue, f.Usage)
 	}
-	if defaultMaxTokens(false) != 64 || defaultMaxTokens(true) != 1024 {
-		t.Errorf("defaultMaxTokens = %d, %d", defaultMaxTokens(false), defaultMaxTokens(true))
+	plain := &gatewayTestOptions{model: "", prompt: "", maxTokens: 0, thinking: false}
+	thinking := &gatewayTestOptions{model: "", prompt: "", maxTokens: 0, thinking: true}
+	if plain.defaultMaxTokens() != 64 || thinking.defaultMaxTokens() != 1024 {
+		t.Errorf("defaultMaxTokens = %d, %d", plain.defaultMaxTokens(), thinking.defaultMaxTokens())
 	}
 }
 

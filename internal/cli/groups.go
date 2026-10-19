@@ -433,7 +433,7 @@ func (app *App) listGroupsInProjects(
 	for _, proj := range projects {
 		r := *res
 		r.Project, r.ProjectSource = proj, flagProvenance
-		pc, cerr := api.New(r, app.apiOptions())
+		pc, cerr := api.New(&r, app.apiOptions())
 		if cerr != nil {
 			return nil, cerr
 		}

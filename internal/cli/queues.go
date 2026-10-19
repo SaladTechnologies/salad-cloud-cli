@@ -442,10 +442,11 @@ func (app *App) runQueueJobsList(cmd *cobra.Command, limit int) error {
 	if cerr != nil {
 		return cerr
 	}
-	jobs, more, partial, cerr := client.ListQueueJobs(cmd.Context(), queue, limit)
+	listing, cerr := client.ListQueueJobs(cmd.Context(), queue, limit)
 	if cerr != nil {
 		return queueNotFound(cerr, queue, client)
 	}
+	jobs, more, partial := listing.Jobs, listing.More, listing.Partial
 	payload := struct {
 		Items []queues.QueueJob `json:"items"`
 	}{jobs}

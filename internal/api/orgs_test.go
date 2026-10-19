@@ -15,7 +15,7 @@ func orgsClient(t *testing.T, h http.HandlerFunc) *Client {
 	t.Helper()
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	c, err := New(config.Resolved{APIKey: "k"}, testOptions(baseURLs(srv.URL)))
+	c, err := New(&config.Resolved{APIKey: "k"}, testOptions(baseURLs(srv.URL)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +114,7 @@ func TestOrganizationListingByStatus(t *testing.T) {
 // TestOrganizationListingNetworkError: an unreachable API is a network error and no list.
 func TestOrganizationListingNetworkError(t *testing.T) {
 	t.Parallel()
-	c, cerr := New(config.Resolved{APIKey: "k"}, testOptions(baseURLs("http://127.0.0.1:1")))
+	c, cerr := New(&config.Resolved{APIKey: "k"}, testOptions(baseURLs("http://127.0.0.1:1")))
 	if cerr != nil {
 		t.Fatal(cerr)
 	}

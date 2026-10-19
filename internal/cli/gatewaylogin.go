@@ -226,7 +226,7 @@ func (g *gatewayLogin) failed(cerr *clierr.Error) *clierr.Error {
 func (g *gatewayLogin) check(ctx context.Context) *clierr.Error {
 	app := g.app
 	gw, cerr := api.NewGateway(
-		config.Resolved{
+		&config.Resolved{
 			GatewayAPIKey:       g.key,
 			APIKey:              "",
 			APIKeySource:        "",

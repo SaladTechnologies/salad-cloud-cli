@@ -40,9 +40,9 @@ type uploadResponse struct {
 }
 
 // UploadFile PUTs one file into the organization's S4 storage as
-// multipart/form-data (parts: file, mimeType, and — when sign is true —
-// sign/signatureExp) and returns the file's URL (a signed URL when sign is
-// set). remoteName may contain "/" as folder separators; each segment is
+// multipart/form-data (parts: file, mimeType, and — when signedSeconds is
+// above zero — sign/signatureExp) and returns the file's URL: signed for
+// signedSeconds, or unsigned when it is zero. remoteName may contain "/" as folder separators; each segment is
 // path-escaped individually. The reader is streamed to the wire — the file
 // is never buffered in memory.
 func (c *Client) UploadFile(
@@ -50,8 +50,7 @@ func (c *Client) UploadFile(
 	remoteName string,
 	r io.Reader,
 	mimeType string,
-	sign bool,
-	signatureExpSeconds int64,
+	signedSeconds int64,
 ) (string, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return "", err
@@ -61,7 +60,7 @@ func (c *Client) UploadFile(
 	pr, pw := io.Pipe()
 	mw := multipart.NewWriter(pw)
 	go func() {
-		err := writeUploadForm(mw, remoteName, r, mimeType, sign, signatureExpSeconds)
+		err := writeUploadForm(mw, remoteName, r, mimeType, signedSeconds)
 		if cerr := mw.Close(); err == nil {
 			err = cerr
 		}
@@ -142,17 +141,16 @@ func writeUploadForm(
 	remoteName string,
 	r io.Reader,
 	mimeType string,
-	sign bool,
-	signatureExpSeconds int64,
+	signedSeconds int64,
 ) error {
 	if err := mw.WriteField("mimeType", mimeType); err != nil {
 		return fmt.Errorf("writing the upload form: %w", err)
 	}
-	if sign {
+	if signedSeconds > 0 {
 		if err := mw.WriteField("sign", "true"); err != nil {
 			return fmt.Errorf("writing the upload form: %w", err)
 		}
-		if err := mw.WriteField("signatureExp", strconv.FormatInt(signatureExpSeconds, 10)); err != nil {
+		if err := mw.WriteField("signatureExp", strconv.FormatInt(signedSeconds, 10)); err != nil {
 			return fmt.Errorf("writing the upload form: %w", err)
 		}
 	}

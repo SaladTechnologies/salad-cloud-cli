@@ -57,7 +57,7 @@ func TestRestJSONNumericEnumRetry(t *testing.T) {
 		respond(t, w, `{"items":[{"name":"legacy","restart_policy":2}]}`)
 	}))
 	t.Cleanup(srv.Close)
-	client, cerr := New(config.Resolved{APIKey: "k", Organization: "o", Project: "p"}, testOptions(baseURLs(srv.URL)))
+	client, cerr := New(&config.Resolved{APIKey: "k", Organization: "o", Project: "p"}, testOptions(baseURLs(srv.URL)))
 	if cerr != nil {
 		t.Fatalf("New: %v", cerr)
 	}

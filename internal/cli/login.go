@@ -469,7 +469,7 @@ func (l *login) keyInvalid() *clierr.Error {
 // cannot list; a 401 means the key is invalid.
 func (app *App) listOrganizations(ctx context.Context, key string) ([]api.Organization, *clierr.Error) {
 	c, cerr := api.New(
-		config.Resolved{
+		&config.Resolved{
 			APIKey:              key,
 			APIKeySource:        "",
 			Organization:        "",
@@ -511,7 +511,7 @@ func (l *login) orgNames() []string {
 func (l *login) checkOrganization(ctx context.Context, org string) (bool, *clierr.Error) {
 	app := l.app
 	c, cerr := api.New(
-		config.Resolved{
+		&config.Resolved{
 			APIKey:              l.key,
 			Organization:        org,
 			APIKeySource:        "",
@@ -807,7 +807,7 @@ func projectCreateURL(org string) string {
 func (l *login) checkProject(ctx context.Context, org, project string) (bool, *clierr.Error) {
 	app := l.app
 	c, cerr := api.New(
-		config.Resolved{
+		&config.Resolved{
 			APIKey:              l.key,
 			Organization:        org,
 			Project:             project,

@@ -37,8 +37,8 @@ const (
 )
 
 // defaultMaxTokens is ai-gateway test's budget when --max-tokens is not set.
-func defaultMaxTokens(thinking bool) int {
-	if thinking {
+func (o *gatewayTestOptions) defaultMaxTokens() int {
+	if o.thinking {
 		return gatewayTestMaxTokensThinking
 	}
 	return gatewayTestMaxTokens
@@ -76,7 +76,7 @@ func (app *App) newGateway() (*api.Gateway, *gatewayKey, *clierr.Error) {
 		res.GatewayAPIKey = key
 	}
 	saved := app.savedConfig()
-	g, cerr := api.NewGateway(res, app.apiOptions())
+	g, cerr := api.NewGateway(&res, app.apiOptions())
 	return g, &gatewayKey{res.GatewayAPIKey, from, saved.GatewayAPIKey}, cerr
 }
 
@@ -311,9 +311,11 @@ func (app *App) runGatewayTest(cmd *cobra.Command, o *gatewayTestOptions) error 
 		o.prompt = gatewayTestDefaultPrompt
 	}
 	if !cmd.Flags().Changed("max-tokens") {
-		o.maxTokens = defaultMaxTokens(o.thinking)
+		o.maxTokens = o.defaultMaxTokens()
 	}
-	c, cerr := g.Complete(cmd.Context(), chosen, o.prompt, o.maxTokens, o.thinking)
+	c, cerr := g.Complete(cmd.Context(), api.GatewayRequest{
+		Model: chosen, Prompt: o.prompt, MaxTokens: o.maxTokens, Thinking: o.thinking,
+	})
 	if cerr != nil {
 		return key.failed(cerr)
 	}

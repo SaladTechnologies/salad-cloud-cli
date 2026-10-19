@@ -105,7 +105,7 @@ func TestDebugBodiesRedactDefinitionSecrets(t *testing.T) {
 	t.Cleanup(srv.Close)
 	buf, opts := debugCapture(t, DebugBodies)
 	opts.Getenv = getenvOf(baseURLs(srv.URL))
-	c, cerr := New(config.Resolved{APIKey: "test-key", Organization: "o", Project: "p"}, opts)
+	c, cerr := New(&config.Resolved{APIKey: "test-key", Organization: "o", Project: "p"}, opts)
 	if cerr != nil {
 		t.Fatal(cerr)
 	}
@@ -165,7 +165,6 @@ func TestDebugBodiesHideUploads(t *testing.T) {
 		"f.wav",
 		strings.NewReader("audio-bytes"),
 		"audio/wav",
-		false,
 		0,
 	)
 	if cerr != nil {
@@ -208,7 +207,7 @@ func TestUserAgentOnEveryClient(t *testing.T) {
 	if _, cerr := newTestGateway(t, srv.URL).ListModels(ctx); cerr != nil {
 		t.Fatal(cerr)
 	}
-	if _, cerr := c.UploadFile(ctx, "f", strings.NewReader("x"), "text/plain", false, 0); cerr != nil {
+	if _, cerr := c.UploadFile(ctx, "f", strings.NewReader("x"), "text/plain", 0); cerr != nil {
 		t.Fatal(cerr)
 	}
 	must(Probe(ctx, srv.URL+"/probe", testOptions(nil)))(t)

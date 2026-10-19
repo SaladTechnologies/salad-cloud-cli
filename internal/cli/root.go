@@ -441,7 +441,7 @@ func (app *App) NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *cl
 		res.APIKey = key
 	}
 	app.assumedWarned.Store(false)
-	client, cerr := api.New(res, app.apiOptions())
+	client, cerr := api.New(&res, app.apiOptions())
 	if cerr != nil {
 		return nil, res, cerr
 	}
@@ -549,7 +549,7 @@ func (app *App) organizationGone(ctx context.Context, res *config.Resolved) *cli
 // keyOrgNames is the names of the organizations key can see, nil when they cannot be listed.
 func (app *App) keyOrgNames(ctx context.Context, key string) []string {
 	c, cerr := api.New(
-		config.Resolved{
+		&config.Resolved{
 			APIKey:              key,
 			APIKeySource:        "",
 			Organization:        "",

@@ -73,21 +73,25 @@ const QueueJobsCap = queueJobsMaxPages * queueJobsPageSize
 // 40 pages, or the limit's worth of pages when that is more.
 const QueueJobsBudget = 40 * queueJobsPageSize
 
+// QueueJobListing is the jobs ListQueueJobs read, newest first, and what it left out.
+type QueueJobListing struct {
+	Jobs []queues.QueueJob
+	// More reports jobs read but left out by the limit or the cap.
+	More bool
+	// Partial reports that reading stopped at the budget with the queue holding more, so the newest are the newest
+	// of those read only.
+	Partial bool
+}
+
 // ListQueueJobs lists a queue's newest jobs, newest first: limit of them (0
 // means all, up to QueueJobsCap). The API lists queue jobs in job ID order,
 // so no page holds the newest: the pages are read and the jobs sorted by
 // creation time. With a limit, reading stops after QueueJobsBudget jobs (or
 // the limit, if larger), which keeps one listing from spending the key's
-// request allowance; partial then reports that the queue holds more than
-// was read, so the newest are the newest of those read only. more reports
-// jobs read but left out by the limit or the cap.
-func (c *Client) ListQueueJobs(
-	ctx context.Context,
-	queue string,
-	limit int,
-) ([]queues.QueueJob, bool, bool, *clierr.Error) {
+// request allowance.
+func (c *Client) ListQueueJobs(ctx context.Context, queue string, limit int) (*QueueJobListing, *clierr.Error) {
 	if err := c.requireOrgProject(); err != nil {
-		return nil, false, false, err
+		return nil, err
 	}
 	maxPages := queueJobsMaxPages
 	if limit > 0 {
@@ -102,7 +106,7 @@ func (c *Client) ListQueueJobs(
 		path := c.queuePath(queue, "jobs") + fmt.Sprintf("?page=%d&page_size=%d", page, queueJobsPageSize)
 		coll, cerr := restJSON[queues.QueueJobCollection](ctx, c, "GET", path, "", nil)
 		if cerr != nil {
-			return nil, false, false, cerr
+			return nil, cerr
 		}
 		jobs = append(jobs, coll.Items...)
 		if len(coll.Items) < queueJobsPageSize {
@@ -120,7 +124,7 @@ func (c *Client) ListQueueJobs(
 	if want := jobsWanted(limit, QueueJobsCap); len(jobs) > want {
 		jobs, more = jobs[:want], true
 	}
-	return jobs, more, partial, nil
+	return &QueueJobListing{Jobs: jobs, More: more, Partial: partial}, nil
 }
 
 // CreateQueueJob submits a job to a queue.

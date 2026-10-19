@@ -36,7 +36,7 @@ func baseURLs(url string) map[string]string {
 // httptest server via the same base URL overrides the CLI honors.
 func newRestTestClient(t *testing.T, baseURL string) *Client {
 	t.Helper()
-	c, cerr := New(config.Resolved{
+	c, cerr := New(&config.Resolved{
 		APIKey:       "test-key",
 		Organization: "my-org",
 		Project:      "default",
@@ -118,7 +118,7 @@ func TestUpdateGroupSendsMergePatchContentType(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
-	if _, cerr := c.UpdateGroup(t.Context(), "my-app", containergroups.ContainerGroupPatch{}); cerr != nil {
+	if _, cerr := c.UpdateGroup(t.Context(), "my-app", &containergroups.ContainerGroupPatch{}); cerr != nil {
 		t.Fatalf("UpdateGroup: %v", cerr)
 	}
 	if gotMethod != http.MethodPatch {
@@ -302,7 +302,7 @@ func TestCreateGroupPreservesExplicitFalseOnTheWire(t *testing.T) {
 		},
 	}
 	c := newRestTestClient(t, srv.URL)
-	if _, cerr := c.CreateGroup(t.Context(), req); cerr != nil {
+	if _, cerr := c.CreateGroup(t.Context(), &req); cerr != nil {
 		t.Fatalf("CreateGroup: %v", cerr)
 	}
 	if gotMethod != http.MethodPost {
