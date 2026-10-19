@@ -193,47 +193,27 @@ func waitForJobTerminal[J any](
 	id string,
 	timeout, poll time.Duration,
 ) (*J, *clierr.Error) {
-	stderr := d.progress
-	if stderr == nil {
-		stderr = app.errw()
-	}
-	start := d.now()
-	deadline := start.Add(timeout)
+	progress := newJobWaitProgress(app, d.progress, d.label, d.now())
+	deadline := progress.start.Add(timeout)
 	lastStatus := "-"
-	lastProgress := ""
-	var lastPrinted time.Time
 	for {
 		job, cerr := d.get(ctx)
 		switch {
 		case cerr != nil && ctx.Err() != nil:
 			return nil, jobWaitInterrupted()
 		case cerr != nil:
-			switch cerr.Code {
-			case clierr.CodeNotFound, clierr.CodeAuth, clierr.CodeUsage, clierr.CodeInvalidInput:
+			if jobWaitErrorIsFinal(cerr) {
 				return nil, cerr
-			default:
-				// Transient (network, 5xx, rate limit): note it, keep polling.
-				fprintf(stderr, "warning: %s (still waiting)\n", cerr.Message)
 			}
+			// Transient (network, 5xx, rate limit): note it, keep polling.
+			fprintf(progress.w, "warning: %s (still waiting)\n", cerr.Message)
 		default:
 			status, lastEvent := d.view(job)
 			lastStatus = status
-			switch inferenceendpoints.Status(status) {
-			case inferenceendpoints.STATUS_SUCCEEDED:
-				return job, nil
-			case inferenceendpoints.STATUS_FAILED, jobStatusCanceled:
-				return job, clierr.New(clierr.CodeGeneric, jobEndKind(status),
-					"job %s %s %s%s", id, d.where, status, lastEvent)
+			if done, end := jobWaitEnd(status, lastEvent, id, d.where); done {
+				return job, end
 			}
-			if app.printer.Mode() == "table" {
-				// The elapsed suffix is excluded from the change check;
-				// otherwise every poll would print.
-				line := fmt.Sprintf("%s: %s", d.label, status)
-				if now := d.now(); line != lastProgress || now.Sub(lastPrinted) >= progressRepeat {
-					lastProgress, lastPrinted = line, now
-					fprintf(stderr, "%s (%s elapsed)\n", line, d.now().Sub(start).Round(time.Second))
-				}
-			}
+			progress.report(status, d.now)
 		}
 		if !d.now().Before(deadline) {
 			return nil, clierr.New(clierr.CodeGeneric, clierr.KindWaitTimeout,
@@ -243,6 +223,69 @@ func waitForJobTerminal[J any](
 		if err := d.sleep(ctx, poll); err != nil {
 			return nil, jobWaitInterrupted()
 		}
+	}
+}
+
+// jobWaitErrorIsFinal says whether an error reading a job ends the wait; any other (network, 5xx, rate limit) is
+// transient, and the wait keeps polling.
+func jobWaitErrorIsFinal(cerr *clierr.Error) bool {
+	switch cerr.Code {
+	case clierr.CodeNotFound, clierr.CodeAuth, clierr.CodeUsage, clierr.CodeInvalidInput:
+		return true
+	}
+	return false
+}
+
+// jobWaitEnd says whether a job in status has ended, and for a job that ended failed or canceled, the error naming
+// its status and last event; succeeded ends with no error.
+func jobWaitEnd(status, lastEvent, id, where string) (bool, *clierr.Error) {
+	switch inferenceendpoints.Status(status) {
+	case inferenceendpoints.STATUS_SUCCEEDED:
+		return true, nil
+	case inferenceendpoints.STATUS_FAILED, jobStatusCanceled:
+		return true, clierr.New(clierr.CodeGeneric, jobEndKind(status), "job %s %s %s%s", id, where, status, lastEvent)
+	}
+	return false, nil
+}
+
+// jobWaitProgress writes a job wait's progress lines (in table mode only) and transient-error warnings to w.
+type jobWaitProgress struct {
+	w           io.Writer
+	table       bool
+	label       string
+	start       time.Time
+	last        string
+	lastPrinted time.Time
+}
+
+// newJobWaitProgress starts the progress of a wait that began at start, writing to w, or to app's stderr when w is
+// nil.
+func newJobWaitProgress(app *App, w io.Writer, label string, start time.Time) *jobWaitProgress {
+	if w == nil {
+		w = app.errw()
+	}
+	return &jobWaitProgress{
+		w:           w,
+		table:       app.printer.Mode() == "table",
+		label:       label,
+		start:       start,
+		last:        "",
+		lastPrinted: time.Time{},
+	}
+}
+
+// report writes the progress line for status in table mode, when it changed or when progressRepeat has passed since
+// it was last written.
+func (p *jobWaitProgress) report(status string, now func() time.Time) {
+	if !p.table {
+		return
+	}
+	// The elapsed suffix is excluded from the change check;
+	// otherwise every poll would print.
+	line := fmt.Sprintf("%s: %s", p.label, status)
+	if t := now(); line != p.last || t.Sub(p.lastPrinted) >= progressRepeat {
+		p.last, p.lastPrinted = line, t
+		fprintf(p.w, "%s (%s elapsed)\n", line, now().Sub(p.start).Round(time.Second))
 	}
 }
 
@@ -360,72 +403,104 @@ func (app *App) addEndpointFlag(cmd *cobra.Command) {
 // addInferenceCommands adds inference.go's commands to the tree.
 func (app *App) addInferenceCommands(root *cobra.Command) {
 	inferenceCmd := newInferenceCmd()
-	inferenceCmd.AddCommand(&cobra.Command{
+	inferenceCmd.AddCommand(app.newInferenceListCmd())
+	inferenceCmd.AddCommand(app.newInferenceGetCmd())
+
+	jobsCmd := newInferenceJobsCmd()
+	jobsCmd.AddCommand(app.newInferenceJobsListCmd())
+	jobsCmd.AddCommand(app.newInferenceJobsGetCmd())
+	jobsCmd.AddCommand(app.newInferenceJobsCreateCmd())
+	jobsCmd.AddCommand(app.newInferenceJobsCancelCmd())
+	inferenceCmd.AddCommand(jobsCmd)
+
+	app.addTranscribeCommands(inferenceCmd)
+	app.orgScoped(inferenceCmd)
+	root.AddCommand(inferenceCmd)
+}
+
+// newInferenceListCmd is 'saladcloud inference list'.
+func (app *App) newInferenceListCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "list",
 		Short: "List the available inference endpoints",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			endpoints, cerr := client.ListInferenceEndpoints(cmd.Context())
-			if cerr != nil {
-				return cerr
-			}
-			// The list envelope alone: the collection's paging keys are
-			// always null once every page is read.
-			payload := struct {
-				Items []inferenceendpoints.InferenceEndpoint `json:"items"`
-			}{endpoints.Items}
-			if payload.Items == nil {
-				payload.Items = []inferenceendpoints.InferenceEndpoint{}
-			}
-			return wrapErr(app.printer.Emit(payload, func(w *output.Writer) {
-				w.Println("NAME\tDISPLAY NAME\tDESCRIPTION")
-				for i := range endpoints.Items {
-					e := &endpoints.Items[i]
-					w.Printf("%s\t%s\t%s\n",
-						ptr.Deref(e.Name), ptr.Deref(e.DisplayName),
-						truncateRunes(oneLine(ptr.Deref(e.Description)), 60))
-				}
-			}))
-		},
-	})
+		RunE:  func(cmd *cobra.Command, _ []string) error { return app.runInferenceList(cmd) },
+	}
+}
 
-	inferenceCmd.AddCommand(&cobra.Command{
+// runInferenceList lists every inference endpoint of the organization.
+func (app *App) runInferenceList(cmd *cobra.Command) error {
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	endpoints, cerr := client.ListInferenceEndpoints(cmd.Context())
+	if cerr != nil {
+		return cerr
+	}
+	// The list envelope alone: the collection's paging keys are
+	// always null once every page is read.
+	payload := struct {
+		Items []inferenceendpoints.InferenceEndpoint `json:"items"`
+	}{endpoints.Items}
+	if payload.Items == nil {
+		payload.Items = []inferenceendpoints.InferenceEndpoint{}
+	}
+	return wrapErr(app.printer.Emit(payload, func(w *output.Writer) {
+		w.Println("NAME\tDISPLAY NAME\tDESCRIPTION")
+		for i := range endpoints.Items {
+			e := &endpoints.Items[i]
+			w.Printf("%s\t%s\t%s\n",
+				ptr.Deref(e.Name), ptr.Deref(e.DisplayName),
+				truncateRunes(oneLine(ptr.Deref(e.Description)), 60))
+		}
+	}))
+}
+
+// newInferenceGetCmd is 'saladcloud inference get <endpoint>'.
+func (app *App) newInferenceGetCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "get <endpoint>",
 		Short: "Show one inference endpoint, its price and its input fields",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			endpoint, cerr := client.GetInferenceEndpoint(cmd.Context(), args[0])
-			if cerr != nil {
-				return endpointNotFound(cerr, args[0], client.Org())
-			}
-			return wrapErr(app.printer.Emit(endpoint, func(w *output.Writer) {
-				row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
-				row("Name", ptr.Deref(endpoint.Name))
-				row("Display name", ptr.Deref(endpoint.DisplayName))
-				if org := ptr.Deref(endpoint.OrganizationName); org != "" {
-					row("Organization", org)
-				}
-				row("Price", oneLine(ptr.Deref(endpoint.PriceDescription)))
-				row("Description", oneLine(ptr.Deref(endpoint.Description)))
-				inputs := "- (no input schema published; see the readme in -o json)"
-				if names := endpointInputFields(endpoint.InputSchema); len(names) > 0 {
-					inputs = strings.Join(names, ", ")
-				}
-				row("Inputs", inputs)
-				row("Note", "use -o json for the input/output schemas and the readme")
-			}))
-		},
-	})
+		RunE:  func(cmd *cobra.Command, args []string) error { return app.runInferenceGet(cmd, args[0]) },
+	}
+}
 
-	jobsCmd := &cobra.Command{
+// runInferenceGet shows one inference endpoint.
+func (app *App) runInferenceGet(cmd *cobra.Command, name string) error {
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	endpoint, cerr := client.GetInferenceEndpoint(cmd.Context(), name)
+	if cerr != nil {
+		return endpointNotFound(cerr, name, client.Org())
+	}
+	return wrapErr(app.printer.Emit(endpoint, func(w *output.Writer) { writeInferenceEndpointDetail(w, endpoint) }))
+}
+
+// writeInferenceEndpointDetail is the table form of 'inference get'.
+func writeInferenceEndpointDetail(w *output.Writer, endpoint *inferenceendpoints.InferenceEndpoint) {
+	row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
+	row("Name", ptr.Deref(endpoint.Name))
+	row("Display name", ptr.Deref(endpoint.DisplayName))
+	if org := ptr.Deref(endpoint.OrganizationName); org != "" {
+		row("Organization", org)
+	}
+	row("Price", oneLine(ptr.Deref(endpoint.PriceDescription)))
+	row("Description", oneLine(ptr.Deref(endpoint.Description)))
+	inputs := "- (no input schema published; see the readme in -o json)"
+	if names := endpointInputFields(endpoint.InputSchema); len(names) > 0 {
+		inputs = strings.Join(names, ", ")
+	}
+	row("Inputs", inputs)
+	row("Note", "use -o json for the input/output schemas and the readme")
+}
+
+// newInferenceJobsCmd is the 'saladcloud inference jobs' noun.
+func newInferenceJobsCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:     "jobs",
 		Aliases: []string{"job"},
 		Short:   "Queue and inspect jobs on an inference endpoint",
@@ -435,85 +510,100 @@ argument and the endpoint is --endpoint:
     saladcloud inference jobs list --endpoint transcribe
     saladcloud inference jobs get <id> --endpoint transcribe`,
 	}
+}
 
-	var listLimit int
-	jobsListCmd := &cobra.Command{
+// newInferenceJobsListCmd is 'saladcloud inference jobs list --endpoint <endpoint>'.
+func (app *App) newInferenceJobsListCmd() *cobra.Command {
+	var limit int
+	cmd := &cobra.Command{
 		Use:   "list --endpoint <endpoint>",
 		Short: "List the organization's jobs on an endpoint, newest first",
 		Long: `List the organization's jobs on an endpoint, newest first. --limit keeps
 the newest N (default 100; 0 for all, up to 10,000); a stderr note says when
 older jobs were left out.`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			endpoint, limit := app.flags.endpoint, listLimit
-			if limit < 0 {
-				return clierr.New(
-					clierr.CodeUsage,
-					clierr.KindUsage,
-					"--limit must be 0 (all) or positive (got %d)",
-					limit,
-				)
-			}
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			jobs, more, cerr := client.ListInferenceJobs(cmd.Context(), endpoint, limit)
-			if cerr != nil {
-				return endpointNotFound(cerr, endpoint, client.Org())
-			}
-			payload := struct {
-				Items []inferenceendpoints.InferenceEndpointJob `json:"items"`
-			}{jobs}
-			err := wrapErr(app.printer.Emit(payload, func(w *output.Writer) {
-				w.Println("ID\tSTATUS\tCREATED\tUPDATED")
-				for i := range jobs {
-					j := &jobs[i]
-					w.Printf("%s\t%s\t%s\t%s\n",
-						ptr.Deref(j.Id), jobStatusString(j),
-						timeCell(j.CreateTime), timeCell(j.UpdateTime))
-				}
-			}))
-			if err != nil {
-				return err
-			}
-			if len(jobs) == 0 && app.printer.Mode() == "table" {
-				fprintf(app.errw(), "no jobs on endpoint %s\n", endpoint)
-			}
-			app.jobsLimitNote(app.errw(), len(jobs), limit, api.InferenceJobsCap, more)
-			return nil
-		},
+		RunE: func(cmd *cobra.Command, _ []string) error { return app.runInferenceJobsList(cmd, limit) },
 	}
-	app.addEndpointFlag(jobsListCmd)
-	jobsListCmd.Flags().
-		IntVar(&listLimit, "limit", 100, fmt.Sprintf("how many of the newest jobs to list (0 = all, up to %d)", api.InferenceJobsCap))
-	jobsCmd.AddCommand(jobsListCmd)
+	app.addEndpointFlag(cmd)
+	cmd.Flags().
+		IntVar(&limit, "limit", 100, fmt.Sprintf("how many of the newest jobs to list (0 = all, up to %d)", api.InferenceJobsCap))
+	return cmd
+}
 
-	jobsGetCmd := &cobra.Command{
+// runInferenceJobsList lists the newest limit jobs on --endpoint (0 for all).
+func (app *App) runInferenceJobsList(cmd *cobra.Command, limit int) error {
+	endpoint := app.flags.endpoint
+	if limit < 0 {
+		return clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			"--limit must be 0 (all) or positive (got %d)",
+			limit,
+		)
+	}
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	jobs, more, cerr := client.ListInferenceJobs(cmd.Context(), endpoint, limit)
+	if cerr != nil {
+		return endpointNotFound(cerr, endpoint, client.Org())
+	}
+	payload := struct {
+		Items []inferenceendpoints.InferenceEndpointJob `json:"items"`
+	}{jobs}
+	err := wrapErr(app.printer.Emit(payload, func(w *output.Writer) {
+		w.Println("ID\tSTATUS\tCREATED\tUPDATED")
+		for i := range jobs {
+			j := &jobs[i]
+			w.Printf("%s\t%s\t%s\t%s\n",
+				ptr.Deref(j.Id), jobStatusString(j),
+				timeCell(j.CreateTime), timeCell(j.UpdateTime))
+		}
+	}))
+	if err != nil {
+		return err
+	}
+	if len(jobs) == 0 && app.printer.Mode() == "table" {
+		fprintf(app.errw(), "no jobs on endpoint %s\n", endpoint)
+	}
+	app.jobsLimitNote(app.errw(), len(jobs), limit, api.InferenceJobsCap, more)
+	return nil
+}
+
+// newInferenceJobsGetCmd is 'saladcloud inference jobs get <id> --endpoint <endpoint>'.
+func (app *App) newInferenceJobsGetCmd() *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "get <id> --endpoint <endpoint>",
 		Short: "Show one job (input/output truncated; -o json for the full document)",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			endpoint := app.flags.endpoint
-			if cerr := requireJobUUID(args[0], "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
-				return cerr
-			}
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			job, cerr := client.GetInferenceJob(cmd.Context(), endpoint, args[0])
-			if cerr != nil {
-				return jobNotFound(cerr, endpoint, args[0])
-			}
-			return wrapErr(app.printer.Emit(job, func(w *output.Writer) { writeJobDetail(w, job) }))
-		},
+		RunE:  func(cmd *cobra.Command, args []string) error { return app.runInferenceJobsGet(cmd, args[0]) },
 	}
-	app.addEndpointFlag(jobsGetCmd)
-	jobsCmd.AddCommand(jobsGetCmd)
+	app.addEndpointFlag(cmd)
+	return cmd
+}
 
-	var jobCreate jobCreateOptions
-	jobsCreateCmd := &cobra.Command{
+// runInferenceJobsGet shows job id on --endpoint.
+func (app *App) runInferenceJobsGet(cmd *cobra.Command, id string) error {
+	endpoint := app.flags.endpoint
+	if cerr := requireJobUUID(id, "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
+		return cerr
+	}
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	job, cerr := client.GetInferenceJob(cmd.Context(), endpoint, id)
+	if cerr != nil {
+		return jobNotFound(cerr, endpoint, id)
+	}
+	return wrapErr(app.printer.Emit(job, func(w *output.Writer) { writeJobDetail(w, job) }))
+}
+
+// newInferenceJobsCreateCmd is 'saladcloud inference jobs create --endpoint <endpoint>'.
+func (app *App) newInferenceJobsCreateCmd() *cobra.Command {
+	var o jobCreateOptions
+	cmd := &cobra.Command{
 		Use:   "create --endpoint <endpoint> (-f <file> | --input '<json>')",
 		Short: "Queue a job on an inference endpoint (--wait blocks until it finishes)",
 		Long: `Queue a job on an inference endpoint. This reaches every endpoint, including
@@ -535,97 +625,112 @@ canceled exits 1 with the job's status and last event. --timeout (default
   # Full prototype from a file (input + webhook)
   saladcloud inference jobs create --endpoint transcribe -f job.yaml`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			endpoint := app.flags.endpoint
-			file, inputJSON := jobCreate.file, jobCreate.input
-			// Pre-flight validation, before any file or API work.
-			if (file == "") == (inputJSON == "") {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage,
-					"exactly one of -f <file> or --input '<json>' is required")
-			}
-			wait, timeout, cerr := jobCreate.wait.values()
-			if cerr != nil {
-				return cerr
-			}
-			var proto inferenceendpoints.InferenceEndpointJobPrototype
-			if file != "" {
-				if cerr = app.loadJobFile(file, &proto); cerr != nil {
-					return cerr
-				}
-				if proto.Input == nil {
-					return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-						"invalid job prototype: input is required")
-				}
-			} else {
-				if !json.Valid([]byte(inputJSON)) {
-					return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-						"invalid --input: not valid JSON")
-				}
-				// RawMessage goes on the wire byte-for-byte inside the prototype.
-				proto.Input = json.RawMessage(inputJSON)
-			}
-
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			job, cerr := client.CreateInferenceJob(cmd.Context(), endpoint, proto)
-			if cerr != nil {
-				return endpointNotFound(cerr, endpoint, client.Org())
-			}
-			if !wait {
-				return wrapErr(app.printer.Emit(job, func(w *output.Writer) { writeJobDetail(w, job) }))
-			}
-			ctx := cmd.Context() // canceled by the one signal handler in Execute
-			id := ptr.Deref(job.Id)
-			d := liveJobWaitDeps(client, endpoint, id, "waiting for job "+id)
-			final, cerr := waitForJobTerminal(ctx, app, d, id, timeout, waitPoll)
-			if cerr != nil {
-				return cerr
-			}
-			return wrapErr(app.printer.Emit(final, func(w *output.Writer) { writeJobDetail(w, final) }))
-		},
+		RunE: func(cmd *cobra.Command, _ []string) error { return app.runInferenceJobsCreate(cmd, &o) },
 	}
-	app.addEndpointFlag(jobsCreateCmd)
-	jobsCreateCmd.Flags().
-		StringVarP(&jobCreate.file, "file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
-	jobsCreateCmd.Flags().
-		StringVar(&jobCreate.input, "input", "", "the job input object as inline JSON (wrapped into the prototype)")
-	addJobWaitFlags(jobsCreateCmd, &jobCreate.wait)
-	jobsCmd.AddCommand(jobsCreateCmd)
+	app.addEndpointFlag(cmd)
+	cmd.Flags().
+		StringVarP(&o.file, "file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
+	cmd.Flags().
+		StringVar(&o.input, "input", "", "the job input object as inline JSON (wrapped into the prototype)")
+	addJobWaitFlags(cmd, &o.wait)
+	return cmd
+}
 
-	jobsCancelCmd := &cobra.Command{
+// runInferenceJobsCreate queues a job on --endpoint and, with --wait, waits for it to end.
+func (app *App) runInferenceJobsCreate(cmd *cobra.Command, o *jobCreateOptions) error {
+	endpoint := app.flags.endpoint
+	// Pre-flight validation, before any file or API work.
+	if (o.file == "") == (o.input == "") {
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage,
+			"exactly one of -f <file> or --input '<json>' is required")
+	}
+	wait, timeout, cerr := o.wait.values()
+	if cerr != nil {
+		return cerr
+	}
+	proto, cerr := app.inferenceJobPrototype(o)
+	if cerr != nil {
+		return cerr
+	}
+
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	job, cerr := client.CreateInferenceJob(cmd.Context(), endpoint, proto)
+	if cerr != nil {
+		return endpointNotFound(cerr, endpoint, client.Org())
+	}
+	if !wait {
+		return wrapErr(app.printer.Emit(job, func(w *output.Writer) { writeJobDetail(w, job) }))
+	}
+	ctx := cmd.Context() // canceled by the one signal handler in Execute
+	id := ptr.Deref(job.Id)
+	d := liveJobWaitDeps(client, endpoint, id, "waiting for job "+id)
+	final, cerr := waitForJobTerminal(ctx, app, d, id, timeout, waitPoll)
+	if cerr != nil {
+		return cerr
+	}
+	return wrapErr(app.printer.Emit(final, func(w *output.Writer) { writeJobDetail(w, final) }))
+}
+
+// inferenceJobPrototype is the job prototype 'inference jobs create' sends: the -f file, which must carry an input,
+// or the --input JSON wrapped into one.
+func (app *App) inferenceJobPrototype(
+	o *jobCreateOptions,
+) (inferenceendpoints.InferenceEndpointJobPrototype, *clierr.Error) {
+	var proto inferenceendpoints.InferenceEndpointJobPrototype
+	if o.file != "" {
+		if cerr := app.loadJobFile(o.file, &proto); cerr != nil {
+			return proto, cerr
+		}
+		if proto.Input == nil {
+			return proto, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+				"invalid job prototype: input is required")
+		}
+		return proto, nil
+	}
+	if !json.Valid([]byte(o.input)) {
+		return proto, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+			"invalid --input: not valid JSON")
+	}
+	// RawMessage goes on the wire byte-for-byte inside the prototype.
+	proto.Input = json.RawMessage(o.input)
+	return proto, nil
+}
+
+// newInferenceJobsCancelCmd is 'saladcloud inference jobs cancel <id> --endpoint <endpoint>'.
+func (app *App) newInferenceJobsCancelCmd() *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "cancel <id> --endpoint <endpoint>",
 		Short: "Cancel a job on an inference endpoint",
 		Long: `Cancel a job on an inference endpoint. The API accepts the request and
 answers with no body; to see the job's status afterwards, run
 saladcloud inference jobs get <id> --endpoint <endpoint>.`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			endpoint := app.flags.endpoint
-			if cerr := requireJobUUID(args[0], "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
-				return cerr
-			}
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			if cerr := client.CancelInferenceJob(cmd.Context(), endpoint, args[0]); cerr != nil {
-				return jobNotFound(cerr, endpoint, args[0])
-			}
-			v := jobActionResult{Endpoint: endpoint, ID: args[0], Action: "canceled", OK: true}
-			return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
-				w.Printf("Job %s on endpoint %s canceled\n", v.ID, v.Endpoint)
-			}))
-		},
+		RunE: func(cmd *cobra.Command, args []string) error { return app.runInferenceJobsCancel(cmd, args[0]) },
 	}
-	app.addEndpointFlag(jobsCancelCmd)
-	jobsCmd.AddCommand(jobsCancelCmd)
-	inferenceCmd.AddCommand(jobsCmd)
+	app.addEndpointFlag(cmd)
+	return cmd
+}
 
-	app.addTranscribeCommands(inferenceCmd)
-	app.orgScoped(inferenceCmd)
-	root.AddCommand(inferenceCmd)
+// runInferenceJobsCancel cancels job id on --endpoint.
+func (app *App) runInferenceJobsCancel(cmd *cobra.Command, id string) error {
+	endpoint := app.flags.endpoint
+	if cerr := requireJobUUID(id, "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
+		return cerr
+	}
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	if cerr := client.CancelInferenceJob(cmd.Context(), endpoint, id); cerr != nil {
+		return jobNotFound(cerr, endpoint, id)
+	}
+	v := jobActionResult{Endpoint: endpoint, ID: id, Action: "canceled", OK: true}
+	return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
+		w.Printf("Job %s on endpoint %s canceled\n", v.ID, v.Endpoint)
+	}))
 }
 
 // jobsLimitNote writes the stderr note for a job listing that left older
