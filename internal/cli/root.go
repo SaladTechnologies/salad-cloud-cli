@@ -66,8 +66,8 @@ stderr as a single-line JSON document: {"error": {...}}, in yaml mode too.
 		if err != nil {
 			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
 		}
-		if err := output.SetMode(m); err != nil {
-			return err
+		if cerr := output.SetMode(m); cerr != nil {
+			return cerr
 		}
 		d := fr.String("debug")
 		if cerr := fr.Err(); cerr != nil {

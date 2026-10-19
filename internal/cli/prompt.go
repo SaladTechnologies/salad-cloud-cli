@@ -6,6 +6,7 @@ package cli
 // screen and keeps it out of the file.
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 
@@ -22,10 +23,15 @@ func tell(format string, args ...any) {
 // exchange (answerEnded), and the terminal is already restored.
 func ask(prompt string, hidden bool) (string, error) {
 	fprint(con.Device(), prompt+" ")
+	read := con.ReadLine
 	if hidden {
-		return con.ReadHidden()
+		read = con.ReadHidden
 	}
-	return con.ReadLine()
+	answer, err := read()
+	if err != nil {
+		return answer, fmt.Errorf("reading the answer: %w", err)
+	}
+	return answer, nil
 }
 
 // askUntil asks until check accepts an answer. check returns true to accept,
@@ -103,5 +109,8 @@ func opener(url string) (name string, args []string) {
 // non-fatal.
 func openBrowser(url string) error {
 	name, args := opener(url)
-	return exec.Command(name, args...).Start()
+	if err := exec.Command(name, args...).Start(); err != nil {
+		return fmt.Errorf("starting %s: %w", name, err)
+	}
+	return nil
 }

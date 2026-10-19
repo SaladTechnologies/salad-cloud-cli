@@ -3,6 +3,7 @@ package cli
 import (
 	"bufio"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"runtime"
@@ -210,7 +211,7 @@ func readLine(r *bufio.Reader) (string, error) {
 	line, err := r.ReadString('\n')
 	line = strings.TrimSpace(line)
 	if err != nil && (err != io.EOF || line == "") {
-		return line, err
+		return line, fmt.Errorf("reading a line: %w", err)
 	}
 	return line, nil
 }

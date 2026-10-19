@@ -24,7 +24,7 @@ var mode = "table"
 
 // SetMode selects the output mode: "table" (default), "json", or "yaml".
 // Any other value returns a usage error.
-func SetMode(m string) error {
+func SetMode(m string) *clierr.Error {
 	switch m {
 	case "table", "json", "yaml":
 		mode = m

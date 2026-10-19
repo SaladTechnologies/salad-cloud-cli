@@ -27,7 +27,7 @@ func (RealClock) Sleep(ctx context.Context, d time.Duration) error {
 	defer t.Stop()
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		return fmt.Errorf("sleep cut short: %w", ctx.Err())
 	case <-t.C:
 		return nil
 	}
