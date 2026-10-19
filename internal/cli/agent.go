@@ -18,12 +18,20 @@ import (
 // agentInitResult is agent init's JSON contract. Every key is always
 // present. File is null only with --print, when nothing was written.
 type agentInitResult struct {
-	File    *string `json:"file"`
-	Action  string  `json:"action"` // "created", "updated", "unchanged", "printed"
-	OK      bool    `json:"ok"`     // always true on success, as on every action result
-	Reason  string  `json:"reason"` // why this file: "--file", "CLAUDECODE set", "CLAUDE.md present", "default", or "--print"
-	Version string  `json:"version"`
+	File   *string `json:"file"`
+	Action string  `json:"action"` // "created", "updated", "unchanged", "printed"
+	OK     bool    `json:"ok"`     // always true on success, as on every action result
+	// Reason is why this file: "--file", "CLAUDECODE set", "CLAUDE.md present", "default", or "--print".
+	Reason  string `json:"reason"`
+	Version string `json:"version"`
 }
+
+// The modes agent init creates a project file and its folder with: the
+// project's own files, readable by everyone who can read the project.
+const (
+	agentFileMode = 0o644
+	agentDirMode  = 0o755
+)
 
 // addAgentCommands adds agent.go's commands to the tree.
 func (app *App) addAgentCommands(root *cobra.Command) {
@@ -57,7 +65,7 @@ The block carries only stable facts about the CLI and the platform. Detailed
 guidance lives in the SaladCloud skills, which the block tells the agent to
 install (npx skills add https://docs.salad.com).`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error { return app.runAgentInit(cmd, args, o) },
+		RunE: func(_ *cobra.Command, _ []string) error { return app.runAgentInit(o) },
 	}
 	initCmd.Flags().StringVar(&o.file, "file", "", "file to write (default: AGENTS.md, or CLAUDE.md under Claude Code)")
 	initCmd.Flags().StringVar(&o.dir, "dir", ".", "project directory")
@@ -73,7 +81,7 @@ type agentInitOptions struct {
 	print     bool
 }
 
-func (app *App) runAgentInit(cmd *cobra.Command, _ []string, o agentInitOptions) error {
+func (app *App) runAgentInit(o agentInitOptions) error {
 	file, dir, printOnly := o.file, o.dir, o.print
 
 	if printOnly {
@@ -131,7 +139,7 @@ func updateAgentFile(path string) (string, *clierr.Error) {
 
 // readAgentFile reads the file agent init writes: its content, or "" and true when it does not exist yet.
 func readAgentFile(path string) (string, bool, *clierr.Error) {
-	existing, err := os.ReadFile(path)
+	existing, err := os.ReadFile(path) //nolint:gosec // the project file the user pointed agent init at
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		return "", true, nil
@@ -163,7 +171,8 @@ func applyAgentBlock(path, existing string) (string, bool, *clierr.Error) {
 
 // writeAgentFile writes out to path, creating its folder first.
 func writeAgentFile(path, out string) *clierr.Error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	err := os.MkdirAll(filepath.Dir(path), agentDirMode)
+	if err != nil {
 		return clierr.New(
 			clierr.CodeGeneric,
 			clierr.KindAPIError,
@@ -172,7 +181,8 @@ func writeAgentFile(path, out string) *clierr.Error {
 			err,
 		)
 	}
-	if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
+	err = os.WriteFile(path, []byte(out), agentFileMode)
+	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write %s: %v", path, err)
 	}
 	return nil
