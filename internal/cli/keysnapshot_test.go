@@ -99,7 +99,7 @@ func keyPaths(typ reflect.Type, prefix string, open map[reflect.Type]bool, out *
 	if typ.Implements(jsonMarshaler()) || reflect.PointerTo(typ).Implements(jsonMarshaler()) {
 		return // encodes itself: a leaf
 	}
-	switch typ.Kind() {
+	switch typ.Kind() { //nolint:exhaustive // every reflect.Kind not named is a leaf
 	case reflect.Struct:
 		if open[typ] {
 			*out = append(*out, prefix+" (recursive)")
@@ -171,7 +171,7 @@ func TestJSONKeySnapshot(t *testing.T) {
 		}
 		return
 	}
-	want, err := os.ReadFile(golden)
+	want, err := os.ReadFile(golden) //nolint:gosec // G304: golden is the fixed testdata path above
 	if err != nil {
 		t.Fatalf("%v — generate it with: go test ./internal/cli -run TestJSONKeySnapshot -update-keys", err)
 	}

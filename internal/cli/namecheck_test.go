@@ -85,7 +85,7 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 		t.Errorf("whoami: exit %d\n%s", o.code, o.stdout)
 	}
 	j := session{args: []string{"whoami", "-o", "json"}, saved: saved, env: env}.run(t)
-	if doc := j.document(t); doc["organization"] != "****...H13m" || doc["organization_found"] != false {
+	if doc := j.document(t); doc["organization"] != "****...H13m" || doc["organization_found"] != any(false) {
 		t.Errorf("whoami json: organization %v, organization_found %v", doc["organization"], doc["organization_found"])
 	}
 	d := session{args: []string{"doctor", "-o", "json"}, saved: saved, env: env}.run(t)
@@ -149,7 +149,7 @@ func TestInvalidOrganizationName(t *testing.T) {
 	}
 	doc := (session{args: []string{"whoami", "-o", "json"}, saved: saved, env: env}).run(t).
 		document(t)
-	if doc["organization_found"] != false {
+	if doc["organization_found"] != any(false) {
 		t.Errorf("organization_found = %v, want false", doc["organization_found"])
 	}
 	if l := (session{args: []string{"orgs", "list"}, saved: saved, env: env}).run(t); l.code != 0 {

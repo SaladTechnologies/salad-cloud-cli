@@ -20,8 +20,10 @@ var backtickSpan = regexp.MustCompile("`([^`]+)`")
 
 // commandRows are the first cells of docs/commands.md's command tables, and
 // aliasRows its alias table's rows, as {commands, aliases}.
-func commandDocRows(t *testing.T) (commandRows []string, aliasRows [][2]string) {
+func commandDocRows(t *testing.T) ([]string, [][2]string) {
 	t.Helper()
+	var commandRows []string
+	var aliasRows [][2]string
 	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "commands.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +137,7 @@ func TestEveryDocumentedCommandExists(t *testing.T) {
 		}
 		last := words[len(words)-1]
 		for alt := range strings.SplitSeq(last, "/") {
-			path := append(append([]string{}, words[:len(words)-1]...), alt)
+			path := append(slices.Clone(words[:len(words)-1]), alt)
 			c, rest, err := app.root.Find(path)
 			if err != nil || len(rest) > 0 || c.Name() != alt {
 				t.Errorf(
@@ -154,8 +156,9 @@ func TestAliasTableMatchesTheTree(t *testing.T) {
 	_, aliasRows := commandDocRows(t)
 	documented := make(map[string][]string)
 	for _, row := range aliasRows {
-		var aliases []string
-		for _, m := range backtickSpan.FindAllStringSubmatch(row[1], -1) {
+		matches := backtickSpan.FindAllStringSubmatch(row[1], -1)
+		aliases := make([]string, 0, len(matches))
+		for _, m := range matches {
 			aliases = append(aliases, m[1])
 		}
 		slices.Sort(aliases)
@@ -168,7 +171,7 @@ func TestAliasTableMatchesTheTree(t *testing.T) {
 		if len(c.Aliases) == 0 || c.Hidden {
 			return
 		}
-		aliases := append([]string{}, c.Aliases...)
+		aliases := slices.Clone(c.Aliases)
 		slices.Sort(aliases)
 		actual[strings.TrimPrefix(c.CommandPath(), app.root.Name()+" ")] = aliases
 	})

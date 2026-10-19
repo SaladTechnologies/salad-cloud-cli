@@ -49,7 +49,7 @@ func TestOutcomeFactsInJSON(t *testing.T) {
 		env:   map[string]string{"SALAD_API_KEY": k, "SALAD_ORGANIZATION": "my-org"},
 		saved: &config.File{APIKey: other},
 	}.run(t)
-	if doc := o.document(t); doc["saved_api_key"] != "****...ABCD" || doc["api_key_saved"] != false {
+	if doc := o.document(t); doc["saved_api_key"] != "****...ABCD" || doc["api_key_saved"] != any(false) {
 		t.Errorf("saved_api_key = %v, api_key_saved = %v", doc["saved_api_key"], doc["api_key_saved"])
 	}
 

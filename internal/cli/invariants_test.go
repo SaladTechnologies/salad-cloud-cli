@@ -126,7 +126,8 @@ func errDocCases() []errDocCase {
 		{name: "ssh-key setup, no terminal", s: session{args: []string{"ssh-key", "setup"}}},
 		{
 			name: "ssh-key setup at a terminal",
-			s:    session{args: []string{"ssh-key", "setup"}, tty: []string{}, sshKey: true},
+			// tty: []string{} is a terminal with no answers; nil would be no terminal.
+			s: session{args: []string{"ssh-key", "setup"}, tty: []string{}, sshKey: true}, //nolint:revive // non-nil tty
 		},
 	}
 }
@@ -144,9 +145,9 @@ func TestErrorDocumentInvariant(t *testing.T) {
 				s := tc.s
 				s.args = append(append([]string(nil), s.args...), "-o", mode)
 				o := s.run(t)
-				checkNoPasteInHints(t, o)
+				checkNoPasteInHints(t, &o)
 				if mode == "table" {
-					checkTableError(t, o)
+					checkTableError(t, &o)
 					return
 				}
 				checkMachineStderr(t, o)
@@ -157,7 +158,7 @@ func TestErrorDocumentInvariant(t *testing.T) {
 
 // checkTableError: a failure is one saladcloud: error: line, then at most
 // one hint: line and nothing else.
-func checkTableError(t *testing.T, o outcome) {
+func checkTableError(t *testing.T, o *outcome) {
 	t.Helper()
 	ls := lines(o.stderr)
 	at := -1
@@ -245,7 +246,7 @@ func checkErrorDocumentValues(t *testing.T, o *outcome, doc map[string]any) {
 }
 
 // checkNoPasteInHints: no hint asks for a key's value.
-func checkNoPasteInHints(t *testing.T, o outcome) {
+func checkNoPasteInHints(t *testing.T, o *outcome) {
 	t.Helper()
 	for _, l := range lines(o.stderr) {
 		if strings.HasPrefix(l, "hint: ") && strings.Contains(strings.ToLower(l), "paste") {
@@ -298,7 +299,8 @@ func credentialCases() []credentialCase {
 		Project:       "default",
 		GatewayAPIKey: testOtherGatewayKey,
 	}
-	var cases []credentialCase                                  //nolint:prealloc // built by several appends; a count would only drift
+	//nolint:prealloc // built by several appends; a count would only drift
+	var cases []credentialCase
 	for _, key := range []string{testAPIKey, testOtherAPIKey} { // accepted, rejected
 		cases = append(
 			cases,
@@ -415,7 +417,7 @@ func TestCredentialsNeverPrinted(t *testing.T) {
 				o := s.run(t)
 				all := o.all()
 				checkNoCredentialIn(t, all)
-				checkNoPasteInHints(t, o)
+				checkNoPasteInHints(t, &o)
 				t.Run("mask", func(t *testing.T) {
 					t.Parallel()
 					if strings.Contains(all, "****\u2026") {
@@ -554,7 +556,7 @@ func TestConfigWritesNameOverridingVariables(t *testing.T) {
 				if o.code != 0 {
 					t.Fatalf("exit %d:\n%s", o.code, o.stderr)
 				}
-				want := append([]string{}, tc.overrides...)
+				want := slices.Clone(tc.overrides)
 				slices.Sort(want)
 				if mode == "json" {
 					checkEnvOverridesDocument(t, &o, want)

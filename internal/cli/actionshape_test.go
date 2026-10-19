@@ -61,7 +61,7 @@ func TestActionResultsShareActionAndOK(t *testing.T) {
 		{
 			// logout acts on no named resource, so it carries no name.
 			name:    "logout",
-			payload: logoutResult{Removed: true, EnvOverrides: []string{}, Action: "logged_out", OK: true},
+			payload: logoutResult{Removed: true, EnvOverrides: nil, Action: "logged_out", OK: true},
 		},
 	}
 	for _, tt := range tests {

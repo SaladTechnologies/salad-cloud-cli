@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -91,7 +92,8 @@ func TestHelpNeverSpellsARemovedCommand(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
 	walkTree(app.root, func(c *cobra.Command) {
-		for field, text := range map[string]string{"Use": c.Use, "Short": c.Short, "Long": c.Long, "Example": c.Example} {
+		fields := map[string]string{"Use": c.Use, "Short": c.Short, "Long": c.Long, "Example": c.Example}
+		for field, text := range fields {
 			for _, re := range removedSpellings() {
 				for line := range strings.SplitSeq(text, "\n") {
 					if m := re.FindString(line); m != "" {
@@ -201,10 +203,8 @@ func TestCommandTreeBuildsCleanly(t *testing.T) {
 func TestAIGatewayHasNoAliases(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
-	if c, _, err := app.root.Find(
-		[]string{"ai-gateway", "models", "list"},
-	); err != nil ||
-		c.Parent().Parent().Name() != "ai-gateway" {
+	c, _, err := app.root.Find([]string{"ai-gateway", "models", "list"})
+	if err != nil || c.Parent().Parent().Name() != "ai-gateway" {
 		t.Fatalf("ai-gateway models list not found (err %v)", err)
 	}
 	for _, name := range []string{"gateway", "ai", "connect"} {
@@ -239,12 +239,8 @@ func TestBareNounIsUsageError(t *testing.T) {
 			checkBareNoun(t, app.clone(t), path)
 		})
 	}
-	if _, err := app.runRoot(
-		t,
-		"gpus",
-		"bogus",
-	); err == nil ||
-		!strings.Contains(err.Error(), `unknown command "bogus"`) {
+	_, err := app.runRoot(t, "gpus", "bogus")
+	if err == nil || !strings.Contains(err.Error(), `unknown command "bogus"`) {
 		t.Errorf("gpus bogus = %v, want an unknown-command usage error", err)
 	}
 }
@@ -298,7 +294,7 @@ func TestResourceNounsTakeListAndGet(t *testing.T) {
 		{"queues", "jobs"},
 	} {
 		for _, verb := range []string{"list", "get"} {
-			if c, _, err := app.root.Find(append(append([]string{}, noun...), verb)); err != nil || c.Name() != verb {
+			if c, _, err := app.root.Find(append(slices.Clone(noun), verb)); err != nil || c.Name() != verb {
 				t.Errorf("%v %s: not found", noun, verb)
 			}
 		}
@@ -312,7 +308,7 @@ func TestJobsCancelNotDelete(t *testing.T) {
 	app := newTestRun(t)
 	for _, noun := range [][]string{{"inference", "jobs"}, {"queues", "jobs"}} {
 		c, _, err := app.root.Find(
-			append(append([]string{}, noun...), "cancel"),
+			append(slices.Clone(noun), "cancel"),
 		)
 		if err != nil ||
 			c.Name() != "cancel" {
@@ -348,7 +344,8 @@ func TestLeafPositionalAncestorsAsFlags(t *testing.T) {
 			checkAncestorFlagRequired(t, verb, tc.flag)
 		}
 	}
-	for _, path := range [][]string{{"logs"}, {"container-groups", "instances", "list"}, {"inference", "jobs", "list"}} {
+	scoped := [][]string{{"logs"}, {"container-groups", "instances", "list"}, {"inference", "jobs", "list"}}
+	for _, path := range scoped {
 		c := app.findCommand(t, path...)
 		if err := c.Args(c, []string{"extra"}); err == nil {
 			t.Errorf("%s accepts a positional; its scope is flags", c.CommandPath())
