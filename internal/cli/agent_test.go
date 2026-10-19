@@ -50,34 +50,18 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 	dir := t.TempDir()
 
 	// 1. Fresh directory: creates AGENTS.md.
-	out, err := app.runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
-	if err != nil {
-		t.Fatalf("first run: %v", err)
-	}
-	var res agentInitResult
-	if err = json.Unmarshal([]byte(out), &res); err != nil {
-		t.Fatalf("first run output is not JSON: %v\n%s", err, out)
-	}
+	res := app.agentInitJSON(t, "first run", dir)
 	if res.Action != "created" || res.Reason != "default" || res.File == nil ||
 		filepath.Base(*res.File) != agentdoc.FileAgents {
 		t.Errorf("first run = %+v", res)
 	}
-	content, err := os.ReadFile(filepath.Join(dir, agentdoc.FileAgents))
-	if err != nil {
-		t.Fatal(err)
-	}
+	content := must(os.ReadFile(filepath.Join(dir, agentdoc.FileAgents)))(t)
 	if string(content) != agentdoc.Block(res.Version) {
 		t.Errorf("created file is not exactly the block:\n%s", content)
 	}
 
 	// 2. Same again: unchanged, file byte-identical, exit 0.
-	out, err = app.runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
-	if err != nil {
-		t.Fatalf("second run: %v", err)
-	}
-	if err = json.Unmarshal([]byte(out), &res); err != nil {
-		t.Fatal(err)
-	}
+	res = app.agentInitJSON(t, "second run", dir)
 	if res.Action != "unchanged" {
 		t.Errorf("second run action = %q, want unchanged", res.Action)
 	}
@@ -91,24 +75,36 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 	stale := "# Project\n\nUser intro.\n\n" +
 		agentdoc.StartMarker("0.0.1") + "\nstale\n<!-- SALADCLOUD END -->\n" +
 		"\n## Testing\nUser outro.\n"
-	if err = os.WriteFile(filepath.Join(dir, agentdoc.FileAgents), []byte(stale), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	out, err = app.runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
-	if err != nil {
-		t.Fatalf("third run: %v", err)
-	}
-	if err := json.Unmarshal([]byte(out), &res); err != nil {
-		t.Fatal(err)
-	}
+	noErr(t, os.WriteFile(filepath.Join(dir, agentdoc.FileAgents), []byte(stale), 0o600))
+	res = app.agentInitJSON(t, "third run", dir)
 	if res.Action != "updated" {
 		t.Errorf("third run action = %q, want updated", res.Action)
 	}
 	final := must(os.ReadFile(filepath.Join(dir, agentdoc.FileAgents)))(t)
-	s := string(final)
-	for _, keep := range []string{"# Project\n\nUser intro.\n\n", "\n## Testing\nUser outro.\n"} {
-		if !strings.Contains(s, keep) {
-			t.Errorf("user text %q lost:\n%s", keep, s)
+	checkStaleBlockReplaced(t, string(final), "# Project\n\nUser intro.\n\n", "\n## Testing\nUser outro.\n")
+}
+
+// agentInitJSON runs agent init in dir with -o json and decodes its result; step names the run in failures.
+func (app *testRun) agentInitJSON(t *testing.T, step, dir string) agentInitResult {
+	t.Helper()
+	out, err := app.runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
+	if err != nil {
+		t.Fatalf("%s: %v", step, err)
+	}
+	var res agentInitResult
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("%s output is not JSON: %v\n%s", step, err, out)
+	}
+	return res
+}
+
+// checkStaleBlockReplaced checks that the file s keeps the user's text around the block and holds one current
+// block, none of the stale one.
+func checkStaleBlockReplaced(t *testing.T, s string, keep ...string) {
+	t.Helper()
+	for _, k := range keep {
+		if !strings.Contains(s, k) {
+			t.Errorf("user text %q lost:\n%s", k, s)
 		}
 	}
 	if strings.Contains(s, "stale") {

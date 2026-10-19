@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,50 +88,9 @@ func (app *App) runAgentInit(cmd *cobra.Command, _ []string, o agentInitOptions)
 	}
 
 	target := agentdoc.PickFile(dir, file, app.Env.Getenv)
-
-	existing, err := os.ReadFile(target.Path)
-	created := false
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		created = true
-	case err != nil:
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read %s: %v", target.Path, err)
-	}
-
-	out, changed, err := agentdoc.Apply(string(existing), version.String())
-	if err != nil {
-		if errors.Is(err, agentdoc.ErrMalformed) {
-			reason := strings.TrimPrefix(err.Error(), agentdoc.ErrMalformed.Error()+": ")
-			return clierr.New(
-				clierr.CodeInvalidInput,
-				clierr.KindInvalidInput,
-				"%s: malformed SaladCloud block: %s",
-				target.Path,
-				reason,
-			)
-		}
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%s: %v", target.Path, err)
-	}
-
-	action := "unchanged"
-	if created {
-		action = "created"
-	} else if changed {
-		action = "updated"
-	}
-	if created || changed {
-		if err := os.MkdirAll(filepath.Dir(target.Path), 0o755); err != nil {
-			return clierr.New(
-				clierr.CodeGeneric,
-				clierr.KindAPIError,
-				"cannot create the folder for %s: %v",
-				target.Path,
-				err,
-			)
-		}
-		if err := os.WriteFile(target.Path, []byte(out), 0o644); err != nil {
-			return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write %s: %v", target.Path, err)
-		}
+	action, cerr := updateAgentFile(target.Path)
+	if cerr != nil {
+		return cerr
 	}
 
 	shown := target.Path
@@ -139,13 +99,92 @@ func (app *App) runAgentInit(cmd *cobra.Command, _ []string, o agentInitOptions)
 	}
 	res := agentInitResult{File: &shown, Action: action, OK: true, Reason: target.Reason, Version: version.String()}
 	return wrapErr(app.printer.Emit(res, func(w *output.Writer) {
-		switch action {
-		case "created":
-			w.Printf("Created %s with the SaladCloud block (%s)\n", shown, target.Reason)
-		case "updated":
-			w.Printf("Updated the SaladCloud block in %s (%s)\n", shown, target.Reason)
-		default:
-			w.Printf("%s already has the current SaladCloud block; nothing to do\n", shown)
-		}
+		w.Print(agentInitLine(action, shown, target.Reason))
 	}))
+}
+
+// updateAgentFile puts the current SaladCloud block into the file at path, creating it when there is none, and
+// returns what that did: "created", "updated" or "unchanged" (nothing written).
+func updateAgentFile(path string) (string, *clierr.Error) {
+	existing, created, cerr := readAgentFile(path)
+	if cerr != nil {
+		return "", cerr
+	}
+	out, changed, cerr := applyAgentBlock(path, existing)
+	if cerr != nil {
+		return "", cerr
+	}
+	action := "unchanged"
+	switch {
+	case created:
+		action = "created"
+	case changed:
+		action = "updated"
+	}
+	if action != "unchanged" {
+		if cerr := writeAgentFile(path, out); cerr != nil {
+			return "", cerr
+		}
+	}
+	return action, nil
+}
+
+// readAgentFile reads the file agent init writes: its content, or "" and true when it does not exist yet.
+func readAgentFile(path string) (string, bool, *clierr.Error) {
+	existing, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return "", true, nil
+	case err != nil:
+		return "", false, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read %s: %v", path, err)
+	}
+	return string(existing), false, nil
+}
+
+// applyAgentBlock is the file's content with the current block in place, and whether that changed it; a file with
+// a broken pair of markers is invalid input.
+func applyAgentBlock(path, existing string) (string, bool, *clierr.Error) {
+	out, changed, err := agentdoc.Apply(existing, version.String())
+	if err != nil {
+		if errors.Is(err, agentdoc.ErrMalformed) {
+			reason := strings.TrimPrefix(err.Error(), agentdoc.ErrMalformed.Error()+": ")
+			return "", false, clierr.New(
+				clierr.CodeInvalidInput,
+				clierr.KindInvalidInput,
+				"%s: malformed SaladCloud block: %s",
+				path,
+				reason,
+			)
+		}
+		return "", false, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%s: %v", path, err)
+	}
+	return out, changed, nil
+}
+
+// writeAgentFile writes out to path, creating its folder first.
+func writeAgentFile(path, out string) *clierr.Error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot create the folder for %s: %v",
+			path,
+			err,
+		)
+	}
+	if err := os.WriteFile(path, []byte(out), 0o644); err != nil {
+		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write %s: %v", path, err)
+	}
+	return nil
+}
+
+// agentInitLine is agent init's table output: what it did to the file shown, and why that file.
+func agentInitLine(action, shown, reason string) string {
+	switch action {
+	case "created":
+		return fmt.Sprintf("Created %s with the SaladCloud block (%s)\n", shown, reason)
+	case "updated":
+		return fmt.Sprintf("Updated the SaladCloud block in %s (%s)\n", shown, reason)
+	}
+	return shown + " already has the current SaladCloud block; nothing to do\n"
 }
