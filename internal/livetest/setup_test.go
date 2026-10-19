@@ -46,15 +46,16 @@ func apiKey() string { return os.Getenv("SALAD_API_KEY") }
 // badKey is a well-formed key the API rejects; checking it costs nothing.
 func badKey() string { return "lt-not-a-key-" + prefix }
 
-// liveContext is the organization and project the setup cases log in to:
-// SALAD_ORGANIZATION, and SALAD_PROJECT or "default", the project every
-// organization starts with.
-func liveContext() (org, project string) {
-	project = os.Getenv("SALAD_PROJECT")
-	if project == "" {
-		project = "default"
+// liveOrg is the organization the setup cases log in to: SALAD_ORGANIZATION.
+func liveOrg() string { return os.Getenv("SALAD_ORGANIZATION") }
+
+// liveProject is the project the setup cases log in to: SALAD_PROJECT, or
+// "default", the project every organization starts with.
+func liveProject() string {
+	if project := os.Getenv("SALAD_PROJECT"); project != "" {
+		return project
 	}
-	return os.Getenv("SALAD_ORGANIZATION"), project
+	return "default"
 }
 
 // mask is how the CLI shows a key: ****... and its last four.
@@ -83,6 +84,7 @@ func (d cfgDir) path() string { return filepath.Join(string(d), "config.json") }
 // one.
 func (d cfgDir) run(t *testing.T, env map[string]string, stdin string, args ...string) result {
 	t.Helper()
+	//nolint:gosec // G204: runs the CLI under test with the case's own arguments
 	cmd := exec.CommandContext(t.Context(), binPath(t), args...)
 	cmd.Env = d.environ(env)
 	if stdin != "" {
@@ -142,7 +144,7 @@ func scrubKeys(t *testing.T, args []string, r result) result {
 func loggedIn(t *testing.T) cfgDir {
 	t.Helper()
 	d := newCfg(t)
-	org, project := liveContext()
+	org, project := liveOrg(), liveProject()
 	if r := d.run(t, nil, apiKey()+"\n", "login", "--api-key", "-", "--org", org, "--project", project); r.Code != 0 {
 		t.Fatalf("login exit %d: %s", r.Code, r.Stderr)
 	}
@@ -171,6 +173,11 @@ func expect(t *testing.T, what string, doc, want map[string]any) {
 			t.Errorf("%s: %s = %#v, want %#v", what, k, got, v)
 		}
 	}
+}
+
+// emptyJSONList is how a JSON [] decodes, which expect's reflect.DeepEqual tells apart from a null.
+func emptyJSONList() []any {
+	return []any{} //nolint:revive // enforce-slice-style: a nil slice is what a JSON null decodes to
 }
 
 // same fails unless got equals want, showing both.
@@ -218,7 +225,7 @@ func machineStderr(t *testing.T, r result) {
 // --project, and the variables alone; and a key the API rejects.
 func TestSetupLogin(t *testing.T) {
 	t.Parallel()
-	org, project := liveContext()
+	org, project := liveOrg(), liveProject()
 	k := apiKey()
 
 	t.Run("a piped key with --org and --project", func(t *testing.T) {
@@ -255,8 +262,15 @@ func TestSetupLogin(t *testing.T) {
 		}
 		same(t, "stderr", r.Stderr, "")
 		expect(t, "login", oneDoc(t, r), map[string]any{
-			"organization": org, "project": project, "api_key": mask(k), "api_key_source": "config",
-			"api_key_saved": true, "env_overrides": []any{}, "config_path": d.path(), "action": "logged_in", "ok": true,
+			"organization":   org,
+			"project":        project,
+			"api_key":        mask(k),
+			"api_key_source": "config",
+			"api_key_saved":  true,
+			"env_overrides":  emptyJSONList(),
+			"config_path":    d.path(),
+			"action":         "logged_in",
+			"ok":             true,
 		})
 	})
 
@@ -303,7 +317,7 @@ func TestSetupLogin(t *testing.T) {
 		same(t, "stderr", r.Stderr, "")
 		expect(t, "login", oneDoc(t, r), map[string]any{
 			"organization": org, "project": project, "api_key": mask(k), "api_key_source": "env",
-			"api_key_saved": false, "env_overrides": []any{}, "action": "logged_in", "ok": true,
+			"api_key_saved": false, "env_overrides": emptyJSONList(), "action": "logged_in", "ok": true,
 		})
 	})
 
@@ -333,11 +347,11 @@ func TestSetupLogin(t *testing.T) {
 		want map[string]any
 	}{
 		{"an organization that does not exist", []string{"--org", missing}, map[string]any{
-			"message": fmt.Sprintf("organization \"%s\" (from --org) not found", missing),
+			"message": `organization "` + missing + `" (from --org) not found`,
 			"hint":    "to list yours, run saladcloud orgs list",
 		}},
 		{"a project that does not exist", []string{"--org", org, "--project", missing}, map[string]any{
-			"message": fmt.Sprintf("project \"%s\" (from --project) not found in %s", missing, org),
+			"message": `project "` + missing + `" (from --project) not found in ` + org,
 			"hint":    fmt.Sprintf("create one at https://portal.salad.com/organizations/%s/projects/new", org),
 		}},
 	} {
@@ -364,7 +378,7 @@ func TestSetupLogin(t *testing.T) {
 // that a miss changes nothing.
 func TestSetupUse(t *testing.T) {
 	t.Parallel()
-	org, project := liveContext()
+	org, project := liveOrg(), liveProject()
 	d := loggedIn(t)
 
 	// use <org> takes "default" when the organization has it, and sets no
@@ -403,7 +417,7 @@ func TestSetupUse(t *testing.T) {
 		wantProject = "default"
 	}
 	expect(t, "use <org>", oneDoc(t, r), map[string]any{
-		"organization": org, "project": wantProject, "env_overrides": []any{}, "action": "switched", "ok": true,
+		"organization": org, "project": wantProject, "env_overrides": emptyJSONList(), "action": "switched", "ok": true,
 	})
 
 	r = d.run(t, nil, "", "use", org+"/"+project)
@@ -442,7 +456,7 @@ func TestSetupUse(t *testing.T) {
 	}
 	expect(t, "use of a missing project", errorDoc(t, r), map[string]any{
 		"kind": "not_found", "http_status": float64(404),
-		"message": fmt.Sprintf("project \"%s\" not found in %s", missing, org),
+		"message": `project "` + missing + `" not found in ` + org,
 		"hint":    fmt.Sprintf("create one at https://portal.salad.com/organizations/%s/projects/new", org),
 	})
 	r = d.run(t, nil, "", "use", missing)
@@ -453,10 +467,7 @@ func TestSetupUse(t *testing.T) {
 		t,
 		"use of a missing organization, stderr",
 		r.Stderr,
-		fmt.Sprintf(
-			"saladcloud: error: organization \"%s\" not found\nhint: to list yours, run saladcloud orgs list\n",
-			missing,
-		),
+		"saladcloud: error: organization \""+missing+"\" not found\nhint: to list yours, run saladcloud orgs list\n",
 	)
 	expect(
 		t,
@@ -470,7 +481,7 @@ func TestSetupUse(t *testing.T) {
 // failing.
 func TestSetupWhoami(t *testing.T) {
 	t.Parallel()
-	org, project := liveContext()
+	org, project := liveOrg(), liveProject()
 	k := apiKey()
 	d := loggedIn(t)
 	doc := d.whoami(t, nil)
@@ -495,14 +506,8 @@ func TestSetupWhoami(t *testing.T) {
 	if r.Code != 0 {
 		t.Fatalf("whoami table exit %d: %s", r.Code, r.Stderr)
 	}
-	if want := fmt.Sprintf(
-		"%s (from SALAD_API_KEY; saved: %s)",
-		mask(badKey()),
-		mask(k),
-	); !strings.Contains(
-		r.Stdout,
-		want,
-	) {
+	want := fmt.Sprintf("%s (from SALAD_API_KEY; saved: %s)", mask(badKey()), mask(k))
+	if !strings.Contains(r.Stdout, want) {
 		t.Errorf("whoami does not show %q:\n%s", want, r.Stdout)
 	}
 }
@@ -630,7 +635,7 @@ func doctorRows(t *testing.T, r result) []map[string]any {
 // a variable that still supplies a key.
 func TestSetupLogout(t *testing.T) {
 	t.Parallel()
-	org, project := liveContext()
+	org, project := liveOrg(), liveProject()
 	k := apiKey()
 	d := loggedIn(t)
 	r := d.run(t, nil, "", "logout")
@@ -660,7 +665,7 @@ func TestSetupLogout(t *testing.T) {
 		"removed":       false,
 		"organization":  org,
 		"project":       project,
-		"env_overrides": []any{},
+		"env_overrides": emptyJSONList(),
 		"action":        "logged_out",
 		"ok":            true,
 	})
@@ -686,7 +691,7 @@ func TestSetupLogout(t *testing.T) {
 // named masked with its source and the fix there. Nothing is created.
 func TestRunTimeRejectedKey(t *testing.T) {
 	t.Parallel()
-	org, _ := liveContext()
+	org := liveOrg()
 	k := apiKey()
 	rejected := fmt.Sprintf("API key %s (from %%s) was rejected", mask(badKey()))
 
@@ -779,11 +784,8 @@ func TestRunTimeMissingOrganization(t *testing.T) {
 		"exit_code":   float64(4),
 		"kind":        "not_found",
 		"http_status": float64(404),
-		"message": fmt.Sprintf(
-			"organization \"%s\" (from --org) not found",
-			missing,
-		),
-		"hint": "to list yours, run saladcloud orgs list",
+		"message":     `organization "` + missing + `" (from --org) not found`,
+		"hint":        "to list yours, run saladcloud orgs list",
 	})
 }
 
@@ -856,7 +858,7 @@ func TestSetupGatewayLogin(t *testing.T) {
 	doc := oneDoc(t, r)
 	expect(t, "ai-gateway login", doc, map[string]any{
 		"ai_gateway_api_key": mask(gw), "ai_gateway_api_key_source": "env", "ai_gateway_api_key_saved": false,
-		"env_overrides": []any{}, "config_path": d.path(), "action": "logged_in", "ok": true,
+		"env_overrides": emptyJSONList(), "config_path": d.path(), "action": "logged_in", "ok": true,
 	})
 	if n := valueAs[float64](doc["models"]); n < 1 {
 		t.Errorf("models = %v, want at least one", doc["models"])
@@ -872,7 +874,7 @@ func TestSetupGatewayLogin(t *testing.T) {
 }
 
 // assertAs returns v as a T and fails the test when it holds something else.
-func assertAs[T any](t *testing.T, v any) T {
+func assertAs[T any](t *testing.T, v any) T { //nolint:ireturn // T is the concrete type the caller names
 	t.Helper()
 	x, ok := v.(T)
 	if !ok {
@@ -883,7 +885,7 @@ func assertAs[T any](t *testing.T, v any) T {
 
 // valueAs returns v as a T, or T's zero value when it holds something else
 // (a field missing from a decoded document).
-func valueAs[T any](v any) T {
+func valueAs[T any](v any) T { //nolint:ireturn // T is the concrete type the caller names
 	if x, ok := v.(T); ok {
 		return x
 	}
