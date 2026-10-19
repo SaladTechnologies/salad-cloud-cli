@@ -217,25 +217,9 @@ func (g *Gateway) Complete(
 // model), 429 → rate limited, 402 → not available (billing), else generic;
 // the gateway's own error message is kept when it has one.
 func gatewayJSON[T any](ctx context.Context, g *Gateway, method, path string, body any) (*T, *clierr.Error) {
-	var reader io.Reader
-	if body != nil {
-		payload, err := json.Marshal(body)
-		if err != nil {
-			return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot encode the request: %v", err)
-		}
-		reader = bytes.NewReader(payload)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, g.baseURL+path, reader)
-	if err != nil {
-		return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot build the request: %v", err)
-	}
-	if g.key != "" {
-		req.Header.Set("Authorization", "Bearer "+g.key)
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", userAgent())
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	req, cerr := g.newRequest(ctx, method, path, body)
+	if cerr != nil {
+		return nil, cerr
 	}
 	resp, err := g.http.Do(req)
 	if err != nil {
@@ -258,37 +242,68 @@ func gatewayJSON[T any](ctx context.Context, g *Gateway, method, path string, bo
 		}
 		return out, nil
 	}
+	return nil, gatewayError(resp.StatusCode, respBody)
+}
+
+// newRequest builds a gateway request with bearer auth (when there is a key) and body, when not nil, encoded as
+// JSON.
+func (g *Gateway) newRequest(ctx context.Context, method, path string, body any) (*http.Request, *clierr.Error) {
+	var reader io.Reader
+	if body != nil {
+		payload, err := json.Marshal(body)
+		if err != nil {
+			return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot encode the request: %v", err)
+		}
+		reader = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, g.baseURL+path, reader)
+	if err != nil {
+		return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot build the request: %v", err)
+	}
+	if g.key != "" {
+		req.Header.Set("Authorization", "Bearer "+g.key)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", userAgent())
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return req, nil
+}
+
+// gatewayError is the error for a gateway response that failed, with the gateway's own message when it has one.
+func gatewayError(status int, respBody []byte) *clierr.Error {
 	msg := gatewayErrorMessage(respBody)
-	switch resp.StatusCode {
+	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		if msg == "" {
 			msg = "the AI Gateway rejected this key"
 		}
-		return nil, clierr.HTTP(clierr.CodeAuth, clierr.KindAuth, resp.StatusCode, msg).
+		return clierr.HTTP(clierr.CodeAuth, clierr.KindAuth, status, msg).
 			WithHint("use the AI Gateway key (SALAD_AI_GATEWAY_API_KEY or the saved one), not the SaladCloud API key")
 	case http.StatusNotFound:
 		if msg == "" {
 			msg = "not found"
 		}
-		return nil, clierr.HTTP(clierr.CodeNotFound, clierr.KindNotFound, resp.StatusCode, msg).
+		return clierr.HTTP(clierr.CodeNotFound, clierr.KindNotFound, status, msg).
 			WithHint("to list the model ids, run saladcloud ai-gateway models list")
 	case http.StatusTooManyRequests:
 		if msg == "" {
 			msg = "rate limited by the AI Gateway"
 		}
-		return nil, clierr.HTTP(clierr.CodeRateLimited, clierr.KindRateLimited, resp.StatusCode, msg)
+		return clierr.HTTP(clierr.CodeRateLimited, clierr.KindRateLimited, status, msg)
 	case http.StatusPaymentRequired:
 		if msg == "" {
 			msg = "the AI Gateway declined the request for billing reasons"
 		}
-		return nil, clierr.HTTP(clierr.CodeNotAvailable, clierr.KindNotAvailable, resp.StatusCode, msg).
+		return clierr.HTTP(clierr.CodeNotAvailable, clierr.KindNotAvailable, status, msg).
 			WithHint("check the pricing and the subscription tier at %s", GatewayPricingURL)
 	}
 	if msg == "" {
-		msg = fmt.Sprintf("AI Gateway returned HTTP %d", resp.StatusCode)
+		msg = fmt.Sprintf("AI Gateway returned HTTP %d", status)
 	}
-	code, kind := codeForStatus(resp.StatusCode)
-	return nil, clierr.HTTP(code, kind, resp.StatusCode, msg)
+	code, kind := codeForStatus(status)
+	return clierr.HTTP(code, kind, status, msg)
 }
 
 // gatewayErrorMessage extracts the OpenAI-style error message
