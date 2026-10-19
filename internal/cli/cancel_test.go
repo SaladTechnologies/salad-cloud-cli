@@ -29,25 +29,32 @@ func TestCtrlCDuringARequest(t *testing.T) {
 					args: append(append([]string{}, tc.args...), "-o", mode), api: api,
 					env: with(keyEnv(), "SALAD_AI_GATEWAY_API_KEY", testGatewayKey),
 				}.run(t)
-				if o.code != 1 {
-					t.Fatalf("exit %d, want 1:\n%s", o.code, o.stderr)
-				}
-				if mode == "table" {
-					if got := strings.TrimSpace(o.stderr); got != "saladcloud: error: "+tc.want {
-						t.Errorf("stderr = %q, want saladcloud: error: %s", got, tc.want)
-					}
-					return
-				}
-				doc, err := o.errorDocument()
-				if err != nil {
-					t.Fatalf("%v:\n%s", err, o.stderr)
-				}
-				if doc["kind"] != "interrupted" || doc["message"] != tc.want || doc["hint"] != nil ||
-					doc["http_status"] != nil {
-					t.Errorf("error document = %v", doc)
-				}
+				checkCanceledRun(t, &o, mode, tc.want)
 			})
 		}
+	}
+}
+
+// checkCanceledRun checks that a run Ctrl-C ended mid-request exits 1 with the error want, of kind interrupted, in
+// the output mode it ran in.
+func checkCanceledRun(t *testing.T, o *outcome, mode, want string) {
+	t.Helper()
+	if o.code != 1 {
+		t.Fatalf("exit %d, want 1:\n%s", o.code, o.stderr)
+	}
+	if mode == "table" {
+		if got := strings.TrimSpace(o.stderr); got != "saladcloud: error: "+want {
+			t.Errorf("stderr = %q, want saladcloud: error: %s", got, want)
+		}
+		return
+	}
+	doc, err := o.errorDocument()
+	if err != nil {
+		t.Fatalf("%v:\n%s", err, o.stderr)
+	}
+	if doc["kind"] != "interrupted" || doc["message"] != want || doc["hint"] != nil ||
+		doc["http_status"] != nil {
+		t.Errorf("error document = %v", doc)
 	}
 }
 
