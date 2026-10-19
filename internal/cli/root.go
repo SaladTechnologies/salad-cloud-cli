@@ -428,14 +428,14 @@ func NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error)
 // readsProject reports whether cmd uses the project: organization-scoped
 // commands hide the --project they cannot use.
 func readsProject(cmd *cobra.Command) bool {
-	f := cmd.Flags().Lookup("project")
+	f := cmd.Flag("project") // as readsOrg
 	return f != nil && !f.Hidden
 }
 
 // readsOrg reports whether cmd reads the organization: --org is its own,
 // not shadowed by contextFree.
 func readsOrg(cmd *cobra.Command) bool {
-	f := cmd.Flags().Lookup("org")
+	f := cmd.Flag("org") // the nearest definition, merged into cmd.Flags() yet or not
 	return f != nil && !f.Hidden
 }
 
