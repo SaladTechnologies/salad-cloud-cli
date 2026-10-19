@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -66,80 +67,15 @@ it is null whenever that list is unavailable.`,
 }
 
 func (app *App) runWhoami(cmd *cobra.Command, _ []string) error {
-	orgFlag, projectFlag := app.flags.org, app.flags.project
-	path, err := config.Path(app.Env)
-	if err != nil {
-		return clierr.New(
-			clierr.CodeGeneric,
-			clierr.KindAPIError,
-			"cannot find a folder for the config file: %s",
-			config.Reason(err),
-		)
-	}
-	res, err := config.Resolve(app.Env, orgFlag, projectFlag)
-	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
-			WithHint("fix or delete it")
+	path, res, cerr := app.whoamiResolve()
+	if cerr != nil {
+		return cerr
 	}
 	saved := app.savedConfig()
-
-	var authenticated, found *bool
-	var orgs []string
-	malformed := false
-	// An organization that cannot be a URL name is reported, not sent.
-	orgChecks := res.Organization != "" && validName(res.Organization) && !app.looksLikeKey(res.Organization)
-	if res.Organization != "" && !orgChecks {
-		no := false
-		found = &no
+	chk, cerr := app.whoamiCheckKey(cmd.Context(), &res)
+	if cerr != nil {
+		return cerr
 	}
-	if res.APIKey != "" {
-		yes, no := true, false
-		key, ok := normalizeKey(res.APIKey)
-		if !ok {
-			authenticated, malformed = &no, true // no key has these characters; the API would reject it
-		} else {
-			client, cerr := api.New(
-				config.Resolved{
-					APIKey:              key,
-					Organization:        res.Organization,
-					APIKeySource:        "",
-					OrganizationSource:  "",
-					Project:             "",
-					ProjectSource:       "",
-					GatewayAPIKey:       "",
-					GatewayAPIKeySource: "",
-					SkippedProject:      "",
-					SkippedProjectOrg:   "",
-				},
-				app.apiOptions(),
-			)
-			if cerr != nil {
-				return cerr
-			}
-			list, cerr := client.OrganizationListing(cmd.Context())
-			switch {
-			case rejected(cerr):
-				authenticated = &no
-			case cerr != nil:
-				return cerr
-			case list != nil:
-				authenticated, orgs = &yes, list.OrgNames()
-			}
-			if orgChecks && !rejected(cerr) {
-				switch cerr := client.CheckOrg(cmd.Context()); {
-				case cerr == nil:
-					authenticated, found = &yes, &yes
-				case cerr.Code == clierr.CodeNotFound:
-					authenticated, found = &yes, &no
-				case rejected(cerr):
-					authenticated = &no
-				default:
-					return cerr
-				}
-			}
-		}
-	}
-
 	r := whoamiResult{
 		APIKey: maskedOrNil(
 			res.APIKey,
@@ -149,7 +85,7 @@ func (app *App) runWhoami(cmd *cobra.Command, _ []string) error {
 		Organization:       app.nameOrNil(res.Organization),
 		OrganizationSource: strOrNil(res.OrganizationSource),
 		SavedOrganization:  app.nameOrNil(saved.Organization),
-		OrganizationFound:  found,
+		OrganizationFound:  chk.found,
 		Project: app.nameOrNil(
 			res.Project,
 		),
@@ -158,88 +94,208 @@ func (app *App) runWhoami(cmd *cobra.Command, _ []string) error {
 		GatewayAPIKey:       maskedOrNil(res.GatewayAPIKey),
 		GatewayAPIKeySource: strOrNil(res.GatewayAPIKeySource),
 		SavedGatewayAPIKey:  maskedOrNil(saved.GatewayAPIKey),
-		Authenticated:       authenticated,
-		Organizations:       orgs,
+		Authenticated:       chk.authenticated,
+		Organizations:       chk.orgs,
 		ConfigPath:          path,
 	}
-	return wrapErr(app.printer.Emit(r, func(w *output.Writer) {
-		fprintf(
-			w,
-			"api-key\t%s\n",
-			whoamiRow(
-				maskAPIKey(res.APIKey),
-				res.APIKeySource,
-				"",
-				envAPIKey,
-				maskAPIKey(saved.APIKey),
-				saved.APIKey != "" && !sameKey(saved.APIKey, res.APIKey),
-				"",
-			),
+	return wrapErr(app.printer.Emit(r, func(w *output.Writer) { app.whoamiTable(w, path, &res, saved, &chk) }))
+}
+
+// whoamiResolve is the config file's path and what commands resolve from the flags, the variables and the file.
+func (app *App) whoamiResolve() (string, config.Resolved, *clierr.Error) {
+	orgFlag, projectFlag := app.flags.org, app.flags.project
+	path, err := config.Path(app.Env)
+	if err != nil {
+		return "", config.Resolved{}, clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot find a folder for the config file: %s",
+			config.Reason(err),
 		)
-		var organization string
-		if res.Organization != "" && !app.looksLikeKey(res.Organization) && !validName(res.Organization) {
-			organization = fmt.Sprintf(
-				`"%s"%s, not a valid organization name`,
-				res.Organization,
-				fromTag(originOf(res.OrganizationSource, "--org", envOrganization)),
-			)
-		} else {
-			notFound := ""
-			if orgChecks && found != nil && !*found {
-				notFound = "not found"
-			}
-			organization = whoamiRow(
-				app.shownName(res.Organization),
-				res.OrganizationSource,
-				"--org",
-				envOrganization,
-				app.shownName(saved.Organization),
-				saved.Organization != res.Organization,
-				notFound,
-			)
-		}
-		w.Printf("organization\t%s\n", organization)
-		project := whoamiRow(
-			app.shownName(res.Project),
-			res.ProjectSource,
-			"--project",
-			envProject,
-			app.shownName(saved.Project),
-			saved.Project != res.Project,
+	}
+	res, err := config.Resolve(app.Env, orgFlag, projectFlag)
+	if err != nil {
+		e := clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot read the config file %s: %s",
+			path,
+			readReason(err),
+		)
+		return "", config.Resolved{}, e.WithHint("fix or delete it")
+	}
+	return path, res, nil
+}
+
+// whoamiCheck is what whoami learned about the key and the organization in use.
+type whoamiCheck struct {
+	authenticated *bool    // whether the API accepted the key; nil when there was nothing to check
+	found         *bool    // the organization check; nil when not checked
+	orgs          []string // the key's organizations; nil when the listing was unavailable
+	malformed     bool     // the key has characters no key has, so it was never sent
+	orgChecks     bool     // the organization can be a URL name, so it is sent
+}
+
+// whoamiCheckKey asks the API about the key in use and its organization. An organization that cannot be a URL name
+// is reported, not sent; a key no key looks like is never sent either.
+func (app *App) whoamiCheckKey(ctx context.Context, res *config.Resolved) (whoamiCheck, *clierr.Error) {
+	chk := whoamiCheck{
+		authenticated: nil,
+		found:         nil,
+		orgs:          nil,
+		malformed:     false,
+		orgChecks:     res.Organization != "" && validName(res.Organization) && !app.looksLikeKey(res.Organization),
+	}
+	if res.Organization != "" && !chk.orgChecks {
+		no := false
+		chk.found = &no
+	}
+	if res.APIKey == "" {
+		return chk, nil
+	}
+	key, ok := normalizeKey(res.APIKey)
+	if !ok {
+		no := false
+		chk.authenticated, chk.malformed = &no, true // no key has these characters; the API would reject it
+		return chk, nil
+	}
+	client, cerr := api.New(
+		config.Resolved{
+			APIKey:              key,
+			Organization:        res.Organization,
+			APIKeySource:        "",
+			OrganizationSource:  "",
+			Project:             "",
+			ProjectSource:       "",
+			GatewayAPIKey:       "",
+			GatewayAPIKeySource: "",
+			SkippedProject:      "",
+			SkippedProjectOrg:   "",
+		},
+		app.apiOptions(),
+	)
+	if cerr != nil {
+		return chk, cerr
+	}
+	cerr = chk.authenticate(ctx, client)
+	return chk, cerr
+}
+
+// authenticate checks the key through the organization listing, then the organization through the organization
+// check unless the key was rejected. A rejected key or a missing organization is an answer; any other error is
+// returned.
+func (chk *whoamiCheck) authenticate(ctx context.Context, client *api.Client) *clierr.Error {
+	yes, no := true, false
+	list, cerr := client.OrganizationListing(ctx)
+	switch {
+	case rejected(cerr):
+		chk.authenticated = &no
+	case cerr != nil:
+		return cerr
+	case list != nil:
+		chk.authenticated, chk.orgs = &yes, list.OrgNames()
+	}
+	if !chk.orgChecks || rejected(cerr) {
+		return nil
+	}
+	switch cerr := client.CheckOrg(ctx); {
+	case cerr == nil:
+		chk.authenticated, chk.found = &yes, &yes
+	case cerr.Code == clierr.CodeNotFound:
+		chk.authenticated, chk.found = &yes, &no
+	case rejected(cerr):
+		chk.authenticated = &no
+	default:
+		return cerr
+	}
+	return nil
+}
+
+// whoamiTable is whoami's table: one row per value, with where it came from and what the API said.
+func (app *App) whoamiTable(w *output.Writer, path string, res *config.Resolved, saved config.File, chk *whoamiCheck) {
+	fprintf(
+		w,
+		"api-key\t%s\n",
+		whoamiRow(
+			maskAPIKey(res.APIKey),
+			res.APIKeySource,
 			"",
-		)
-		if res.ProjectSource == config.SourceDefault {
-			project = `none set, using "default"`
-		}
-		w.Printf("project\t%s\n", project)
-		fprintf(
-			w,
-			"ai-gateway-api-key\t%s\n",
-			whoamiRow(
-				maskAPIKey(res.GatewayAPIKey),
-				res.GatewayAPIKeySource,
-				"",
-				envGatewayKey,
-				maskAPIKey(
-					saved.GatewayAPIKey,
-				),
-				saved.GatewayAPIKey != "" && !sameKey(saved.GatewayAPIKey, res.GatewayAPIKey),
-				"",
+			envAPIKey,
+			maskAPIKey(saved.APIKey),
+			saved.APIKey != "" && !sameKey(saved.APIKey, res.APIKey),
+			"",
+		),
+	)
+	w.Printf("organization\t%s\n", app.whoamiOrganizationCell(res, saved, chk))
+	project := whoamiRow(
+		app.shownName(res.Project),
+		res.ProjectSource,
+		"--project",
+		envProject,
+		app.shownName(saved.Project),
+		saved.Project != res.Project,
+		"",
+	)
+	if res.ProjectSource == config.SourceDefault {
+		project = `none set, using "default"`
+	}
+	w.Printf("project\t%s\n", project)
+	fprintf(
+		w,
+		"ai-gateway-api-key\t%s\n",
+		whoamiRow(
+			maskAPIKey(res.GatewayAPIKey),
+			res.GatewayAPIKeySource,
+			"",
+			envGatewayKey,
+			maskAPIKey(
+				saved.GatewayAPIKey,
 			),
+			saved.GatewayAPIKey != "" && !sameKey(saved.GatewayAPIKey, res.GatewayAPIKey),
+			"",
+		),
+	)
+	w.Printf("authenticated\t%s\n", chk.authenticatedCell())
+	w.Printf("organizations\t%s\n", orgListCell(chk.orgs))
+	w.Printf("config-path\t%s\n", path)
+}
+
+// whoamiOrganizationCell is the organization row: a name that cannot be one is said so, and an organization the
+// check did not find is marked.
+func (app *App) whoamiOrganizationCell(res *config.Resolved, saved config.File, chk *whoamiCheck) string {
+	if res.Organization != "" && !app.looksLikeKey(res.Organization) && !validName(res.Organization) {
+		return fmt.Sprintf(
+			`"%s"%s, not a valid organization name`,
+			res.Organization,
+			fromTag(originOf(res.OrganizationSource, "--org", envOrganization)),
 		)
-		auth := "unknown"
-		switch {
-		case malformed:
-			auth = "no (the API key contains characters an API key cannot have)"
-		case authenticated != nil && *authenticated:
-			auth = "yes"
-		case authenticated != nil:
-			auth = "no (the API rejected the key)"
-		}
-		w.Printf("authenticated\t%s\n", auth)
-		w.Printf("organizations\t%s\n", orgListCell(orgs))
-		w.Printf("config-path\t%s\n", path)
-	}))
+	}
+	notFound := ""
+	if chk.orgChecks && chk.found != nil && !*chk.found {
+		notFound = "not found"
+	}
+	return whoamiRow(
+		app.shownName(res.Organization),
+		res.OrganizationSource,
+		"--org",
+		envOrganization,
+		app.shownName(saved.Organization),
+		saved.Organization != res.Organization,
+		notFound,
+	)
+}
+
+// authenticatedCell is the authenticated row: yes, no and why, or unknown when there was nothing to check.
+func (chk *whoamiCheck) authenticatedCell() string {
+	switch {
+	case chk.malformed:
+		return "no (the API key contains characters an API key cannot have)"
+	case chk.authenticated != nil && *chk.authenticated:
+		return "yes"
+	case chk.authenticated != nil:
+		return "no (the API rejected the key)"
+	}
+	return "unknown"
 }
 
 // whoamiRow renders one whoami value: "not set", or the value with where it
