@@ -19,6 +19,7 @@ import (
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/input"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
@@ -35,7 +36,7 @@ type groupActionResult struct {
 // validateCreateRequest pre-validates the fields the API requires so a bad
 // file fails fast with a friendly message instead of an HTTP 400.
 func validateCreateRequest(req *containergroups.ContainerGroupCreationRequest) *clierr.Error {
-	missing := func(field string) *clierr.Error {
+	if field := missingCreateField(req); field != "" {
 		return clierr.New(
 			clierr.CodeInvalidInput,
 			clierr.KindInvalidInput,
@@ -43,27 +44,46 @@ func validateCreateRequest(req *containergroups.ContainerGroupCreationRequest) *
 			field,
 		)
 	}
+	return validateGroupName(*req.Name)
+}
+
+// missingCreateField is the first field the API requires that req lacks,
+// or "" when it has them all.
+func missingCreateField(req *containergroups.ContainerGroupCreationRequest) string {
 	switch {
 	case req.Name == nil || *req.Name == "":
-		return missing("name")
+		return "name"
 	case req.Container == nil:
-		return missing("container")
-	case req.Container.Image == nil || *req.Container.Image == "":
-		return missing("container.image")
-	case req.Container.Resources == nil:
-		return missing("container.resources")
-	case req.Container.Resources.Cpu == nil:
-		return missing("container.resources.cpu")
-	case req.Container.Resources.Memory == nil:
-		return missing("container.resources.memory")
-	case req.Replicas == nil:
-		return missing("replicas")
-	case req.RestartPolicy == nil:
-		return missing("restart_policy")
-	case req.AutostartPolicy == nil:
-		return missing("autostart_policy")
+		return "container"
 	}
-	return validateGroupName(*req.Name)
+	if field := missingCreateContainerField(req.Container); field != "" {
+		return field
+	}
+	switch {
+	case req.Replicas == nil:
+		return "replicas"
+	case req.RestartPolicy == nil:
+		return "restart_policy"
+	case req.AutostartPolicy == nil:
+		return "autostart_policy"
+	}
+	return ""
+}
+
+// missingCreateContainerField is the first field the API requires in a
+// container that c lacks, or "" when it has them all.
+func missingCreateContainerField(c *containergroups.ContainerConfiguration) string {
+	switch {
+	case c.Image == nil || *c.Image == "":
+		return "container.image"
+	case c.Resources == nil:
+		return "container.resources"
+	case c.Resources.Cpu == nil:
+		return "container.resources.cpu"
+	case c.Resources.Memory == nil:
+		return "container.resources.memory"
+	}
+	return ""
 }
 
 // groupStatus renders a group's current status ("-" when the API omits it).
@@ -146,16 +166,7 @@ func writeGroupDetail(w *output.Writer, g *shared.ContainerGroup) {
 	row("Name", ptr.Deref(g.Name))
 	row("Display name", ptr.Deref(g.DisplayName))
 	row("ID", ptr.Deref(g.Id))
-	if c := g.Container; c != nil {
-		row("Image", ptr.Deref(c.Image))
-		if r := c.Resources; r != nil {
-			row("CPU", strconv.FormatInt(ptr.Deref(r.Cpu), 10))
-			row("Memory (MB)", strconv.FormatInt(ptr.Deref(r.Memory), 10))
-			if len(r.GpuClasses) > 0 {
-				row("GPU classes", strings.Join(r.GpuClasses, ", "))
-			}
-		}
-	}
+	writeGroupContainerRows(row, g)
 	row("Priority", priorityString(g.Priority))
 	row("Replicas", strconv.FormatInt(ptr.Deref(g.Replicas), 10))
 	if s := scheduledScalingString(g); s != "" {
@@ -181,6 +192,26 @@ func writeGroupDetail(w *output.Writer, g *shared.ContainerGroup) {
 		row("DNS", *g.Networking.Dns)
 	}
 	row("Created", timeCell(g.CreateTime))
+}
+
+// writeGroupContainerRows writes writeGroupDetail's rows for the group's
+// container (image and resources) through row; none when it has no
+// container.
+func writeGroupContainerRows(row func(k, v string), g *shared.ContainerGroup) {
+	c := g.Container
+	if c == nil {
+		return
+	}
+	row("Image", ptr.Deref(c.Image))
+	r := c.Resources
+	if r == nil {
+		return
+	}
+	row("CPU", strconv.FormatInt(ptr.Deref(r.Cpu), 10))
+	row("Memory (MB)", strconv.FormatInt(ptr.Deref(r.Memory), 10))
+	if len(r.GpuClasses) > 0 {
+		row("GPU classes", strings.Join(r.GpuClasses, ", "))
+	}
 }
 
 // groupAction runs one bodiless group verb and emits its confirmation.
@@ -242,348 +273,9 @@ func validGroupStatuses() map[string]bool {
 
 // addGroupsCommands adds groups.go's commands to the tree.
 func (app *App) addGroupsCommands(cg *cobra.Command) {
-	var listOpts struct {
-		status   string
-		projects []string
-		watch    watchOptions
-	}
-	listCmd := &cobra.Command{
-		Use:   "list",
-		Short: "List container groups (current project, or --projects for several)",
-		Long: `List the container groups in the current project.
-
---status filters client-side on the group status. --projects fans the
-listing out across several named projects in the organization (repeat the
-flag for each: --projects a --projects b) and adds a PROJECT column. Name
-the projects you want listed.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			statusFilter, projects := listOpts.status, listOpts.projects
-			if statusFilter != "" && !validGroupStatuses()[statusFilter] {
-				return clierr.New(
-					clierr.CodeUsage,
-					clierr.KindUsage,
-					`invalid --status "%s"`,
-					statusFilter,
-				).WithHint("use pending, running, stopped, succeeded, failed or deploying")
-			}
-			client, res, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			multi := len(projects) > 0
-			return app.runMaybeWatch(cmd, listOpts.watch, func(ctx context.Context) *clierr.Error {
-				var items []shared.ContainerGroup
-				if multi {
-					for _, proj := range projects {
-						r := res
-						r.Project, r.ProjectSource = proj, "flag"
-						pc, cerr := api.New(r, app.apiOptions())
-						if cerr != nil {
-							return cerr
-						}
-						groups, lerr := pc.ListGroups(ctx)
-						if lerr != nil {
-							if lerr.Code == clierr.CodeNotFound {
-								fprintf(app.errw(), "warning: project \"%s\" not found, skipped\n", proj)
-								continue
-							}
-							return lerr
-						}
-						items = append(items, groups.Items...)
-					}
-				} else {
-					groups, lerr := client.ListGroups(ctx)
-					if lerr != nil {
-						// A 404 on the whole collection means the project (or
-						// org) itself wasn't found, not any container group.
-						// (A missing organization is reported as one before this.)
-						return describeNotFound(lerr, "",
-							`project "%s" not found in organization %s`, client.Project(), client.Org())
-					}
-					items = groups.Items
-				}
-				if statusFilter != "" {
-					kept := items[:0]
-					for i := range items {
-						if groupStatus(&items[i]) == statusFilter {
-							kept = append(kept, items[i])
-						}
-					}
-					items = kept
-				}
-				payload := struct {
-					Items []shared.ContainerGroup `json:"items"`
-				}{items}
-				if err := app.printer.Emit(payload, func(w *output.Writer) {
-					if multi {
-						w.Print("PROJECT\t")
-					}
-					w.Println("NAME\tDISPLAY NAME\tPRIORITY\tREPLICAS\tRUNNING\tSTATUS\tPENDING\tIMAGE\tCREATED")
-					for i := range items {
-						g := &items[i]
-						if multi {
-							w.Printf("%s\t", ptr.Deref(g.ProjectName))
-						}
-						w.Printf("%s\t%s\t%s\t%d\t%s\t%s\t%t\t%s\t%s\n",
-							ptr.Deref(g.Name), ptr.Deref(g.DisplayName), priorityString(g.Priority),
-							ptr.Deref(g.Replicas), runningCell(g), groupStatus(g), ptr.Deref(g.PendingChange),
-							imageCell(g), timeCell(g.CreateTime))
-					}
-				}); err != nil {
-					return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)
-				}
-				// A bare header is ambiguous for humans; disambiguate an
-				// empty listing on stderr so the stdout contract (and json
-				// mode) stays unchanged.
-				if len(items) == 0 && app.printer.Mode() == "table" {
-					switch {
-					case multi:
-						fprintln(app.errw(), "no container groups in the listed projects")
-					case statusFilter != "":
-						fprintf(
-							app.errw(),
-							"no container groups in %s/%s matching --status %s\n",
-							res.Organization,
-							res.Project,
-							statusFilter,
-						)
-					default:
-						fprintf(app.errw(), "no container groups in %s/%s\n", res.Organization, res.Project)
-					}
-				}
-				return nil
-			})
-		},
-	}
-	listCmd.Flags().
-		StringVar(&listOpts.status, "status", "", "filter by status: pending|running|stopped|succeeded|failed|deploying")
-	listCmd.Flags().
-		StringArrayVar(&listOpts.projects, "projects", nil, "list this project instead of the current one, repeatable (--projects a --projects b); adds a PROJECT column")
-	app.addWatchFlags(listCmd, &listOpts.watch)
-	cg.AddCommand(listCmd)
-
-	var getOpts struct {
-		writable bool
-		watch    watchOptions
-	}
-	getCmd := &cobra.Command{
-		Use:   "get <group>",
-		Short: "Show one container group (--writable emits a patch document for update -f)",
-		Long: `Show one container group.
-
---writable emits the group as a JSON document that update -f accepts:
-response-only fields (id, version, current_state, ...) and create-only
-fields are removed, and the one request/response relocation is applied
-(responses return priority at the top level; requests take
-container.priority). The output is always JSON regardless of -o, so this
-round-trips (bash or zsh, then PowerShell):
-
-  saladcloud container-groups get my-app --writable > my-app.json
-  saladcloud container-groups get my-app --writable | Set-Content -Encoding ascii my-app.json
-  # edit my-app.json
-  saladcloud container-groups update my-app -f my-app.json
-
-Note that the document includes replicas, and writing replicas puts
-scheduled scaling on hold (a documented platform rule); remove it from the
-document unless you mean to change it. The CLI prints a note when the
-group has scheduled scaling enabled.`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			writable, watch := getOpts.writable, getOpts.watch.watch
-			if watch && writable {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--writable and --watch cannot be combined")
-			}
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			if writable {
-				group, cerr := client.GetGroup(cmd.Context(), args[0])
-				if cerr != nil {
-					return groupNotFound(cerr, args[0], client.Org(), client.Project())
-				}
-				doc, dropped, err := writableDocument(group)
-				if err != nil {
-					return clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot render group: %v", err)
-				}
-				if m, ok := doc.(map[string]any); ok {
-					if asType[bool](m["scheduled-scaling-enabled"]) {
-						if _, has := m["replicas"]; has {
-							fprintln(
-								app.errw(),
-								"note: replicas is included; writing it puts scheduled scaling on hold, so drop it unless you mean to change it",
-							)
-						}
-					}
-				}
-				if len(dropped) > 0 {
-					fprintf(
-						app.errw(),
-						"note: %d field(s) update cannot write were omitted: %s\n",
-						len(dropped),
-						joinPaths(dropped),
-					)
-				}
-				// Always JSON: a table rendering of a patch document has no use.
-				data, err := json.MarshalIndent(doc, "", "  ")
-				if err != nil {
-					return clierr.New(clierr.CodeGeneric, clierr.KindInternal, "%v", err)
-				}
-				_, err = fmt.Fprintln(app.printer.Out(), string(output.ASCII(data)))
-				return wrapErr(err)
-			}
-			return app.runMaybeWatch(cmd, getOpts.watch, func(ctx context.Context) *clierr.Error {
-				group, cerr := client.GetGroup(ctx, args[0])
-				if cerr != nil {
-					return groupNotFound(cerr, args[0], client.Org(), client.Project())
-				}
-				if err := app.printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }); err != nil {
-					return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)
-				}
-				return nil
-			})
-		},
-	}
-	getCmd.Flags().
-		BoolVar(&getOpts.writable, "writable", false, "emit a JSON patch document for update -f (response-only and create-only fields removed)")
-	app.addWatchFlags(getCmd, &getOpts.watch)
-	cg.AddCommand(getCmd)
-
-	var updateOpts struct {
-		file         string
-		allowUnknown bool
-		flags        updateFlags
-		settle       settleOptions
-	}
-	updateCmd := &cobra.Command{
-		Use:   "update <group> [-f <file>] [flags] [-- <command>...]",
-		Short: "Update a container group from flags and/or a JSON or YAML patch file (waits for the change to settle)",
-		Long: `Update a container group from flags, a JSON or YAML merge patch file (-f),
-or both; flags win over the file. The change settles before the command
-returns (--no-wait returns at once), and the result is checked against what
-you asked for.
-
-The flags are the create flags that can change on an existing group:
---image, --cpu, --memory, --storage, --gpu (UUID or name; replaces the GPU
-classes), --country (replaces the countries), --replicas, --priority,
---port, --display-name, and -e/--env. The API
-replaces the whole set of environment variables on every write, so -e reads
-the group's current variables and merges into them: other variables are
-kept. A patch file's environment_variables, without -e, is sent as written
-and replaces the set. The name, restart policy, autostart, gateway auth
-and queue connection cannot change after create.
-
-Words after -- replace the container command, which runs in place of the
-image's ENTRYPOINT and CMD, so it starts with the program; unlike cg ssh,
-there is no shell. Put saladcloud's own flags before --. To go back to the
-image's own command, send a patch file with {"container": {"command": []}}.`,
-		Example: `  # Roll out a new image
-  saladcloud container-groups update my-app --image ghcr.io/me/app:v2
-
-  # Add or change one variable, keeping the others
-  saladcloud container-groups update my-app -e LOG_LEVEL=debug
-
-  # A patch file, with a flag on top
-  saladcloud container-groups update my-app -f patch.yaml --replicas 4
-
-  # Replace the container command
-  saladcloud container-groups update my-app -- python app.py --port 8080`,
-		Args: func(cmd *cobra.Command, args []string) error {
-			// The one positional is <group>; the words after -- are the
-			// container command and are not counted.
-			if pos, _, _ := splitCommand(cmd, args); len(pos) != 1 {
-				return fmt.Errorf("%w 1 arg(s) before --, received %d", errAccepts, len(pos))
-			}
-			return nil
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			file, allowUnknown := updateOpts.file, updateOpts.allowUnknown
-			args, command, commandGiven := splitCommand(cmd, args)
-			if cerr := app.validateCommand(command, commandGiven); cerr != nil {
-				return cerr
-			}
-			warnCommand(app.errw(), cmd, command)
-			wait, timeout, cerr := updateOpts.settle.values()
-			if cerr != nil {
-				return cerr // pre-flight: a bad --timeout must not patch anything
-			}
-			flags := collectUpdateFlags(cmd, updateOpts.flags)
-			flags.Command = command
-			if cerr = validateUpdateFlags(flags); cerr != nil {
-				return cerr
-			}
-			if file == "" && !flags.any() {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage,
-					"nothing to update").
-					WithHint("pass -f <file>, a flag such as --image, or both; to see the flags, run saladcloud container-groups update --help")
-			}
-			// The typed struct is validation only (strict parse, friendly
-			// errors); the RAW document is what goes on the wire. Re-marshaling
-			// the struct would drop explicit empty values ([], "", 0) via
-			// omitempty — and in a merge patch those mean "clear this field".
-			// Because the wire document is the user's own bytes, the
-			// --allow-unknown-fields path needs no grafting here: tolerated
-			// fields ride through untouched.
-			var patch containergroups.ContainerGroupPatch
-			var raw json.RawMessage
-			switch {
-			case file == "":
-				// Flags only: the patch is built from them below.
-			case allowUnknown:
-				r, unknowns, err := input.LoadLenient(file, app.Stdin, &patch)
-				if err != nil {
-					return err
-				}
-				warnUnknowns(app.errw(), unknowns, false)
-				raw = r
-			default:
-				// Strict: load leniently, then reject with per-field advice
-				// so a create-only field (networking.auth) or a response-only
-				// one (piped back from `get -o json`) gets an explanation
-				// rather than a suggestion to force it through and have the
-				// API discard it.
-				r, u, err := input.LoadLenient(file, app.Stdin, &patch)
-				if err != nil {
-					return err
-				}
-				if cerr = namingGroup(app.rejectUnknowns(u), args[0]); cerr != nil {
-					return cerr
-				}
-				raw = r
-			}
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			var intent json.RawMessage // what was asked for, when it differs from the wire patch
-			if flags.any() {
-				flags.ResolveGpu = lazyGpuResolver(cmd, client)
-				var env map[string]*string
-				if len(flags.Env) > 0 {
-					current, err := client.GetGroup(cmd.Context(), args[0])
-					if err != nil {
-						return groupNotFound(err, args[0], client.Org(), client.Project())
-					}
-					env = envOf(current)
-				}
-				if raw, intent, cerr = buildUpdatePatch(raw, flags, env); cerr != nil {
-					return cerr
-				}
-			}
-			group, err := app.applyPatch(cmd, client, args[0], raw, intent, wait, timeout, "update settled")
-			if err != nil {
-				return err
-			}
-			return wrapErr(app.printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
-		},
-	}
-	updateCmd.Flags().
-		StringVarP(&updateOpts.file, "file", "f", "", "container group patch file (.json/.yaml; \"-\" reads stdin)")
-	addUpdateFlags(updateCmd, &updateOpts.flags)
-	addAllowUnknownFlag(updateCmd, &updateOpts.allowUnknown)
-	addSettleFlags(updateCmd, &updateOpts.settle)
-	cg.AddCommand(updateCmd)
+	app.addGroupsListCommand(cg)
+	app.addGroupsGetCommand(cg)
+	app.addGroupsUpdateCommand(cg)
 
 	var startWait waitOptions
 	startCmd := &cobra.Command{
@@ -629,6 +321,470 @@ name_conflict. Pick a new name for the replacement.`,
 			})
 		},
 	})
+}
+
+// groupsListOptions are container-groups list's flags.
+type groupsListOptions struct {
+	status   string
+	projects []string
+	watch    watchOptions
+}
+
+// addGroupsListCommand adds container-groups list to the tree.
+func (app *App) addGroupsListCommand(cg *cobra.Command) {
+	var listOpts groupsListOptions
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List container groups (current project, or --projects for several)",
+		Long: `List the container groups in the current project.
+
+--status filters client-side on the group status. --projects fans the
+listing out across several named projects in the organization (repeat the
+flag for each: --projects a --projects b) and adds a PROJECT column. Name
+the projects you want listed.`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return app.runGroupsList(cmd, &listOpts)
+		},
+	}
+	listCmd.Flags().
+		StringVar(&listOpts.status, "status", "", "filter by status: pending|running|stopped|succeeded|failed|deploying")
+	listCmd.Flags().
+		StringArrayVar(&listOpts.projects, "projects", nil, "list this project instead of the current one, repeatable (--projects a --projects b); adds a PROJECT column")
+	app.addWatchFlags(listCmd, &listOpts.watch)
+	cg.AddCommand(listCmd)
+}
+
+// runGroupsList is container-groups list's RunE: check --status, then list
+// (once, or on every --watch tick), filter and emit.
+func (app *App) runGroupsList(cmd *cobra.Command, opts *groupsListOptions) error {
+	statusFilter, projects := opts.status, opts.projects
+	if statusFilter != "" && !validGroupStatuses()[statusFilter] {
+		return clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			`invalid --status "%s"`,
+			statusFilter,
+		).WithHint("use pending, running, stopped, succeeded, failed or deploying")
+	}
+	client, res, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	return app.runMaybeWatch(cmd, opts.watch, func(ctx context.Context) *clierr.Error {
+		var items []shared.ContainerGroup
+		var lerr *clierr.Error
+		if len(projects) > 0 {
+			items, lerr = app.listGroupsInProjects(ctx, &res, projects)
+		} else {
+			items, lerr = listGroupsInCurrentProject(ctx, client)
+		}
+		if lerr != nil {
+			return lerr
+		}
+		return app.emitGroupList(filterGroupsByStatus(items, statusFilter), opts, &res)
+	})
+}
+
+// listGroupsInCurrentProject lists the current project's container groups.
+func listGroupsInCurrentProject(ctx context.Context, client *api.Client) ([]shared.ContainerGroup, *clierr.Error) {
+	groups, lerr := client.ListGroups(ctx)
+	if lerr != nil {
+		// A 404 on the whole collection means the project (or
+		// org) itself wasn't found, not any container group.
+		// (A missing organization is reported as one before this.)
+		return nil, describeNotFound(lerr, "",
+			`project "%s" not found in organization %s`, client.Project(), client.Org())
+	}
+	return groups.Items, nil
+}
+
+// listGroupsInProjects lists the container groups of each --projects
+// project in turn; a project that is not found is skipped with a warning.
+func (app *App) listGroupsInProjects(
+	ctx context.Context,
+	res *config.Resolved,
+	projects []string,
+) ([]shared.ContainerGroup, *clierr.Error) {
+	var items []shared.ContainerGroup
+	for _, proj := range projects {
+		r := *res
+		r.Project, r.ProjectSource = proj, "flag"
+		pc, cerr := api.New(r, app.apiOptions())
+		if cerr != nil {
+			return nil, cerr
+		}
+		groups, lerr := pc.ListGroups(ctx)
+		if lerr != nil {
+			if lerr.Code == clierr.CodeNotFound {
+				fprintf(app.errw(), "warning: project \"%s\" not found, skipped\n", proj)
+				continue
+			}
+			return nil, lerr
+		}
+		items = append(items, groups.Items...)
+	}
+	return items, nil
+}
+
+// filterGroupsByStatus keeps the groups whose status is status, in place;
+// an empty status keeps them all.
+func filterGroupsByStatus(items []shared.ContainerGroup, status string) []shared.ContainerGroup {
+	if status == "" {
+		return items
+	}
+	kept := items[:0]
+	for i := range items {
+		if groupStatus(&items[i]) == status {
+			kept = append(kept, items[i])
+		}
+	}
+	return kept
+}
+
+// emitGroupList emits list's {"items": [...]} document, or its table, with
+// a PROJECT column under --projects.
+func (app *App) emitGroupList(
+	items []shared.ContainerGroup,
+	opts *groupsListOptions,
+	res *config.Resolved,
+) *clierr.Error {
+	payload := struct {
+		Items []shared.ContainerGroup `json:"items"`
+	}{items}
+	if err := app.printer.Emit(payload, func(w *output.Writer) { writeGroupList(w, items, opts) }); err != nil {
+		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)
+	}
+	// A bare header is ambiguous for humans; disambiguate an
+	// empty listing on stderr so the stdout contract (and json
+	// mode) stays unchanged.
+	if len(items) == 0 && app.printer.Mode() == "table" {
+		app.noteEmptyGroupList(opts, res)
+	}
+	return nil
+}
+
+// writeGroupList writes list's table, with a PROJECT column under
+// --projects.
+func writeGroupList(w *output.Writer, items []shared.ContainerGroup, opts *groupsListOptions) {
+	multi := len(opts.projects) > 0
+	if multi {
+		w.Print("PROJECT\t")
+	}
+	w.Println("NAME\tDISPLAY NAME\tPRIORITY\tREPLICAS\tRUNNING\tSTATUS\tPENDING\tIMAGE\tCREATED")
+	for i := range items {
+		g := &items[i]
+		if multi {
+			w.Printf("%s\t", ptr.Deref(g.ProjectName))
+		}
+		w.Printf("%s\t%s\t%s\t%d\t%s\t%s\t%t\t%s\t%s\n",
+			ptr.Deref(g.Name), ptr.Deref(g.DisplayName), priorityString(g.Priority),
+			ptr.Deref(g.Replicas), runningCell(g), groupStatus(g), ptr.Deref(g.PendingChange),
+			imageCell(g), timeCell(g.CreateTime))
+	}
+}
+
+// noteEmptyGroupList says on stderr where list found no container groups.
+func (app *App) noteEmptyGroupList(opts *groupsListOptions, res *config.Resolved) {
+	switch statusFilter := opts.status; {
+	case len(opts.projects) > 0:
+		fprintln(app.errw(), "no container groups in the listed projects")
+	case statusFilter != "":
+		fprintf(
+			app.errw(),
+			"no container groups in %s/%s matching --status %s\n",
+			res.Organization,
+			res.Project,
+			statusFilter,
+		)
+	default:
+		fprintf(app.errw(), "no container groups in %s/%s\n", res.Organization, res.Project)
+	}
+}
+
+// groupsGetOptions are container-groups get's flags.
+type groupsGetOptions struct {
+	writable bool
+	watch    watchOptions
+}
+
+// addGroupsGetCommand adds container-groups get to the tree.
+func (app *App) addGroupsGetCommand(cg *cobra.Command) {
+	var getOpts groupsGetOptions
+	getCmd := &cobra.Command{
+		Use:   "get <group>",
+		Short: "Show one container group (--writable emits a patch document for update -f)",
+		Long: `Show one container group.
+
+--writable emits the group as a JSON document that update -f accepts:
+response-only fields (id, version, current_state, ...) and create-only
+fields are removed, and the one request/response relocation is applied
+(responses return priority at the top level; requests take
+container.priority). The output is always JSON regardless of -o, so this
+round-trips (bash or zsh, then PowerShell):
+
+  saladcloud container-groups get my-app --writable > my-app.json
+  saladcloud container-groups get my-app --writable | Set-Content -Encoding ascii my-app.json
+  # edit my-app.json
+  saladcloud container-groups update my-app -f my-app.json
+
+Note that the document includes replicas, and writing replicas puts
+scheduled scaling on hold (a documented platform rule); remove it from the
+document unless you mean to change it. The CLI prints a note when the
+group has scheduled scaling enabled.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.runGroupsGet(cmd, &getOpts, args[0])
+		},
+	}
+	getCmd.Flags().
+		BoolVar(&getOpts.writable, "writable", false, "emit a JSON patch document for update -f (response-only and create-only fields removed)")
+	app.addWatchFlags(getCmd, &getOpts.watch)
+	cg.AddCommand(getCmd)
+}
+
+// runGroupsGet is container-groups get's RunE: the patch document under
+// --writable, else the group (once, or on every --watch tick).
+func (app *App) runGroupsGet(cmd *cobra.Command, opts *groupsGetOptions, name string) error {
+	writable, watch := opts.writable, opts.watch.watch
+	if watch && writable {
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--writable and --watch cannot be combined")
+	}
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	if writable {
+		return app.emitWritableGroup(cmd, client, name)
+	}
+	return app.runMaybeWatch(cmd, opts.watch, func(ctx context.Context) *clierr.Error {
+		group, cerr := client.GetGroup(ctx, name)
+		if cerr != nil {
+			return groupNotFound(cerr, name, client.Org(), client.Project())
+		}
+		if err := app.printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }); err != nil {
+			return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)
+		}
+		return nil
+	})
+}
+
+// emitWritableGroup is get --writable: the group as a patch document for
+// update -f, always JSON, with notes on stderr about what it leaves out and
+// about replicas.
+func (app *App) emitWritableGroup(cmd *cobra.Command, client *api.Client, name string) error {
+	group, cerr := client.GetGroup(cmd.Context(), name)
+	if cerr != nil {
+		return groupNotFound(cerr, name, client.Org(), client.Project())
+	}
+	doc, dropped, err := writableDocument(group)
+	if err != nil {
+		return clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot render group: %v", err)
+	}
+	app.noteWritableReplicas(doc)
+	if len(dropped) > 0 {
+		fprintf(
+			app.errw(),
+			"note: %d field(s) update cannot write were omitted: %s\n",
+			len(dropped),
+			joinPaths(dropped),
+		)
+	}
+	// Always JSON: a table rendering of a patch document has no use.
+	data, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return clierr.New(clierr.CodeGeneric, clierr.KindInternal, "%v", err)
+	}
+	_, err = fmt.Fprintln(app.printer.Out(), string(output.ASCII(data)))
+	return wrapErr(err)
+}
+
+// noteWritableReplicas notes on stderr that a writable document of a group
+// with scheduled scaling enabled carries replicas, which puts the schedule
+// on hold when written.
+func (app *App) noteWritableReplicas(doc any) {
+	m, ok := doc.(map[string]any)
+	if !ok || !asType[bool](m["scheduled-scaling-enabled"]) {
+		return
+	}
+	if _, has := m["replicas"]; has {
+		fprintln(
+			app.errw(),
+			"note: replicas is included; writing it puts scheduled scaling on hold, so drop it unless you mean to change it",
+		)
+	}
+}
+
+// groupsUpdateOptions are container-groups update's flags.
+type groupsUpdateOptions struct {
+	file         string
+	allowUnknown bool
+	flags        updateFlags
+	settle       settleOptions
+}
+
+// addGroupsUpdateCommand adds container-groups update to the tree.
+func (app *App) addGroupsUpdateCommand(cg *cobra.Command) {
+	var updateOpts groupsUpdateOptions
+	updateCmd := &cobra.Command{
+		Use:   "update <group> [-f <file>] [flags] [-- <command>...]",
+		Short: "Update a container group from flags and/or a JSON or YAML patch file (waits for the change to settle)",
+		Long: `Update a container group from flags, a JSON or YAML merge patch file (-f),
+or both; flags win over the file. The change settles before the command
+returns (--no-wait returns at once), and the result is checked against what
+you asked for.
+
+The flags are the create flags that can change on an existing group:
+--image, --cpu, --memory, --storage, --gpu (UUID or name; replaces the GPU
+classes), --country (replaces the countries), --replicas, --priority,
+--port, --display-name, and -e/--env. The API
+replaces the whole set of environment variables on every write, so -e reads
+the group's current variables and merges into them: other variables are
+kept. A patch file's environment_variables, without -e, is sent as written
+and replaces the set. The name, restart policy, autostart, gateway auth
+and queue connection cannot change after create.
+
+Words after -- replace the container command, which runs in place of the
+image's ENTRYPOINT and CMD, so it starts with the program; unlike cg ssh,
+there is no shell. Put saladcloud's own flags before --. To go back to the
+image's own command, send a patch file with {"container": {"command": []}}.`,
+		Example: `  # Roll out a new image
+  saladcloud container-groups update my-app --image ghcr.io/me/app:v2
+
+  # Add or change one variable, keeping the others
+  saladcloud container-groups update my-app -e LOG_LEVEL=debug
+
+  # A patch file, with a flag on top
+  saladcloud container-groups update my-app -f patch.yaml --replicas 4
+
+  # Replace the container command
+  saladcloud container-groups update my-app -- python app.py --port 8080`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			// The one positional is <group>; the words after -- are the
+			// container command and are not counted.
+			if pos, _, _ := splitCommand(cmd, args); len(pos) != 1 {
+				return fmt.Errorf("%w 1 arg(s) before --, received %d", errAccepts, len(pos))
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return app.runGroupsUpdate(cmd, &updateOpts, args)
+		},
+	}
+	updateCmd.Flags().
+		StringVarP(&updateOpts.file, "file", "f", "", "container group patch file (.json/.yaml; \"-\" reads stdin)")
+	addUpdateFlags(updateCmd, &updateOpts.flags)
+	addAllowUnknownFlag(updateCmd, &updateOpts.allowUnknown)
+	addSettleFlags(updateCmd, &updateOpts.settle)
+	cg.AddCommand(updateCmd)
+}
+
+// runGroupsUpdate is container-groups update's RunE: check the command line
+// pre-flight, load the patch file, lay the flags over it, and apply it.
+func (app *App) runGroupsUpdate(cmd *cobra.Command, opts *groupsUpdateOptions, args []string) error {
+	args, command, commandGiven := splitCommand(cmd, args)
+	if cerr := app.validateCommand(command, commandGiven); cerr != nil {
+		return cerr
+	}
+	warnCommand(app.errw(), cmd, command)
+	wait, timeout, cerr := opts.settle.values()
+	if cerr != nil {
+		return cerr // pre-flight: a bad --timeout must not patch anything
+	}
+	flags, cerr := updateCheckFlags(cmd, opts, command)
+	if cerr != nil {
+		return cerr
+	}
+	raw, cerr := app.updateLoadPatchFile(opts, args[0])
+	if cerr != nil {
+		return cerr
+	}
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	var intent json.RawMessage // what was asked for, when it differs from the wire patch
+	if flags.any() {
+		flags.ResolveGpu = lazyGpuResolver(cmd, client)
+		env, eerr := updateCurrentEnv(cmd, client, args[0], &flags)
+		if eerr != nil {
+			return eerr
+		}
+		if raw, intent, cerr = buildUpdatePatch(raw, flags, env); cerr != nil {
+			return cerr
+		}
+	}
+	group, err := app.applyPatch(cmd, client, args[0], raw, intent, wait, timeout, "update settled")
+	if err != nil {
+		return err
+	}
+	return wrapErr(app.printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
+}
+
+// updateCheckFlags is update's flags, checked pre-flight: their values, and
+// that there is something to update at all.
+func updateCheckFlags(cmd *cobra.Command, opts *groupsUpdateOptions, command []string) (updateFlags, *clierr.Error) {
+	flags := collectUpdateFlags(cmd, opts.flags)
+	flags.Command = command
+	if cerr := validateUpdateFlags(flags); cerr != nil {
+		return flags, cerr
+	}
+	if opts.file == "" && !flags.any() {
+		return flags, clierr.New(clierr.CodeUsage, clierr.KindUsage,
+			"nothing to update").
+			WithHint("pass -f <file>, a flag such as --image, or both; to see the flags, run saladcloud container-groups update --help")
+	}
+	return flags, nil
+}
+
+// updateLoadPatchFile loads update's -f patch file; nil without -f (flags
+// only: the patch is built from them later).
+//
+// The typed struct is validation only (strict parse, friendly errors); the
+// RAW document is what goes on the wire. Re-marshaling the struct would drop
+// explicit empty values ([], "", 0) via omitempty — and in a merge patch
+// those mean "clear this field". Because the wire document is the user's own
+// bytes, the --allow-unknown-fields path needs no grafting here: tolerated
+// fields ride through untouched.
+func (app *App) updateLoadPatchFile(opts *groupsUpdateOptions, group string) (json.RawMessage, *clierr.Error) {
+	if opts.file == "" {
+		return nil, nil
+	}
+	var patch containergroups.ContainerGroupPatch
+	raw, unknowns, cerr := input.LoadLenient(opts.file, app.Stdin, &patch)
+	if cerr != nil {
+		return nil, cerr
+	}
+	if opts.allowUnknown {
+		warnUnknowns(app.errw(), unknowns, false)
+		return raw, nil
+	}
+	// Strict: load leniently, then reject with per-field advice so a
+	// create-only field (networking.auth) or a response-only one (piped back
+	// from `get -o json`) gets an explanation rather than a suggestion to
+	// force it through and have the API discard it.
+	if rerr := namingGroup(app.rejectUnknowns(unknowns), group); rerr != nil {
+		return nil, rerr
+	}
+	return raw, nil
+}
+
+// updateCurrentEnv is the group's present environment variables under -e,
+// which the patch must carry merged whole; nil without -e.
+func updateCurrentEnv(
+	cmd *cobra.Command,
+	client *api.Client,
+	group string,
+	flags *updateFlags,
+) (map[string]*string, *clierr.Error) {
+	if len(flags.Env) == 0 {
+		return nil, nil
+	}
+	current, cerr := client.GetGroup(cmd.Context(), group)
+	if cerr != nil {
+		return nil, groupNotFound(cerr, group, client.Org(), client.Project())
+	}
+	return envOf(current), nil
 }
 
 // applyPatch is the one write path for merge patches: update -f and scale
