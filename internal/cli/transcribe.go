@@ -8,6 +8,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -19,6 +20,7 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/inferenceendpoints"
 	"github.com/spf13/cobra"
 
+	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
@@ -119,19 +121,15 @@ func resultURLKeys() []string {
 func transcriptText(out any, wantSRT, wantFile bool) (string, *clierr.Error) {
 	m, isMap := out.(map[string]any)
 	if isMap && wantFile {
-		for _, key := range resultURLKeys() {
-			if s, ok := m[key].(string); ok && s != "" {
-				return s, nil
-			}
+		if s := transcriptField(m, resultURLKeys()...); s != "" {
+			return s, nil
 		}
 		return "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
 			"the job succeeded, but its output has no result URL").WithHint("inspect the job document with -o json")
 	}
 	if isMap && wantSRT {
-		for _, key := range []string{"srt_content", "srt"} {
-			if s, ok := m[key].(string); ok && s != "" {
-				return s, nil
-			}
+		if s := transcriptField(m, "srt_content", "srt"); s != "" {
+			return s, nil
 		}
 		return "", clierr.New(
 			clierr.CodeGeneric,
@@ -139,12 +137,20 @@ func transcriptText(out any, wantSRT, wantFile bool) (string, *clierr.Error) {
 			"the job succeeded, but its output has no SRT document (expected output.srt_content)",
 		).WithHint("inspect the job document with -o json")
 	}
-	if isMap {
-		if s, ok := m["text"].(string); ok && s != "" {
-			return s, nil
-		}
+	if s := transcriptField(m, "text"); s != "" {
+		return s, nil
 	}
 	return compactJSON(out, 0), nil
+}
+
+// transcriptField is the first of keys whose value in a job's output m is a non-empty string, or "" when none is.
+func transcriptField(m map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if s, ok := m[key].(string); ok && s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // jobOutputError extracts the error message and code a terminal job's output
@@ -473,43 +479,11 @@ func (app *App) runTranscribe(
 	source, endpoint string,
 	fields []inputField,
 ) error {
-	inputExtra, noWait, keepUpload, timeout := o.inputExtra, o.noWait, o.keepUpload, o.timeout
 	set := o.given(cmd)
-	srt := givenTrue(set, "srt")
-	asFile := givenTrue(set, "return_as_file")
-
 	// Pre-flight validation, before any upload or API work.
-	if timeout <= 0 {
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--timeout must be greater than zero (got %s)", timeout)
-	}
-	if p, ok := o.fields["summarize"].(*int64); ok {
-		if n := *p; n < 0 {
-			return clierr.New(
-				clierr.CodeInvalidInput,
-				clierr.KindInvalidInput,
-				"invalid --summarize %d: the endpoint takes 0 to 2000",
-				n,
-			)
-		}
-	}
-	// Validate the input (and --input-extra's JSON) now, so a bad value
-	// fails before any upload.
-	if _, cerr := buildTranscribeInput(source, fields, set, inputExtra); cerr != nil {
+	fileSize, cerr := transcribeValidate(o, set, source, fields)
+	if cerr != nil {
 		return cerr
-	}
-	isURL := isHTTPURL(source)
-	var fileSize int64
-	if !isURL {
-		fi, err := os.Stat(source)
-		switch {
-		case err != nil:
-			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-				`audio file "%s" not found`, source).WithHint("pass a local file path or an http(s) URL")
-		case fi.IsDir():
-			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-				`"%s" is a directory, not an audio file`, source)
-		}
-		fileSize = fi.Size()
 	}
 
 	client, _, cerr := app.NewClient(cmd)
@@ -522,107 +496,169 @@ func (app *App) runTranscribe(
 
 	url := source
 	remote := "" // the S4 name of a local file's upload
-	if !isURL {
-		fh, err := os.Open(source)
-		if err != nil {
-			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, `cannot read "%s": %v`, source, err)
-		}
+	if !isHTTPURL(source) {
 		remote = transcribeRemoteName(source, time.Now())
-		url, cerr = client.UploadFile(
-			cmd.Context(),
-			remote,
-			fh,
-			transcribeMime(source),
-			true,
-			transcribeSignedURLExp,
-		)
-		if err := fh.Close(); err != nil {
-			fprintf(app.errw(), "warning: could not close %s: %v\n", source, err) // read only: nothing is lost
-		}
-		if cerr != nil {
+		if url, cerr = app.transcribeUpload(cmd.Context(), client, source, remote, fileSize); cerr != nil {
 			return cerr
-		}
-		if app.printer.Mode() == "table" {
-			fprintf(app.errw(), "uploaded %s (%s) to S4\n", source, humanSize(fileSize))
 		}
 	}
 
-	in, cerr := buildTranscribeInput(url, fields, set, inputExtra)
+	in, cerr := buildTranscribeInput(url, fields, set, o.inputExtra)
 	if cerr != nil {
 		return cerr // unreachable (validated pre-flight), kept for safety
 	}
-	job, cerr := client.CreateInferenceJob(cmd.Context(), endpoint,
-		inferenceendpoints.InferenceEndpointJobPrototype{Input: in})
+	job, cerr := app.transcribeCreateJob(cmd.Context(), client, o, endpoint, in, remote)
 	if cerr != nil {
-		// No job will read the upload: delete it, unless asked to keep it
-		// or the delete fails, and then say where it is.
-		if remote != "" && (keepUpload || client.DeleteFile(cmd.Context(), remote) != nil) {
+		return cerr
+	}
+	if o.noWait {
+		return app.transcribeQueued(job, endpoint, remote)
+	}
+	return app.transcribeAwait(cmd.Context(), client, o, set, ptr.Deref(job.Id), endpoint, remote)
+}
+
+// transcribeValidate makes the transcribe checks that need no upload or API call, in the order they are reported,
+// and returns the size of a local audio file (0 for a URL).
+func transcribeValidate(
+	o *transcribeOptions,
+	set fieldValues,
+	source string,
+	fields []inputField,
+) (int64, *clierr.Error) {
+	if o.timeout <= 0 {
+		return 0, clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			"--timeout must be greater than zero (got %s)",
+			o.timeout,
+		)
+	}
+	if p, ok := o.fields["summarize"].(*int64); ok {
+		if n := *p; n < 0 {
+			return 0, clierr.New(
+				clierr.CodeInvalidInput,
+				clierr.KindInvalidInput,
+				"invalid --summarize %d: the endpoint takes 0 to 2000",
+				n,
+			)
+		}
+	}
+	// Validate the input (and --input-extra's JSON) now, so a bad value
+	// fails before any upload.
+	if _, cerr := buildTranscribeInput(source, fields, set, o.inputExtra); cerr != nil {
+		return 0, cerr
+	}
+	if isHTTPURL(source) {
+		return 0, nil
+	}
+	fi, err := os.Stat(source)
+	switch {
+	case err != nil:
+		return 0, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+			`audio file "%s" not found`, source).WithHint("pass a local file path or an http(s) URL")
+	case fi.IsDir():
+		return 0, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+			`"%s" is a directory, not an audio file`, source)
+	}
+	return fi.Size(), nil
+}
+
+// transcribeUpload uploads the local audio file source to S4 as remote and returns its signed URL.
+func (app *App) transcribeUpload(
+	ctx context.Context,
+	client *api.Client,
+	source, remote string,
+	fileSize int64,
+) (string, *clierr.Error) {
+	fh, err := os.Open(source)
+	if err != nil {
+		return "", clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, `cannot read "%s": %v`, source, err)
+	}
+	url, cerr := client.UploadFile(ctx, remote, fh, transcribeMime(source), true, transcribeSignedURLExp)
+	if err := fh.Close(); err != nil {
+		fprintf(app.errw(), "warning: could not close %s: %v\n", source, err) // read only: nothing is lost
+	}
+	if cerr != nil {
+		return "", cerr
+	}
+	if app.printer.Mode() == "table" {
+		fprintf(app.errw(), "uploaded %s (%s) to S4\n", source, humanSize(fileSize))
+	}
+	return url, nil
+}
+
+// transcribeCreateJob queues the transcription job with input in. When that fails, no job will read the upload
+// remote: it is deleted, unless --keep-upload asks to keep it or the delete fails, and then the note says where it
+// is. The returned job's input has the upload's signed URL redacted unless the upload is kept.
+func (app *App) transcribeCreateJob(
+	ctx context.Context,
+	client *api.Client,
+	o *transcribeOptions,
+	endpoint string,
+	in map[string]any,
+	remote string,
+) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
+	job, cerr := client.CreateInferenceJob(ctx, endpoint, inferenceendpoints.InferenceEndpointJobPrototype{Input: in})
+	if cerr != nil {
+		if remote != "" && (o.keepUpload || client.DeleteFile(ctx, remote) != nil) {
 			app.keptUploadNote(remote)
 		}
-		return endpointNotFound(cerr, endpoint, client.Org())
+		return nil, endpointNotFound(cerr, endpoint, client.Org())
 	}
-	id := ptr.Deref(job.Id)
-
-	if remote != "" && !keepUpload {
+	if remote != "" && !o.keepUpload {
 		redactUploadURL(job)
 	}
-	if noWait {
-		if remote != "" && app.printer.Mode() == "table" {
-			fprintf(app.errw(), "note: the upload stays in S4 as %s; the queued job reads it\n", remote)
-		}
-		return wrapErr(app.printer.Emit(job, func(w *output.Writer) {
-			w.Printf("Job %s queued on endpoint %s (status: %s)\n", id, endpoint, jobStatusString(job))
-			if remote != "" {
-				fprintf(app.errw(), "note: %s\n", signedLinkNote)
-			}
-			fprintf(
-				app.errw(),
-				"hint: to check on it, run saladcloud inference jobs get %s --endpoint %s\n",
-				id,
-				endpoint,
-			)
-		}))
-	}
+	return job, nil
+}
 
-	ctx := cmd.Context() // canceled by the one signal handler in Execute
+// transcribeQueued emits a job queued with --no-wait, and in table mode the notes and the hint to check on it.
+func (app *App) transcribeQueued(job *inferenceendpoints.InferenceEndpointJob, endpoint, remote string) error {
+	id := ptr.Deref(job.Id)
+	if remote != "" && app.printer.Mode() == "table" {
+		fprintf(app.errw(), "note: the upload stays in S4 as %s; the queued job reads it\n", remote)
+	}
+	return wrapErr(app.printer.Emit(job, func(w *output.Writer) {
+		w.Printf("Job %s queued on endpoint %s (status: %s)\n", id, endpoint, jobStatusString(job))
+		if remote != "" {
+			fprintf(app.errw(), "note: %s\n", signedLinkNote)
+		}
+		fprintf(
+			app.errw(),
+			"hint: to check on it, run saladcloud inference jobs get %s --endpoint %s\n",
+			id,
+			endpoint,
+		)
+	}))
+}
+
+// transcribeAwait waits for job id to end, emits the transcript (the full job with -o json), and deletes the upload
+// remote unless asked to keep it.
+func (app *App) transcribeAwait(
+	ctx context.Context, // canceled by the one signal handler in Execute
+	client *api.Client,
+	o *transcribeOptions,
+	set fieldValues,
+	id, endpoint, remote string,
+) error {
 	d := liveJobWaitDeps(client, endpoint, id, "transcribing")
-	final, cerr := waitForJobTerminal(ctx, app, d, id, timeout, waitPoll)
+	final, cerr := waitForJobTerminal(ctx, app, d, id, o.timeout, waitPoll)
 	if cerr != nil {
 		app.keptUploadNote(remote)
 		return transcriptionKind(cerr)
 	}
-	if remote != "" && !keepUpload {
+	if remote != "" && !o.keepUpload {
 		redactUploadURL(final)
 	}
-	// The API can mark a failed transcription `succeeded` with the failure
-	// embedded in the output — treat that as the failure it is (stdout stays
-	// empty, scripts can trust the exit code).
-	if errMsg, errCode := jobOutputError(final.Output); errMsg != "" || errCode != "" {
-		detail := errMsg
-		if detail == "" {
-			detail = "transcription failed"
-		}
-		if errCode != "" {
-			detail = fmt.Sprintf("%s (error_code: %s)", detail, errCode)
-		}
-		app.keptUploadNote(remote)
-		if remote != "" {
-			detail += " (" + signedLinkNote + ")"
-		}
-		return clierr.New(
-			clierr.CodeGeneric,
-			clierr.KindTranscriptionFailed,
-			"%s",
-			detail,
-		).WithHint("to see the full job document, run saladcloud inference jobs get %s --endpoint %s -o json", id, endpoint)
+	if ferr := app.transcribeOutputFailure(final, id, endpoint, remote); ferr != nil {
+		return ferr
 	}
-	text, cerr := transcriptText(final.Output, srt, asFile)
+	text, cerr := transcriptText(final.Output, givenTrue(set, "srt"), givenTrue(set, "return_as_file"))
 	if cerr != nil {
 		app.keptUploadNote(remote)
 		return cerr
 	}
-	if remote != "" && !keepUpload {
-		if derr := client.DeleteFile(cmd.Context(), remote); derr != nil {
+	if remote != "" && !o.keepUpload {
+		if derr := client.DeleteFile(ctx, remote); derr != nil {
 			fprintf(app.errw(), "warning: could not delete the S4 upload %s: %s\n", remote, derr.Message)
 		}
 	}
@@ -630,6 +666,36 @@ func (app *App) runTranscribe(
 	return wrapErr(app.printer.Emit(final, func(w *output.Writer) {
 		w.Println(text)
 	}))
+}
+
+// transcribeOutputFailure is the error for a job that ended succeeded with a failure in its output, or nil. The API
+// can mark a failed transcription `succeeded` with the failure embedded in the output — treat that as the failure it
+// is (stdout stays empty, scripts can trust the exit code).
+func (app *App) transcribeOutputFailure(
+	final *inferenceendpoints.InferenceEndpointJob,
+	id, endpoint, remote string,
+) *clierr.Error {
+	errMsg, errCode := jobOutputError(final.Output)
+	if errMsg == "" && errCode == "" {
+		return nil
+	}
+	detail := errMsg
+	if detail == "" {
+		detail = "transcription failed"
+	}
+	if errCode != "" {
+		detail = fmt.Sprintf("%s (error_code: %s)", detail, errCode)
+	}
+	app.keptUploadNote(remote)
+	if remote != "" {
+		detail += " (" + signedLinkNote + ")"
+	}
+	return clierr.New(
+		clierr.CodeGeneric,
+		clierr.KindTranscriptionFailed,
+		"%s",
+		detail,
+	).WithHint("to see the full job document, run saladcloud inference jobs get %s --endpoint %s -o json", id, endpoint)
 }
 
 // transcriptionKind gives a transcription job that ended failed the kind

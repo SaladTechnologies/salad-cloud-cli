@@ -115,7 +115,6 @@ func TestBuildTranscribeInputRejectsBadExtra(t *testing.T) {
 // spell one input differently.
 func TestTranscribeFlagsAreTheEndpointFields(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	if len(transcribeFields())+1 != 20 || len(transcriptionLiteFields())+1 != 9 {
 		t.Errorf("fields with url: transcribe %d, transcription-lite %d; want 20 and 9",
 			len(transcribeFields())+1, len(transcriptionLiteFields())+1)
@@ -132,6 +131,12 @@ func TestTranscribeFlagsAreTheEndpointFields(t *testing.T) {
 			t.Errorf("lite field %q is not a full-tier field of the same type", f.name)
 		}
 	}
+}
+
+// transcription-lite rejects a full-tier-only flag by itself, and none of the old spellings is a flag.
+func TestTranscriptionLiteRejectsFullTierFlags(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	lite := app.newTranscribeCmd("transcription-lite", transcriptionLiteFields(), "")
 	if err := lite.ParseFlags([]string{"--summarize", "10"}); err == nil {
 		t.Error("transcription-lite accepted --summarize, a full-tier-only field")
@@ -195,42 +200,46 @@ func TestTranscriptText(t *testing.T) {
 	srtDoc := "1\n00:00:00,000 --> 00:00:01,000\nhello\n"
 	// The endpoint returns the SRT under "srt_content" (verified live).
 	out := map[string]any{"text": "hello world", "srt_content": srtDoc}
-	if got, cerr := transcriptText(out, false, false); cerr != nil || got != "hello world" {
-		t.Errorf("transcriptText(text) = %q, %v; want the text field", got, cerr)
+	cases := []struct {
+		name              string
+		out               any
+		wantSRT, wantFile bool
+		want              string
+		// wantErr is a fragment of the error message; "" expects no error.
+		wantErr string
+	}{
+		{name: "text", out: out, want: "hello world"},
+		{name: "srt", out: out, wantSRT: true, want: srtDoc},
+		// The legacy "srt" spelling is accepted too.
+		{name: "legacy srt", out: map[string]any{"srt": srtDoc}, wantSRT: true, want: srtDoc},
+		// srt requested but absent: an error, NOT a silent fallback to the text —
+		// a script piping to an .srt file must not receive a transcript instead.
+		{name: "srt missing", out: map[string]any{"text": "t"}, wantSRT: true, wantErr: "srt_content"},
+		// Neither field: compact JSON of the whole output.
+		{name: "no text", out: map[string]any{"words": []any{"a"}}, want: `{"words":["a"]}`},
+		// --return-as-file prints the result URL; none is an error, not the text.
+		{
+			name:     "file",
+			out:      map[string]any{"text": "t", "url": "https://r/x.json"},
+			wantFile: true,
+			want:     "https://r/x.json",
+		},
+		{name: "file, no url", out: map[string]any{"text": "t"}, wantFile: true, wantErr: "no result URL"},
 	}
-	if got, cerr := transcriptText(out, true, false); cerr != nil || got != srtDoc {
-		t.Errorf("transcriptText(srt) = %q, %v; want the srt_content field", got, cerr)
-	}
-	// The legacy "srt" spelling is accepted too.
-	if got, cerr := transcriptText(map[string]any{"srt": srtDoc}, true, false); cerr != nil || got != srtDoc {
-		t.Errorf("transcriptText(legacy srt) = %q, %v; want the srt field", got, cerr)
-	}
-	// srt requested but absent: an error, NOT a silent fallback to the text —
-	// a script piping to an .srt file must not receive a transcript instead.
-	if got, cerr := transcriptText(map[string]any{"text": "t"}, true, false); cerr == nil {
-		t.Errorf("transcriptText(srt missing) = %q, nil; want an error", got)
-	} else if !strings.Contains(cerr.Message, "srt_content") {
-		t.Errorf("srt-missing error %q does not name srt_content", cerr.Message)
-	}
-	// Neither field: compact JSON of the whole output.
-	if got, cerr := transcriptText(
-		map[string]any{"words": []any{"a"}},
-		false,
-		false,
-	); cerr != nil ||
-		got != `{"words":["a"]}` {
-		t.Errorf("transcriptText(no text) = %q, %v; want compact JSON", got, cerr)
-	} // --return-as-file prints the result URL; none is an error, not the text.
-	if got, cerr := transcriptText(
-		map[string]any{"text": "t", "url": "https://r/x.json"},
-		false,
-		true,
-	); cerr != nil ||
-		got != "https://r/x.json" {
-		t.Errorf("transcriptText(file) = %q, %v; want the url", got, cerr)
-	}
-	if _, cerr := transcriptText(map[string]any{"text": "t"}, false, true); cerr == nil {
-		t.Error("transcriptText(file, no url) = nil error, want one")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, cerr := transcriptText(tc.out, tc.wantSRT, tc.wantFile)
+			if tc.wantErr == "" {
+				if cerr != nil || got != tc.want {
+					t.Errorf("transcriptText = %q, %v; want %q", got, cerr, tc.want)
+				}
+				return
+			}
+			if cerr == nil || !strings.Contains(cerr.Message, tc.wantErr) {
+				t.Errorf("transcriptText = %q, %v; want an error containing %q", got, cerr, tc.wantErr)
+			}
+		})
 	}
 }
 

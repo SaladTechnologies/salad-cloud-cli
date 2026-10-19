@@ -24,17 +24,7 @@ func TestTranscribeDeletesUploadWhenJobCreateFails(t *testing.T) {
 		mu.Lock()
 		seen = append(seen, r.Method+" "+r.URL.Path)
 		mu.Unlock()
-		switch {
-		case r.Method == http.MethodPut:
-			respond(t, w, `{"url":"http://`+r.Host+r.URL.Path+`?token=t"}`)
-		case r.Method == http.MethodDelete:
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/jobs"):
-			w.WriteHeader(http.StatusPaymentRequired)
-			respond(t, w, `{"detail":"insufficient balance"}`)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
+		serveUploadButNoJob(t, w, r)
 	}))
 	t.Cleanup(srv.Close)
 	app.stubAPI(t, nil)
@@ -49,18 +39,37 @@ func TestTranscribeDeletesUploadWhenJobCreateFails(t *testing.T) {
 	if !errors.As(err, &cerr) || cerr.Code == clierr.CodeOK {
 		t.Fatalf("transcribe = %v, want the job-create error", err)
 	}
-	var put, del string
-	for _, s := range seen {
-		switch {
-		case strings.HasPrefix(s, "PUT "):
-			put = strings.TrimPrefix(s, "PUT ")
-		case strings.HasPrefix(s, "DELETE "):
-			del = strings.TrimPrefix(s, "DELETE ")
-		}
-	}
+	put, del := lastRequestPath(seen, http.MethodPut), lastRequestPath(seen, http.MethodDelete)
 	if put == "" || del != put {
 		t.Errorf("requests = %v; want the uploaded file deleted after the failed create", seen)
 	}
+}
+
+// serveUploadButNoJob is a stub API and S4 that takes an upload and its delete but refuses to create a job.
+func serveUploadButNoJob(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	t.Helper()
+	switch {
+	case r.Method == http.MethodPut:
+		respond(t, w, `{"url":"http://`+r.Host+r.URL.Path+`?token=t"}`)
+	case r.Method == http.MethodDelete:
+		w.WriteHeader(http.StatusNoContent)
+	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/jobs"):
+		w.WriteHeader(http.StatusPaymentRequired)
+		respond(t, w, `{"detail":"insufficient balance"}`)
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+// lastRequestPath is the path of the last request with method in seen, a list of "METHOD /path" lines, or "".
+func lastRequestPath(seen []string, method string) string {
+	path := ""
+	for _, s := range seen {
+		if p, ok := strings.CutPrefix(s, method+" "); ok {
+			path = p
+		}
+	}
+	return path
 }
 
 func TestTranscriptionKind(t *testing.T) {
