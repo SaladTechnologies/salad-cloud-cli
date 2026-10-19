@@ -268,19 +268,9 @@ func (app *App) namedValue(flag, flagName, env string) (value, from string) {
 
 // keyFromStdin reads --api-key -'s key: one line, hidden at a terminal.
 func (l *login) keyFromStdin() *clierr.Error {
-	app := l.app
-	var line string
-	if app.Console.Terminal() { // hidden whenever stdin is a terminal, prompts or not
-		answer, err := app.Console.ReadHidden()
-		if err != nil {
-			return l.canceled()
-		}
-		line = answer
-	} else {
-		var err error
-		if line, err = readLine(bufio.NewReader(app.Stdin)); err != nil {
-			line = "" // a failed read is no key; the check below says so
-		}
+	line, ok := l.app.readKeyLineFromStdin()
+	if !ok {
+		return l.canceled()
 	}
 	if strings.TrimSpace(line) == "" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--api-key - got no key on stdin").
@@ -288,6 +278,24 @@ func (l *login) keyFromStdin() *clierr.Error {
 	}
 	l.key, l.keyFrom = line, keyFromStdin
 	return nil
+}
+
+// readKeyLineFromStdin reads the one line --api-key - takes, hidden whenever stdin is a terminal (prompts or not);
+// ok is false when the hidden read was canceled. A failed read off a terminal is an empty line, which the caller
+// reports as no key.
+func (app *App) readKeyLineFromStdin() (string, bool) {
+	if app.Console.Terminal() {
+		answer, err := app.Console.ReadHidden()
+		if err != nil {
+			return "", false
+		}
+		return answer, true
+	}
+	line, err := readLine(bufio.NewReader(app.Stdin))
+	if err != nil {
+		line = "" // a failed read is no key; the caller's check says so
+	}
+	return line, true
 }
 
 // canceled is the error for Ctrl-C or end of input at a prompt, or Ctrl-C
@@ -518,11 +526,15 @@ func (l *login) pickOrganization() (string, *clierr.Error) {
 	}
 	def := ""
 	if saved := l.saved.Organization; saved != "" {
-		org, savedDef, cerr := l.savedOrganization(saved)
-		if cerr != nil || org != "" {
-			return org, cerr
+		org, offer, cerr := l.savedOrganization(saved)
+		switch {
+		case cerr != nil:
+			return "", cerr
+		case offer:
+			def = org
+		case org != "":
+			return org, nil
 		}
-		def = savedDef
 	}
 	return l.chooseOrganization(def)
 }
@@ -553,24 +565,24 @@ func (l *login) checkableSavedName(name string) bool {
 	return validName(name) && !l.app.looksLikeKey(name)
 }
 
-// savedOrganization is step 4 for the saved organization. It returns the organization to use when the saved one is
-// used as it is, else the default to offer in the pick (the saved one when it was found), and either may be "".
-func (l *login) savedOrganization(saved string) (string, string, *clierr.Error) {
+// savedOrganization is step 4 for the saved organization: it returns the saved one when it was found ("" when not),
+// and whether it is only to be offered as the pick's default rather than used as it is.
+func (l *login) savedOrganization(saved string) (string, bool, *clierr.Error) {
 	found := false
 	if l.checkableSavedName(saved) {
 		var cerr *clierr.Error
 		if found, cerr = l.checkOrganization(saved); cerr != nil {
-			return "", "", cerr
+			return "", false, cerr
 		}
 	}
 	switch {
 	case found && (!l.terminal || len(l.orgs) == 1):
 		l.app.say("Organization: %s", saved)
-		return saved, "", nil
+		return saved, false, nil
 	case found:
-		return "", saved, nil
+		return saved, true, nil
 	}
-	return "", "", l.savedOrganizationMissing(saved)
+	return "", false, l.savedOrganizationMissing(saved)
 }
 
 // savedOrganizationMissing reports a saved organization that was not found or looks like an API key: the error
@@ -637,9 +649,9 @@ func (l *login) selectOrganization(def string) (string, *clierr.Error) {
 			case answer == "":
 				return false, "", nil
 			}
-			name, retry := l.orgMenuAnswer(answer, choices)
-			if retry != "" {
-				return false, retry, nil
+			name, ok := l.orgMenuAnswer(answer, choices)
+			if !ok {
+				return false, name, nil // the line that asks again
 			}
 			found, cerr := l.checkOrganization(name)
 			if cerr != nil {
@@ -659,19 +671,19 @@ func (l *login) selectOrganization(def string) (string, *clierr.Error) {
 	return chosen, nil
 }
 
-// orgMenuAnswer resolves an answer to the numbered list, a number or a name: the organization it names, or else the
-// line that asks again.
-func (l *login) orgMenuAnswer(answer, choices string) (string, string) {
+// orgMenuAnswer resolves an answer to the numbered list, a number or a name, to the organization it names and true;
+// when it names none, it returns the line that asks again and false.
+func (l *login) orgMenuAnswer(answer, choices string) (string, bool) {
 	if n, err := strconv.Atoi(answer); err == nil {
 		if n < 1 || n > len(l.orgs) {
-			return "", fmt.Sprintf(`"%s" isn't on the list; %s.`, answer, choices)
+			return fmt.Sprintf(`"%s" isn't on the list; %s.`, answer, choices), false
 		}
-		return ptr.Deref(l.orgs[n-1].OrganizationName), ""
+		return ptr.Deref(l.orgs[n-1].OrganizationName), true
 	}
 	if !validName(answer) {
-		return "", nameRetry("organization", answer, l.key)
+		return nameRetry("organization", answer, l.key), false
 	}
-	return answer, ""
+	return answer, true
 }
 
 // typeOrganization asks for a name when there is no list to pick from (4j).
