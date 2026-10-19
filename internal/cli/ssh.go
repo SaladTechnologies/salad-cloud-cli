@@ -92,28 +92,7 @@ func resolveSSHInstance(
 	group, prefix string,
 ) (*containergroups.ContainerGroupInstance, *clierr.Error) {
 	if prefix != "" {
-		var matches []*containergroups.ContainerGroupInstance
-		for i := range instances {
-			if strings.HasPrefix(ptr.Deref(instances[i].Id), prefix) {
-				matches = append(matches, &instances[i])
-			}
-		}
-		switch len(matches) {
-		case 1:
-			return matches[0], nil
-		case 0:
-			return nil, clierr.New(clierr.CodeNotFound, clierr.KindNotFound,
-				`no instance of container group %s matches ID prefix "%s"`, group, prefix).
-				WithHint("to list its instances, run saladcloud container-groups instances list -c %s", group)
-		default:
-			ids := make([]string, len(matches))
-			for i, m := range matches {
-				ids[i] = ptr.Deref(m.Id)
-			}
-			return nil, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-				`instance ID prefix "%s" is ambiguous in container group %s`, prefix, group).
-				WithHint("give more of the ID; it matches %s", strings.Join(ids, ", "))
-		}
+		return resolveSSHInstancePrefix(instances, group, prefix)
 	}
 	for i := range instances {
 		if instances[i].State != nil &&
@@ -124,6 +103,35 @@ func resolveSSHInstance(
 	return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
 		"no running instances in container group %s", group).
 		WithHint("to list its instances, run saladcloud container-groups instances list -c %s", group)
+}
+
+// resolveSSHInstancePrefix is resolveSSHInstance with an ID prefix, which must match exactly one instance ID.
+func resolveSSHInstancePrefix(
+	instances []containergroups.ContainerGroupInstance,
+	group, prefix string,
+) (*containergroups.ContainerGroupInstance, *clierr.Error) {
+	var matches []*containergroups.ContainerGroupInstance
+	for i := range instances {
+		if strings.HasPrefix(ptr.Deref(instances[i].Id), prefix) {
+			matches = append(matches, &instances[i])
+		}
+	}
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		return nil, clierr.New(clierr.CodeNotFound, clierr.KindNotFound,
+			`no instance of container group %s matches ID prefix "%s"`, group, prefix).
+			WithHint("to list its instances, run saladcloud container-groups instances list -c %s", group)
+	default:
+		ids := make([]string, len(matches))
+		for i, m := range matches {
+			ids[i] = ptr.Deref(m.Id)
+		}
+		return nil, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+			`instance ID prefix "%s" is ambiguous in container group %s`, prefix, group).
+			WithHint("give more of the ID; it matches %s", strings.Join(ids, ", "))
+	}
 }
 
 // pickInstance is resolveSSHInstance for ssh, sftp, and cp: when no
@@ -341,16 +349,32 @@ func (app *App) runChildWith(stdout, stderr io.Writer, name string, args []strin
 	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot run %s: %v", name, err)
 }
 
+// sshOptions are the flags of 'container-groups ssh'.
+type sshOptions struct {
+	user, identity, instance string
+	useConfig                bool
+}
+
 // addSSHCommands adds ssh.go's commands to the tree.
 func (app *App) addSSHCommands(cg *cobra.Command) {
-	var (
-		user      string
-		identity  string
-		instance  string
-		useConfig bool
-	)
+	var o sshOptions
+	sshCmd := app.newSSHCmd(&o)
+	sshCmd.Flags().
+		StringVar(&o.instance, "instance", "", "the instance to connect to: its ID or a unique prefix (default: the first running instance)")
+	sshCmd.Flags().
+		StringVar(&o.user, "user", "root", "SSH username; selects the container user, which the image must define (root always exists)")
+	sshCmd.Flags().
+		StringVarP(&o.identity, "identity", "i", "", "identity (private key) file for ssh -i (default: ~/.ssh/saladcloud_ed25519 when present)")
+	sshCmd.Flags().
+		BoolVar(&o.useConfig, "config", false, "print ssh_config Host blocks for the group's running instances (or only --instance) instead of connecting")
+	app.addHiddenGroupFlag(sshCmd)
+	annotate(sshCmd, annotationFlagForArg, "instance")
+	cg.AddCommand(sshCmd)
+}
 
-	sshCmd := &cobra.Command{
+// newSSHCmd is 'saladcloud container-groups ssh <group>', its flags bound to o by addSSHCommands.
+func (app *App) newSSHCmd(o *sshOptions) *cobra.Command {
+	return &cobra.Command{
 		Use:   "ssh <group> [--instance <id>] [-- <command>...]",
 		Short: "Open an SSH session or run a one-shot command on a running instance",
 		Long: `Open an interactive SSH session on a running instance of a container
@@ -390,91 +414,101 @@ Host alias.`,
 
   # The same in PowerShell
   saladcloud container-groups ssh my-app --config | Add-Content -Encoding ascii ~/.ssh/config`,
-		Args: func(cmd *cobra.Command, args []string) error {
-			// The one positional is <group>; everything after -- is the
-			// remote command and is not counted.
-			n := cmd.ArgsLenAtDash()
-			if n < 0 {
-				n = len(args)
-			}
-			if n != 1 {
-				return fmt.Errorf("%w 1 arg(s) before --, received %d", errAccepts, n)
-			}
-			return nil
-		},
-		RunE: func(cmd *cobra.Command, args []string) error {
-			pos, command := args, []string(nil)
-			if n := cmd.ArgsLenAtDash(); n >= 0 {
-				pos, command = args[:n], args[n:]
-			}
-			group := pos[0]
-			if useConfig && len(command) > 0 {
-				return clierr.New(
-					clierr.CodeUsage,
-					clierr.KindUsage,
-					"--config prints Host blocks and cannot be combined with a -- command",
-				)
-			}
-
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			collection, cerr := client.ListInstances(cmd.Context(), group)
-			if cerr != nil {
-				return groupNotFound(cerr, group, client.Org(), client.Project())
-			}
-
-			if useConfig {
-				instances := collection.Instances
-				if instance != "" {
-					inst, err := resolveSSHInstance(collection.Instances, group, instance)
-					if err != nil {
-						return err
-					}
-					instances = []containergroups.ContainerGroupInstance{*inst}
-				}
-				text, n := app.renderSSHConfigIdentity(group, instances, user, app.resolveIdentity(identity))
-				if n == 0 {
-					return clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
-						"no running SSH-ready instances in container group %s", group).
-						WithHint("to list its instances, run saladcloud container-groups instances list -c %s", group)
-				}
-				_, err := io.WriteString(app.Stdout, text)
-				return wrapErr(err)
-			}
-
-			inst, cerr := pickInstance(app.errw(), collection.Instances, group, instance)
-			if cerr != nil {
-				return cerr
-			}
-			target, cerr := sshTargetOf(inst, group)
-			if cerr != nil {
-				return cerr
-			}
-
-			sshArgs := app.buildSSHArgs(target, user, app.resolveIdentity(identity), command)
-			runErr := app.runChild("ssh", sshArgs)
-			if len(command) > 0 {
-				if note := oneShotExitNote(childExitCode(runErr)); note != "" {
-					fprintln(app.errw(), note)
-				}
-			}
-			if runErr != nil {
-				return runErr
-			}
-			return nil
-		},
+		Args: sshOneArgBeforeDash,
+		RunE: func(cmd *cobra.Command, args []string) error { return app.runSSH(cmd, args, o) },
 	}
-	sshCmd.Flags().
-		StringVar(&instance, "instance", "", "the instance to connect to: its ID or a unique prefix (default: the first running instance)")
-	sshCmd.Flags().
-		StringVar(&user, "user", "root", "SSH username; selects the container user, which the image must define (root always exists)")
-	sshCmd.Flags().
-		StringVarP(&identity, "identity", "i", "", "identity (private key) file for ssh -i (default: ~/.ssh/saladcloud_ed25519 when present)")
-	sshCmd.Flags().
-		BoolVar(&useConfig, "config", false, "print ssh_config Host blocks for the group's running instances (or only --instance) instead of connecting")
-	app.addHiddenGroupFlag(sshCmd)
-	annotate(sshCmd, annotationFlagForArg, "instance")
-	cg.AddCommand(sshCmd)
+}
+
+// sshOneArgBeforeDash is the positional check of ssh: the one positional is <group>; everything after -- is the
+// remote command and is not counted.
+func sshOneArgBeforeDash(cmd *cobra.Command, args []string) error {
+	n := cmd.ArgsLenAtDash()
+	if n < 0 {
+		n = len(args)
+	}
+	if n != 1 {
+		return fmt.Errorf("%w 1 arg(s) before --, received %d", errAccepts, n)
+	}
+	return nil
+}
+
+// runSSH opens a session (or runs the -- command) on an instance of the group, or with --config prints Host blocks.
+func (app *App) runSSH(cmd *cobra.Command, args []string, o *sshOptions) error {
+	pos, command := args, []string(nil)
+	if n := cmd.ArgsLenAtDash(); n >= 0 {
+		pos, command = args[:n], args[n:]
+	}
+	group := pos[0]
+	if o.useConfig && len(command) > 0 {
+		return clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			"--config prints Host blocks and cannot be combined with a -- command",
+		)
+	}
+
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	collection, cerr := client.ListInstances(cmd.Context(), group)
+	if cerr != nil {
+		return groupNotFound(cerr, group, client.Org(), client.Project())
+	}
+	if o.useConfig {
+		return app.sshPrintConfig(collection.Instances, group, o)
+	}
+	return app.sshConnect(collection.Instances, group, o, command)
+}
+
+// sshPrintConfig writes ssh_config Host blocks for the group's running instances, or only --instance, to stdout.
+func (app *App) sshPrintConfig(
+	instances []containergroups.ContainerGroupInstance,
+	group string,
+	o *sshOptions,
+) error {
+	if o.instance != "" {
+		inst, err := resolveSSHInstance(instances, group, o.instance)
+		if err != nil {
+			return err
+		}
+		instances = []containergroups.ContainerGroupInstance{*inst}
+	}
+	text, n := app.renderSSHConfigIdentity(group, instances, o.user, app.resolveIdentity(o.identity))
+	if n == 0 {
+		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
+			"no running SSH-ready instances in container group %s", group).
+			WithHint("to list its instances, run saladcloud container-groups instances list -c %s", group)
+	}
+	_, err := io.WriteString(app.Stdout, text)
+	return wrapErr(err)
+}
+
+// sshConnect runs ssh to the picked instance of the group: a shell, or the one-shot command when one is given.
+func (app *App) sshConnect(
+	instances []containergroups.ContainerGroupInstance,
+	group string,
+	o *sshOptions,
+	command []string,
+) error {
+	inst, cerr := pickInstance(app.errw(), instances, group, o.instance)
+	if cerr != nil {
+		return cerr
+	}
+	target, cerr := sshTargetOf(inst, group)
+	if cerr != nil {
+		return cerr
+	}
+
+	sshArgs := app.buildSSHArgs(target, o.user, app.resolveIdentity(o.identity), command)
+	runErr := app.runChild("ssh", sshArgs)
+	if len(command) > 0 {
+		if note := oneShotExitNote(childExitCode(runErr)); note != "" {
+			fprintln(app.errw(), note)
+		}
+	}
+	if runErr != nil {
+		return runErr
+	}
+	return nil
 }
