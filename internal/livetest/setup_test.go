@@ -29,19 +29,21 @@ import (
 
 // setupVars are never inherited by a setup case; each case sets the ones
 // it is about.
-var setupVars = []string{
-	"SALAD_API_KEY",
-	"SALAD_ORGANIZATION",
-	"SALAD_PROJECT",
-	"SALAD_AI_GATEWAY_API_KEY",
-	"SALAD_CLI_CONFIG_DIR",
+func setupVars() []string {
+	return []string{
+		"SALAD_API_KEY",
+		"SALAD_ORGANIZATION",
+		"SALAD_PROJECT",
+		"SALAD_AI_GATEWAY_API_KEY",
+		"SALAD_CLI_CONFIG_DIR",
+	}
 }
 
 // apiKey is the real API key this run holds, from SALAD_API_KEY.
 func apiKey() string { return os.Getenv("SALAD_API_KEY") }
 
 // badKey is a well-formed key the API rejects; checking it costs nothing.
-var badKey = "lt-not-a-key-" + prefix
+func badKey() string { return "lt-not-a-key-" + prefix }
 
 // liveContext is the organization and project the setup cases log in to:
 // SALAD_ORGANIZATION, and SALAD_PROJECT or "default", the project every
@@ -83,7 +85,7 @@ func (d cfgDir) run(t *testing.T, env map[string]string, stdin string, args ...s
 	cmd := exec.CommandContext(t.Context(), binPath(t), args...)
 	for _, kv := range os.Environ() {
 		name, _, _ := strings.Cut(kv, "=")
-		if !slices.ContainsFunc(setupVars, func(v string) bool { return strings.EqualFold(v, name) }) {
+		if !slices.ContainsFunc(setupVars(), func(v string) bool { return strings.EqualFold(v, name) }) {
 			cmd.Env = append(cmd.Env, kv)
 		}
 	}
@@ -290,13 +292,13 @@ func TestSetupLogin(t *testing.T) {
 
 	t.Run("a rejected key", func(t *testing.T) {
 		d := newCfg(t)
-		r := d.run(t, nil, badKey+"\n", "login", "--api-key", "-", "--org", org, "-o", "json")
+		r := d.run(t, nil, badKey()+"\n", "login", "--api-key", "-", "--org", org, "-o", "json")
 		if r.Code != 3 {
 			t.Errorf("exit %d, want 3: %s", r.Code, r.Stderr)
 		}
 		expect(t, "error", errorDoc(t, r), map[string]any{
 			"exit_code": float64(3), "kind": "auth", "http_status": float64(401),
-			"message": fmt.Sprintf("API key %s (from stdin) is invalid", mask(badKey)),
+			"message": fmt.Sprintf("API key %s (from stdin) is invalid", mask(badKey())),
 			"hint":    "check that you copied all of it, and that it isn't an AI Gateway key",
 		})
 		expect(t, "whoami after a failed login", d.whoami(t, nil), map[string]any{
@@ -464,9 +466,9 @@ func TestSetupWhoami(t *testing.T) {
 
 	// A rejected key from the variable, hiding the saved one: reported, not
 	// failed.
-	bad := map[string]string{"SALAD_API_KEY": badKey}
+	bad := map[string]string{"SALAD_API_KEY": badKey()}
 	expect(t, "whoami with a rejected key", d.whoami(t, bad), map[string]any{
-		"api_key": mask(badKey), "api_key_source": "env", "saved_api_key": mask(k), "authenticated": false,
+		"api_key": mask(badKey()), "api_key_source": "env", "saved_api_key": mask(k), "authenticated": false,
 	})
 	r := d.run(t, bad, "", "whoami")
 	if r.Code != 0 {
@@ -474,7 +476,7 @@ func TestSetupWhoami(t *testing.T) {
 	}
 	if want := fmt.Sprintf(
 		"%s (from SALAD_API_KEY; saved: %s)",
-		mask(badKey),
+		mask(badKey()),
 		mask(k),
 	); !strings.Contains(
 		r.Stdout,
@@ -538,7 +540,7 @@ func TestSetupDoctor(t *testing.T) {
 
 	// A rejected key from the variable: api-key fails, the checks that
 	// need it skip, and the run names the failure.
-	r = d.run(t, map[string]string{"SALAD_API_KEY": badKey}, "", "doctor", "-o", "json")
+	r = d.run(t, map[string]string{"SALAD_API_KEY": badKey()}, "", "doctor", "-o", "json")
 	if r.Code != 1 {
 		t.Errorf("doctor with a rejected key exit %d, want 1: %s", r.Code, r.Stderr)
 	}
@@ -547,7 +549,7 @@ func TestSetupDoctor(t *testing.T) {
 		case "api-key":
 			expect(t, "doctor api-key row", row, map[string]any{
 				"status": "fail",
-				"detail": mask(badKey) + " (from SALAD_API_KEY) rejected",
+				"detail": mask(badKey()) + " (from SALAD_API_KEY) rejected",
 				"hint": fmt.Sprintf(
 					"remove SALAD_API_KEY to use the saved API key (%s), or set it to a working key",
 					mask(k),
@@ -567,7 +569,7 @@ func TestSetupDoctor(t *testing.T) {
 		r.Stderr,
 		fmt.Sprintf(
 			"warning: commands use SALAD_API_KEY (%s) instead of the saved API key (%s)",
-			mask(badKey),
+			mask(badKey()),
 			mask(k),
 		),
 	) {
@@ -647,12 +649,12 @@ func TestSetupLogout(t *testing.T) {
 func TestRunTimeRejectedKey(t *testing.T) {
 	org, _ := liveContext()
 	k := apiKey()
-	rejected := fmt.Sprintf("API key %s (from %%s) was rejected", mask(badKey))
+	rejected := fmt.Sprintf("API key %s (from %%s) was rejected", mask(badKey()))
 
 	d := newCfg(t)
 	r := d.run(
 		t,
-		map[string]string{"SALAD_API_KEY": badKey, "SALAD_ORGANIZATION": org},
+		map[string]string{"SALAD_API_KEY": badKey(), "SALAD_ORGANIZATION": org},
 		"",
 		"quotas",
 		"get",
@@ -669,7 +671,7 @@ func TestRunTimeRejectedKey(t *testing.T) {
 	})
 
 	d = loggedIn(t)
-	r = d.run(t, map[string]string{"SALAD_API_KEY": badKey}, "", "quotas", "get")
+	r = d.run(t, map[string]string{"SALAD_API_KEY": badKey()}, "", "quotas", "get")
 	if r.Code != 3 {
 		t.Errorf("SALAD_API_KEY, another key saved: exit %d, want 3", r.Code)
 	}
@@ -685,7 +687,7 @@ func TestRunTimeRejectedKey(t *testing.T) {
 	)
 
 	d = newCfg(t)
-	if r = d.run(t, nil, badKey+"\n", "config", "set", "api-key", "-"); r.Code != 0 {
+	if r = d.run(t, nil, badKey()+"\n", "config", "set", "api-key", "-"); r.Code != 0 {
 		t.Fatalf("config set api-key - exit %d: %s", r.Code, r.Stderr)
 	}
 	r = d.run(t, map[string]string{"SALAD_ORGANIZATION": org}, "", "quotas", "get", "-o", "json")

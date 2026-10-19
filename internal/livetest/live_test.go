@@ -51,7 +51,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,7 +62,7 @@ import (
 )
 
 // prefix is unique per run so a previous run's reserved names cannot collide.
-var prefix = fmt.Sprintf("lt-%06x", rand.Intn(1<<24))
+var prefix = fmt.Sprintf("lt-%06x", rand.IntN(1<<24)) //nolint:gochecknoglobals // shared by the whole run
 
 // binPath locates the CLI under test: $SALAD_CLI_TEST_BIN, else the dist build
 // for this platform.
@@ -166,13 +166,24 @@ func settle(t *testing.T, group string) {
 // createSpacing keeps a create loop from tripping the pending-window quota.
 const createSpacing = 3 * time.Second
 
+// fprintf writes the suite's own messages (TestMain's and the sweep's) to
+// stdout, where go test shows them; a failed write leaves nothing to tell.
+func fprintf(format string, a ...any) {
+	if _, err := fmt.Fprintf(os.Stdout, format, a...); err != nil {
+		return
+	}
+}
+
+// fprintln is fprintf for one line.
+func fprintln(line string) { fprintf("%s\n", line) }
+
 // TestMain fails an unconfigured run instead of passing with no tests: the
 // live suite is the check run before a release is tagged (see Releasing in
 // AGENTS.md), so "ok" must mean it ran.
 func TestMain(m *testing.M) {
 	if os.Getenv("SALAD_API_KEY") == "" || os.Getenv("SALAD_ORGANIZATION") == "" {
-		fmt.Println("livetest: SALAD_API_KEY and SALAD_ORGANIZATION must both be set; nothing ran")
-		os.Exit(1)
+		fprintln("livetest: SALAD_API_KEY and SALAD_ORGANIZATION must both be set; nothing ran")
+		os.Exit(1) //nolint:forbidigo // an unconfigured run must fail, not pass with no tests
 	}
 	m.Run()
 	sweep()
@@ -191,7 +202,7 @@ func sweep() {
 	}
 	out, err := exec.Command(bin, "container-groups", "list", "-o", "json").Output()
 	if err != nil {
-		fmt.Printf("livetest sweep: list failed: %v\n", err)
+		fprintf("livetest sweep: list failed: %v\n", err)
 		return
 	}
 	var listing struct {
@@ -202,9 +213,9 @@ func sweep() {
 	}
 	for _, it := range listing.Items {
 		if strings.HasPrefix(it.Name, prefix) {
-			fmt.Printf("livetest sweep: deleting %s\n", it.Name)
+			fprintf("livetest sweep: deleting %s\n", it.Name)
 			if runErr := exec.Command(bin, "container-groups", "delete", it.Name).Run(); runErr != nil {
-				fmt.Printf("livetest sweep: deleting %s failed: %v\n", it.Name, runErr)
+				fprintf("livetest sweep: deleting %s failed: %v\n", it.Name, runErr)
 			}
 		}
 	}
@@ -221,9 +232,9 @@ func sweep() {
 	}
 	for _, it := range queues.Items {
 		if strings.HasPrefix(it.Name, prefix) {
-			fmt.Printf("livetest sweep: deleting queue %s\n", it.Name)
+			fprintf("livetest sweep: deleting queue %s\n", it.Name)
 			if runErr := exec.Command(bin, "queues", "delete", it.Name).Run(); runErr != nil {
-				fmt.Printf("livetest sweep: deleting queue %s failed: %v\n", it.Name, runErr)
+				fprintf("livetest sweep: deleting queue %s failed: %v\n", it.Name, runErr)
 			}
 		}
 	}

@@ -30,11 +30,7 @@ import (
 // compares the list with testdata/json-keys.golden: a difference fails CI
 // until the golden file is regenerated and the CHANGELOG says what
 // changed. Regenerate it with `go test ./internal/cli -run TestJSONKeySnapshot -update-keys`.
-var updateKeys = flag.Bool(
-	"update-keys",
-	false,
-	"rewrite testdata/json-keys.golden",
-) //nolint:gochecknoglobals // a test flag registers when the package loads
+var updateKeys = flag.Bool("update-keys", false, "rewrite the golden file") //nolint:gochecknoglobals // a test flag
 
 // keySnapshotRoots are the documents commands emit, by command.
 func keySnapshotRoots() []struct {
