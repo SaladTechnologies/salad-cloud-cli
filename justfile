@@ -131,10 +131,23 @@ lint-powershell:
     $bad = $false
     foreach ($file in $files) {
         # PSScriptAnalyzer 1.25.0 throws "Object reference not set to an instance of an object" on install.ps1 when
-        # this preference is on together with Stop and strict mode; it reports normally with it off.
-        $records = & {
-            $PSNativeCommandUseErrorActionPreference = $false
-            Invoke-ScriptAnalyzer -Path $file -Settings $settings
+        # this preference is on together with Stop and strict mode; it reports normally with it off. Its
+        # UseCorrectCasing rule also throws a NullReferenceException from CommandInfo.Parameters on the first analysis
+        # in a fresh process now and then (seen on Linux in about one run in three); the next analysis of the same
+        # file reports normally, so that throw is retried once.
+        $records = $null
+        foreach ($attempt in 1, 2) {
+            try {
+                $records = & {
+                    $PSNativeCommandUseErrorActionPreference = $false
+                    Invoke-ScriptAnalyzer -Path $file -Settings $settings
+                }
+                break
+            } catch [System.NullReferenceException] {
+                if ($attempt -eq 2) {
+                    throw
+                }
+            }
         }
         foreach ($record in $records | Sort-Object Line, Column) {
             $bad = $true
