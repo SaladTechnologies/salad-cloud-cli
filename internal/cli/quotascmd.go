@@ -3,6 +3,7 @@ package cli
 import (
 	"strconv"
 
+	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/quotas"
 	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
@@ -29,29 +30,33 @@ func (app *App) addQuotasCommands(root *cobra.Command) {
 			if qerr != nil {
 				return qerr
 			}
-			return wrapErr(app.printer.Emit(q, func(w *output.Writer) {
-				cg := q.ContainerGroupsQuotas
-				if cg == nil {
-					w.Println("No container group quotas reported")
-					return
-				}
-				w.Printf("replicas\t%s / %s\n",
-					int64Cell(cg.ContainerReplicasUsed), int64Cell(cg.ContainerReplicasQuota))
-				if cg.MaxContainerGroupReallocationsPerMinute != nil {
-					w.Printf("max reallocations/min\t%d\n", *cg.MaxContainerGroupReallocationsPerMinute)
-				}
-				if cg.MaxContainerGroupRecreatesPerMinute != nil {
-					w.Printf("max recreates/min\t%d\n", *cg.MaxContainerGroupRecreatesPerMinute)
-				}
-				if cg.MaxContainerGroupRestartsPerMinute != nil {
-					w.Printf("max restarts/min\t%d\n", *cg.MaxContainerGroupRestartsPerMinute)
-				}
-			}))
+			return wrapErr(app.printer.Emit(q, func(w *output.Writer) { writeQuotas(w, q) }))
 		},
 	}
 	quotasCmd.AddCommand(cmd)
 	app.orgScoped(quotasCmd)
 	root.AddCommand(quotasCmd)
+}
+
+// writeQuotas writes quotas get's table: replicas used of the quota, then
+// each per-minute limit the API reports.
+func writeQuotas(w *output.Writer, q *quotas.Quotas) {
+	cg := q.ContainerGroupsQuotas
+	if cg == nil {
+		w.Println("No container group quotas reported")
+		return
+	}
+	w.Printf("replicas\t%s / %s\n",
+		int64Cell(cg.ContainerReplicasUsed), int64Cell(cg.ContainerReplicasQuota))
+	if cg.MaxContainerGroupReallocationsPerMinute != nil {
+		w.Printf("max reallocations/min\t%d\n", *cg.MaxContainerGroupReallocationsPerMinute)
+	}
+	if cg.MaxContainerGroupRecreatesPerMinute != nil {
+		w.Printf("max recreates/min\t%d\n", *cg.MaxContainerGroupRecreatesPerMinute)
+	}
+	if cg.MaxContainerGroupRestartsPerMinute != nil {
+		w.Printf("max restarts/min\t%d\n", *cg.MaxContainerGroupRestartsPerMinute)
+	}
 }
 
 func int64Cell(v *int64) string {

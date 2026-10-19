@@ -38,25 +38,11 @@ func (app *App) addOrgsCommands(root *cobra.Command) {
 				return cerr
 			}
 			return app.runMaybeWatch(cmd, listWatch, func(ctx context.Context) *clierr.Error {
-				orgs, cerr := client.ListOrganizations(ctx)
-				if cerr == nil {
-					cerr = unreadableListing(orgs)
-				}
+				orgs, cerr := listReadableOrganizations(ctx, client)
 				if cerr != nil {
 					return cerr
 				}
-				err := app.printer.Emit(orgs, func(w *output.Writer) {
-					w.Println("NAME\tDISPLAY NAME\tCREATED")
-					for _, o := range orgs.Items {
-						fprintf(
-							w,
-							"%s\t%s\t%s\n",
-							ptr.Deref(o.OrganizationName),
-							ptr.Deref(o.DisplayName),
-							timeCell(o.CreateTime),
-						)
-					}
-				})
+				err := app.printer.Emit(orgs, func(w *output.Writer) { writeOrganizationList(w, orgs) })
 				if err != nil {
 					return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)
 				}
@@ -76,33 +62,63 @@ name. It is looked up in the same listing orgs list prints.
 ` + orgsLong,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			orgs, cerr := client.ListOrganizations(cmd.Context())
-			if cerr == nil {
-				cerr = unreadableListing(orgs)
-			}
-			if cerr != nil {
-				return cerr
-			}
-			org := findOrganization(orgs, args[0])
-			if org == nil {
-				return clierr.New(clierr.CodeNotFound, clierr.KindNotFound,
-					`organization "%s" not found`, args[0]).WithHint("to list yours, run saladcloud orgs list")
-			}
-			return wrapErr(app.printer.Emit(org, func(w *output.Writer) {
-				row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
-				row("Name", ptr.Deref(org.OrganizationName))
-				row("Display name", ptr.Deref(org.DisplayName))
-				row("ID", ptr.Deref(org.OrganizationID))
-				row("Created", timeCell(org.CreateTime))
-				row("Updated", timeCell(org.UpdateTime))
-			}))
+			return app.runOrgsGet(cmd, args[0])
 		},
 	})
 	root.AddCommand(orgsCmd)
+}
+
+// runOrgsGet is orgs get's RunE: find the named organization in the
+// listing and emit it.
+func (app *App) runOrgsGet(cmd *cobra.Command, name string) error {
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	orgs, cerr := listReadableOrganizations(cmd.Context(), client)
+	if cerr != nil {
+		return cerr
+	}
+	org := findOrganization(orgs, name)
+	if org == nil {
+		return clierr.New(clierr.CodeNotFound, clierr.KindNotFound,
+			`organization "%s" not found`, name).WithHint("to list yours, run saladcloud orgs list")
+	}
+	return wrapErr(app.printer.Emit(org, func(w *output.Writer) {
+		row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
+		row("Name", ptr.Deref(org.OrganizationName))
+		row("Display name", ptr.Deref(org.DisplayName))
+		row("ID", ptr.Deref(org.OrganizationID))
+		row("Created", timeCell(org.CreateTime))
+		row("Updated", timeCell(org.UpdateTime))
+	}))
+}
+
+// listReadableOrganizations lists the account's organizations, failing on a
+// listing this CLI cannot read (unreadableListing).
+func listReadableOrganizations(ctx context.Context, client *api.Client) (*api.OrganizationList, *clierr.Error) {
+	orgs, cerr := client.ListOrganizations(ctx)
+	if cerr == nil {
+		cerr = unreadableListing(orgs)
+	}
+	if cerr != nil {
+		return nil, cerr
+	}
+	return orgs, nil
+}
+
+// writeOrganizationList writes orgs list's table.
+func writeOrganizationList(w *output.Writer, orgs *api.OrganizationList) {
+	w.Println("NAME\tDISPLAY NAME\tCREATED")
+	for _, o := range orgs.Items {
+		fprintf(
+			w,
+			"%s\t%s\t%s\n",
+			ptr.Deref(o.OrganizationName),
+			ptr.Deref(o.DisplayName),
+			timeCell(o.CreateTime),
+		)
+	}
 }
 
 // findOrganization returns the listed organization with the given URL

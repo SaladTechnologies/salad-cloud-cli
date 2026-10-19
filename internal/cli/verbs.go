@@ -69,22 +69,29 @@ func commandsNamed(root *cobra.Command, word, next string) []string {
 				continue
 			}
 			if sub.Name() == word || sub.HasAlias(word) || slices.Contains(sub.SuggestFor, word) {
-				path := sub.CommandPath()
-				if next != "" {
-					i := slices.IndexFunc(sub.Commands(), func(v *cobra.Command) bool {
-						return v.IsAvailableCommand() && (v.Name() == next || v.HasAlias(next))
-					})
-					if i >= 0 {
-						path += " " + sub.Commands()[i].Name()
-					}
-				}
-				paths = append(paths, path)
+				paths = append(paths, pathWithSubcommand(sub, next))
 			}
 			walk(sub)
 		}
 	}
 	walk(root)
 	return paths
+}
+
+// pathWithSubcommand is c's full path, followed by its available subcommand
+// named (or aliased) next when it has one.
+func pathWithSubcommand(c *cobra.Command, next string) string {
+	path := c.CommandPath()
+	if next == "" {
+		return path
+	}
+	i := slices.IndexFunc(c.Commands(), func(v *cobra.Command) bool {
+		return v.IsAvailableCommand() && (v.Name() == next || v.HasAlias(next))
+	})
+	if i >= 0 {
+		path += " " + c.Commands()[i].Name()
+	}
+	return path
 }
 
 // nearNames returns the full paths of parent's subcommands nearest word by
