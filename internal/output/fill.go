@@ -112,48 +112,56 @@ func decodeOrdered(dec *json.Decoder) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("decoding the document: %w", err)
 	}
-	if t, ok := tok.(json.Delim); ok {
-		switch t {
-		case '{':
-			o := &object{vals: make(map[string]any), keys: nil}
-			for dec.More() {
-				kt, err := dec.Token()
-				if err != nil {
-					return nil, fmt.Errorf("decoding the document: %w", err)
-				}
-				k, ok := kt.(string)
-				if !ok {
-					return nil, fmt.Errorf("object key %v %w", kt, errKeyNotString)
-				}
-				v, err := decodeOrdered(dec)
-				if err != nil {
-					return nil, err
-				}
-				if !o.has(k) {
-					o.keys = append(o.keys, k)
-				}
-				o.vals[k] = v
-			}
-			if _, err := dec.Token(); err != nil { // '}'
-				return nil, fmt.Errorf("decoding the document: %w", err)
-			}
-			return o, nil
-		case '[':
-			arr := []any{}
-			for dec.More() {
-				v, err := decodeOrdered(dec)
-				if err != nil {
-					return nil, err
-				}
-				arr = append(arr, v)
-			}
-			if _, err := dec.Token(); err != nil { // ']'
-				return nil, fmt.Errorf("decoding the document: %w", err)
-			}
-			return arr, nil
-		}
+	switch tok {
+	case json.Delim('{'):
+		return decodeObject(dec)
+	case json.Delim('['):
+		return decodeArray(dec)
 	}
 	return tok, nil
+}
+
+// decodeObject is decodeOrdered for an object, its '{' already read: an *object, nil (not a nil *object) on error.
+func decodeObject(dec *json.Decoder) (any, error) {
+	o := &object{vals: make(map[string]any), keys: nil}
+	for dec.More() {
+		kt, err := dec.Token()
+		if err != nil {
+			return nil, fmt.Errorf("decoding the document: %w", err)
+		}
+		k, ok := kt.(string)
+		if !ok {
+			return nil, fmt.Errorf("object key %v %w", kt, errKeyNotString)
+		}
+		v, err := decodeOrdered(dec)
+		if err != nil {
+			return nil, err
+		}
+		if !o.has(k) {
+			o.keys = append(o.keys, k)
+		}
+		o.vals[k] = v
+	}
+	if _, err := dec.Token(); err != nil { // '}'
+		return nil, fmt.Errorf("decoding the document: %w", err)
+	}
+	return o, nil
+}
+
+// decodeArray is decodeOrdered for an array, its '[' already read.
+func decodeArray(dec *json.Decoder) (any, error) {
+	arr := []any{}
+	for dec.More() {
+		v, err := decodeOrdered(dec)
+		if err != nil {
+			return nil, err
+		}
+		arr = append(arr, v)
+	}
+	if _, err := dec.Token(); err != nil { // ']'
+		return nil, fmt.Errorf("decoding the document: %w", err)
+	}
+	return arr, nil
 }
 
 func marshalerType() reflect.Type {
@@ -183,13 +191,8 @@ func nullableValue(t reflect.Type) (int, bool) {
 
 // fillValue fills doc, the encoding of v, and returns it.
 func fillValue(doc any, v reflect.Value, mode fillMode) any {
-	for v.IsValid() && (v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface) {
-		if v.IsNil() {
-			return doc
-		}
-		v = v.Elem()
-	}
-	if !v.IsValid() {
+	v, ok := deref(v)
+	if !ok {
 		return doc
 	}
 	if i, ok := nullableValue(v.Type()); ok {
@@ -198,9 +201,15 @@ func fillValue(doc any, v reflect.Value, mode fillMode) any {
 		}
 		return fillValue(doc, v.Field(i), mode)
 	}
-	if opaque(v.Type()) {
-		return doc
+	if !opaque(v.Type()) {
+		fillComposite(doc, v, mode)
 	}
+	return doc
+}
+
+// fillComposite fills doc in place when v, a value that does not encode itself, is a struct, slice, array or map
+// whose encoding doc is.
+func fillComposite(doc any, v reflect.Value, mode fillMode) {
 	switch v.Kind() {
 	case reflect.Struct:
 		if o, ok := doc.(*object); ok {
@@ -208,21 +217,42 @@ func fillValue(doc any, v reflect.Value, mode fillMode) any {
 		}
 	case reflect.Slice, reflect.Array:
 		if arr, ok := doc.([]any); ok && v.Len() == len(arr) {
-			for i := range arr {
-				arr[i] = fillValue(arr[i], v.Index(i), mode)
-			}
+			fillElements(arr, v, mode)
 		}
 	case reflect.Map:
 		if o, ok := doc.(*object); ok && v.Type().Key().Kind() == reflect.String {
-			for _, k := range o.keys {
-				mv := v.MapIndex(reflect.ValueOf(k).Convert(v.Type().Key()))
-				if mv.IsValid() {
-					o.vals[k] = fillValue(o.vals[k], mv, mode)
-				}
-			}
+			fillMapValues(o, v, mode)
 		}
 	}
-	return doc
+}
+
+// deref follows v through pointers and interfaces to the value they hold; ok is false when it meets a nil or v
+// holds nothing.
+func deref(v reflect.Value) (reflect.Value, bool) {
+	for v.IsValid() && (v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface) {
+		if v.IsNil() {
+			return v, false
+		}
+		v = v.Elem()
+	}
+	return v, v.IsValid()
+}
+
+// fillElements fills each element of arr, the encoding of slice or array v of the same length, in place.
+func fillElements(arr []any, v reflect.Value, mode fillMode) {
+	for i := range arr {
+		arr[i] = fillValue(arr[i], v.Index(i), mode)
+	}
+}
+
+// fillMapValues fills each value of o, the encoding of map v with string-kinded keys, in place.
+func fillMapValues(o *object, v reflect.Value, mode fillMode) {
+	for _, k := range o.keys {
+		mv := v.MapIndex(reflect.ValueOf(k).Convert(v.Type().Key()))
+		if mv.IsValid() {
+			o.vals[k] = fillValue(o.vals[k], mv, mode)
+		}
+	}
 }
 
 // fillStruct fills the keys of struct v in o, in field order: a key the
@@ -231,47 +261,64 @@ func fillValue(doc any, v reflect.Value, mode fillMode) any {
 // map, [] or {} (fillSetEmpty). Keys o has that no field claims keep their
 // place at the end.
 func fillStruct(o *object, v reflect.Value, mode fillMode) {
-	type field struct {
-		name  string
-		depth int
-		typ   reflect.Type
-		val   reflect.Value // invalid under a nil embedded pointer
-	}
-	var fields []field
-	var walk func(v reflect.Value, t reflect.Type, depth int)
-	walk = func(v reflect.Value, t reflect.Type, depth int) {
-		for i := range t.NumField() {
-			f := t.Field(i)
-			name, ok := jsonName(f)
-			if !ok {
-				continue
-			}
-			var fv reflect.Value
-			if v.IsValid() {
-				fv = v.Field(i)
-			}
-			if name == "" { // embedded struct: its fields are promoted
-				ft := f.Type
-				if ft.Kind() == reflect.Pointer {
-					ft = ft.Elem()
-					if fv.IsValid() {
-						if fv.IsNil() {
-							fv = reflect.Value{}
-						} else {
-							fv = fv.Elem()
-						}
-					}
-				}
-				walk(fv, ft, depth+1)
-				continue
-			}
-			fields = append(fields, field{name, depth, f.Type, fv})
-		}
-	}
-	walk(v, v.Type(), 0)
+	fields := structFields(v, v.Type(), 0, nil)
+	keys := fillFields(o, fields, mode)
+	o.keys = appendUnclaimed(keys, o.keys)
+}
 
-	// As in encoding/json, the shallowest field of a name wins.
-	best := make(map[string]field)
+// structField is one key a struct encodes: its name, the depth of embedding it is promoted from, and its type and
+// value.
+type structField struct {
+	name  string
+	depth int
+	typ   reflect.Type
+	val   reflect.Value // invalid under a nil embedded pointer
+}
+
+// structFields appends to fields the keys of struct type t at embedding depth depth, with their values in v (which
+// is invalid under a nil embedded pointer), in field order: an embedded struct's fields are promoted in its place.
+func structFields(v reflect.Value, t reflect.Type, depth int, fields []structField) []structField {
+	for i := range t.NumField() {
+		f := t.Field(i)
+		name, ok := jsonName(f)
+		if !ok {
+			continue
+		}
+		var fv reflect.Value
+		if v.IsValid() {
+			fv = v.Field(i)
+		}
+		if name == "" { // embedded struct: its fields are promoted
+			et, ev := embeddedStruct(f.Type, fv)
+			fields = structFields(ev, et, depth+1, fields)
+			continue
+		}
+		fields = append(fields, structField{name, depth, f.Type, fv})
+	}
+	return fields
+}
+
+// embeddedStruct is the struct type and value of an embedded field of type t and value v, through a pointer; the
+// value is invalid under a nil pointer, as it is when v is.
+func embeddedStruct(t reflect.Type, v reflect.Value) (reflect.Type, reflect.Value) {
+	if t.Kind() != reflect.Pointer {
+		return t, v
+	}
+	switch {
+	case !v.IsValid():
+	case v.IsNil():
+		v = reflect.Value{}
+	default:
+		v = v.Elem()
+	}
+	return t.Elem(), v
+}
+
+// fillFields fills o's key for each field that wins its name and returns those keys in field order, without the
+// unset ones fillSetEmpty leaves absent. As in encoding/json, the shallowest field of a name wins, the first of
+// them when several share that depth.
+func fillFields(o *object, fields []structField, mode fillMode) []string {
+	best := make(map[string]structField)
 	for _, f := range fields {
 		if b, ok := best[f.name]; !ok || f.depth < b.depth {
 			best[f.name] = f
@@ -284,30 +331,44 @@ func fillStruct(o *object, v reflect.Value, mode fillMode) {
 			continue
 		}
 		delete(best, f.name)
-		switch {
-		case !o.has(f.name) && mode == fillAll:
-			o.vals[f.name] = filler(f.typ)
-		case !o.has(f.name):
-			e, ok := setEmpty(f.val)
-			if !ok {
-				continue // unset: stays absent, and keeps no place in the order
-			}
-			o.vals[f.name] = e
-		case f.val.IsValid():
-			o.vals[f.name] = fillValue(o.vals[f.name], f.val, mode)
+		if fillField(o, &f, mode) {
+			keys = append(keys, f.name)
 		}
-		keys = append(keys, f.name)
 	}
+	return keys
+}
+
+// fillField fills o's key for f and reports whether o has the key afterwards: a key the encoder wrote is filled
+// recursively, and an absent one gets its type's filler (fillAll) or, when f holds a set-but-empty slice or map,
+// [] or {} (fillSetEmpty); an unset one stays absent and keeps no place in the order.
+func fillField(o *object, f *structField, mode fillMode) bool {
+	switch {
+	case !o.has(f.name) && mode == fillAll:
+		o.vals[f.name] = filler(f.typ)
+	case !o.has(f.name):
+		e, ok := setEmpty(f.val)
+		if !ok {
+			return false
+		}
+		o.vals[f.name] = e
+	case f.val.IsValid():
+		o.vals[f.name] = fillValue(o.vals[f.name], f.val, mode)
+	}
+	return true
+}
+
+// appendUnclaimed appends to keys the keys of others it does not already hold, in their order.
+func appendUnclaimed(keys, others []string) []string {
 	claimed := make(map[string]bool)
 	for _, k := range keys {
 		claimed[k] = true
 	}
-	for _, k := range o.keys {
+	for _, k := range others {
 		if !claimed[k] {
 			keys = append(keys, k)
 		}
 	}
-	o.keys = keys
+	return keys
 }
 
 // jsonName returns the key encoding/json uses for f, "" for an embedded
@@ -340,13 +401,8 @@ func jsonName(f reflect.StructField) (string, bool) {
 // with no elements, and returns its document, [] or {}. A nil slice or map
 // is unset, not empty.
 func setEmpty(v reflect.Value) (any, bool) {
-	for v.IsValid() && v.Kind() == reflect.Pointer {
-		if v.IsNil() {
-			return nil, false
-		}
-		v = v.Elem()
-	}
-	if !v.IsValid() || opaque(v.Type()) {
+	v, ok := derefPointers(v)
+	if !ok || opaque(v.Type()) {
 		return nil, false
 	}
 	switch v.Kind() {
@@ -362,6 +418,17 @@ func setEmpty(v reflect.Value) (any, bool) {
 		return &object{vals: make(map[string]any), keys: nil}, true
 	}
 	return nil, false
+}
+
+// derefPointers is deref through pointers only: an interface stays as it is.
+func derefPointers(v reflect.Value) (reflect.Value, bool) {
+	for v.IsValid() && v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return v, false
+		}
+		v = v.Elem()
+	}
+	return v, v.IsValid()
 }
 
 // filler is the value an absent key of type t renders as: [] for an array,
