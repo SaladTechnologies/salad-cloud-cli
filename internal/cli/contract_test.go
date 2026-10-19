@@ -58,7 +58,6 @@ func checkCpChildExit(t *testing.T, id string, o *outcome) {
 // why.
 func TestShadowedFlagSaysWhy(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	for _, tc := range []struct {
 		args []string
 		want string
@@ -70,7 +69,7 @@ func TestShadowedFlagSaysWhy(t *testing.T) {
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			_, err := app.runRoot(t, tc.args...)
 			var cerr *clierr.Error
 			if !errors.As(err, &cerr) || cerr.Code != clierr.CodeUsage ||

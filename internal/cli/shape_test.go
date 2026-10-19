@@ -145,7 +145,6 @@ func assertShapeValue(t *testing.T, path string, typ reflect.Type, tag string, v
 // nested objects and array elements.
 func TestSDKBackedJSONShape(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	cases := []struct {
 		name   string
 		v      any
@@ -204,7 +203,7 @@ func TestSDKBackedJSONShape(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			for _, mode := range []string{"json", "yaml"} {
 				doc := app.emitJSON(t, tc.v, tc.stream, mode)
 				assertShape(t, tc.name+" ("+mode+")", reflect.TypeOf(tc.v), doc)
@@ -218,7 +217,6 @@ func TestSDKBackedJSONShape(t *testing.T) {
 // answers with no items renders [] (none).
 func TestWhoamiOrganizationsUnavailableVsEmpty(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	for _, tc := range []struct {
 		name   string
 		status int
@@ -231,7 +229,7 @@ func TestWhoamiOrganizationsUnavailableVsEmpty(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if strings.HasSuffix(r.URL.Path, "/v1/organizations") {
 					w.WriteHeader(tc.status)
@@ -268,7 +266,6 @@ func TestWhoamiOrganizationsUnavailableVsEmpty(t *testing.T) {
 // cover both modes.
 func TestCLIResultsSameInYAML(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	cases := map[string]any{
 		"agent init":             agentInitResult{},
 		"changelog":              changelogResult{},
@@ -294,7 +291,7 @@ func TestCLIResultsSameInYAML(t *testing.T) {
 	for name, v := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			j, y := app.emitJSON(t, v, false, "json"), app.emitJSON(t, v, false, "yaml")
 			if !reflect.DeepEqual(j, y) {
 				t.Errorf("yaml differs from json:\njson %v\nyaml %v", j, y)

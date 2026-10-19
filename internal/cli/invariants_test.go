@@ -447,17 +447,17 @@ func checkNoCredentialIn(t *testing.T, all string) {
 // key's value (the word "paste").
 func TestNoHelpAsksForAKey(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
+	parent := newTestRun(t)
 	if strings.Contains(strings.ToLower(agentdoc.Body()), "paste") {
 		t.Error("the agent block mentions paste")
 	}
 	var all []*cobra.Command
-	walkTree(app.root, func(c *cobra.Command) { all = append(all, c) })
+	walkTree(parent.root, func(c *cobra.Command) { all = append(all, c) })
 	for _, c := range all {
 		path := c.CommandPath()
 		t.Run(path, func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := parent.clone(t)
 			var out bytes.Buffer
 			_, root := app.fresh()
 			root.SetOut(&out)

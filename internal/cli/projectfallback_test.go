@@ -76,7 +76,6 @@ func TestAssumedProjectWarningIsOrgScopedOnly(t *testing.T) {
 // not found, and so does a 404 whose organization is the problem.
 func TestAssumedProjectMissing(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	cases := []struct {
 		name     string
 		routes   map[string]string
@@ -118,7 +117,7 @@ func TestAssumedProjectMissing(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			app.stubAPI(t, tc.routes)
 			app.unsetProject(t)
 			_, err := app.runRoot(t, tc.args...)
@@ -173,14 +172,13 @@ func TestSavedProjectStaysWithItsOrg(t *testing.T) {
 // returning nothing.
 func TestGroupLogsCheckTheAssumedProject(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	for _, args := range [][]string{
 		{"container-groups", "logs", "g", "--since", "5m", "-o", "json"},
 		{"logs", "-c", "g", "--since", "5m", "-o", "json"},
 	} {
 		t.Run(strings.Join(args[:2], " "), func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			app.stubAPI(
 				t,
 				map[string]string{quotasRoute: `{}`, defaultListRoute: emptyListBody, "/log-entries": `{"items":[]}`},

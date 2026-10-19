@@ -475,8 +475,8 @@ func TestBuildCreateRequestNoAutostart(t *testing.T) {
 
 func TestBuildCreateRequestValidationFailures(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
-	app.setenv("MSYSTEM", "MINGW64") // the Git Bash check runs only under Git Bash
+	parent := newTestRun(t)
+	parent.setenv("MSYSTEM", "MINGW64") // the Git Bash check runs only under Git Bash
 	tests := []struct {
 		name     string
 		base     containergroups.ContainerGroupCreationRequest
@@ -542,7 +542,7 @@ func TestBuildCreateRequestValidationFailures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := parent.clone(t)
 			_, cerr := app.buildCreateRequest(tt.base, tt.opts)
 			if cerr == nil {
 				t.Fatal("buildCreateRequest returned nil error")
@@ -694,7 +694,6 @@ func TestValidateWaitAutostart(t *testing.T) {
 // the write landed — the exact silent no-op strict checking exists to stop.
 func TestRejectUnknownsOffersHatchOnlyForNovelFields(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	const hatch = "--allow-unknown-fields"
 	tests := []struct {
 		name      string
@@ -768,7 +767,7 @@ func TestRejectUnknownsOffersHatchOnlyForNovelFields(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			cerr := app.rejectUnknowns([]input.Unknown{
 				{Desc: `unknown field "x"`, Path: tt.path},
 			})

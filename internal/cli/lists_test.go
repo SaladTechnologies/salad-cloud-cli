@@ -15,7 +15,6 @@ import (
 // is rejected before any request, with where to find the full ID.
 func TestJobIDsMustBeFullUUIDs(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	for _, tc := range []struct {
 		args []string
 		list string
@@ -29,7 +28,7 @@ func TestJobIDsMustBeFullUUIDs(t *testing.T) {
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			app.stubAPI(t, make(map[string]string)) // any request would 404
 			_, err := app.runRoot(t, tc.args...)
 			want := `job IDs must be full UUIDs, not "c39e9f69"; to list them, run ` + tc.list
@@ -88,8 +87,8 @@ func TestAIGatewayModelsListNeedsNoKey(t *testing.T) {
 // alone, as on every other list.
 func TestListEnvelopesAreItemsOnly(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
-	app.stubAPI(t, map[string]string{
+	parent := newTestRun(t)
+	parent.stubAPI(t, map[string]string{
 		"/inference-endpoints":                 `{"items":[{"name":"transcribe"}],"page":1,"page_size":25,"total_size":null}`,
 		"/inference-endpoints/transcribe/jobs": `{"items":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","create_time":"2026-10-01T00:00:00Z"}],"page":1,"page_size":25,"total_size":null}`,
 	})
@@ -99,7 +98,7 @@ func TestListEnvelopesAreItemsOnly(t *testing.T) {
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := parent.clone(t)
 			out, err := app.runRoot(t, args...)
 			if err != nil {
 				t.Fatal(err)

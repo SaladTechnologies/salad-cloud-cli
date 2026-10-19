@@ -99,7 +99,6 @@ func TestDescribeNotFound(t *testing.T) {
 // instances first, and used to print the API's bare "Not Found").
 func TestGroupNotFoundEverywhere(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	want := `container group "nosuch" not found in my-org/default`
 	for _, args := range [][]string{
 		{"cg", "get", "nosuch"},
@@ -110,7 +109,7 @@ func TestGroupNotFoundEverywhere(t *testing.T) {
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			app.stubAPI(t, map[string]string{quotasRoute: `{}`}) // the organization exists
 			_, err := app.runRoot(t, args...)
 			var cerr *clierr.Error

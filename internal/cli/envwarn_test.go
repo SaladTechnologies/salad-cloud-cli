@@ -44,7 +44,6 @@ func (app *testRun) warned(when overrideWhen, ovs []override) string {
 
 func TestOverrideWarnings(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	saved := config.File{APIKey: key9QxZ, Organization: "my-org", Project: "default"}
 	for _, tc := range []struct {
 		name     string
@@ -176,7 +175,7 @@ Then open a new terminal (restart VS Code if you use its terminal).
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			app.atATerminal(t, tc.terminal, tc.os, tc.mode)
 			app.setEnv(t, tc.env...)
 			if got := app.warned(tc.when, app.overridesOf(tc.file, tc.vars...)); got != tc.want {
@@ -188,7 +187,6 @@ Then open a new terminal (restart VS Code if you use its terminal).
 
 func TestRemovalWarnings(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	for _, tc := range []struct {
 		name, os, mode string
 		terminal       bool
@@ -224,7 +222,7 @@ Then open a new terminal (restart VS Code if you use its terminal).
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			app.atATerminal(t, tc.terminal, tc.os, tc.mode)
 			app.setEnv(t, tc.env...)
 			ovs := app.stillSupplied(tc.vars...)

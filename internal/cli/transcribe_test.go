@@ -29,7 +29,6 @@ func (app *testRun) parsedTranscribeCmd(
 // user passed, so the endpoint's own defaults govern the rest.
 func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	tests := []struct {
 		name  string
 		args  []string
@@ -82,7 +81,7 @@ func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			set := app.parsedTranscribeCmd(t, "transcribe", transcribeFields(), tt.args...)
 			got, cerr := buildTranscribeInput("u", transcribeFields(), set, tt.extra)
 			if cerr != nil {

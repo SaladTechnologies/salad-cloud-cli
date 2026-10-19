@@ -12,7 +12,6 @@ import (
 // the first runs as the program in place of the image's ENTRYPOINT and CMD.
 func TestValidateCommand(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	tests := []struct {
 		name     string
 		words    []string
@@ -38,7 +37,7 @@ func TestValidateCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			cerr := app.validateCommand(tt.words, tt.given)
 			if tt.wantCode == 0 {
 				if cerr != nil {

@@ -550,7 +550,6 @@ func TestWaitStartToleratesInitialStopped(t *testing.T) {
 // stopped, failed and succeeded each end a wait for running at once.
 func TestWaitAbortsOnTerminalAfterActive(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	for _, tc := range []struct {
 		terminal shared.ContainerGroupStatus
 		kind     clierr.Kind
@@ -561,7 +560,7 @@ func TestWaitAbortsOnTerminalAfterActive(t *testing.T) {
 	} {
 		t.Run(string(tc.terminal), func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			cerr, h := app.runWait(t, []waitStep{
 				statusStep(shared.CONTAINER_GROUP_STATUS_STOPPED), // start not yet acted on
 				statusStep(shared.CONTAINER_GROUP_STATUS_DEPLOYING),

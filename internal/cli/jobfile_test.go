@@ -27,7 +27,6 @@ func writeJobFile(t *testing.T, name, body string) string {
 // says what a job file looks like, without changing its exit code or kind.
 func TestLoadJobFileShapeHint(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
 	tests := []struct {
 		name     string
 		body     string
@@ -42,7 +41,7 @@ func TestLoadJobFileShapeHint(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
+			app := newTestRun(t)
 			var proto queues.QueueJobPrototype
 			cerr := app.loadJobFile(writeJobFile(t, strings.ReplaceAll(tt.name, " ", "-")+".yaml", tt.body), &proto)
 			if (cerr != nil) != tt.wantErr {
