@@ -586,10 +586,7 @@ func (app *App) newInferenceJobsGetCmd() *cobra.Command {
 // runInferenceJobsGet shows job id on --endpoint.
 func (app *App) runInferenceJobsGet(cmd *cobra.Command, id string) error {
 	endpoint := app.flags.endpoint
-	if cerr := requireJobUUID(id, "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
-		return cerr
-	}
-	client, _, cerr := app.NewClient(cmd)
+	client, cerr := app.jobVerbClient(cmd, id, "saladcloud inference jobs list --endpoint "+endpoint)
 	if cerr != nil {
 		return cerr
 	}
@@ -717,10 +714,7 @@ saladcloud inference jobs get <id> --endpoint <endpoint>.`,
 // runInferenceJobsCancel cancels job id on --endpoint.
 func (app *App) runInferenceJobsCancel(cmd *cobra.Command, id string) error {
 	endpoint := app.flags.endpoint
-	if cerr := requireJobUUID(id, "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
-		return cerr
-	}
-	client, _, cerr := app.NewClient(cmd)
+	client, cerr := app.jobVerbClient(cmd, id, "saladcloud inference jobs list --endpoint "+endpoint)
 	if cerr != nil {
 		return cerr
 	}
