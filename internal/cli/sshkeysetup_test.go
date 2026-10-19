@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,7 +11,7 @@ import (
 // ssh-keygen, and ssh-keygen present or not (lookPath is toolsFound or
 // toolsMissing).
 func stubKeygen(d *Deps, lookPath func(string) (string, error)) {
-	d.GenerateKey = func(keyPath string) error {
+	d.GenerateKey = func(_ context.Context, keyPath string) error {
 		if err := os.WriteFile(keyPath, []byte("private"), 0o600); err != nil {
 			return err
 		}
@@ -21,7 +22,7 @@ func stubKeygen(d *Deps, lookPath func(string) (string, error)) {
 
 // stubPassphrase makes every key passphrase-protected or not.
 func stubPassphrase(d *Deps, has bool) {
-	d.HasPassphrase = func(string) (bool, bool) { return has, true }
+	d.HasPassphrase = func(context.Context, string) passphraseCheck { return passphraseCheck{has: has, known: true} }
 }
 
 func TestSSHKeySetupBranches(t *testing.T) {

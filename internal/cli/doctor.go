@@ -119,7 +119,7 @@ func (app *App) runDoctor(cmd *cobra.Command, _ []string) error {
 		d.organizationRow(ctx),
 		d.projectRow(ctx),
 		d.gatewayRow(),
-		d.sshRow(),
+		d.sshRow(ctx),
 	}
 	ovs := d.hidingOverrides()
 	err := app.printer.Emit(doctorResult{Items: rows, EnvOverrides: overrideNames(ovs)}, func(w *output.Writer) {
@@ -644,7 +644,7 @@ func (d *doctorRun) gatewayRow() checkResult {
 	return row(name, checkPass, fmt.Sprintf("%s (from %s; not tested)", maskAPIKey(d.res.GatewayAPIKey), from), "")
 }
 
-func (d *doctorRun) sshRow() checkResult {
+func (d *doctorRun) sshRow(ctx context.Context) checkResult {
 	app := d.app
 	const name = "local-ssh-key-present"
 	home, err := config.HomeDir(app.Env)
@@ -664,7 +664,7 @@ func (d *doctorRun) sshRow() checkResult {
 		return row(name, checkWarn, "key found, but ssh is not installed", app.sshMissingHint("ssh"))
 	}
 	priv := strings.TrimSuffix(pub, ".pub")
-	if enc, known := app.HasPassphrase(priv); known && enc {
+	if check := app.HasPassphrase(ctx, priv); check.known && check.has {
 		hint := fmt.Sprintf(
 			"run ssh-add %s first; to generate a key without one, run saladcloud ssh-key setup --generate",
 			priv,

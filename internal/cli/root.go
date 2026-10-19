@@ -231,7 +231,7 @@ func New(app *App) *cobra.Command {
 // printed to stderr: in json mode as a one-line {"error": {...}} document,
 // in table mode as "saladcloud: error: <message>" and, when the error has a
 // fix, "hint: <fix>" under it.
-func Run(ctx context.Context, d Deps) int {
+func Run(ctx context.Context, d *Deps) int {
 	app := newApp(d)
 	rootCmd := New(app) //nolint:contextcheck // New only builds the tree; commands get ctx from ExecuteContextC below
 	if err := errors.Join(app.treeErrs...); err != nil {
@@ -445,7 +445,7 @@ func (app *App) NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *cl
 	if cerr != nil {
 		return nil, res, cerr
 	}
-	app.warnOnAssumedProject(client, res)
+	app.warnOnAssumedProject(client, &res)
 	saved := app.savedConfig()
 	client.OnRejected = func() *clierr.Error { return keyRejected(res.APIKey, keyFrom, saved.APIKey) }
 	ctx := cmd.Context()
@@ -575,7 +575,8 @@ func (app *App) keyOrgNames(ctx context.Context, key string) []string {
 
 // warnOnAssumedProject makes c print the assumed-project warning, once per
 // command, the first time it uses an assumed project.
-func (app *App) warnOnAssumedProject(c *api.Client, res config.Resolved) {
+func (app *App) warnOnAssumedProject(c *api.Client, resolved *config.Resolved) {
+	res := *resolved // the configuration as of this call; the warning prints later
 	c.OnAssumedProject = func() {
 		if app.assumedWarned.CompareAndSwap(false, true) {
 			fprintln(app.errw(), app.assumedProjectWarning(&res))

@@ -51,7 +51,7 @@ func fakeChild() (int, bool) {
 // from the process, output goes nowhere, stdin is empty, there is no
 // terminal, no page opens, and the CLI's known_hosts is /cfg/known_hosts (the
 // relay argv tests compare exact argument lists).
-func testDeps(env map[string]string) Deps {
+func testDeps(env map[string]string) *Deps {
 	d := ProcessDeps()
 	d.Args = nil
 	d.Stdin = strings.NewReader("")
@@ -102,7 +102,7 @@ func (app *testRun) clone(t *testing.T) *testRun {
 	d := app.Deps
 	own := testDeps(env)
 	d.Env.Getenv, d.Environ = own.Env.Getenv, own.Environ
-	c := &testRun{App: newApp(d), env: env, root: nil}
+	c := &testRun{App: newApp(&d), env: env, root: nil}
 	if cerr := c.printer.SetMode(app.printer.Mode()); cerr != nil {
 		t.Fatal(cerr)
 	}
@@ -116,7 +116,7 @@ func (app *testRun) setenv(k, v string) { app.env[k] = v }
 // fresh is a new App and tree on the run's deps as they are now: its
 // environment, seams and streams.
 func (app *testRun) fresh() (*App, *cobra.Command) {
-	a := newApp(app.Deps)
+	a := newApp(&app.Deps)
 	return a, New(a)
 }
 

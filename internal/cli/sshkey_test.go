@@ -115,13 +115,13 @@ func TestKeyHasPassphrase(t *testing.T) {
 	keygen(plain, "")
 	locked := filepath.Join(dir, "locked")
 	keygen(locked, "correct horse")
-	if enc, known := keyHasPassphrase(plain); !known || enc {
-		t.Errorf("plain key: encrypted=%v known=%v, want false/true", enc, known)
+	if c := keyHasPassphrase(t.Context(), plain); !c.known || c.has {
+		t.Errorf("plain key: encrypted=%v known=%v, want false/true", c.has, c.known)
 	}
-	if enc, known := keyHasPassphrase(locked); !known || !enc {
-		t.Errorf("locked key: encrypted=%v known=%v, want true/true", enc, known)
+	if c := keyHasPassphrase(t.Context(), locked); !c.known || !c.has {
+		t.Errorf("locked key: encrypted=%v known=%v, want true/true", c.has, c.known)
 	}
-	if _, known := keyHasPassphrase(filepath.Join(dir, "missing")); known {
+	if c := keyHasPassphrase(t.Context(), filepath.Join(dir, "missing")); c.known {
 		t.Error("missing key must be unknown, not a verdict")
 	}
 }

@@ -21,18 +21,18 @@ func TestParseFromRef(t *testing.T) {
 		{"my-app", "", "my-app"},
 		{"staging/my-app", "staging", "my-app"},
 	} {
-		project, group, cerr := parseFromRef(tc.ref)
-		if cerr != nil || project != tc.project || group != tc.group {
-			t.Errorf("parseFromRef(%q) = %q, %q, %v; want %q, %q", tc.ref, project, group, cerr, tc.project, tc.group)
+		from, cerr := parseFromRef(tc.ref)
+		if cerr != nil || from.project != tc.project || from.group != tc.group {
+			t.Errorf("parseFromRef(%q) = %+v, %v; want %q, %q", tc.ref, from, cerr, tc.project, tc.group)
 		}
 	}
 	for _, ref := range []string{"", "/my-app", "staging/", "my-org/staging/my-app"} {
-		if _, _, cerr := parseFromRef(ref); cerr == nil || cerr.Code != clierr.CodeUsage {
+		if _, cerr := parseFromRef(ref); cerr == nil || cerr.Code != clierr.CodeUsage {
 			t.Errorf("parseFromRef(%q) = %v, want a usage error", ref, cerr)
 		}
 	}
 	// The cross-organization form says why it is refused.
-	_, _, cerr := parseFromRef("my-org/staging/my-app")
+	_, cerr := parseFromRef("my-org/staging/my-app")
 	if !strings.Contains(errText(cerr), "organization") {
 		t.Errorf("cross-org message %q does not mention the organization", errText(cerr))
 	}

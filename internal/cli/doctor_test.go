@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -49,7 +50,9 @@ const (
 // stubSSH makes ssh present or not (lookPath is toolsFound or toolsMissing), and keys passphrase-protected or not.
 func stubSSH(d *Deps, lookPath func(string) (string, error), passphrase bool) {
 	d.LookPath = lookPath
-	d.HasPassphrase = func(string) (bool, bool) { return passphrase, true }
+	d.HasPassphrase = func(context.Context, string) passphraseCheck {
+		return passphraseCheck{has: passphrase, known: true}
+	}
 }
 
 // toolsFound is a LookPath that finds every tool in /usr/bin.

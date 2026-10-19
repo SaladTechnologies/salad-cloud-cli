@@ -28,15 +28,20 @@ import (
 // the command line.
 const flagProvenance = "flag"
 
+// fromRef is --from's reference: the source group, and its project ("" for the current one).
+type fromRef struct {
+	project, group string
+}
+
 // parseFromRef splits --from's [<project>/]<group> into the project and the
 // group. The project is "" when the reference names only a group (the
 // current project). A third segment would read as <org>/<project>/<group>,
 // and copies never cross organizations.
-func parseFromRef(ref string) (string, string, *clierr.Error) {
+func parseFromRef(ref string) (fromRef, *clierr.Error) {
 	project, group, hasProject := strings.Cut(ref, "/")
 	switch {
 	case hasProject && strings.Contains(group, "/"):
-		return "", "", clierr.New(
+		return fromRef{}, clierr.New(
 			clierr.CodeUsage,
 			clierr.KindUsage,
 			`invalid --from "%s"`,
@@ -44,7 +49,7 @@ func parseFromRef(ref string) (string, string, *clierr.Error) {
 		).WithHint("give <group> or <project>/<group>; --from stays within the organization")
 	case hasProject:
 		if project == "" {
-			return "", "", clierr.New(
+			return fromRef{}, clierr.New(
 				clierr.CodeUsage,
 				clierr.KindUsage,
 				`invalid --from "%s": the project before the / is empty`,
@@ -55,14 +60,14 @@ func parseFromRef(ref string) (string, string, *clierr.Error) {
 		project, group = "", project
 	}
 	if group == "" {
-		return "", "", clierr.New(
+		return fromRef{}, clierr.New(
 			clierr.CodeUsage,
 			clierr.KindUsage,
 			`invalid --from "%s": no container group named`,
 			ref,
 		)
 	}
-	return project, group, nil
+	return fromRef{project: project, group: group}, nil
 }
 
 // checkCopyTarget rejects a copy that can only fail on a name conflict: one
@@ -244,10 +249,11 @@ func (app *App) fromSourceProject(
 	cmd *cobra.Command,
 	ref, name string,
 ) (config.Resolved, string, *clierr.Error) {
-	project, group, cerr := parseFromRef(ref)
+	from, cerr := parseFromRef(ref)
 	if cerr != nil {
 		return config.Resolved{}, "", cerr
 	}
+	project, group := from.project, from.group
 	client, res, cerr := app.NewClient(cmd)
 	if cerr != nil {
 		return config.Resolved{}, "", cerr
@@ -281,7 +287,7 @@ func (app *App) fromFetchSource(
 	if cerr != nil {
 		return nil, cerr
 	}
-	app.warnOnAssumedProject(src, *source)
+	app.warnOnAssumedProject(src, source)
 	g, cerr := src.GetGroup(cmd.Context(), group)
 	if cerr != nil {
 		return nil, groupNotFound(cerr, group, src.Org(), src.Project())

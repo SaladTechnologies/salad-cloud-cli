@@ -23,7 +23,7 @@ func (app *testRun) runExecute(t *testing.T, args ...string) executeOutput {
 	var out, errBuf bytes.Buffer
 	d := app.Deps
 	d.Args, d.Stdout, d.Stderr = args, &out, &errBuf
-	code := Run(t.Context(), d)
+	code := Run(t.Context(), &d)
 	return executeOutput{code: code, stdout: out.String(), stderr: errBuf.String()}
 }
 

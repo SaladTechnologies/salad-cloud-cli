@@ -418,7 +418,7 @@ func (s session) run(t *testing.T) outcome {
 		d.Env.GOOS = "windows"
 	}
 	if s.deps != nil {
-		s.deps(&d)
+		s.deps(d)
 	}
 	done := make(chan int, 1)
 	go func() { done <- Run(ctx, d) }()

@@ -315,10 +315,11 @@ func (app *App) runAvailability(cmd *cobra.Command, _ []string, af *availability
 	}
 	var fromProject, fromGroup string
 	if af.From != "" {
-		var cerr *clierr.Error
-		if fromProject, fromGroup, cerr = parseFromRef(af.From); cerr != nil {
+		from, cerr := parseFromRef(af.From)
+		if cerr != nil {
 			return cerr
 		}
+		fromProject, fromGroup = from.project, from.group
 	}
 
 	client, res, cerr := app.NewClient(cmd)
@@ -362,7 +363,7 @@ func (app *App) availabilityFrom(
 	if err != nil {
 		return api.AvailabilityRequest{}, err
 	}
-	app.warnOnAssumedProject(src, r)
+	app.warnOnAssumedProject(src, &r)
 	g, err := src.GetGroup(ctx, fromGroup)
 	if err != nil {
 		return api.AvailabilityRequest{}, groupNotFound(err, fromGroup, src.Org(), src.Project())

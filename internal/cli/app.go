@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"io"
 	"os"
 	"os/exec"
@@ -29,20 +30,20 @@ type Deps struct {
 	// KnownHostsPath is the CLI's own known_hosts file, "" when there is none.
 	KnownHostsPath func() string
 	// GenerateKey makes a key without a passphrase at keyPath (ssh-keygen).
-	GenerateKey func(keyPath string) error
+	GenerateKey func(ctx context.Context, keyPath string) error
 	// ProductionAPI is the API doctor reports on when no override is set.
 	ProductionAPI string
 	// LookPath and HasPassphrase are the system checks doctor's SSH row makes.
 	LookPath      func(file string) (string, error)
-	HasPassphrase func(keyPath string) (has, known bool)
+	HasPassphrase func(ctx context.Context, keyPath string) passphraseCheck
 	// Environ is the environment ssh, sftp and cp's child process gets.
 	Environ func() []string
 }
 
 // ProcessDeps is the running process as a run's dependencies.
-func ProcessDeps() Deps {
+func ProcessDeps() *Deps {
 	env := config.ProcessEnv()
-	return Deps{
+	return &Deps{
 		Args:           os.Args[1:],
 		Stdin:          os.Stdin,
 		Stdout:         os.Stdout,
@@ -90,9 +91,9 @@ type runFlags struct {
 }
 
 // newApp is a run with dependencies d.
-func newApp(d Deps) *App {
+func newApp(d *Deps) *App {
 	return &App{
-		Deps:    d,
+		Deps:    *d,
 		printer: output.NewPrinter(d.Stdout),
 		flags: runFlags{
 			output:   "",
