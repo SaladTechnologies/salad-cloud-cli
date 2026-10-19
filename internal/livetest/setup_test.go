@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,19 +84,7 @@ func (d cfgDir) path() string { return filepath.Join(string(d), "config.json") }
 func (d cfgDir) run(t *testing.T, env map[string]string, stdin string, args ...string) result {
 	t.Helper()
 	cmd := exec.CommandContext(t.Context(), binPath(t), args...)
-	for _, kv := range os.Environ() {
-		name, _, _ := strings.Cut(kv, "=")
-		if !slices.ContainsFunc(setupVars(), func(v string) bool { return strings.EqualFold(v, name) }) {
-			cmd.Env = append(cmd.Env, kv)
-		}
-	}
-	cmd.Env = append(cmd.Env, "SALAD_CLI_CONFIG_DIR="+string(d))
-	names := make([]string, 0, len(env))
-	for k, v := range env {
-		cmd.Env = append(cmd.Env, k+"="+v)
-		names = append(names, k)
-	}
-	slices.Sort(names)
+	cmd.Env = d.environ(env)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
@@ -110,11 +99,34 @@ func (d cfgDir) run(t *testing.T, env map[string]string, stdin string, args ...s
 		t.Fatalf("running %v: %v", args, err)
 	}
 	with := ""
-	if len(names) > 0 {
+	if names := slices.Sorted(maps.Keys(env)); len(names) > 0 {
 		with = " (with " + strings.Join(names, ", ") + ")"
 	}
 	t.Logf("$ saladcloud %s%s -> exit %d", strings.Join(args, " "), with, code)
-	r := result{Code: code, Stdout: out.String(), Stderr: errb.String()}
+	return scrubKeys(t, args, result{Code: code, Stdout: out.String(), Stderr: errb.String()})
+}
+
+// environ is a setup case's environment: the inherited one without setupVars, SALAD_CLI_CONFIG_DIR set to this
+// folder, and the variables in env.
+func (d cfgDir) environ(env map[string]string) []string {
+	var environ []string
+	for _, kv := range os.Environ() {
+		name, _, _ := strings.Cut(kv, "=")
+		if !slices.ContainsFunc(setupVars(), func(v string) bool { return strings.EqualFold(v, name) }) {
+			environ = append(environ, kv)
+		}
+	}
+	environ = append(environ, "SALAD_CLI_CONFIG_DIR="+string(d))
+	for k, v := range env {
+		environ = append(environ, k+"="+v)
+	}
+	return environ
+}
+
+// scrubKeys fails the case when r, the result of args, holds the value of SALAD_API_KEY or
+// SALAD_AI_GATEWAY_API_KEY, and returns it with each such value replaced by the variable's name.
+func scrubKeys(t *testing.T, args []string, r result) result {
+	t.Helper()
 	for _, name := range []string{"SALAD_API_KEY", "SALAD_AI_GATEWAY_API_KEY"} {
 		if v := os.Getenv(name); v != "" && strings.Contains(r.Stdout+r.Stderr, v) {
 			t.Errorf("%v printed the value of %s", args, name)
@@ -506,7 +518,15 @@ func TestSetupDoctor(t *testing.T) {
 		t.Fatalf("doctor exit %d: %s", r.Code, r.Stderr)
 	}
 	machineStderr(t, r)
-	rows := doctorRows(t, r)
+	doctorPassRows(t, doctorRows(t, r))
+	doctorTableHeader(t, d)
+	doctorRejectedKey(t, d, k)
+}
+
+// doctorPassRows checks doctor's rows on a fresh login: every check in order, each with a hint key, no passing row
+// with a hint, and the checks a working login satisfies passing.
+func doctorPassRows(t *testing.T, rows []map[string]any) {
+	t.Helper()
 	names := make([]string, 0, len(rows))
 	for _, row := range rows {
 		names = append(names, assertAs[string](t, row["name"]))
@@ -532,7 +552,11 @@ func TestSetupDoctor(t *testing.T) {
 			t.Errorf("doctor %v = %v (%v), want pass", row["name"], row["status"], row["detail"])
 		}
 	}
+}
 
+// doctorTableHeader checks the header of doctor's table for the config folder d.
+func doctorTableHeader(t *testing.T, d cfgDir) {
+	t.Helper()
 	table := d.run(t, nil, "", "doctor")
 	if table.Code != 0 {
 		t.Fatalf("doctor table exit %d: %s", table.Code, table.Stderr)
@@ -547,10 +571,13 @@ func TestSetupDoctor(t *testing.T) {
 	) != "CHECK STATUS DETAIL" {
 		t.Errorf("doctor table header = %q", first)
 	}
+}
 
-	// A rejected key from the variable: api-key fails, the checks that
-	// need it skip, and the run names the failure.
-	r = d.run(t, map[string]string{"SALAD_API_KEY": badKey()}, "", "doctor", "-o", "json")
+// doctorRejectedKey runs doctor in d with a rejected key from the variable: api-key fails, the checks that need it
+// skip, and the run names the failure and warns that the variable hides the saved key k.
+func doctorRejectedKey(t *testing.T, d cfgDir, k string) {
+	t.Helper()
+	r := d.run(t, map[string]string{"SALAD_API_KEY": badKey()}, "", "doctor", "-o", "json")
 	if r.Code != 1 {
 		t.Errorf("doctor with a rejected key exit %d, want 1: %s", r.Code, r.Stderr)
 	}

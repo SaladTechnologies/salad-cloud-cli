@@ -192,52 +192,53 @@ func TestMain(m *testing.M) {
 // sweep deletes everything this run created, by prefix. Best-effort: a leaked
 // stopped group costs nothing, but leaking is still untidy.
 func sweep() {
-	bin := os.Getenv("SALAD_CLI_TEST_BIN")
-	if bin == "" {
-		name := "saladcloud"
-		if runtime.GOOS == "windows" {
-			name += ".exe"
-		}
-		bin = filepath.Join("..", "..", "dist", runtime.GOOS+"-"+runtime.GOARCH, name)
-	}
+	bin := sweepBin()
 	out, err := exec.Command(bin, "container-groups", "list", "-o", "json").Output()
 	if err != nil {
 		fprintf("livetest sweep: list failed: %v\n", err)
 		return
 	}
-	var listing struct {
-		Items []struct{ Name string } `json:"items"`
-	}
-	if err = json.Unmarshal(out, &listing); err != nil {
+	if !sweepDelete(bin, "container-groups", "", out) {
 		return
-	}
-	for _, it := range listing.Items {
-		if strings.HasPrefix(it.Name, prefix) {
-			fprintf("livetest sweep: deleting %s\n", it.Name)
-			if runErr := exec.Command(bin, "container-groups", "delete", it.Name).Run(); runErr != nil {
-				fprintf("livetest sweep: deleting %s failed: %v\n", it.Name, runErr)
-			}
-		}
 	}
 	// Queues after groups: a queue with a connected group may refuse deletion.
 	out, err = exec.Command(bin, "queues", "list", "-o", "json").Output()
 	if err != nil {
 		return
 	}
-	var queues struct {
+	sweepDelete(bin, "queues", "queue ", out)
+}
+
+// sweepBin is binPath without a test to skip: $SALAD_CLI_TEST_BIN, else the dist build for this platform.
+func sweepBin() string {
+	if bin := os.Getenv("SALAD_CLI_TEST_BIN"); bin != "" {
+		return bin
+	}
+	name := "saladcloud"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join("..", "..", "dist", runtime.GOOS+"-"+runtime.GOARCH, name)
+}
+
+// sweepDelete deletes every item in noun's list document out whose name carries this run's prefix, naming each
+// as label plus its name. It reports false when out is not a list document, which ends the sweep.
+func sweepDelete(bin, noun, label string, out []byte) bool {
+	var listing struct {
 		Items []struct{ Name string } `json:"items"`
 	}
-	if json.Unmarshal(out, &queues) != nil {
-		return
+	if json.Unmarshal(out, &listing) != nil {
+		return false
 	}
-	for _, it := range queues.Items {
+	for _, it := range listing.Items {
 		if strings.HasPrefix(it.Name, prefix) {
-			fprintf("livetest sweep: deleting queue %s\n", it.Name)
-			if runErr := exec.Command(bin, "queues", "delete", it.Name).Run(); runErr != nil {
-				fprintf("livetest sweep: deleting queue %s failed: %v\n", it.Name, runErr)
+			fprintf("livetest sweep: deleting %s%s\n", label, it.Name)
+			if runErr := exec.Command(bin, noun, "delete", it.Name).Run(); runErr != nil {
+				fprintf("livetest sweep: deleting %s%s failed: %v\n", label, it.Name, runErr)
 			}
 		}
 	}
+	return true
 }
 
 // TestPreflight: the environment is usable at all.
@@ -292,32 +293,68 @@ func TestLogScopes(t *testing.T) {
 			if r.Code != 0 {
 				t.Fatalf("exit %d: %s", r.Code, r.Stderr)
 			}
-			for i, line := range strings.Split(strings.TrimSpace(r.Stdout), "\n") {
-				if line == "" {
-					continue
-				}
-				var entry struct {
-					Resource struct {
-						Labels map[string]string `json:"labels"`
-					} `json:"resource"`
-				}
-				if err := json.Unmarshal([]byte(line), &entry); err != nil {
-					t.Fatalf("line %d is not a complete JSON document: %s", i+1, line)
-				}
-				for label, want := range tc.want {
-					if got := entry.Resource.Labels[label]; got != want {
-						t.Errorf("line %d: %s = %q, want %q", i+1, label, got, want)
-					}
-				}
-			}
+			checkLogLabels(t, r.Stdout, tc.want)
 		})
 	}
+}
+
+// checkLogLabels checks that every NDJSON line of stdout is a complete log entry carrying each label in want with
+// its value.
+func checkLogLabels(t *testing.T, stdout string, want map[string]string) {
+	t.Helper()
+	for i, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
+		if line == "" {
+			continue
+		}
+		var entry struct {
+			Resource struct {
+				Labels map[string]string `json:"labels"`
+			} `json:"resource"`
+		}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			t.Fatalf("line %d is not a complete JSON document: %s", i+1, line)
+		}
+		for label, value := range want {
+			if got := entry.Resource.Labels[label]; got != value {
+				t.Errorf("line %d: %s = %q, want %q", i+1, label, got, value)
+			}
+		}
+	}
+}
+
+// liveTempFile writes body to a file called name in a fresh temporary folder and returns its path.
+func liveTempFile(t *testing.T, name, body string) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
 }
 
 // TestGroupLifecycle is the spine: create stopped, read it back, patch it,
 // scale it, then delete. Nothing here runs, so it costs nothing.
 func TestGroupLifecycle(t *testing.T) { //nolint:paralleltest // writes to the live account, one at a time
 	g := name("life")
+	lifecycleCreate(t, g)
+	lifecycleGet(t, g)
+
+	// A freshly created group is pending; a patch during that window is
+	// rejected, so wait it out before writing again.
+	settle(t, g)
+
+	lifecycleWritableRoundTrip(t, g)
+	sched := lifecycleScaleHolds(t, g)
+	lifecycleKeepSchedule(t, g, sched)
+
+	if r := run(t, "container-groups", "delete", g, "-o", "json"); r.Code != 0 {
+		t.Fatalf("delete exit %d: %s", r.Code, r.Stderr)
+	}
+}
+
+// lifecycleCreate creates TestGroupLifecycle's group g stopped with two replicas and checks create's document.
+func lifecycleCreate(t *testing.T, g string) {
+	t.Helper()
 	r := run(t, "container-groups", "create", g, "--image", "docker.io/library/busybox:1.36",
 		"--no-autostart", "--replicas", "2", "-e", "A=1", "-o", "json")
 	if r.Code != 0 {
@@ -330,9 +367,12 @@ func TestGroupLifecycle(t *testing.T) { //nolint:paralleltest // writes to the l
 	if doc["replicas"] != float64(2) {
 		t.Errorf("replicas = %v, want 2", doc["replicas"])
 	}
+}
 
-	// get must round-trip the same shape as create.
-	r = run(t, "container-groups", "get", g, "-o", "json")
+// lifecycleGet checks that get round-trips the same shape as create, every key present.
+func lifecycleGet(t *testing.T, g string) {
+	t.Helper()
+	r := run(t, "container-groups", "get", g, "-o", "json")
 	if r.Code != 0 {
 		t.Fatalf("get exit %d: %s", r.Code, r.Stderr)
 	}
@@ -350,17 +390,14 @@ func TestGroupLifecycle(t *testing.T) { //nolint:paralleltest // writes to the l
 	if _, ok := got["country_codes"].([]any); !ok {
 		t.Errorf("get country_codes = %v, want an array", got["country_codes"])
 	}
+}
 
-	// A freshly created group is pending; a patch during that window is
-	// rejected, so wait it out before writing again.
-	settle(t, g)
-
+// lifecycleWritableRoundTrip patches g, then feeds get --writable back through update -f.
+func lifecycleWritableRoundTrip(t *testing.T, g string) {
+	t.Helper()
 	// update settles by default, so the next write is accepted.
-	patch := filepath.Join(t.TempDir(), "p.json")
-	if err := os.WriteFile(patch, []byte(`{"replicas":3}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if r = run(t, "container-groups", "update", g, "-f", patch); r.Code != 0 {
+	patch := liveTempFile(t, "p.json", `{"replicas":3}`)
+	if r := run(t, "container-groups", "update", g, "-f", patch); r.Code != 0 {
 		t.Fatalf("update exit %d: %s", r.Code, r.Stderr)
 	}
 	// get --writable must round-trip through update -f with no rejection
@@ -370,10 +407,7 @@ func TestGroupLifecycle(t *testing.T) { //nolint:paralleltest // writes to the l
 	if wr.Code != 0 {
 		t.Fatalf("get --writable exit %d: %s", wr.Code, wr.Stderr)
 	}
-	wdoc := filepath.Join(t.TempDir(), "writable.json")
-	if err := os.WriteFile(wdoc, []byte(wr.Stdout), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	wdoc := liveTempFile(t, "writable.json", wr.Stdout)
 	rt := run(
 		t,
 		"container-groups",
@@ -386,24 +420,26 @@ func TestGroupLifecycle(t *testing.T) { //nolint:paralleltest // writes to the l
 		strings.Contains(rt.Stderr, "warning:") {
 		t.Errorf("get --writable | update -f round trip: exit %d, stderr %q", rt.Code, rt.Stderr)
 	}
+}
 
+// lifecycleScaleHolds enables scheduled scaling on g, scales it straight after, and checks that the schedule went on
+// hold with a note. It returns the schedule patch file for lifecycleKeepSchedule.
+func lifecycleScaleHolds(t *testing.T, g string) string {
+	t.Helper()
 	// The point of settling: an immediate second write must not be rejected
 	// with pending_update_in_progress. Enable scheduled scaling first so the
 	// scale below exercises the hold rule: setting replicas puts the schedule
 	// on hold, and scale — the replicas verb — must say so (as a note, not a
 	// warning: it is a documented platform rule).
-	sched := filepath.Join(t.TempDir(), "sched.json")
-	if err := os.WriteFile(
-		sched,
-		[]byte(`{"scheduled-scaling-enabled":true,"scaling-actions":[{"replicas":1,"schedule":"0 9 * * 1-5"}]}`),
-		0o600,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if r = run(t, "container-groups", "update", g, "-f", sched); r.Code != 0 {
+	sched := liveTempFile(
+		t,
+		"sched.json",
+		`{"scheduled-scaling-enabled":true,"scaling-actions":[{"replicas":1,"schedule":"0 9 * * 1-5"}]}`,
+	)
+	if r := run(t, "container-groups", "update", g, "-f", sched); r.Code != 0 {
 		t.Fatalf("enable scheduled scaling exit %d: %s", r.Code, r.Stderr)
 	}
-	r = run(t, "container-groups", "scale", g, "--replicas", "1", "-o", "json")
+	r := run(t, "container-groups", "scale", g, "--replicas", "1", "-o", "json")
 	if r.Code != 0 {
 		t.Fatalf("scale straight after update exit %d: %s", r.Code, r.Stderr)
 	}
@@ -420,9 +456,16 @@ func TestGroupLifecycle(t *testing.T) { //nolint:paralleltest // writes to the l
 	if held["scheduled-scaling-enabled"] != false {
 		t.Errorf("scheduled-scaling-enabled after scale = %v, want false (on hold)", held["scheduled-scaling-enabled"])
 	}
+	return sched
+}
+
+// lifecycleKeepSchedule re-enables g's schedule from sched and checks that scale --keep-schedule keeps it.
+func lifecycleKeepSchedule(t *testing.T, g, sched string) {
+	t.Helper()
 	// --keep-schedule: re-enable, scale again with the flag, and the schedule
 	// must survive (two writes under the hood).
-	if r = run(t, "container-groups", "update", g, "-f", sched); r.Code != 0 {
+	r := run(t, "container-groups", "update", g, "-f", sched)
+	if r.Code != 0 {
 		t.Fatalf("re-enable scheduled scaling exit %d: %s", r.Code, r.Stderr)
 	}
 	if r = run(t, "container-groups", "scale", g, "--replicas", "2", "--keep-schedule"); r.Code != 0 {
@@ -448,10 +491,6 @@ func TestGroupLifecycle(t *testing.T) { //nolint:paralleltest // writes to the l
 	}
 	if act["ok"] != true {
 		t.Errorf("scale ok = %v, want true", act["ok"])
-	}
-
-	if r := run(t, "container-groups", "delete", g, "-o", "json"); r.Code != 0 {
-		t.Fatalf("delete exit %d: %s", r.Code, r.Stderr)
 	}
 }
 
@@ -496,18 +535,7 @@ func TestDeletedNameStaysTaken(t *testing.T) { //nolint:paralleltest // writes t
 // depend on. All client-side or 404 paths, so nothing is created.
 func TestErrorContract(t *testing.T) {
 	t.Parallel()
-	cases := []struct {
-		name     string
-		args     []string
-		wantCode int
-		wantKind string
-		// wantHTTP is the error document's http_status: "null" for a
-		// client-side failure, the status otherwise.
-		wantHTTP string
-		// jsonError is false when the failure is the output mode itself: the
-		// CLI never reached json mode, so it correctly reports in table form.
-		jsonError bool
-	}{
+	cases := []errorContractCase{
 		{
 			"not found is 4",
 			[]string{"container-groups", "get", prefix + "-nope", "-o", "json"},
@@ -561,28 +589,48 @@ func TestErrorContract(t *testing.T) {
 				}
 				return
 			}
-			var errDoc struct {
-				Error struct {
-					ExitCode   int             `json:"exit_code"`
-					Kind       string          `json:"kind"`
-					HTTPStatus json.RawMessage `json:"http_status"`
-				} `json:"error"`
-			}
-			if err := json.Unmarshal([]byte(line), &errDoc); err != nil {
-				t.Fatalf("stderr is not one JSON error document: %s", line)
-			}
-			if errDoc.Error.ExitCode != tc.wantCode {
-				t.Errorf("error.exit_code = %d, want %d", errDoc.Error.ExitCode, tc.wantCode)
-			}
-			if tc.wantKind != "" && errDoc.Error.Kind != tc.wantKind {
-				t.Errorf("error.kind = %q, want %q", errDoc.Error.Kind, tc.wantKind)
-			}
-			// Every key is present: http_status is null, not missing, when
-			// no HTTP response caused the error.
-			if got := string(errDoc.Error.HTTPStatus); got != tc.wantHTTP {
-				t.Errorf("error.http_status = %q, want %s (stderr: %s)", got, tc.wantHTTP, line)
-			}
+			checkErrorContractDoc(t, &tc, line)
 		})
+	}
+}
+
+// errorContractCase is one TestErrorContract command line and the error it must report.
+type errorContractCase struct {
+	name     string
+	args     []string
+	wantCode int
+	wantKind string
+	// wantHTTP is the error document's http_status: "null" for a
+	// client-side failure, the status otherwise.
+	wantHTTP string
+	// jsonError is false when the failure is the output mode itself: the
+	// CLI never reached json mode, so it correctly reports in table form.
+	jsonError bool
+}
+
+// checkErrorContractDoc checks that line, the trimmed stderr, is one JSON error document matching tc.
+func checkErrorContractDoc(t *testing.T, tc *errorContractCase, line string) {
+	t.Helper()
+	var errDoc struct {
+		Error struct {
+			ExitCode   int             `json:"exit_code"`
+			Kind       string          `json:"kind"`
+			HTTPStatus json.RawMessage `json:"http_status"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(line), &errDoc); err != nil {
+		t.Fatalf("stderr is not one JSON error document: %s", line)
+	}
+	if errDoc.Error.ExitCode != tc.wantCode {
+		t.Errorf("error.exit_code = %d, want %d", errDoc.Error.ExitCode, tc.wantCode)
+	}
+	if tc.wantKind != "" && errDoc.Error.Kind != tc.wantKind {
+		t.Errorf("error.kind = %q, want %q", errDoc.Error.Kind, tc.wantKind)
+	}
+	// Every key is present: http_status is null, not missing, when
+	// no HTTP response caused the error.
+	if got := string(errDoc.Error.HTTPStatus); got != tc.wantHTTP {
+		t.Errorf("error.http_status = %q, want %s (stderr: %s)", got, tc.wantHTTP, line)
 	}
 }
 
@@ -624,18 +672,16 @@ func TestContainerCommand(t *testing.T) { //nolint:paralleltest // writes to the
 		t.Fatalf("create exit %d: %s", r.Code, r.Stderr)
 	}
 	defer run(t, "container-groups", "delete", g)
-	command := func(doc string) []string {
-		var got struct {
-			Container struct {
-				Command []string `json:"command"`
-			} `json:"container"`
-		}
-		if err := json.Unmarshal([]byte(doc), &got); err != nil {
-			t.Fatalf("stdout: %v\n%s", err, doc)
-		}
-		return got.Container.Command
-	}
-	if got := command(r.Stdout); strings.Join(got, "\x00") != strings.Join([]string{"sh", "-c", script}, "\x00") {
+	if got := containerCommand(
+		t,
+		r.Stdout,
+	); strings.Join(
+		got,
+		"\x00",
+	) != strings.Join(
+		[]string{"sh", "-c", script},
+		"\x00",
+	) {
 		t.Errorf("created command = %q", got)
 	}
 	if strings.Contains(r.Stderr, "warning:") {
@@ -647,26 +693,11 @@ func TestContainerCommand(t *testing.T) { //nolint:paralleltest // writes to the
 	if r.Code != 0 {
 		t.Fatalf("update exit %d: %s", r.Code, r.Stderr)
 	}
-	if got := command(r.Stdout); strings.Join(got, " ") != "sleep 2147483647" {
+	if got := containerCommand(t, r.Stdout); strings.Join(got, " ") != "sleep 2147483647" {
 		t.Errorf("updated command = %q", got)
 	}
 
-	// The documented way back to the image's own command: an empty list in a
-	// patch file, with no drift warning on the read-back.
-	clearDoc := filepath.Join(t.TempDir(), "clear.json")
-	if err := os.WriteFile(clearDoc, []byte(`{"container":{"command":[]}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	r = run(t, "container-groups", "update", g, "-f", clearDoc, "-o", "json")
-	if r.Code != 0 {
-		t.Fatalf("clear exit %d: %s", r.Code, r.Stderr)
-	}
-	if got := command(r.Stdout); len(got) != 0 {
-		t.Errorf("cleared command = %q, want []", got)
-	}
-	if strings.Contains(r.Stderr, "warning:") {
-		t.Errorf("clear warned: %q", r.Stderr)
-	}
+	containerCommandClear(t, g)
 
 	// Client-side checks, before any write.
 	for _, tc := range []struct {
@@ -683,6 +714,37 @@ func TestContainerCommand(t *testing.T) { //nolint:paralleltest // writes to the
 	}
 }
 
+// containerCommand is container.command in doc, a group document on stdout.
+func containerCommand(t *testing.T, doc string) []string {
+	t.Helper()
+	var got struct {
+		Container struct {
+			Command []string `json:"command"`
+		} `json:"container"`
+	}
+	if err := json.Unmarshal([]byte(doc), &got); err != nil {
+		t.Fatalf("stdout: %v\n%s", err, doc)
+	}
+	return got.Container.Command
+}
+
+// containerCommandClear clears g's command the documented way back to the image's own: an empty list in a patch
+// file, with no drift warning on the read-back.
+func containerCommandClear(t *testing.T, g string) {
+	t.Helper()
+	clearDoc := liveTempFile(t, "clear.json", `{"container":{"command":[]}}`)
+	r := run(t, "container-groups", "update", g, "-f", clearDoc, "-o", "json")
+	if r.Code != 0 {
+		t.Fatalf("clear exit %d: %s", r.Code, r.Stderr)
+	}
+	if got := containerCommand(t, r.Stdout); len(got) != 0 {
+		t.Errorf("cleared command = %q, want []", got)
+	}
+	if strings.Contains(r.Stderr, "warning:") {
+		t.Errorf("clear warned: %q", r.Stderr)
+	}
+}
+
 // TestCreateFrom copies a stopped group whose settings are all non-default,
 // so a field that fails to come across shows up as the default.
 func TestCreateFrom(t *testing.T) { //nolint:paralleltest // writes to the live account, one at a time
@@ -691,12 +753,13 @@ func TestCreateFrom(t *testing.T) { //nolint:paralleltest // writes to the live 
 	// An HTTP probe with no headers: the API rejects the probe unless the
 	// empty headers list is sent, from the file here and from the source on
 	// the copy below.
-	probe := filepath.Join(t.TempDir(), "probe.yaml")
-	if err := os.WriteFile(probe, []byte("readiness_probe:\n  http: {path: /, port: 8080, scheme: http, headers: []}\n"+
-		"  initial_delay_seconds: 0\n  period_seconds: 5\n  timeout_seconds: 2\n  success_threshold: 1\n  "+
-		"failure_threshold: 3\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	probe := liveTempFile(
+		t,
+		"probe.yaml",
+		"readiness_probe:\n  http: {path: /, port: 8080, scheme: http, headers: []}\n"+
+			"  initial_delay_seconds: 0\n  period_seconds: 5\n  timeout_seconds: 2\n  success_threshold: 1\n  "+
+			"failure_threshold: 3\n",
+	)
 	if r := run(t, "container-groups", "create", src, "--image", "docker.io/library/busybox:1.36", "-f", probe,
 		"--restart-policy", "never", "--port", "8080", "--no-auth", "-e", "MODE=prod",
 		"--priority", "high", "--replicas", "2", "--no-autostart"); r.Code != 0 {
@@ -727,25 +790,14 @@ func TestCreateFrom(t *testing.T) { //nolint:paralleltest // writes to the live 
 	if strings.Contains(r.Stderr, "warning:") {
 		t.Errorf("create --from warned: %q", r.Stderr)
 	}
-	var got struct {
-		Name          string `json:"name"`
-		DisplayName   string `json:"display_name"`
-		RestartPolicy string `json:"restart_policy"`
-		Priority      string `json:"priority"`
-		Replicas      int    `json:"replicas"`
-		Networking    struct {
-			Port int  `json:"port"`
-			Auth bool `json:"auth"`
-		} `json:"networking"`
-		Container struct {
-			Env map[string]string `json:"environment_variables"`
-		} `json:"container"`
-		ReadinessProbe *struct {
-			HTTP *struct {
-				Path string `json:"path"`
-			} `json:"http"`
-		} `json:"readiness_probe"`
-	}
+	checkCreateFromCopy(t, r, cp)
+}
+
+// checkCreateFromCopy checks that create --from's document r carries every non-default setting of
+// TestCreateFrom's source, under the copy's own name cp.
+func checkCreateFromCopy(t *testing.T, r result, cp string) {
+	t.Helper()
+	var got createFromDoc
 	if err := json.Unmarshal([]byte(r.Stdout), &got); err != nil {
 		t.Fatalf("stdout: %v\n%s", err, r.Stdout)
 	}
@@ -755,6 +807,34 @@ func TestCreateFrom(t *testing.T) { //nolint:paralleltest // writes to the live 
 	if got.Name != cp || got.DisplayName != cp {
 		t.Errorf("name/display_name = %q/%q, want both %q", got.Name, got.DisplayName, cp)
 	}
+	checkCreateFromSettings(t, &got)
+}
+
+// createFromDoc is the part of create --from's document TestCreateFrom checks.
+type createFromDoc struct {
+	Name          string `json:"name"`
+	DisplayName   string `json:"display_name"`
+	RestartPolicy string `json:"restart_policy"`
+	Priority      string `json:"priority"`
+	Replicas      int    `json:"replicas"`
+	Networking    struct {
+		Port int  `json:"port"`
+		Auth bool `json:"auth"`
+	} `json:"networking"`
+	Container struct {
+		Env map[string]string `json:"environment_variables"`
+	} `json:"container"`
+	ReadinessProbe *struct {
+		HTTP *struct {
+			Path string `json:"path"`
+		} `json:"http"`
+	} `json:"readiness_probe"`
+}
+
+// checkCreateFromSettings checks the copied restart policy, priority, replicas, networking and environment, with the
+// copy's own EXTRA variable added.
+func checkCreateFromSettings(t *testing.T, got *createFromDoc) {
+	t.Helper()
 	if got.RestartPolicy != "never" || got.Priority != "high" || got.Replicas != 2 {
 		t.Errorf(
 			"restart_policy/priority/replicas = %q/%q/%d, want never/high/2",
@@ -784,16 +864,13 @@ func TestRunningLifecycle(t *testing.T) { //nolint:paralleltest // writes to the
 	}
 	time.Sleep(createSpacing)
 	g := name("run")
-	def := filepath.Join(t.TempDir(), "run.json")
 	// sleep 2147483647, never "infinity": busybox rejects it, the instance
 	// fails at start and the platform reallocates it, so the group loops
 	// across nodes and --wait would just time out.
 	body := `{"autostart_policy":true,"restart_policy":"always","replicas":3,
 	  "container":{"image":"docker.io/library/busybox:1.36","priority":"batch",
 	  "command":["sleep","2147483647"],"resources":{"cpu":1,"memory":1024}}}`
-	if err := os.WriteFile(def, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	def := liveTempFile(t, "run.json", body)
 	defer func() { _ = run(t, "container-groups", "delete", g) }()
 
 	// Generous timeout regardless: batch capacity can still be slow.
@@ -807,7 +884,20 @@ func TestRunningLifecycle(t *testing.T) { //nolint:paralleltest // writes to the
 		t.Errorf("--wait -o json emitted status %v, want running (the settled document)", state["status"])
 	}
 
-	// Logs must be NDJSON: every line a complete document.
+	runningLogsAreNDJSON(t, g)
+	runningInstancePrefix(t, g)
+
+	// Remote access, while we have a running instance to talk to.
+	t.Run("ssh", func(t *testing.T) { testSSH(t, g) })
+
+	if r := run(t, "container-groups", "stop", g, "--wait", "--timeout", "5m"); r.Code != 0 {
+		t.Errorf("stop --wait exit %d: %s", r.Code, r.Stderr)
+	}
+}
+
+// runningLogsAreNDJSON checks that g's logs are NDJSON: every line a complete document.
+func runningLogsAreNDJSON(t *testing.T, g string) {
+	t.Helper()
 	lg := run(t, "container-groups", "logs", g, "--since", "20m", "-o", "json")
 	if lg.Code != 0 {
 		t.Fatalf("logs exit %d: %s", lg.Code, lg.Stderr)
@@ -821,8 +911,12 @@ func TestRunningLifecycle(t *testing.T) { //nolint:paralleltest // writes to the
 			t.Errorf("logs line %d is not a complete JSON document: %s", i+1, line)
 		}
 	}
+}
 
-	// Instance prefix resolution, against a real instance id.
+// runningInstancePrefix checks instance prefix resolution against a real instance id of g, through instances get
+// and instances update.
+func runningInstancePrefix(t *testing.T, g string) {
+	t.Helper()
 	inst := run(t, "container-groups", "instances", "list", "-c", g, "-o", "json")
 	if inst.Code != 0 {
 		t.Fatalf("instances list exit %d: %s", inst.Code, inst.Stderr)
@@ -853,13 +947,6 @@ func TestRunningLifecycle(t *testing.T) { //nolint:paralleltest // writes to the
 	} else if doc := oneDoc(t, upd); doc["deletion_cost"] != float64(7) || doc["id"] != id {
 		t.Errorf("instances update = deletion_cost %v id %v, want 7 and %s", doc["deletion_cost"], doc["id"], id)
 	}
-
-	// Remote access, while we have a running instance to talk to.
-	t.Run("ssh", func(t *testing.T) { testSSH(t, g) })
-
-	if r := run(t, "container-groups", "stop", g, "--wait", "--timeout", "5m"); r.Code != 0 {
-		t.Errorf("stop --wait exit %d: %s", r.Code, r.Stderr)
-	}
 }
 
 // testSSH covers the remote-access surface: ssh/cp is the part of this CLI a
@@ -874,30 +961,65 @@ func TestRunningLifecycle(t *testing.T) { //nolint:paralleltest // writes to the
 // endpoint resolving, the sh -c argv wrapping, --config rendering, and the
 // documented exit-code caveat — is asserted.
 func testSSH(t *testing.T, g string) { //nolint:thelper // a subtest body, not a helper: failures point into it
-	// --config opens no session, so it works even without a usable key and
-	// proves the relay endpoint was resolved.
-	cfg := run(t, "container-groups", "ssh", g, "--config")
-	if cfg.Code != 0 {
-		t.Errorf("ssh --config exit %d: %s", cfg.Code, cfg.Stderr)
-	} else {
-		for _, want := range []string{"Host ", "HostName ", "Port "} {
-			if !strings.Contains(cfg.Stdout, want) {
-				t.Errorf("ssh --config output missing %q; got:\n%s", want, cfg.Stdout)
-			}
-		}
-	}
+	sshConfig(t, g)
 
 	// One-shot command. The relay does not propagate exit codes, so assert
 	// on stdout rather than the code — that caveat is itself the contract.
-	// A publickey denial here is almost always environmental, not a CLI bug:
-	// the registered key must be on the machine running the binary. Running
-	// the linux build under WSL offers WSL's ~/.ssh key, not the Windows
-	// host's registered one, and is denied every time, which can look like a
-	// platform fault. Point SALAD_CLI_TEST_BIN at a binary whose host holds
-	// the registered key.
-	//
-	// A couple of retries still guard against a genuine transient without
-	// masking a real failure for long.
+	r := sshOneShot(t, g)
+	if !strings.Contains(r.Stdout, "hello-from-instance") {
+		t.Errorf("ssh one-shot did not echo through the relay; stdout %q, stderr %q", r.Stdout, r.Stderr)
+	}
+	// The sh -c wrapping is what makes shell syntax work at all through a
+	// relay that execs raw argv.
+	if sh := run(
+		t,
+		"container-groups",
+		"ssh",
+		g,
+		"--",
+		"echo",
+		"a",
+		"&&",
+		"echo",
+		"b",
+	); !strings.Contains(sh.Stdout, "a") ||
+		!strings.Contains(sh.Stdout, "b") {
+		t.Errorf("shell operators did not survive the sh -c wrapping; stdout %q, stderr %q", sh.Stdout, sh.Stderr)
+	}
+
+	sshCopyRoundTrip(t, g)
+}
+
+// sshConfig checks ssh --config. It opens no session, so it works even without a usable key and proves the relay
+// endpoint was resolved.
+func sshConfig(t *testing.T, g string) {
+	t.Helper()
+	cfg := run(t, "container-groups", "ssh", g, "--config")
+	if cfg.Code != 0 {
+		t.Errorf("ssh --config exit %d: %s", cfg.Code, cfg.Stderr)
+		return
+	}
+	for _, want := range []string{"Host ", "HostName ", "Port "} {
+		if !strings.Contains(cfg.Stdout, want) {
+			t.Errorf("ssh --config output missing %q; got:\n%s", want, cfg.Stdout)
+		}
+	}
+}
+
+// sshOneShot runs one echo through ssh on g and returns its result, skipping the test (failing it under
+// SALAD_CLI_TEST_REQUIRE_SSH=1) when every attempt is denied on publickey.
+//
+// A publickey denial here is almost always environmental, not a CLI bug:
+// the registered key must be on the machine running the binary. Running
+// the linux build under WSL offers WSL's ~/.ssh key, not the Windows
+// host's registered one, and is denied every time, which can look like a
+// platform fault. Point SALAD_CLI_TEST_BIN at a binary whose host holds
+// the registered key.
+//
+// A couple of retries still guard against a genuine transient without
+// masking a real failure for long.
+func sshOneShot(t *testing.T, g string) result {
+	t.Helper()
 	var r result
 	for attempt := 1; attempt <= 3; attempt++ {
 		r = run(t, "container-groups", "ssh", g, "--", "echo", "hello-from-instance")
@@ -928,38 +1050,18 @@ func testSSH(t *testing.T, g string) { //nolint:thelper // a subtest body, not a
 			strings.TrimSpace(r.Stderr),
 		)
 	}
-	if !strings.Contains(r.Stdout, "hello-from-instance") {
-		t.Errorf("ssh one-shot did not echo through the relay; stdout %q, stderr %q", r.Stdout, r.Stderr)
-	}
-	// The sh -c wrapping is what makes shell syntax work at all through a
-	// relay that execs raw argv.
-	if sh := run(
-		t,
-		"container-groups",
-		"ssh",
-		g,
-		"--",
-		"echo",
-		"a",
-		"&&",
-		"echo",
-		"b",
-	); !strings.Contains(sh.Stdout, "a") ||
-		!strings.Contains(sh.Stdout, "b") {
-		t.Errorf("shell operators did not survive the sh -c wrapping; stdout %q, stderr %q", sh.Stdout, sh.Stderr)
-	}
+	return r
+}
 
-	// cp: push a file and read it back through the same relay. The group
-	// runs several replicas and "first running instance" can change between
-	// calls as instances come and go, so pin one instance for the whole
-	// round trip — otherwise the write and the read could land on different
-	// containers and fail for a reason that has nothing to do with the CLI.
+// sshCopyRoundTrip pushes a file to g with cp and reads it back through the same relay, with ssh and with cp. The
+// group runs several replicas and "first running instance" can change between calls as instances come and go, so
+// it pins one instance for the whole round trip — otherwise the write and the read could land on different
+// containers and fail for a reason that has nothing to do with the CLI.
+func sshCopyRoundTrip(t *testing.T, g string) {
+	t.Helper()
 	inst := firstRunningInstance(t, g)
-	local := filepath.Join(t.TempDir(), "up.txt")
 	payload := "livetest-" + prefix
-	if err := os.WriteFile(local, []byte(payload), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	local := liveTempFile(t, "up.txt", payload)
 	if up := run(t, "container-groups", "cp", local, g+"/"+inst+":/tmp/up.txt"); up.Code != 0 {
 		t.Errorf("cp up exit %d: %s", up.Code, up.Stderr)
 	}
@@ -1060,17 +1162,7 @@ func TestTranscribe(t *testing.T) { //nolint:paralleltest // writes to the live 
 	if phrase == "" {
 		phrase = "quick brown fox"
 	}
-	var r result
-	for attempt := 1; attempt <= 2; attempt++ {
-		r = run(t, "inference", "transcribe", audio)
-		if r.Code == 0 {
-			break
-		}
-		t.Logf("transcribe attempt %d failed (exit %d): %s", attempt, r.Code, r.Stderr)
-	}
-	if r.Code != 0 {
-		t.Fatalf("transcribe failed twice: %s", r.Stderr)
-	}
+	r := transcribeRetried(t, audio)
 	if !strings.Contains(strings.ToLower(r.Stdout), strings.ToLower(phrase)) {
 		t.Errorf("transcript %q does not contain %q", r.Stdout, phrase)
 	}
@@ -1091,6 +1183,29 @@ func TestTranscribe(t *testing.T) { //nolint:paralleltest // writes to the live 
 		t.Errorf("failed transcription must leave stdout empty, got: %s", bad.Stdout)
 	}
 
+	transcribeLite(t, audio, phrase)
+}
+
+// transcribeRetried transcribes audio, retrying a failed job once, and fails the test when both attempts fail.
+func transcribeRetried(t *testing.T, audio string) result {
+	t.Helper()
+	var r result
+	for attempt := 1; attempt <= 2; attempt++ {
+		r = run(t, "inference", "transcribe", audio)
+		if r.Code == 0 {
+			break
+		}
+		t.Logf("transcribe attempt %d failed (exit %d): %s", attempt, r.Code, r.Stderr)
+	}
+	if r.Code != 0 {
+		t.Fatalf("transcribe failed twice: %s", r.Stderr)
+	}
+	return r
+}
+
+// transcribeLite checks the lite tier: its JSON drops the upload's signed URL, and its transcript holds phrase.
+func transcribeLite(t *testing.T, audio, phrase string) {
+	t.Helper()
 	// -o json never hands out the upload's signed URL: the token is removed
 	// (and the upload itself deleted) once the transcript is back.
 	js := run(t, "inference", "transcription-lite", audio, "-o", "json")
@@ -1118,45 +1233,39 @@ func TestTranscribeLanguageAndStream(t *testing.T) { //nolint:paralleltest // wr
 	if audio == "" {
 		t.Skip("SALAD_CLI_TEST_AUDIO_FOREIGN unset (path to a short single-track non-English clip); skipping")
 	}
-	// Transient job failures are retried once, as in TestTranscribe.
-	doc := func(args ...string) map[string]any {
-		var r result
-		for attempt := 1; attempt <= 2; attempt++ {
-			r = run(t, append([]string{"inference", "transcribe", audio, "-o", "json"}, args...)...)
-			if r.Code == 0 {
-				return oneDoc(t, r)
-			}
-			t.Logf("transcribe %v attempt %d failed (exit %d): %s", args, attempt, r.Code, r.Stderr)
-		}
-		t.Fatalf("transcribe %v failed twice: %s", args, r.Stderr)
-		return nil
-	}
-	text := func(d map[string]any) string {
-		out := valueAs[map[string]any](d["output"])
-		s := valueAs[string](out["text"])
-		return strings.TrimSpace(s)
-	}
-
-	omitted := doc()
-	null := doc("--input-extra", `{"language_code": null}`)
-	forced := doc("--language-code", "en")
+	omitted := transcribeDoc(t, audio)
+	null := transcribeDoc(t, audio, "--input-extra", `{"language_code": null}`)
+	forced := transcribeDoc(t, audio, "--language-code", "en")
 
 	if in := valueAs[map[string]any](null["input"]); in == nil {
 		t.Errorf("null job has no input: %v", null)
 	} else if v, has := in["language_code"]; !has || v != nil {
 		t.Errorf("null was not preserved in the echoed input: %v", in)
 	}
-	if text(omitted) == "" {
+	if transcriptText(omitted) == "" {
 		t.Fatalf("omitted language_code returned no transcript: %v", omitted)
 	}
-	if text(null) != text(omitted) {
-		t.Errorf("null and omitted language_code differ:\nnull:    %s\nomitted: %s", text(null), text(omitted))
+	if transcriptText(null) != transcriptText(omitted) {
+		t.Errorf(
+			"null and omitted language_code differ:\nnull:    %s\nomitted: %s",
+			transcriptText(null),
+			transcriptText(omitted),
+		)
 	}
-	if text(forced) == text(omitted) {
-		t.Errorf("forcing en changed nothing, so omitted may default to en, or the clip is English: %s", text(forced))
+	if transcriptText(forced) == transcriptText(omitted) {
+		t.Errorf(
+			"forcing en changed nothing, so omitted may default to en, or the clip is English: %s",
+			transcriptText(forced),
+		)
 	}
 
-	// A stream the file lacks fails the job, which proves the field is read.
+	transcribeMissingStream(t, audio)
+}
+
+// transcribeMissingStream checks that a stream the single-track clip audio lacks fails the job, which proves
+// audio_stream_index is read.
+func transcribeMissingStream(t *testing.T, audio string) {
+	t.Helper()
 	bad := run(t, "inference", "transcribe", audio, "--audio-stream-index", "1")
 	if bad.Code == 0 {
 		t.Errorf("--audio-stream-index 1 on a single-track clip exited 0; stdout: %s", bad.Stdout)
@@ -1167,6 +1276,29 @@ func TestTranscribeLanguageAndStream(t *testing.T) { //nolint:paralleltest // wr
 	if strings.TrimSpace(bad.Stdout) != "" {
 		t.Errorf("failed transcription must leave stdout empty, got: %s", bad.Stdout)
 	}
+}
+
+// transcribeDoc is transcribe's JSON document for audio with the extra args. Transient job failures are retried
+// once, as in TestTranscribe.
+func transcribeDoc(t *testing.T, audio string, args ...string) map[string]any {
+	t.Helper()
+	var r result
+	for attempt := 1; attempt <= 2; attempt++ {
+		r = run(t, append([]string{"inference", "transcribe", audio, "-o", "json"}, args...)...)
+		if r.Code == 0 {
+			return oneDoc(t, r)
+		}
+		t.Logf("transcribe %v attempt %d failed (exit %d): %s", args, attempt, r.Code, r.Stderr)
+	}
+	t.Fatalf("transcribe %v failed twice: %s", args, r.Stderr)
+	return nil
+}
+
+// transcriptText is the trimmed output.text of a transcription job document.
+func transcriptText(d map[string]any) string {
+	out := valueAs[map[string]any](d["output"])
+	s := valueAs[string](out["text"])
+	return strings.TrimSpace(s)
 }
 
 // TestGateway smoke-tests the AI Gateway commands. It needs a gateway key,
@@ -1193,9 +1325,13 @@ func TestGateway(t *testing.T) {
 	if res["ok"] != true || res["reply"] == "" {
 		t.Errorf("gateway test = %v", res)
 	}
-	// A wrong key is an auth failure with empty stdout. The model list is
-	// public and accepts any key, so the check is test's completion, which
-	// the gateway rejects before it runs (not billed).
+	gatewayWrongKey(t)
+}
+
+// gatewayWrongKey checks that a wrong key is an auth failure with empty stdout. The model list is public and accepts
+// any key, so the check is test's completion, which the gateway rejects before it runs (not billed).
+func gatewayWrongKey(t *testing.T) {
+	t.Helper()
 	bad := runEnv(
 		t,
 		map[string]string{"SALAD_AI_GATEWAY_API_KEY": "not-a-real-key"},
@@ -1228,41 +1364,9 @@ func TestGateway(t *testing.T) {
 // read verbs of the nouns answer. Read-only.
 func TestGrammar(t *testing.T) {
 	t.Parallel()
-	for _, noun := range []string{"gpus", "orgs", "quotas", "queues", "inference"} {
-		r := run(t, noun, "-o", "json")
-		if r.Code != 2 || strings.TrimSpace(r.Stdout) != "" || !strings.Contains(r.Stderr, "needs a verb") {
-			t.Errorf(
-				"bare %s: exit %d stdout %q stderr %q, want 2, empty, needs a verb",
-				noun,
-				r.Code,
-				r.Stdout,
-				r.Stderr,
-			)
-		}
-	}
-	for _, args := range [][]string{{"gpus", "list"}, {"orgs", "list"}, {"queues", "list"}, {"inference", "list"}} {
-		r := run(t, append(args, "-o", "json")...)
-		if r.Code != 0 {
-			t.Errorf("%v exit %d: %s", args, r.Code, r.Stderr)
-			continue
-		}
-		if _, ok := oneDoc(t, r)["items"].([]any); !ok {
-			t.Errorf("%v: no items array: %s", args, r.Stdout)
-		}
-	}
-	if r := run(t, "quotas", "get", "-o", "json"); r.Code != 0 || oneDoc(t, r)["container_groups_quotas"] == nil {
-		t.Errorf("quotas get exit %d: %s", r.Code, r.Stderr)
-	}
-	org := os.Getenv("SALAD_ORGANIZATION")
-	if r := run(t, "orgs", "get", org, "-o", "json"); r.Code != 0 || oneDoc(t, r)["organization_name"] != org {
-		t.Errorf("orgs get %s exit %d: %s %s", org, r.Code, r.Stdout, r.Stderr)
-	}
-	if r := run(t, "orgs", "get", prefix+"-no-such-org"); r.Code != 4 {
-		t.Errorf("orgs get of an unknown org exit %d, want 4", r.Code)
-	}
-	if r := run(t, "gpus", "get", "rtx 3060 (12 gb)", "-o", "json"); r.Code != 0 || oneDoc(t, r)["prices"] == nil {
-		t.Errorf("gpus get exit %d: %s", r.Code, r.Stderr)
-	}
+	grammarBareNouns(t)
+	grammarListEnvelopes(t)
+	grammarGets(t)
 	if r := run(t, "inference", "get", "transcribe"); r.Code != 0 || !strings.Contains(r.Stdout, "Inputs") {
 		t.Errorf("inference get transcribe exit %d: %s", r.Code, r.Stderr)
 	}
@@ -1275,6 +1379,56 @@ func TestGrammar(t *testing.T) {
 	); r.Code != 2 ||
 		!strings.Contains(r.Stderr, "did you mean saladcloud container-groups create") {
 		t.Errorf("bare create: exit %d stderr %q, want 2 with did-you-mean", r.Code, r.Stderr)
+	}
+}
+
+// grammarBareNouns checks that a bare resource noun is a usage error with empty stdout.
+func grammarBareNouns(t *testing.T) {
+	t.Helper()
+	for _, noun := range []string{"gpus", "orgs", "quotas", "queues", "inference"} {
+		r := run(t, noun, "-o", "json")
+		if r.Code != 2 || strings.TrimSpace(r.Stdout) != "" || !strings.Contains(r.Stderr, "needs a verb") {
+			t.Errorf(
+				"bare %s: exit %d stdout %q stderr %q, want 2, empty, needs a verb",
+				noun,
+				r.Code,
+				r.Stdout,
+				r.Stderr,
+			)
+		}
+	}
+}
+
+// grammarListEnvelopes checks that every list is an items envelope.
+func grammarListEnvelopes(t *testing.T) {
+	t.Helper()
+	for _, args := range [][]string{{"gpus", "list"}, {"orgs", "list"}, {"queues", "list"}, {"inference", "list"}} {
+		r := run(t, append(args, "-o", "json")...)
+		if r.Code != 0 {
+			t.Errorf("%v exit %d: %s", args, r.Code, r.Stderr)
+			continue
+		}
+		if _, ok := oneDoc(t, r)["items"].([]any); !ok {
+			t.Errorf("%v: no items array: %s", args, r.Stdout)
+		}
+	}
+}
+
+// grammarGets checks that the get verbs of quotas, orgs and gpus answer, and an unknown organization is not found.
+func grammarGets(t *testing.T) {
+	t.Helper()
+	if r := run(t, "quotas", "get", "-o", "json"); r.Code != 0 || oneDoc(t, r)["container_groups_quotas"] == nil {
+		t.Errorf("quotas get exit %d: %s", r.Code, r.Stderr)
+	}
+	org := os.Getenv("SALAD_ORGANIZATION")
+	if r := run(t, "orgs", "get", org, "-o", "json"); r.Code != 0 || oneDoc(t, r)["organization_name"] != org {
+		t.Errorf("orgs get %s exit %d: %s %s", org, r.Code, r.Stdout, r.Stderr)
+	}
+	if r := run(t, "orgs", "get", prefix+"-no-such-org"); r.Code != 4 {
+		t.Errorf("orgs get of an unknown org exit %d, want 4", r.Code)
+	}
+	if r := run(t, "gpus", "get", "rtx 3060 (12 gb)", "-o", "json"); r.Code != 0 || oneDoc(t, r)["prices"] == nil {
+		t.Errorf("gpus get exit %d: %s", r.Code, r.Stderr)
 	}
 }
 
@@ -1324,6 +1478,14 @@ func TestQueues(t *testing.T) { //nolint:paralleltest // writes to the live acco
 	if doc := oneDoc(t, r); doc["name"] != q {
 		t.Errorf("created queue name = %v", doc["name"])
 	}
+	queuesReadUpdate(t, q)
+	queuesJobs(t, q)
+	queuesConnectGroup(t, q)
+}
+
+// queuesReadUpdate reads queue q back and updates its description.
+func queuesReadUpdate(t *testing.T, q string) {
+	t.Helper()
 	if g := run(t, "queues", "get", q, "-o", "json"); g.Code != 0 {
 		t.Errorf("queues get exit %d: %s", g.Code, g.Stderr)
 	}
@@ -1341,7 +1503,12 @@ func TestQueues(t *testing.T) { //nolint:paralleltest // writes to the live acco
 		oneDoc(t, u)["description"] != "updated" {
 		t.Errorf("queues update exit %d: %s %s", u.Code, u.Stdout, u.Stderr)
 	}
+}
 
+// queuesJobs submits a job to q, which has no container group, so it stays pending: read it back, list it, and
+// cancel it.
+func queuesJobs(t *testing.T, q string) {
+	t.Helper()
 	job := run(t, "queues", "jobs", "create", "--queue", q, "--input", `{"n": 1}`, "-o", "json")
 	if job.Code != 0 {
 		t.Fatalf("queues jobs create exit %d: %s", job.Code, job.Stderr)
@@ -1370,7 +1537,12 @@ func TestQueues(t *testing.T) { //nolint:paralleltest // writes to the live acco
 	if d := run(t, "queues", "jobs", "cancel", id, "--queue", q, "-o", "json"); d.Code != 0 {
 		t.Errorf("queues jobs cancel (before dispatch) exit %d: %s", d.Code, d.Stderr)
 	}
+}
 
+// queuesConnectGroup checks create --queue: a missing queue is not found, and a group created on q carries its
+// queue connection, the worker note, and its queue autoscaler or a warning that the API dropped it.
+func queuesConnectGroup(t *testing.T, q string) {
+	t.Helper()
 	// create --queue checks the queue exists before creating anything.
 	missing := run(t, "container-groups", "create", name("qmiss"), "--image", "docker.io/library/busybox:1.36",
 		"--no-autostart", "--queue", prefix+"-no-such-queue", "--queue-port", "8080", "--queue-path", "/job")
@@ -1379,15 +1551,11 @@ func TestQueues(t *testing.T) { //nolint:paralleltest // writes to the live acco
 	}
 	time.Sleep(createSpacing)
 	g := name("qcg")
-	auto := filepath.Join(t.TempDir(), "auto.json")
-	err := os.WriteFile(
-		auto,
-		[]byte(`{"queue_autoscaler":{"min_replicas":0,"max_replicas":1,"desired_queue_length":1}}`),
-		0o600,
+	auto := liveTempFile(
+		t,
+		"auto.json",
+		`{"queue_autoscaler":{"min_replicas":0,"max_replicas":1,"desired_queue_length":1}}`,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	cg := run(t, "container-groups", "create", g, "--image", "docker.io/library/busybox:1.36", "--no-autostart",
 		"--queue", q, "--queue-port", "8080", "--queue-path", "/job", "-f", auto, "-o", "json")
 	if cg.Code != 0 {
