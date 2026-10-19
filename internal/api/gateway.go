@@ -226,7 +226,7 @@ func gatewayJSON[T any](ctx context.Context, g *Gateway, method, path string, bo
 	if err != nil {
 		return nil, transportErr(ctx, "network error", err)
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp.Body)
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, readErr(ctx, "response", err)

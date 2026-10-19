@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 )
@@ -115,7 +116,10 @@ func decodeOrdered(dec *json.Decoder) (any, error) {
 				if err != nil {
 					return nil, err
 				}
-				k := kt.(string)
+				k, ok := kt.(string)
+				if !ok {
+					return nil, fmt.Errorf("object key %v is not a string", kt)
+				}
 				v, err := decodeOrdered(dec)
 				if err != nil {
 					return nil, err

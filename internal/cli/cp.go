@@ -6,6 +6,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -234,9 +235,13 @@ set it up, run saladcloud ssh-key setup.`,
 			if err != nil {
 				return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot create the sftp batch file: %v", err)
 			}
-			defer os.Remove(batch.Name())
+			defer func() {
+				if err := os.Remove(batch.Name()); err != nil {
+					fprintf(errw(), "warning: could not remove the sftp batch file %s: %v\n", batch.Name(), err)
+				}
+			}()
 			if _, err := batch.WriteString(buildSFTPBatch(upload, recursive, local, spec.Path)); err != nil {
-				batch.Close()
+				err = errors.Join(err, batch.Close())
 				return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the sftp batch file: %v", err)
 			}
 			if err := batch.Close(); err != nil {

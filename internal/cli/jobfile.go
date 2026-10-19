@@ -32,7 +32,7 @@ func loadJobFile(file string, out any) *clierr.Error {
 		var doc map[string]json.RawMessage
 		if json.Unmarshal(raw, &doc) == nil {
 			if _, ok := doc["input"]; !ok && hasTopLevelUnknown(unknowns) {
-				e.WithHint("%s", jobFileShapeHint)
+				e = e.WithHint("%s", jobFileShapeHint)
 			}
 		}
 		return e

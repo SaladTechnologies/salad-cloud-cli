@@ -557,7 +557,10 @@ func runCreate(
 	// and only then emit — the document must describe the settled state, and
 	// stdout must stay empty if the wait fails (timeout, interrupt). Without
 	// --wait the create response is emitted immediately, as before.
-	wait, timeout, _ := waitFlagValues(cmd)
+	wait, timeout, cerr := waitFlagValues(cmd)
+	if cerr != nil {
+		return cerr
+	}
 	if wait {
 		name = ptr.Deref(group.Name)
 		if name == "" {

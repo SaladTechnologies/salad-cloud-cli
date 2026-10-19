@@ -103,7 +103,11 @@ func (c *stdConsole) read(hidden bool) (string, error) {
 	if err != nil {
 		return c.readCooked(hidden)
 	}
-	defer func() { _ = term.Restore(fd, state) }()
+	defer func() {
+		if err := term.Restore(fd, state); err != nil {
+			fprintf(errw(), "warning: could not restore the terminal: %v\n", err)
+		}
+	}()
 	echo := c.Device()
 	if hidden {
 		echo = io.Discard

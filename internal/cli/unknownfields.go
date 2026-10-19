@@ -226,7 +226,7 @@ func rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
 
 	full := input.UnknownFieldsError("", unknowns, "")
 	if len(clauses) > 0 {
-		full.WithHint("%s", strings.Join(clauses, "; "))
+		full = full.WithHint("%s", strings.Join(clauses, "; "))
 	}
 	// The commonest mistake, editing a `get` document and sending the whole
 	// thing back as a patch, gets only its diagnosis and the command to start

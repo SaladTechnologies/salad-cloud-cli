@@ -153,7 +153,9 @@ func applyAvailabilityFlags(
 		req.StorageAmount = ptr.To(f.Storage * bytesPerGB)
 	}
 	if len(f.Countries) > 0 {
-		req.CountryCodes, _ = normalizeCountries(f.Countries)
+		if codes, cerr := normalizeCountries(f.Countries); cerr == nil { // checked pre-flight
+			req.CountryCodes = codes
+		}
 	}
 	return req
 }

@@ -173,7 +173,7 @@ func instanceAction(group, id, pastTense string, call func() *clierr.Error) erro
 // positional, its ancestor a named flag.
 func addGroupFlag(cmd *cobra.Command) {
 	cmd.Flags().StringP("container-group", "c", "", "the container group (required)")
-	_ = cmd.MarkFlagRequired("container-group")
+	noteTreeErr(cmd.MarkFlagRequired("container-group"))
 	annotate(cmd, annotationFlagForArg, "container-group")
 }
 
@@ -366,7 +366,7 @@ so raising it protects an instance doing long work. 0-100000.`,
 	addGroupFlag(updateCmd)
 	updateCmd.Flags().
 		Int64("deletion-cost", 0, "deletion cost, 0-100000 (required); lower is removed first on scale-down")
-	_ = updateCmd.MarkFlagRequired("deletion-cost")
+	noteTreeErr(updateCmd.MarkFlagRequired("deletion-cost"))
 	instancesCmd.AddCommand(updateCmd)
 
 	instancesCmd.AddCommand(instanceVerb("restart",

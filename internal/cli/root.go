@@ -140,7 +140,7 @@ func shadow(c *cobra.Command, names ...string) {
 	for _, n := range names {
 		if c.PersistentFlags().Lookup(n) == nil {
 			c.PersistentFlags().String(n, "", "")
-			_ = c.PersistentFlags().MarkHidden(n)
+			noteTreeErr(c.PersistentFlags().MarkHidden(n))
 		}
 	}
 }
@@ -171,6 +171,11 @@ func RegisterContainerGroups(cmd *cobra.Command) { containerGroupsCmd.AddCommand
 func Execute() int {
 	prepareTree()
 	registerCompletions(rootCmd)
+	if err := errors.Join(treeErrs...); err != nil {
+		ce := clierr.New(clierr.CodeGeneric, clierr.KindInternal, "the command tree is incomplete: %v", err)
+		printError(ce)
+		return ce.Code
+	}
 	// One signal handler for the whole run: Ctrl-C cancels the root
 	// context. A wait sees that and fails with kind interrupted; a request
 	// in flight ends as "<command> canceled", also interrupted; an
@@ -208,6 +213,19 @@ func Execute() int {
 	}
 	printError(ce)
 	return ce.Code
+}
+
+// treeErrs are the errors from building the command tree. Marking a flag
+// required or hidden, or giving it completion, fails only for a flag the
+// command does not define or completion given twice: a bug, which Execute
+// reports before it runs anything.
+var treeErrs []error
+
+// noteTreeErr records an error from building the command tree.
+func noteTreeErr(err error) {
+	if err != nil {
+		treeErrs = append(treeErrs, err)
+	}
 }
 
 // baseContext is the context a run starts from. Tests replace it to cancel a
@@ -268,7 +286,9 @@ func adoptOutputFlag(cmd *cobra.Command) {
 		return
 	}
 	if f := cmd.Flag("output"); f != nil && f.Changed {
-		_ = output.SetMode(f.Value.String())
+		if cerr := output.SetMode(f.Value.String()); cerr != nil {
+			return // an invalid -o keeps table mode, the form its own error reports in
+		}
 	}
 }
 
@@ -308,7 +328,9 @@ func adoptOutputArg(args []string) {
 		}
 	}
 	if mode != "" {
-		_ = output.SetMode(mode)
+		if cerr := output.SetMode(mode); cerr != nil {
+			return // not reached: mode is one of the three modes
+		}
 	}
 }
 
@@ -358,7 +380,7 @@ func NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error)
 	}
 	res, err := config.Resolve(orgFlag, projectFlag)
 	if err != nil {
-		path, _ := config.Path()
+		path := configPath()
 		return nil, config.Resolved{}, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it")
 	}
@@ -396,7 +418,7 @@ func NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error)
 		return nil, res, cerr
 	}
 	warnOnAssumedProject(client, res)
-	saved, _ := config.Load()
+	saved := savedConfig()
 	client.OnRejected = func() *clierr.Error { return keyRejected(res.APIKey, keyFrom, saved.APIKey) }
 	ctx := cmd.Context()
 	client.OnOrgGone = func() *clierr.Error { return organizationGone(ctx, res) }
@@ -460,7 +482,7 @@ func organizationGone(ctx context.Context, res config.Resolved) *clierr.Error {
 		fix = "to switch, run saladcloud use <org>"
 	}
 	if h := hintClauses(orgsClause(names), fix); h != "" {
-		e.WithHint("%s", h)
+		e = e.WithHint("%s", h)
 	}
 	return e
 }

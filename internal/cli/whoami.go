@@ -85,7 +85,7 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it")
 	}
-	saved, _ := config.Load()
+	saved := savedConfig()
 
 	var authenticated, found *bool
 	var orgs []string

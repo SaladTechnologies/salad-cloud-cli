@@ -59,8 +59,21 @@ func jsonLogText(v any) string {
 			parts = append(parts, k+"="+s)
 			continue
 		}
-		b, _ := json.Marshal(val)
+		b, err := json.Marshal(val)
+		if err != nil {
+			b = []byte(fmt.Sprint(val))
+		}
 		parts = append(parts, k+"="+string(b))
 	}
 	return strings.Join(parts, " ")
+}
+
+// asType returns v as a T, or T's zero value when v holds something else (a
+// field missing from a decoded document, or of another type).
+func asType[T any](v any) T {
+	if t, ok := v.(T); ok {
+		return t
+	}
+	var zero T
+	return zero
 }

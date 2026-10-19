@@ -35,6 +35,14 @@ func debugf(format string, args ...any) {
 	_, _ = io.WriteString(debugOut, line) //nolint:errcheck // a failed write to stderr has nowhere to be reported
 }
 
+// closeBody closes a response body the CLI is done with. Its error says
+// nothing about the response, so it is only reported under --debug.
+func closeBody(body io.Closer) {
+	if err := body.Close(); err != nil && debugLevel != DebugOff {
+		debugf("debug: closing a response body: %v\n", err)
+	}
+}
+
 // SetDebug sets the --debug level for every request the CLI makes.
 func SetDebug(level DebugLevel) { debugLevel = level }
 
@@ -74,7 +82,7 @@ func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	debugf("debug: %s %s -> %d (%s)\n", req.Method, redactText(req.URL.String()), resp.StatusCode, took)
 	if debugLevel >= DebugBodies && resp.Body != nil {
 		body, rerr := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		closeBody(resp.Body)
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 		if rerr != nil {
 			return nil, rerr
@@ -100,7 +108,7 @@ func requestBodyForLog(req *http.Request) string {
 	if err != nil {
 		return "(body not shown)"
 	}
-	defer rc.Close()
+	defer closeBody(rc)
 	b, err := io.ReadAll(rc)
 	if err != nil {
 		return "(body not shown)"
@@ -209,7 +217,10 @@ func writeRedacted(buf *bytes.Buffer, v any, key, parent string) {
 		}
 		writeJSONString(buf, t)
 	default:
-		b, _ := json.Marshal(t)
+		b, err := json.Marshal(t)
+		if err != nil {
+			b = []byte(`null`) // not reached: a decoded JSON value always encodes
+		}
 		buf.Write(b)
 	}
 }

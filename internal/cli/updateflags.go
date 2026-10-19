@@ -255,7 +255,15 @@ func buildUpdatePatch(
 	if len(removed) == 0 {
 		return wire, wire, nil
 	}
-	env := doc["container"].(map[string]any)["environment_variables"].(map[string]any)
+	container, ok := doc["container"].(map[string]any)
+	env, envOK := container["environment_variables"].(map[string]any)
+	if !ok || !envOK {
+		return nil, nil, clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindInternal,
+			"cannot encode the patch: no environment variables to remove from",
+		)
+	}
 	for _, k := range removed {
 		env[k] = nil
 	}

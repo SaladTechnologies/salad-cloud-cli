@@ -82,7 +82,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file: %v", err)
 	}
-	saved, _ := config.Load() // configReady has read it
+	saved := savedConfig() // configReady has read it
 	if res.APIKey == "" {
 		return clierr.New(clierr.CodeAuth, clierr.KindAuth, "no API key set").
 			WithHint("run saladcloud login in a terminal, or set SALAD_API_KEY")
@@ -112,7 +112,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if h := orgsClause(names); h != "" {
-			e.WithHint("%s", h)
+			e = e.WithHint("%s", h)
 		}
 		return e
 	}

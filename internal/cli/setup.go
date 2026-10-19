@@ -63,6 +63,27 @@ func fprint(w io.Writer, args ...any) { writeUnreported(w, fmt.Sprint(args...)) 
 // stderr, in table mode only.
 func hintLine(format string, args ...any) { say("hint: "+format, args...) }
 
+// savedConfig is the config file's contents for a command that has already
+// checked it can be read (configReady) or reported that it cannot; a file
+// that cannot be read reads as empty, as it does to Load's caller anyway.
+func savedConfig() config.File {
+	f, err := config.Load()
+	if err != nil {
+		return config.File{}
+	}
+	return f
+}
+
+// configPath is the config file's location for a message, or "" when the
+// location itself is unknown (no user config directory).
+func configPath() string {
+	p, err := config.Path()
+	if err != nil {
+		return ""
+	}
+	return p
+}
+
 // The two credentials, as messages name them.
 const (
 	labelAPIKey     = "API key"
@@ -154,7 +175,7 @@ func looksLikeKey(v string) bool {
 	if v == "" {
 		return false
 	}
-	saved, _ := config.Load()
+	saved := savedConfig()
 	for _, k := range []string{os.Getenv(envAPIKey), os.Getenv(envGatewayKey), saved.APIKey, saved.GatewayAPIKey} {
 		if key, _ := normalizeKey(k); key != "" && key == v {
 			return true

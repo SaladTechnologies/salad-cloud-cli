@@ -152,8 +152,8 @@ func jobOutputError(out any) (msg, code string) {
 	if !ok {
 		return "", ""
 	}
-	msg, _ = m["error"].(string)
-	code, _ = m["error_code"].(string)
+	msg = asType[string](m["error"])
+	code = asType[string](m["error_code"])
 	return msg, code
 }
 
@@ -472,7 +472,6 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		if err != nil {
 			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, `cannot read "%s": %v`, source, err)
 		}
-		defer fh.Close()
 		remote = transcribeRemoteName(source, time.Now())
 		url, cerr = client.UploadFile(
 			cmd.Context(),
@@ -482,6 +481,9 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 			true,
 			transcribeSignedURLExp,
 		)
+		if err := fh.Close(); err != nil {
+			fprintf(errw(), "warning: could not close %s: %v\n", source, err) // read only: nothing is lost
+		}
 		if cerr != nil {
 			return cerr
 		}

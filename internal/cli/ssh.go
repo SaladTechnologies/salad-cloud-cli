@@ -344,7 +344,7 @@ func runChildWith(stdout, stderr io.Writer, name string, args []string) *clierr.
 		}
 		e := clierr.New(code, clierr.KindChildExit, "%s exited with status %d", name, ee.ExitCode())
 		if ee.ExitCode() == 255 {
-			e.WithHint("%s", sessionFailedHint)
+			e = e.WithHint("%s", sessionFailedHint)
 		}
 		return e
 	}

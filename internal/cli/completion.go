@@ -207,9 +207,9 @@ func registerCompletions(root *cobra.Command) {
 			"severity":       logsq.Severities,
 			"status":         {"pending", "running", "stopped", "succeeded", "failed", "deploying"},
 		}
-		_ = root.RegisterFlagCompletionFunc("output", staticValues("table", "json", "yaml"))
-		_ = root.RegisterFlagCompletionFunc("debug", staticValues("body"))
-		_ = root.RegisterFlagCompletionFunc("org", complete(orgNames))
+		noteTreeErr(root.RegisterFlagCompletionFunc("output", staticValues("table", "json", "yaml")))
+		noteTreeErr(root.RegisterFlagCompletionFunc("debug", staticValues("body")))
+		noteTreeErr(root.RegisterFlagCompletionFunc("org", complete(orgNames)))
 
 		var walk func(c *cobra.Command)
 		walk = func(c *cobra.Command) {
@@ -219,12 +219,12 @@ func registerCompletions(root *cobra.Command) {
 			}
 			for name, f := range flags {
 				if c.LocalFlags().Lookup(name) != nil {
-					_ = c.RegisterFlagCompletionFunc(name, complete(f))
+					noteTreeErr(c.RegisterFlagCompletionFunc(name, complete(f)))
 				}
 			}
 			for name, values := range enums {
 				if c.LocalFlags().Lookup(name) != nil {
-					_ = c.RegisterFlagCompletionFunc(name, staticValues(values...))
+					noteTreeErr(c.RegisterFlagCompletionFunc(name, staticValues(values...)))
 				}
 			}
 			for _, sub := range c.Commands() {

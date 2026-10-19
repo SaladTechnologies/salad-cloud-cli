@@ -40,7 +40,7 @@ func annotate(c *cobra.Command, key, value string) {
 // corrected command: the group is c's argument (or part of cp's path).
 func addHiddenGroupFlag(c *cobra.Command) {
 	c.Flags().StringP("container-group", "c", "", "")
-	_ = c.Flags().MarkHidden("container-group")
+	noteTreeErr(c.Flags().MarkHidden("container-group"))
 	annotate(c, annotationGroupIsArg, "true")
 }
 
@@ -240,7 +240,13 @@ var (
 // false for any other error.
 func argBounds(err error) (minArgs, maxArgs int, ok bool) {
 	msg := err.Error()
-	atoi := func(s string) int { n, _ := strconv.Atoi(s); return n }
+	atoi := func(s string) int {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return 0 // not reached: the patterns match digits only
+		}
+		return n
+	}
 	switch {
 	case noArgsRe.MatchString(msg):
 		return 0, 0, true

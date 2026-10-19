@@ -405,7 +405,7 @@ group has scheduled scaling enabled.`,
 					return clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot render group: %v", err)
 				}
 				if m, ok := doc.(map[string]any); ok {
-					if enabled, _ := m["scheduled-scaling-enabled"].(bool); enabled {
+					if asType[bool](m["scheduled-scaling-enabled"]) {
 						if _, has := m["replicas"]; has {
 							fprintln(
 								os.Stderr,

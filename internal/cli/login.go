@@ -157,7 +157,7 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 	if cerr := configReady("login"); cerr != nil {
 		return cerr
 	}
-	l.saved, _ = config.Load() // configReady has read it
+	l.saved = savedConfig() // configReady has read it
 
 	// Step 1: where the key comes from.
 	switch {
@@ -233,7 +233,10 @@ func (l *login) keyFromStdin() *clierr.Error {
 		}
 		line = answer
 	} else {
-		line, _ = readLine(bufio.NewReader(os.Stdin))
+		var err error
+		if line, err = readLine(bufio.NewReader(os.Stdin)); err != nil {
+			line = "" // a failed read is no key; the check below says so
+		}
 	}
 	if strings.TrimSpace(line) == "" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--api-key - got no key on stdin").
@@ -441,7 +444,7 @@ func (l *login) pickOrganization() (string, *clierr.Error) {
 			e := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `organization "%s"%s not found`, l.orgName, fromTag(l.orgFrom)).
 				WithStatus(404)
 			if h := orgsClause(l.orgNames()); h != "" {
-				e.WithHint("%s", h)
+				e = e.WithHint("%s", h)
 			}
 			return "", e
 		}
@@ -473,7 +476,7 @@ func (l *login) pickOrganization() (string, *clierr.Error) {
 			e := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `saved organization "%s" not found`, saved).
 				WithHint("%s", hintClauses("pass --org or set SALAD_ORGANIZATION", orgsClause(nil)))
 			if validName(saved) { // the organization check answered 404
-				e.WithStatus(404)
+				e = e.WithStatus(404)
 			}
 			return "", e
 		default:

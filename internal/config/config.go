@@ -106,7 +106,9 @@ func Writable() error {
 		return err
 	}
 	if f, openErr := os.OpenFile(p, os.O_WRONLY, 0); openErr == nil {
-		f.Close()
+		if err := f.Close(); err != nil {
+			return err
+		}
 	} else if !errors.Is(openErr, os.ErrNotExist) {
 		return openErr
 	}
@@ -130,7 +132,9 @@ func Writable() error {
 		return err
 	}
 	name := tmp.Name()
-	tmp.Close()
+	if err := tmp.Close(); err != nil {
+		return errors.Join(err, os.Remove(name))
+	}
 	return os.Remove(name)
 }
 
@@ -156,19 +160,22 @@ func Save(f File) error {
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name()) // a no-op once the rename succeeds
+	// On any failure the temp file goes; errors.Join keeps the failure's
+	// message as it is unless the removal fails too.
+	name := tmp.Name()
 	if err := tmp.Chmod(0o600); err != nil && !errors.Is(err, errors.ErrUnsupported) {
-		tmp.Close()
-		return err
+		return errors.Join(err, tmp.Close(), os.Remove(name))
 	}
 	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
+		return errors.Join(err, tmp.Close(), os.Remove(name))
 	}
 	if err := tmp.Close(); err != nil {
-		return err
+		return errors.Join(err, os.Remove(name))
 	}
-	return os.Rename(tmp.Name(), p)
+	if err := os.Rename(name, p); err != nil {
+		return errors.Join(err, os.Remove(name))
+	}
+	return nil
 }
 
 // Resolved is the effective configuration after applying precedence, with

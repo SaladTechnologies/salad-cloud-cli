@@ -137,7 +137,7 @@ func writeQueueJobDetail(w *output.Writer, j *queues.QueueJob) {
 // addQueueFlag registers the required --queue flag on a queue jobs verb.
 func addQueueFlag(cmd *cobra.Command) {
 	cmd.Flags().String("queue", "", "the queue (required; saladcloud queues list shows them)")
-	_ = cmd.MarkFlagRequired("queue")
+	noteTreeErr(cmd.MarkFlagRequired("queue"))
 	annotate(cmd, annotationFlagForArg, "queue")
 }
 

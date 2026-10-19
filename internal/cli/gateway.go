@@ -59,7 +59,7 @@ type gatewayTestResult struct {
 func newGateway() (*api.Gateway, *gatewayKey, *clierr.Error) {
 	res, err := config.Resolve("", "")
 	if err != nil {
-		path, _ := config.Path()
+		path := configPath()
 		return nil, nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it")
 	}
@@ -71,7 +71,7 @@ func newGateway() (*api.Gateway, *gatewayKey, *clierr.Error) {
 		}
 		res.GatewayAPIKey = key
 	}
-	saved, _ := config.Load()
+	saved := savedConfig()
 	g, cerr := api.NewGateway(res)
 	return g, &gatewayKey{res.GatewayAPIKey, from, saved.GatewayAPIKey}, cerr
 }
@@ -197,8 +197,8 @@ every key, so no AI Gateway key is needed; with one set, it is sent.`,
 			return wrapErr(output.Emit(result, func(w *output.Writer) {
 				w.Println("MODEL\tOWNED BY")
 				for _, m := range result.Items {
-					id, _ := m["id"].(string)
-					owner, _ := m["owned_by"].(string)
+					id := asType[string](m["id"])
+					owner := asType[string](m["owned_by"])
 					if owner == "" {
 						owner = "-"
 					}

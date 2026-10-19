@@ -92,7 +92,7 @@ func errorFromBody(status int, body []byte) *clierr.Error {
 	msg, hint := messageFromBody(status, body)
 	e := clierr.HTTP(code, kind, status, msg)
 	if hint != "" {
-		e.WithHint("%s", hint)
+		e = e.WithHint("%s", hint)
 	}
 	return e
 }

@@ -342,7 +342,7 @@ func endpointInputFields(schema *string) []string {
 // addEndpointFlag registers the required --endpoint flag on a jobs verb.
 func addEndpointFlag(cmd *cobra.Command) {
 	cmd.Flags().String("endpoint", "", "the inference endpoint (required; saladcloud inference list shows them)")
-	_ = cmd.MarkFlagRequired("endpoint")
+	noteTreeErr(cmd.MarkFlagRequired("endpoint"))
 	annotate(cmd, annotationFlagForArg, "endpoint")
 }
 

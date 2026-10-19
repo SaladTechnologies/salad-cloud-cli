@@ -100,7 +100,7 @@ func runGatewayLogin(cmd *cobra.Command, _ []string) error {
 		return cerr
 	}
 	g := &gatewayLogin{ctx: cmd.Context(), terminal: atTerminal(), credits: true}
-	g.saved, _ = config.Load() // configReady has read it
+	g.saved = savedConfig() // configReady has read it
 
 	switch {
 	case keyFlag == "-":
@@ -112,7 +112,10 @@ func runGatewayLogin(cmd *cobra.Command, _ []string) error {
 			}
 			line = answer
 		} else {
-			line, _ = readLine(bufio.NewReader(os.Stdin))
+			var err error
+			if line, err = readLine(bufio.NewReader(os.Stdin)); err != nil {
+				line = "" // a failed read is no key; the check below says so
+			}
 		}
 		if strings.TrimSpace(line) == "" {
 			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--api-key - got no key on stdin").
@@ -331,7 +334,7 @@ func (g *gatewayLogin) save() error {
 // reportUnsaved is the result for a key from SALAD_AI_GATEWAY_API_KEY with
 // no terminal: checked, not saved.
 func (g *gatewayLogin) reportUnsaved() error {
-	path, _ := config.Path()
+	path := configPath()
 	say("No AI Gateway key provided, using SALAD_AI_GATEWAY_API_KEY (%s).", maskAPIKey(g.key))
 	err := output.Emit(g.result(false, path, nil), func(w *output.Writer) {
 		fprintln(

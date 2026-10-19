@@ -163,6 +163,16 @@ func TestAliasRule(t *testing.T) {
 	}
 }
 
+// TestCommandTreeBuildsCleanly: every flag the tree marks required or hidden,
+// or gives completion, exists on its command; Execute refuses to run otherwise.
+func TestCommandTreeBuildsCleanly(t *testing.T) {
+	prepareTree()
+	registerCompletions(rootCmd)
+	if len(treeErrs) != 0 {
+		t.Errorf("building the command tree failed: %v", treeErrs)
+	}
+}
+
 // TestAIGatewayHasNoAliases: gateway would bring back the container-gateway
 // confusion and ai is the word any future AI product wants.
 func TestAIGatewayHasNoAliases(t *testing.T) {
