@@ -2,8 +2,10 @@ agentdoc
 anchore
 ARCHITEW
 autostarts
+availabilitycmd
 bodyclose
 buildx
+cerr
 CLAUDECODE
 clierr
 codegen
@@ -28,6 +30,7 @@ esbenp
 exhaustruct
 footgun
 forbidigo
+fset
 gochecksumtype
 gocognit
 goconst
@@ -84,13 +87,16 @@ PATHCONV
 pflag
 pkgs
 publickey
+quotascmd
 readback
+remediations
 rundll
 saladcloud
 saladcloudcli
 saladtechnologies
 sandboxed
 sboms
+sdcard
 SETTINGCHANGE
 startswith
 stretchr

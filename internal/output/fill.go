@@ -250,7 +250,7 @@ func fillElements(arr []any, v reflect.Value, mode fillMode) {
 	}
 }
 
-// fillMapValues fills each value of o, the encoding of map v with string-kinded keys, in place.
+// fillMapValues fills each value of o, the encoding of map v with keys of kind string, in place.
 func fillMapValues(o *object, v reflect.Value, mode fillMode) {
 	for _, k := range o.keys {
 		mv := v.MapIndex(reflect.ValueOf(k).Convert(v.Type().Key()))
