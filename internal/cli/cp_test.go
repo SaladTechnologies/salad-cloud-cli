@@ -94,7 +94,7 @@ func TestParseRemoteSpecGitBashRewrite(t *testing.T) {
 // The test binary stands in for sftp when SALAD_CLI_TEST_FAKE_SFTP is set: it
 // prints sftp's batch echo on stdout and exits, before the test flags parse.
 func init() {
-	switch procEnv.Getenv("SALAD_CLI_TEST_FAKE_SFTP") {
+	switch os.Getenv("SALAD_CLI_TEST_FAKE_SFTP") {
 	case "":
 	case "fail":
 		fmt.Println(`sftp> get "/etc/hostname" "./h"`)
@@ -114,26 +114,20 @@ func runCp(t *testing.T, fake string, mode ...string) (out, stderr string, err e
 	stubAPI(t, map[string]string{
 		"/containers/my-app/instances": `{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","state":"running","ssh_ip":"203.0.113.7","ssh_port":30123}]}`,
 	})
-	old := sftpProgram
-	sftpProgram = os.Args[0]
-	t.Cleanup(func() { sftpProgram = old })
+	old := app.SFTPProgram
+	app.SFTPProgram = os.Args[0]
+	t.Cleanup(func() { app.SFTPProgram = old })
 	t.Setenv("SALAD_CLI_TEST_FAKE_SFTP", fake)
 
-	realOut, realErr := os.Stdout, os.Stderr
-	outFile := must(os.CreateTemp(t.TempDir(), "stdout"))(t)
-	errFile := must(os.CreateTemp(t.TempDir(), "stderr"))(t)
-	os.Stdout, os.Stderr = outFile, errFile
+	var childOut, childErr bytes.Buffer
+	realOut, realErr := app.Stdout, app.Stderr
+	app.Stdout, app.Stderr = &childOut, &childErr
 	out, err = runRoot(t, append([]string{"cg", "cp", "my-app/8a2f:/etc/hostname", "./h"}, mode...)...)
-	os.Stdout, os.Stderr = realOut, realErr
-	// Closed before TempDir's cleanup: Windows cannot remove an open file.
-	noErr(t, outFile.Close())
-	noErr(t, errFile.Close())
-	childOut := must(os.ReadFile(outFile.Name()))(t)
-	if len(childOut) != 0 {
-		t.Errorf("sftp wrote %q to stdout; stdout carries only the result", childOut)
+	app.Stdout, app.Stderr = realOut, realErr
+	if childOut.Len() != 0 {
+		t.Errorf("sftp wrote %q to stdout; stdout carries only the result", childOut.String())
 	}
-	childErr := must(os.ReadFile(errFile.Name()))(t)
-	return out, string(childErr), err
+	return out, childErr.String(), err
 }
 
 // TestCpStdoutCarriesOnlyTheResult: stdout holds the one result document;

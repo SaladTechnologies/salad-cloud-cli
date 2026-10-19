@@ -28,7 +28,7 @@ func init() {
 			if qerr != nil {
 				return qerr
 			}
-			return wrapErr(printer.Emit(q, func(w *output.Writer) {
+			return wrapErr(app.printer.Emit(q, func(w *output.Writer) {
 				cg := q.ContainerGroupsQuotas
 				if cg == nil {
 					w.Println("No container group quotas reported")

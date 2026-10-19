@@ -14,17 +14,17 @@ import (
 
 // tell writes one line of the exchange to the terminal device.
 func tell(format string, args ...any) {
-	fprintf(con.Device(), format+"\n", args...)
+	fprintf(app.Console.Device(), format+"\n", args...)
 }
 
 // ask writes prompt to the terminal device and reads the answer, hidden when
 // asked. Ctrl-C returns errInterrupt and end of input [io.EOF]: both end the
 // exchange (answerEnded), and the terminal is already restored.
 func ask(prompt string, hidden bool) (string, error) {
-	fprint(con.Device(), prompt+" ")
-	read := con.ReadLine
+	fprint(app.Console.Device(), prompt+" ")
+	read := app.Console.ReadLine
 	if hidden {
-		read = con.ReadHidden
+		read = app.Console.ReadHidden
 	}
 	answer, err := read()
 	if err != nil {
@@ -61,10 +61,10 @@ func askUntil(prompt string, hidden bool, check func(answer string) (bool, strin
 // Linux only with a display. The key prompts offer a page only then, and only
 // at a terminal.
 func browserVisible() bool {
-	if procEnv.Getenv("SSH_CONNECTION") != "" || procEnv.Getenv("SSH_TTY") != "" {
+	if app.Env.Getenv("SSH_CONNECTION") != "" || app.Env.Getenv("SSH_TTY") != "" {
 		return false
 	}
-	if procEnv.GOOS == "linux" && procEnv.Getenv("DISPLAY") == "" && procEnv.Getenv("WAYLAND_DISPLAY") == "" {
+	if app.Env.GOOS == "linux" && app.Env.Getenv("DISPLAY") == "" && app.Env.Getenv("WAYLAND_DISPLAY") == "" {
 		return false
 	}
 	return true
@@ -82,7 +82,7 @@ func keyPrompt() string {
 // openOffered opens url after an empty Enter at a key prompt and says what
 // happened; the caller asks again either way.
 func openOffered(url string) {
-	if err := openPage(url); err != nil {
+	if err := app.OpenPage(url); err != nil {
 		tell("Could not open a browser; open %s yourself.", url)
 		return
 	}
@@ -94,11 +94,11 @@ func openOffered(url string) {
 // opener there often has no browser to start and still reports success.
 func opener(url string) (name string, args []string) {
 	switch {
-	case procEnv.GOOS == "windows":
+	case app.Env.GOOS == "windows":
 		return "rundll32", []string{"url.dll,FileProtocolHandler", url}
-	case procEnv.GOOS == "darwin":
+	case app.Env.GOOS == "darwin":
 		return "open", []string{url}
-	case procEnv.Getenv("WSL_DISTRO_NAME") != "":
+	case app.Env.Getenv("WSL_DISTRO_NAME") != "":
 		return "cmd.exe", []string{"/c", "start", "", url}
 	}
 	return "xdg-open", []string{url}

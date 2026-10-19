@@ -50,15 +50,15 @@ const (
 // stubSSH makes ssh present or not, and keys passphrase-protected or not.
 func stubSSH(t *testing.T, sshInstalled, passphrase bool) {
 	t.Helper()
-	oldLook, oldPass := lookPath, hasPassphrase
-	lookPath = func(name string) (string, error) {
+	oldLook, oldPass := app.LookPath, app.HasPassphrase
+	app.LookPath = func(name string) (string, error) {
 		if sshInstalled {
 			return "/usr/bin/" + name, nil
 		}
 		return "", errors.New("not found")
 	}
-	hasPassphrase = func(string) (bool, bool) { return passphrase, true }
-	t.Cleanup(func() { lookPath, hasPassphrase = oldLook, oldPass })
+	app.HasPassphrase = func(string) (bool, bool) { return passphrase, true }
+	t.Cleanup(func() { app.LookPath, app.HasPassphrase = oldLook, oldPass })
 }
 
 func failed(n int, names string) string {
@@ -734,20 +734,20 @@ func TestDoctorJSON(t *testing.T) {
 // TestDoctorReachable: the API row names https://api.salad.com when no
 // stand-in is set, and a failure says to check the network.
 func TestDoctorReachable(t *testing.T) {
-	old := productionAPI
-	t.Cleanup(func() { productionAPI = old })
+	old := app.ProductionAPI
+	t.Cleanup(func() { app.ProductionAPI = old })
 	t.Setenv("SALAD_CLI_API_BASE_URL", "")
 	srv := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) }),
 	)
 	defer srv.Close()
-	productionAPI = srv.URL
+	app.ProductionAPI = srv.URL
 	d := &doctorRun{ctx: t.Context()}
 	if r := d.reachableRow(); r.Status != checkPass || r.Detail != "https://api.salad.com" || r.Hint != nil ||
 		!d.reachable {
 		t.Errorf("reachable: %+v", r)
 	}
-	productionAPI = "http://127.0.0.1:1"
+	app.ProductionAPI = "http://127.0.0.1:1"
 	d = &doctorRun{ctx: t.Context()}
 	if r := d.reachableRow(); r.Status != checkFail || !strings.HasPrefix(r.Detail, "https://api.salad.com: ") ||
 		r.Hint == nil ||

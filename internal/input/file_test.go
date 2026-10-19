@@ -29,7 +29,7 @@ func writeTemp(t *testing.T, name, content string) string {
 func TestLoadYAML(t *testing.T) {
 	p := writeTemp(t, "demo.yaml", "name: hello\nreplicas: 3\n")
 	var d demo
-	if err := Load(p, &d); err != nil {
+	if err := Load(p, nil, &d); err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
 	if d.Name != "hello" || d.Replicas != 3 {
@@ -40,7 +40,7 @@ func TestLoadYAML(t *testing.T) {
 func TestLoadJSON(t *testing.T) {
 	p := writeTemp(t, "demo.json", `{"name": "hello", "replicas": 3}`)
 	var d demo
-	if err := Load(p, &d); err != nil {
+	if err := Load(p, nil, &d); err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
 	if d.Name != "hello" || d.Replicas != 3 {
@@ -59,17 +59,14 @@ func TestLoadStdin(t *testing.T) {
 	if _, err := f.Seek(0, 0); err != nil {
 		t.Fatal(err)
 	}
-	orig := os.Stdin
-	os.Stdin = f
 	defer func() {
-		os.Stdin = orig
 		if err := f.Close(); err != nil {
 			t.Error(err)
 		}
 	}()
 
 	var d demo
-	if cerr := Load("-", &d); cerr != nil {
+	if cerr := Load("-", f, &d); cerr != nil {
 		t.Fatalf("Load returned error: %v", cerr)
 	}
 	if d.Name != "piped" || d.Replicas != 1 {
@@ -79,7 +76,7 @@ func TestLoadStdin(t *testing.T) {
 
 func TestLoadMissingFile(t *testing.T) {
 	var d demo
-	err := Load(filepath.Join(t.TempDir(), "no-such-file.yaml"), &d)
+	err := Load(filepath.Join(t.TempDir(), "no-such-file.yaml"), nil, &d)
 	if err == nil {
 		t.Fatal("Load returned nil for a missing file")
 	}
@@ -94,7 +91,7 @@ func TestLoadMissingFile(t *testing.T) {
 func TestLoadMalformedYAML(t *testing.T) {
 	p := writeTemp(t, "bad.yaml", "name: [unclosed\n")
 	var d demo
-	err := Load(p, &d)
+	err := Load(p, nil, &d)
 	if err == nil {
 		t.Fatal("Load returned nil for malformed YAML")
 	}
@@ -121,7 +118,7 @@ func TestLoadRawPreservesEmptyArray(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := writeTemp(t, tt.file, tt.content)
 			var patch containergroups.ContainerGroupPatch
-			raw, cerr := LoadRaw(p, &patch)
+			raw, cerr := LoadRaw(p, nil, &patch)
 			if cerr != nil {
 				t.Fatalf("LoadRaw returned error: %v", cerr)
 			}
@@ -138,7 +135,7 @@ func TestLoadRawPreservesEmptyArray(t *testing.T) {
 
 func TestLoadRawMissingFile(t *testing.T) {
 	var d demo
-	raw, err := LoadRaw(filepath.Join(t.TempDir(), "no-such-file.yaml"), &d)
+	raw, err := LoadRaw(filepath.Join(t.TempDir(), "no-such-file.yaml"), nil, &d)
 	if err == nil {
 		t.Fatal("LoadRaw returned nil for a missing file")
 	}
@@ -156,7 +153,7 @@ func TestLoadRawMissingFile(t *testing.T) {
 func TestLoadScheduledScalingExampleRoundTrip(t *testing.T) {
 	path := filepath.Join("..", "..", "examples", "scheduled-scaling.yaml")
 	var req containergroups.ContainerGroupCreationRequest
-	raw, cerr := LoadRaw(path, &req)
+	raw, cerr := LoadRaw(path, nil, &req)
 	if cerr != nil {
 		t.Fatalf("LoadRaw returned error: %v", cerr)
 	}
@@ -187,7 +184,7 @@ func TestLoadScheduledScalingExampleRoundTrip(t *testing.T) {
 // into a ContainerGroupCreationRequest with every demo-critical field set.
 func TestLoadExampleRoundTrip(t *testing.T) {
 	var req containergroups.ContainerGroupCreationRequest
-	if err := Load(filepath.Join("..", "..", "examples", "hello-cpu.yaml"), &req); err != nil {
+	if err := Load(filepath.Join("..", "..", "examples", "hello-cpu.yaml"), nil, &req); err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
 	if got := ptr.Deref(req.Name); got != "saladcloud-demo" {
@@ -248,7 +245,7 @@ func TestLoadExampleRoundTrip(t *testing.T) {
 // exhibit in the README and docs/guide.md).
 func TestLoadSleepExampleRoundTrip(t *testing.T) {
 	var req containergroups.ContainerGroupCreationRequest
-	if err := Load(filepath.Join("..", "..", "examples", "sleep-cpu.json"), &req); err != nil {
+	if err := Load(filepath.Join("..", "..", "examples", "sleep-cpu.json"), nil, &req); err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
 	if got := ptr.Deref(req.Name); got != "sleep-demo" {
@@ -295,7 +292,7 @@ func TestLoadSleepExampleRoundTrip(t *testing.T) {
 // TestLoadGpuExampleRoundTrip pins examples/gpu-small.yaml.
 func TestLoadGpuExampleRoundTrip(t *testing.T) {
 	var req containergroups.ContainerGroupCreationRequest
-	if err := Load(filepath.Join("..", "..", "examples", "gpu-small.yaml"), &req); err != nil {
+	if err := Load(filepath.Join("..", "..", "examples", "gpu-small.yaml"), nil, &req); err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
 	if got := ptr.Deref(req.Name); got != "gpu-demo" {

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -42,18 +41,9 @@ type doctorResult struct {
 	EnvOverrides []string      `json:"env_overrides"`
 }
 
-// apiHost is how doctor names the production API; productionAPI is where
+// apiHost is how doctor names the production API; Deps.ProductionAPI is where
 // it probes it (tests point it at a stand-in).
 const apiHost = "https://api.salad.com"
-
-var productionAPI = api.DefaultBaseURL
-
-// lookPath and hasPassphrase are the system checks the SSH row makes;
-// tests replace them.
-var (
-	lookPath      = exec.LookPath
-	hasPassphrase = keyHasPassphrase
-)
 
 func init() {
 	cmd := &cobra.Command{
@@ -140,7 +130,7 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 			ovs = append(ovs, o)
 		}
 	}
-	err := printer.Emit(doctorResult{Items: rows, EnvOverrides: overrideNames(ovs)}, func(w *output.Writer) {
+	err := app.printer.Emit(doctorResult{Items: rows, EnvOverrides: overrideNames(ovs)}, func(w *output.Writer) {
 		w.Println("CHECK\tSTATUS\tDETAIL")
 		for _, r := range rows {
 			w.Printf("%s\t%s\t%s\n", r.Name, strings.ToUpper(r.Status), r.Detail)
@@ -163,7 +153,7 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 		checks = "check"
 	}
 	hint := "each failing row's hint above says how to fix it"
-	if printer.Machine() {
+	if app.printer.Machine() {
 		hint = "each failing row's hint says how to fix it"
 	}
 	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%d %s failed: %s", len(failed), checks, strings.Join(failed, ", ")).
@@ -181,9 +171,9 @@ func row(name, status, detail, hint string) checkResult {
 // configRow checks the config file; the run's settings resolve from it, or
 // from flags and the environment alone when it cannot be read.
 func (d *doctorRun) configRow() checkResult {
-	path, err := config.Path(procEnv)
+	path, err := config.Path(app.Env)
 	if err != nil {
-		d.res = config.ResolveFrom(procEnv,
+		d.res = config.ResolveFrom(app.Env,
 			config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
 			d.orgFlag,
 			d.projectFlag,
@@ -191,9 +181,9 @@ func (d *doctorRun) configRow() checkResult {
 		return row("config", checkFail, "no config location: "+config.Reason(err),
 			"set SALAD_CLI_CONFIG_DIR, or use SALAD_API_KEY, SALAD_ORGANIZATION and SALAD_PROJECT")
 	}
-	f, err := config.Load(procEnv)
+	f, err := config.Load(app.Env)
 	if err != nil {
-		d.res = config.ResolveFrom(procEnv,
+		d.res = config.ResolveFrom(app.Env,
 			config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
 			d.orgFlag,
 			d.projectFlag,
@@ -206,8 +196,8 @@ func (d *doctorRun) configRow() checkResult {
 		)
 	}
 	d.saved = f
-	d.res = config.ResolveFrom(procEnv, f, d.orgFlag, d.projectFlag)
-	if err := config.Writable(procEnv); err != nil {
+	d.res = config.ResolveFrom(app.Env, f, d.orgFlag, d.projectFlag)
+	if err := config.Writable(app.Env); err != nil {
 		return row(
 			"config",
 			checkWarn,
@@ -223,7 +213,7 @@ func (d *doctorRun) configRow() checkResult {
 
 // reachableRow checks the API answers at all (any HTTP status will do).
 func (d *doctorRun) reachableRow() checkResult {
-	base, shown, override := productionAPI, apiHost, procEnv.Getenv("SALAD_CLI_API_BASE_URL")
+	base, shown, override := app.ProductionAPI, apiHost, app.Env.Getenv("SALAD_CLI_API_BASE_URL")
 	if override != "" {
 		base, shown = override, override
 	}
@@ -546,7 +536,7 @@ func (d *doctorRun) gatewayRow() checkResult {
 
 func (*doctorRun) sshRow() checkResult {
 	const name = "local-ssh-key-present"
-	home, err := config.HomeDir(procEnv)
+	home, err := config.HomeDir(app.Env)
 	if err != nil {
 		return row(name, checkWarn, "cannot find the home folder: "+config.Reason(err), "")
 	}
@@ -559,11 +549,11 @@ func (*doctorRun) sshRow() checkResult {
 			"to use container-groups ssh, cp or sftp, run saladcloud ssh-key setup",
 		)
 	}
-	if _, err := lookPath("ssh"); err != nil {
+	if _, err := app.LookPath("ssh"); err != nil {
 		return row(name, checkWarn, "key found, but ssh is not installed", sshMissingHint("ssh"))
 	}
 	priv := strings.TrimSuffix(pub, ".pub")
-	if enc, known := hasPassphrase(priv); known && enc {
+	if enc, known := app.HasPassphrase(priv); known && enc {
 		hint := fmt.Sprintf(
 			"run ssh-add %s first; to generate a key without one, run saladcloud ssh-key setup --generate",
 			priv,

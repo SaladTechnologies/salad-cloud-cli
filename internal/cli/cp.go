@@ -39,9 +39,6 @@ type cpResult struct {
 	Dst      string `json:"dst"`
 }
 
-// sftpProgram is the sftp client cp runs. Tests replace it.
-var sftpProgram = "sftp"
-
 // msysPathList matches what Git Bash (MSYS) makes of an argument such as
 // my-app/8a2f:/data before the CLI sees it: a slash before the colon makes
 // it look like a POSIX path list, which MSYS converts into a Windows one,
@@ -222,7 +219,7 @@ set it up, run saladcloud ssh-key setup.`,
 			if cerr != nil {
 				return groupNotFound(cerr, spec.Group, client.Org(), client.Project())
 			}
-			inst, cerr := pickInstance(os.Stderr, collection.Instances, spec.Group, spec.InstancePrefix)
+			inst, cerr := pickInstance(errw(), collection.Instances, spec.Group, spec.InstancePrefix)
 			if cerr != nil {
 				return cerr
 			}
@@ -255,10 +252,10 @@ set it up, run saladcloud ssh-key setup.`,
 			// held back, and its last line ends the error when it fails.
 			sftpArgs := buildSFTPArgs(target, user, resolveIdentity(identity), batch.Name())
 			var runErr *clierr.Error
-			if printer.Machine() {
-				runErr = runChildQuiet(sftpProgram, sftpArgs)
+			if app.printer.Machine() {
+				runErr = runChildQuiet(app.SFTPProgram, sftpArgs)
 			} else {
-				runErr = runChildTo(os.Stderr, sftpProgram, sftpArgs)
+				runErr = runChildTo(errw(), app.SFTPProgram, sftpArgs)
 			}
 			if runErr != nil {
 				return runErr
@@ -271,7 +268,7 @@ set it up, run saladcloud ssh-key setup.`,
 				Src:      args[0],
 				Dst:      args[1],
 			}
-			return wrapErr(printer.Emit(v, func(w *output.Writer) {
+			return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
 				w.Printf("Copied %s to %s (instance %s)\n", v.Src, v.Dst, v.Instance)
 			}))
 		},

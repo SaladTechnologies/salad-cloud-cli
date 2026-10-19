@@ -360,8 +360,8 @@ func TestBrowserOffer(t *testing.T) {
 		{"darwin", []string{"SSH_TTY", "/dev/ttys001"}, false},
 		{"windows", []string{"SSH_CONNECTION", "x"}, false},
 	} {
-		old := procEnv.GOOS
-		procEnv.GOOS = tc.os
+		old := app.Env.GOOS
+		app.Env.GOOS = tc.os
 		for _, v := range []string{"DISPLAY", "WAYLAND_DISPLAY", "SSH_CONNECTION", "SSH_TTY"} {
 			t.Setenv(v, "")
 		}
@@ -375,15 +375,15 @@ func TestBrowserOffer(t *testing.T) {
 		if got := keyPrompt(); browserVisible() != tc.ok || got != want {
 			t.Errorf("%s %v: visible %t, prompt %q", tc.os, tc.env, browserVisible(), got)
 		}
-		procEnv.GOOS = old
+		app.Env.GOOS = old
 	}
 }
 
 func TestOpener(t *testing.T) {
 	const url = "https://portal.salad.com/api-key"
 	t.Setenv("WSL_DISTRO_NAME", "")
-	old := procEnv.GOOS
-	t.Cleanup(func() { procEnv.GOOS = old })
+	old := app.Env.GOOS
+	t.Cleanup(func() { app.Env.GOOS = old })
 	for _, tc := range []struct {
 		os, wsl, want string
 	}{
@@ -392,7 +392,7 @@ func TestOpener(t *testing.T) {
 		{"linux", "", "xdg-open " + url},
 		{"linux", "Ubuntu", "cmd.exe /c start  " + url},
 	} {
-		procEnv.GOOS = tc.os
+		app.Env.GOOS = tc.os
 		t.Setenv("WSL_DISTRO_NAME", tc.wsl)
 		name, args := opener(url)
 		if got := name + " " + strings.Join(args, " "); got != tc.want {
@@ -404,12 +404,12 @@ func TestOpener(t *testing.T) {
 func TestOpenOffered(t *testing.T) {
 	const url = "https://portal.salad.com/api-key"
 	fc := &fakeConsole{terminal: true}
-	oldCon, oldOpen := con, openPage
-	t.Cleanup(func() { con, openPage = oldCon, oldOpen })
-	con = fc
-	openPage = func(string) error { return nil }
+	oldCon, oldOpen := app.Console, app.OpenPage
+	t.Cleanup(func() { app.Console, app.OpenPage = oldCon, oldOpen })
+	app.Console = fc
+	app.OpenPage = func(string) error { return nil }
 	openOffered(url)
-	openPage = func(string) error { return errors.New("no opener") }
+	app.OpenPage = func(string) error { return errors.New("no opener") }
 	openOffered(url)
 	want := "Opening https://portal.salad.com/api-key in your browser.\nCould not open a browser; open " +
 		"https://portal.salad.com/api-key yourself.\n"
@@ -421,10 +421,10 @@ func TestOpenOffered(t *testing.T) {
 // TestAskUntil: prompts and retry lines go to the terminal device, answers
 // are re-asked until accepted, and Ctrl-C or end of input end the exchange.
 func TestAskUntil(t *testing.T) {
-	old := con
-	t.Cleanup(func() { con = old })
+	old := app.Console
+	t.Cleanup(func() { app.Console = old })
 	fc := &fakeConsole{terminal: true, answers: []string{"Acme Prod", "my-org"}}
-	con = fc
+	app.Console = fc
 	got, err := askUntil("Type an organization name:", false, func(a string) (bool, string, *clierr.Error) {
 		if !validName(a) {
 			return false, nameRetry("organization", a, ""), nil
@@ -441,7 +441,7 @@ func TestAskUntil(t *testing.T) {
 		t.Errorf("device:\n%s\nwant:\n%s", fc.device.String(), want)
 	}
 	for _, end := range []string{keyCtrlC, keyEOF} {
-		con = &fakeConsole{terminal: true, answers: []string{end}}
+		app.Console = &fakeConsole{terminal: true, answers: []string{end}}
 		if _, err := askUntil(
 			"Paste it here, hidden:",
 			true,

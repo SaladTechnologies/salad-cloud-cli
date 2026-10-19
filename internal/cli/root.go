@@ -6,13 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"os"
-	"os/signal"
 	"strings"
-	"sync/atomic"
-	"syscall"
 
 	"github.com/spf13/cobra"
 
@@ -66,7 +61,7 @@ stderr as a single-line JSON document: {"error": {...}}, in yaml mode too.
 		if err != nil {
 			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
 		}
-		if cerr := printer.SetMode(m); cerr != nil {
+		if cerr := app.printer.SetMode(m); cerr != nil {
 			return cerr
 		}
 		d := fr.String("debug")
@@ -75,11 +70,11 @@ stderr as a single-line JSON document: {"error": {...}}, in yaml mode too.
 		}
 		switch d {
 		case "":
-			debugLevel = api.DebugOff
+			app.debugLevel = api.DebugOff
 		case "requests":
-			debugLevel = api.DebugRequests
+			app.debugLevel = api.DebugRequests
 		case "body":
-			debugLevel = api.DebugBodies
+			app.debugLevel = api.DebugBodies
 		default:
 			return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --debug "%s"`, d).
 				WithHint("use --debug or --debug=body")
@@ -168,7 +163,10 @@ func RegisterContainerGroups(cmd *cobra.Command) { containerGroupsCmd.AddCommand
 // printed to stderr: in json mode as a one-line {"error": {...}} document,
 // in table mode as "saladcloud: error: <message>" and, when the error has a
 // fix, "hint: <fix>" under it.
-func Execute() int {
+func Run(ctx context.Context, d Deps) int {
+	prev := app
+	app = newApp(d)
+	defer func() { app = prev }()
 	prepareTree()
 	registerCompletions(rootCmd)
 	if err := errors.Join(treeErrs...); err != nil {
@@ -176,19 +174,7 @@ func Execute() int {
 		printError(ce)
 		return ce.Code
 	}
-	// One signal handler for the whole run: Ctrl-C cancels the root
-	// context. A wait sees that and fails with kind interrupted; a request
-	// in flight ends as "<command> canceled", also interrupted; an
-	// open-ended command (logs --follow, --watch) stops cleanly with exit 0.
-	// After the first signal the default handler is back, so a second
-	// Ctrl-C kills the process.
-	ctx, stop := signal.NotifyContext(baseContext(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	go func() {
-		<-ctx.Done()
-		stop()
-	}()
-	rootCmd.SetArgs(commandLine)
+	rootCmd.SetArgs(app.Args)
 	cmd, err := rootCmd.ExecuteContextC(ctx)
 	// cobra keeps the context on every command it ran; clear it so a later
 	// in-process run (tests) does not inherit this run's canceled one.
@@ -199,14 +185,14 @@ func Execute() int {
 		return clierr.CodeOK
 	}
 	adoptOutputFlag(cmd)
-	adoptOutputArg(commandLine)
+	adoptOutputArg(app.Args)
 	var ce *clierr.Error
 	if !errors.As(err, &ce) {
 		// Anything that escapes without a *clierr.Error came from cobra's
 		// own parsing (unknown command, bad args, flag errors that bypass
 		// the flag error func) — those are usage errors by definition,
 		// because command RunE funcs always return *clierr.Error.
-		ce = suggestUnknownCommand(rootCmd, err.Error(), commandLine)
+		ce = suggestUnknownCommand(rootCmd, err.Error(), app.Args)
 	}
 	if canceledByCtrlC(ctx, ce) {
 		ce = clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "%s canceled", commandPath(cmd))
@@ -228,23 +214,10 @@ func noteTreeErr(err error) {
 	}
 }
 
-// debugLevel is the run's --debug level.
-var debugLevel api.DebugLevel
-
 // apiOptions is how the run's API clients are built.
 func apiOptions() api.Options {
-	return api.Options{Getenv: procEnv.Getenv, Debug: debugLevel, DebugOut: errw(), Backoff: nil, Now: nil}
+	return api.Options{Getenv: app.Env.Getenv, Debug: app.debugLevel, DebugOut: errw(), Backoff: nil, Now: nil}
 }
-
-// procEnv is the environment the run reads, the process's for now.
-var procEnv = config.ProcessEnv()
-
-// printer is the run's render path: stdout and the --output mode.
-var printer = output.NewPrinter(os.Stdout)
-
-// baseContext is the context a run starts from. Tests replace it to cancel a
-// run the way Ctrl-C does.
-var baseContext = context.Background
 
 // canceledByCtrlC reports whether ce is a request Ctrl-C stopped, or any
 // failure that followed Ctrl-C: either way the command was canceled. A
@@ -296,11 +269,11 @@ var contextFreeCommands = map[string]bool{
 // that error still reports in table form. Errors raised before the flag was
 // parsed are adoptOutputArg's.
 func adoptOutputFlag(cmd *cobra.Command) {
-	if cmd == nil || printer.Machine() {
+	if cmd == nil || app.printer.Machine() {
 		return
 	}
 	if f := cmd.Flag("output"); f != nil && f.Changed {
-		if cerr := printer.SetMode(f.Value.String()); cerr != nil {
+		if cerr := app.printer.SetMode(f.Value.String()); cerr != nil {
 			return // an invalid -o keeps table mode, the form its own error reports in
 		}
 	}
@@ -313,7 +286,7 @@ func adoptOutputFlag(cmd *cobra.Command) {
 // after "--" are arguments, not flags; an invalid value is ignored, so that
 // error reports in table form.
 func adoptOutputArg(args []string) {
-	if printer.Machine() {
+	if app.printer.Machine() {
 		return
 	}
 	mode := ""
@@ -342,30 +315,24 @@ func adoptOutputArg(args []string) {
 		}
 	}
 	if mode != "" {
-		if cerr := printer.SetMode(mode); cerr != nil {
+		if cerr := app.printer.SetMode(mode); cerr != nil {
 			return // not reached: mode is one of the three modes
 		}
 	}
 }
 
-// commandLine is the command line Execute runs. Tests replace it.
-var commandLine = os.Args[1:]
-
-// errOut is where Execute writes errors. Tests may swap it.
-var errOut io.Writer = os.Stderr
-
 func printError(e *clierr.Error) {
 	// Errors are the one-line JSON document in every machine mode, yaml
 	// included, so a script parses one error shape.
-	if printer.Machine() {
+	if app.printer.Machine() {
 		if payload, err := output.Marshal(map[string]*clierr.Error{"error": e}); err == nil {
-			fprintln(errOut, string(output.ASCII(payload)))
+			fprintln(app.Stderr, string(output.ASCII(payload)))
 			return
 		}
 	}
-	fprintln(errOut, "saladcloud: error: "+e.Message)
+	fprintln(app.Stderr, "saladcloud: error: "+e.Message)
 	if h := e.HintText(); h != "" {
-		fprintln(errOut, "hint: "+h)
+		fprintln(app.Stderr, "hint: "+h)
 	}
 }
 
@@ -392,7 +359,7 @@ func NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error)
 	if cerr := fr.Err(); cerr != nil {
 		return nil, config.Resolved{}, cerr
 	}
-	res, err := config.Resolve(procEnv, orgFlag, projectFlag)
+	res, err := config.Resolve(app.Env, orgFlag, projectFlag)
 	if err != nil {
 		path := configPath()
 		return nil, config.Resolved{}, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
@@ -426,7 +393,7 @@ func NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error)
 		}
 		res.APIKey = key
 	}
-	assumedWarned.Store(false)
+	app.assumedWarned.Store(false)
 	client, cerr := api.New(res, apiOptions())
 	if cerr != nil {
 		return nil, res, cerr
@@ -515,16 +482,12 @@ func organizationGone(ctx context.Context, res config.Resolved) *clierr.Error {
 	return e
 }
 
-// assumedWarned keeps the assumed-project warning to one line per command,
-// however many clients the command builds (a --from source has its own).
-var assumedWarned atomic.Bool
-
 // warnOnAssumedProject makes c print the assumed-project warning, once per
 // command, the first time it uses an assumed project.
 func warnOnAssumedProject(c *api.Client, res config.Resolved) {
 	c.OnAssumedProject = func() {
-		if assumedWarned.CompareAndSwap(false, true) {
-			fprintln(os.Stderr, assumedProjectWarning(res))
+		if app.assumedWarned.CompareAndSwap(false, true) {
+			fprintln(errw(), assumedProjectWarning(res))
 		}
 	}
 }

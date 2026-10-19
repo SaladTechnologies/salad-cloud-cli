@@ -75,7 +75,7 @@ func runAgentInit(cmd *cobra.Command, _ []string) error {
 
 	if printOnly {
 		res := agentInitResult{Action: "printed", OK: true, Reason: "--print", Version: version.Version, File: nil}
-		return wrapErr(printer.Emit(res, func(w *output.Writer) {
+		return wrapErr(app.printer.Emit(res, func(w *output.Writer) {
 			w.Print(agentdoc.Block(version.Version))
 		}))
 	}
@@ -84,7 +84,7 @@ func runAgentInit(cmd *cobra.Command, _ []string) error {
 		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, `--dir "%s" is not a directory`, dir)
 	}
 
-	target := agentdoc.PickFile(dir, file, procEnv.Getenv)
+	target := agentdoc.PickFile(dir, file, app.Env.Getenv)
 
 	existing, err := os.ReadFile(target.Path)
 	created := false
@@ -136,7 +136,7 @@ func runAgentInit(cmd *cobra.Command, _ []string) error {
 		shown = rel
 	}
 	res := agentInitResult{File: &shown, Action: action, OK: true, Reason: target.Reason, Version: version.Version}
-	return wrapErr(printer.Emit(res, func(w *output.Writer) {
+	return wrapErr(app.printer.Emit(res, func(w *output.Writer) {
 		switch action {
 		case "created":
 			w.Printf("Created %s with the SaladCloud block (%s)\n", shown, target.Reason)

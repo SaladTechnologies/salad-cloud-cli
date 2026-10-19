@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 	"github.com/spf13/cobra"
@@ -128,13 +127,13 @@ write (the API does not honor the flag in the same patch as replicas), for
 					); err != nil {
 						return err
 					}
-					fprintln(os.Stderr, "note: scheduled scaling re-enabled (--keep-schedule)")
+					fprintln(errw(), "note: scheduled scaling re-enabled (--keep-schedule)")
 				case before != nil && !ptr.Deref(before.ScheduledScalingEnabled):
-					fprintln(os.Stderr, "note: --keep-schedule: scheduled scaling was not enabled, nothing to keep")
+					fprintln(errw(), "note: --keep-schedule: scheduled scaling was not enabled, nothing to keep")
 				}
 			}
 			v := scaleResult{Name: args[0], Action: "scaled", Replicas: n, OK: true}
-			return wrapErr(printer.Emit(v, func(w *output.Writer) {
+			return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
 				w.Printf("Scaled %s to %s\n", v.Name, replicas(v.Replicas))
 			}))
 		},

@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -190,7 +189,7 @@ func groupAction(name, pastTense string, call func() *clierr.Error) error {
 		return err
 	}
 	v := groupActionResult{Name: name, Action: pastTense, OK: true}
-	return wrapErr(printer.Emit(v, func(w *output.Writer) {
+	return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
 		w.Printf("Container group %s %s\n", v.Name, v.Action)
 	}))
 }
@@ -226,7 +225,7 @@ func startStopRunE(
 			}
 		}
 		v := groupActionResult{Name: args[0], Action: pastTense, OK: true}
-		return wrapErr(printer.Emit(v, func(w *output.Writer) {
+		return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
 			w.Printf("Container group %s %s\n", v.Name, v.Action)
 		}))
 	}
@@ -282,7 +281,7 @@ the projects you want listed.`,
 						groups, lerr := pc.ListGroups(ctx)
 						if lerr != nil {
 							if lerr.Code == clierr.CodeNotFound {
-								fprintf(os.Stderr, "warning: project \"%s\" not found, skipped\n", proj)
+								fprintf(errw(), "warning: project \"%s\" not found, skipped\n", proj)
 								continue
 							}
 							return lerr
@@ -312,7 +311,7 @@ the projects you want listed.`,
 				payload := struct {
 					Items []shared.ContainerGroup `json:"items"`
 				}{items}
-				if err := printer.Emit(payload, func(w *output.Writer) {
+				if err := app.printer.Emit(payload, func(w *output.Writer) {
 					if multi {
 						w.Print("PROJECT\t")
 					}
@@ -333,20 +332,20 @@ the projects you want listed.`,
 				// A bare header is ambiguous for humans; disambiguate an
 				// empty listing on stderr so the stdout contract (and json
 				// mode) stays unchanged.
-				if len(items) == 0 && printer.Mode() == "table" {
+				if len(items) == 0 && app.printer.Mode() == "table" {
 					switch {
 					case multi:
-						fprintln(os.Stderr, "no container groups in the listed projects")
+						fprintln(errw(), "no container groups in the listed projects")
 					case statusFilter != "":
 						fprintf(
-							os.Stderr,
+							errw(),
 							"no container groups in %s/%s matching --status %s\n",
 							res.Organization,
 							res.Project,
 							statusFilter,
 						)
 					default:
-						fprintf(os.Stderr, "no container groups in %s/%s\n", res.Organization, res.Project)
+						fprintf(errw(), "no container groups in %s/%s\n", res.Organization, res.Project)
 					}
 				}
 				return nil
@@ -408,7 +407,7 @@ group has scheduled scaling enabled.`,
 					if asType[bool](m["scheduled-scaling-enabled"]) {
 						if _, has := m["replicas"]; has {
 							fprintln(
-								os.Stderr,
+								errw(),
 								"note: replicas is included; writing it puts scheduled scaling on hold, so drop it unless you mean to change it",
 							)
 						}
@@ -416,7 +415,7 @@ group has scheduled scaling enabled.`,
 				}
 				if len(dropped) > 0 {
 					fprintf(
-						os.Stderr,
+						errw(),
 						"note: %d field(s) update cannot write were omitted: %s\n",
 						len(dropped),
 						joinPaths(dropped),
@@ -427,7 +426,7 @@ group has scheduled scaling enabled.`,
 				if err != nil {
 					return clierr.New(clierr.CodeGeneric, clierr.KindInternal, "%v", err)
 				}
-				_, err = fmt.Fprintln(printer.Out(), string(output.ASCII(data)))
+				_, err = fmt.Fprintln(app.printer.Out(), string(output.ASCII(data)))
 				return wrapErr(err)
 			}
 			return runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
@@ -435,7 +434,7 @@ group has scheduled scaling enabled.`,
 				if cerr != nil {
 					return groupNotFound(cerr, args[0], client.Org(), client.Project())
 				}
-				if err := printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }); err != nil {
+				if err := app.printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }); err != nil {
 					return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)
 				}
 				return nil
@@ -499,7 +498,7 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 			if cerr := validateCommand(command, commandGiven); cerr != nil {
 				return cerr
 			}
-			warnCommand(os.Stderr, cmd, command)
+			warnCommand(errw(), cmd, command)
 			wait, timeout, cerr := settleFlagValues(cmd)
 			if cerr != nil {
 				return cerr // pre-flight: a bad --timeout must not patch anything
@@ -530,11 +529,11 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 			case file == "":
 				// Flags only: the patch is built from them below.
 			case allowUnknown:
-				r, unknowns, err := input.LoadLenient(file, &patch)
+				r, unknowns, err := input.LoadLenient(file, app.Stdin, &patch)
 				if err != nil {
 					return err
 				}
-				warnUnknowns(os.Stderr, unknowns, false)
+				warnUnknowns(errw(), unknowns, false)
 				raw = r
 			default:
 				// Strict: load leniently, then reject with per-field advice
@@ -542,7 +541,7 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 				// one (piped back from `get -o json`) gets an explanation
 				// rather than a suggestion to force it through and have the
 				// API discard it.
-				r, u, err := input.LoadLenient(file, &patch)
+				r, u, err := input.LoadLenient(file, app.Stdin, &patch)
 				if err != nil {
 					return err
 				}
@@ -574,7 +573,7 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 			if err != nil {
 				return err
 			}
-			return wrapErr(printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
+			return wrapErr(app.printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
 		},
 	}
 	updateCmd.Flags().StringP("file", "f", "", "container group patch file (.json/.yaml; \"-\" reads stdin)")
@@ -671,13 +670,13 @@ func applyPatch(
 		group = final
 	} else if ptr.Deref(group.PendingChange) {
 		fprintf(
-			os.Stderr,
+			errw(),
 			"note: change accepted, still pending, not verified (--no-wait); to check it, run saladcloud container-groups get %s\n",
 			name,
 		)
 	}
 	// "Did what I asked for happen?" and "did anything else happen?".
-	warnIgnoredFields(os.Stderr, findIgnoredFields(intent, before, group))
-	warnUnrequestedChanges(os.Stderr, findUnrequestedChanges(intent, before, group))
+	warnIgnoredFields(errw(), findIgnoredFields(intent, before, group))
+	warnUnrequestedChanges(errw(), findUnrequestedChanges(intent, before, group))
 	return group, nil
 }

@@ -14,12 +14,12 @@ import (
 
 // read returns the bytes of path (or stdin when path == "-") and the name
 // to use for it in error messages.
-func read(path string) (name string, data []byte, cerr *clierr.Error) {
+func read(path string, stdin io.Reader) (name string, data []byte, cerr *clierr.Error) {
 	name = path
 	var err error
 	if path == "-" {
 		name = "stdin"
-		data, err = io.ReadAll(os.Stdin)
+		data, err = io.ReadAll(stdin)
 	} else {
 		data, err = os.ReadFile(path)
 	}
@@ -40,8 +40,8 @@ func read(path string) (name string, data []byte, cerr *clierr.Error) {
 // Nullable fields), and a custom unmarshaler opts a type out of strict field
 // checking entirely — so without the walk, every typo'd field is a silent
 // no-op (see strict.go).
-func loadFile(path string, out any, strict bool) (json.RawMessage, []Unknown, *clierr.Error) {
-	name, data, cerr := read(path)
+func loadFile(path string, stdin io.Reader, out any, strict bool) (json.RawMessage, []Unknown, *clierr.Error) {
+	name, data, cerr := read(path, stdin)
 	if cerr != nil {
 		return nil, nil, cerr
 	}
@@ -74,8 +74,8 @@ func loadFile(path string, out any, strict bool) (json.RawMessage, []Unknown, *c
 // Unknown fields anywhere in the document are rejected with a
 // CodeInvalidInput error naming the offending path (fields typed `any`,
 // like an inference job's input, stay free-form).
-func Load(path string, out any) *clierr.Error {
-	_, _, cerr := loadFile(path, out, true)
+func Load(path string, stdin io.Reader, out any) *clierr.Error {
+	_, _, cerr := loadFile(path, stdin, out, true)
 	return cerr
 }
 
@@ -86,8 +86,8 @@ func Load(path string, out any) *clierr.Error {
 // That distinction matters for merge patches: re-marshaling through the
 // SDK's omitempty-tagged structs drops explicit empty values ([], "", 0),
 // which in merge-patch semantics mean "clear this field".
-func LoadRaw(path string, out any) (json.RawMessage, *clierr.Error) {
-	raw, _, cerr := loadFile(path, out, true)
+func LoadRaw(path string, stdin io.Reader, out any) (json.RawMessage, *clierr.Error) {
+	raw, _, cerr := loadFile(path, stdin, out, true)
 	return raw, cerr
 }
 
@@ -96,8 +96,8 @@ func LoadRaw(path string, out any) (json.RawMessage, *clierr.Error) {
 // for it in error messages. It is for callers that check fields themselves
 // before unmarshaling, so the check runs even for types with no custom
 // unmarshaler (which UnmarshalStrict would reject first, without a path).
-func ReadDocument(path string) (name string, raw json.RawMessage, cerr *clierr.Error) {
-	name, data, cerr := read(path)
+func ReadDocument(path string, stdin io.Reader) (name string, raw json.RawMessage, cerr *clierr.Error) {
+	name, data, cerr := read(path, stdin)
 	if cerr != nil {
 		return name, nil, cerr
 	}
@@ -119,6 +119,6 @@ func ReadDocument(path string) (name string, raw json.RawMessage, cerr *clierr.E
 // raw document (which still carries them) is what goes on the wire. This is
 // the --allow-unknown-fields path — the forward-compat escape hatch for API
 // fields newer than this CLI's pinned SDK model.
-func LoadLenient(path string, out any) (json.RawMessage, []Unknown, *clierr.Error) {
-	return loadFile(path, out, false)
+func LoadLenient(path string, stdin io.Reader, out any) (json.RawMessage, []Unknown, *clierr.Error) {
+	return loadFile(path, stdin, out, false)
 }

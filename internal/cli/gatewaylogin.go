@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -113,15 +112,15 @@ func runGatewayLogin(cmd *cobra.Command, _ []string) error {
 	switch {
 	case keyFlag == "-":
 		var line string
-		if con.Terminal() { // hidden whenever stdin is a terminal, prompts or not
-			answer, err := con.ReadHidden()
+		if app.Console.Terminal() { // hidden whenever stdin is a terminal, prompts or not
+			answer, err := app.Console.ReadHidden()
 			if err != nil {
 				return g.canceled()
 			}
 			line = answer
 		} else {
 			var err error
-			if line, err = readLine(bufio.NewReader(os.Stdin)); err != nil {
+			if line, err = readLine(bufio.NewReader(app.Stdin)); err != nil {
 				line = "" // a failed read is no key; the check below says so
 			}
 		}
@@ -138,8 +137,8 @@ func runGatewayLogin(cmd *cobra.Command, _ []string) error {
 			return cerr
 		}
 		return g.save()
-	case procEnv.Getenv(envGatewayKey) != "":
-		g.key, g.keyFrom = procEnv.Getenv(envGatewayKey), envGatewayKey
+	case app.Env.Getenv(envGatewayKey) != "":
+		g.key, g.keyFrom = app.Env.Getenv(envGatewayKey), envGatewayKey
 	default:
 		return clierr.New(clierr.CodeAuth, clierr.KindAuth, "no AI Gateway key provided").
 			WithHint("run saladcloud ai-gateway login in a terminal, or set SALAD_AI_GATEWAY_API_KEY")
@@ -298,7 +297,7 @@ func (g *gatewayLogin) askForKey() *clierr.Error {
 // result is the JSON document for this run.
 func (g *gatewayLogin) result(saved bool, path string, ovs []override) gatewayLoginResult {
 	source := "config"
-	if procEnv.Getenv(envGatewayKey) != "" {
+	if app.Env.Getenv(envGatewayKey) != "" {
 		source = "env"
 	}
 	return gatewayLoginResult{
@@ -328,16 +327,16 @@ func (*gatewayLogin) warnNoCredits() {
 func (g *gatewayLogin) save() error {
 	f := g.saved
 	f.GatewayAPIKey = g.key
-	path, err := config.Path(procEnv)
+	path, err := config.Path(app.Env)
 	if err == nil {
-		err = config.Save(procEnv, f)
+		err = config.Save(app.Env, f)
 	}
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
 			WithHint("%s", unwritableHint("ai-gateway login"))
 	}
 	ovs := overridesOf(f, envGatewayKey)
-	if err := printer.Emit(g.result(true, path, ovs), func(w *output.Writer) {
+	if err := app.printer.Emit(g.result(true, path, ovs), func(w *output.Writer) {
 		w.Println("AI Gateway key saved")
 		w.Printf("Config at: %s\n", path)
 	}); err != nil {
@@ -358,7 +357,7 @@ func (g *gatewayLogin) save() error {
 func (g *gatewayLogin) reportUnsaved() error {
 	path := configPath()
 	say("No AI Gateway key provided, using SALAD_AI_GATEWAY_API_KEY (%s).", maskAPIKey(g.key))
-	err := printer.Emit(g.result(false, path, nil), func(w *output.Writer) {
+	err := app.printer.Emit(g.result(false, path, nil), func(w *output.Writer) {
 		fprintln(
 			w,
 			"The AI Gateway key works. It is not saved, so it works only where SALAD_AI_GATEWAY_API_KEY is set.",
@@ -395,7 +394,7 @@ type gatewayLogoutResult struct {
 }
 
 func runGatewayLogout(_ *cobra.Command, _ []string) error {
-	path, err := config.Path(procEnv)
+	path, err := config.Path(app.Env)
 	if err != nil {
 		return clierr.New(
 			clierr.CodeGeneric,
@@ -404,7 +403,7 @@ func runGatewayLogout(_ *cobra.Command, _ []string) error {
 			config.Reason(err),
 		)
 	}
-	f, err := config.Load(procEnv)
+	f, err := config.Load(app.Env)
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it, then run saladcloud ai-gateway logout again")
@@ -412,14 +411,14 @@ func runGatewayLogout(_ *cobra.Command, _ []string) error {
 	old := f.GatewayAPIKey
 	if old != "" {
 		f.GatewayAPIKey = ""
-		if err := config.Save(procEnv, f); err != nil {
+		if err := config.Save(app.Env, f); err != nil {
 			return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
 				WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud ai-gateway logout again")
 		}
 	}
 	ovs := stillSupplied(envGatewayKey)
 	result := gatewayLogoutResult{Removed: old != "", EnvOverrides: overrideNames(ovs), Action: "logged_out", OK: true}
-	if err := printer.Emit(result, func(w *output.Writer) {
+	if err := app.printer.Emit(result, func(w *output.Writer) {
 		if old == "" {
 			w.Println("No AI Gateway key was saved; nothing to remove")
 			return

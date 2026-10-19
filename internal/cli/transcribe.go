@@ -32,7 +32,7 @@ const (
 // keptUploadNote says, on stderr, that a failed job's upload stays in S4.
 func keptUploadNote(remote string) {
 	if remote != "" {
-		fprintf(os.Stderr, "note: the upload stays in S4 as %s for inspection\n", remote)
+		fprintf(errw(), "note: the upload stays in S4 as %s for inspection\n", remote)
 	}
 }
 
@@ -487,8 +487,8 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		if cerr != nil {
 			return cerr
 		}
-		if printer.Mode() == "table" {
-			fprintf(os.Stderr, "uploaded %s (%s) to S4\n", source, humanSize(fileSize))
+		if app.printer.Mode() == "table" {
+			fprintf(errw(), "uploaded %s (%s) to S4\n", source, humanSize(fileSize))
 		}
 	}
 
@@ -512,16 +512,16 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		redactUploadURL(job)
 	}
 	if noWait {
-		if remote != "" && printer.Mode() == "table" {
-			fprintf(os.Stderr, "note: the upload stays in S4 as %s; the queued job reads it\n", remote)
+		if remote != "" && app.printer.Mode() == "table" {
+			fprintf(errw(), "note: the upload stays in S4 as %s; the queued job reads it\n", remote)
 		}
-		return wrapErr(printer.Emit(job, func(w *output.Writer) {
+		return wrapErr(app.printer.Emit(job, func(w *output.Writer) {
 			w.Printf("Job %s queued on endpoint %s (status: %s)\n", id, endpoint, jobStatusString(job))
 			if remote != "" {
-				fprintf(os.Stderr, "note: %s\n", signedLinkNote)
+				fprintf(errw(), "note: %s\n", signedLinkNote)
 			}
 			fprintf(
-				os.Stderr,
+				errw(),
 				"hint: to check on it, run saladcloud inference jobs get %s --endpoint %s\n",
 				id,
 				endpoint,
@@ -568,11 +568,11 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 	}
 	if remote != "" && !keepUpload {
 		if derr := client.DeleteFile(cmd.Context(), remote); derr != nil {
-			fprintf(os.Stderr, "warning: could not delete the S4 upload %s: %s\n", remote, derr.Message)
+			fprintf(errw(), "warning: could not delete the S4 upload %s: %s\n", remote, derr.Message)
 		}
 	}
 	// Table mode prints the transcript itself; -o json emits the full job.
-	return wrapErr(printer.Emit(final, func(w *output.Writer) {
+	return wrapErr(app.printer.Emit(final, func(w *output.Writer) {
 		w.Println(text)
 	}))
 }

@@ -78,7 +78,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 	if cerr := configReady("use"); cerr != nil {
 		return cerr
 	}
-	res, err := config.Resolve(procEnv, "", "")
+	res, err := config.Resolve(app.Env, "", "")
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file: %v", err)
 	}
@@ -167,9 +167,9 @@ func runUse(cmd *cobra.Command, args []string) error {
 
 	f := saved
 	f.Organization, f.Project = org, project
-	path, err := config.Path(procEnv)
+	path, err := config.Path(app.Env)
 	if err == nil {
-		err = config.Save(procEnv, f)
+		err = config.Save(app.Env, f)
 	}
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
@@ -183,7 +183,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 		Action:       "switched",
 		OK:           true,
 	}
-	if err := printer.Emit(result, func(w *output.Writer) {
+	if err := app.printer.Emit(result, func(w *output.Writer) {
 		if project == "" {
 			w.Printf("Switched to %s, no project set\n", org)
 			return

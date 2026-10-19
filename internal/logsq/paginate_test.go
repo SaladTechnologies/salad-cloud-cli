@@ -87,7 +87,7 @@ func TestFetchWindowSinglePartialPage(t *testing.T) {
 			PageMaxTime: "2026-03-01T00:00:03Z",
 		}},
 	}, &calls)
-	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 3, collectEmit(&got)); err != nil {
+	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 3, collectEmit(&got), nil); err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
 	assertTexts(t, got, "a", "b")
@@ -108,7 +108,7 @@ func TestFetchWindowEmptyFirstPage(t *testing.T) {
 	var calls []fetchCall
 	var got []Entry
 	fetch := scriptFetcher(nil, &calls)
-	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 100, collectEmit(&got)); err != nil {
+	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 100, collectEmit(&got), nil); err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
 	if len(got) != 0 || len(calls) != 1 {
@@ -131,7 +131,7 @@ func TestFetchWindowExactFullPageThenEmpty(t *testing.T) {
 		}},
 		{page: &Page{}},
 	}, &calls)
-	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 3, collectEmit(&got)); err != nil {
+	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 3, collectEmit(&got), nil); err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
 	assertTexts(t, got, "a", "b", "c")
@@ -174,7 +174,7 @@ func TestFetchWindowBoundaryDuplicates(t *testing.T) {
 			PageMaxTime: "2026-03-01T00:00:04Z",
 		}},
 	}, &calls)
-	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 3, collectEmit(&got)); err != nil {
+	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 3, collectEmit(&got), nil); err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
 	assertTexts(t, got, "a", "b", "c", "d", "e")
@@ -199,7 +199,7 @@ func TestFetchWindowBoundaryMillisecondCarry(t *testing.T) {
 		{page: &Page{Items: []Entry{a, b, c, d, e}, PageMinTime: a.Time, PageMaxTime: e.Time}},
 		{page: &Page{Items: []Entry{e, f}, PageMinTime: e.Time, PageMaxTime: f.Time}},
 	}, &calls)
-	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 3, collectEmit(&got)); err != nil {
+	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 3, collectEmit(&got), nil); err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
 	assertTexts(t, got, "a", "b", "c", "d", "e", "f")
@@ -222,7 +222,7 @@ func TestFetchWindowRoundsRequestTimesOutward(t *testing.T) {
 	fetch := scriptFetcher(nil, &calls)
 	start := time.Date(2026, time.March, 1, 0, 0, 0, 400700, time.UTC) // .0004007s
 	end := time.Date(2026, time.March, 1, 0, 0, 1, 2000500, time.UTC)  // 1.0020005s
-	if err := FetchWindow(t.Context(), fetch, "q", start, end, 100, collectEmit(&got)); err != nil {
+	if err := FetchWindow(t.Context(), fetch, "q", start, end, 100, collectEmit(&got), nil); err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
 	if want := "2026-03-01T00:00:00.000Z"; calls[0].start != want {
@@ -249,7 +249,7 @@ func TestFetchWindowSameTimestampLoopGuard(t *testing.T) {
 		{page: &Page{}},
 	}, &calls)
 	err := FetchWindow(t.Context(), fetch, "q",
-		time.Date(2026, time.March, 1, 0, 0, 1, 0, time.UTC), winEnd, 2, collectEmit(&got))
+		time.Date(2026, time.March, 1, 0, 0, 1, 0, time.UTC), winEnd, 2, collectEmit(&got), nil)
 	if err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestFetchWindowEmitErrorPropagates(t *testing.T) {
 	want := clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "pipe closed")
 	err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 100, func(Entry) error {
 		return want
-	})
+	}, nil)
 	if err != want {
 		t.Fatalf("FetchWindow error = %v, want the emit error", err)
 	}
@@ -284,7 +284,7 @@ func TestFetchWindowFetchErrorPropagates(t *testing.T) {
 	var calls []fetchCall
 	want := clierr.New(clierr.CodeRateLimited, clierr.KindRateLimited, "slow down")
 	fetch := scriptFetcher([]scriptedResult{{err: want}}, &calls)
-	err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 100, func(Entry) error { return nil })
+	err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 100, func(Entry) error { return nil }, nil)
 	if err != want {
 		t.Fatalf("FetchWindow error = %v, want the fetch error", err)
 	}
@@ -388,6 +388,7 @@ func TestFetchWindowResumesFromEmissionTimeNotPageMaxTime(t *testing.T) {
 			winEnd,
 			size,
 			collectEmit(&got),
+			nil,
 		)
 		if cerr != nil {
 			t.Fatalf("page size %d: %v", size, cerr)

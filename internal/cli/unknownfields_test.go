@@ -97,8 +97,8 @@ func TestRejectUnknownsGetResponseTellLeads(t *testing.T) {
 	}
 
 	// --debug adds the per-field list on stderr.
-	debugLevel = api.DebugRequests
-	t.Cleanup(func() { debugLevel = api.DebugOff })
+	app.debugLevel = api.DebugRequests
+	t.Cleanup(func() { app.debugLevel = api.DebugOff })
 	stderr := captureStderr(t, func() {
 		if rejectUnknowns(us) == nil {
 			t.Error("the unknown fields were not rejected")
@@ -125,17 +125,12 @@ func errText(e *clierr.Error) string {
 // captureStderr runs fn with os.Stderr sent to a file and returns what it wrote.
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
-	f, err := os.CreateTemp(t.TempDir(), "stderr")
-	if err != nil {
-		t.Fatal(err)
-	}
-	old := os.Stderr
-	os.Stderr = f
+	var buf bytes.Buffer
+	old := app.Stderr
+	app.Stderr = &buf
 	fn()
-	os.Stderr = old
-	noErr(t, f.Close()) // before TempDir's cleanup: Windows cannot remove an open file
-	b := must(os.ReadFile(f.Name()))(t)
-	return string(b)
+	app.Stderr = old
+	return buf.String()
 }
 
 func TestRejectUnknownsHedgesSchemaFacts(t *testing.T) {

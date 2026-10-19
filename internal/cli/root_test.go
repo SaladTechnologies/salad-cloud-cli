@@ -7,23 +7,18 @@ import (
 	"testing"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
-// runExecute runs Execute with args through the real command tree, capturing
+// runExecute runs Run with args through the real command tree, capturing
 // stdout and stderr. It resets the run's state afterward because cobra keeps
 // flag values between executions in one process.
 func runExecute(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	var out, errBuf bytes.Buffer
-	oldOut, oldErr := printer, errOut
-	printer, errOut = output.NewPrinter(&out), &errBuf
-	t.Cleanup(func() {
-		printer, errOut = oldOut, oldErr
-		resetRun(t)
-	})
-	commandLine = args
-	code = Execute()
+	t.Cleanup(func() { resetRun(t) })
+	d := app.Deps
+	d.Args, d.Stdout, d.Stderr = args, &out, &errBuf
+	code = Run(t.Context(), d)
 	return code, out.String(), errBuf.String()
 }
 

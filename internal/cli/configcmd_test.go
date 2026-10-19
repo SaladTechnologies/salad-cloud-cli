@@ -81,7 +81,7 @@ func TestConfigListResultStableJSONShape(t *testing.T) {
 func TestConfigListEmitsItems(t *testing.T) {
 	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
 	if err := config.Save(
-		procEnv,
+		app.Env,
 		config.File{APIKey: "salad_cloud_user_1234567890", Organization: "my-org"},
 	); err != nil {
 		t.Fatal(err)

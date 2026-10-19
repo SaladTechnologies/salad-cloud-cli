@@ -3,7 +3,6 @@ package logsq
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -64,10 +63,11 @@ const (
 // suppress repeats by identity. The honest consequence: an entry ingested
 // more than Lookback after its node-emission time is missed by --follow.
 type Follower struct {
-	Poll       time.Duration // effective poll interval; 0 means DefaultPoll, floored at MinPoll
-	MaxBackoff time.Duration // rate-limit backoff cap; 0 means DefaultMaxBackoff
-	Lookback   time.Duration // re-scan horizon behind max seen `time`; 0 means DefaultLookback
-	Clock      Clock         // nil means RealClock
+	Poll       time.Duration     // effective poll interval; 0 means DefaultPoll, floored at MinPoll
+	MaxBackoff time.Duration     // rate-limit backoff cap; 0 means DefaultMaxBackoff
+	Lookback   time.Duration     // re-scan horizon behind max seen `time`; 0 means DefaultLookback
+	Clock      Clock             // nil means RealClock
+	Warn       func(line string) // where warning: lines go; nil drops them
 
 	// seen maps the DedupKey of every emitted entry inside the lookback
 	// horizon to its parsed emission time, so re-scans emit nothing twice.
@@ -136,7 +136,7 @@ func (f *Follower) Run(
 	if werr := FetchWindow(ctx, fetch, query, sinceU, backlogEnd, pageSize, func(e Entry) error {
 		record(e, backlogEnd)
 		return emit(e)
-	}); werr != nil {
+	}, f.Warn); werr != nil {
 		if ctx.Err() != nil {
 			return nil //nolint:nilerr // canceled: --follow ends with exit 0
 		}
@@ -161,7 +161,7 @@ func (f *Follower) Run(
 			}
 			record(e, windowEnd)
 			return emit(e)
-		})
+		}, f.Warn)
 		if werr != nil {
 			if ctx.Err() != nil {
 				return nil //nolint:nilerr // canceled: --follow ends with exit 0
@@ -171,7 +171,7 @@ func (f *Follower) Run(
 				if effective > maxBackoff {
 					effective = maxBackoff
 				}
-				fmt.Fprintf(os.Stderr, "warning: rate limited by the API; slowing polling to %s\n", effective)
+				warn(f.Warn, fmt.Sprintf("warning: rate limited by the API; slowing polling to %s", effective))
 				continue
 			}
 			return werr

@@ -23,7 +23,7 @@ const jobFileShapeHint = `put your fields under "input", or pass them with --inp
 // jobFileShapeHint when the file has unknown top-level fields and no "input"
 // key.
 func loadJobFile(file string, out any) *clierr.Error {
-	name, raw, cerr := input.ReadDocument(file)
+	name, raw, cerr := input.ReadDocument(file, app.Stdin)
 	if cerr != nil {
 		return cerr
 	}

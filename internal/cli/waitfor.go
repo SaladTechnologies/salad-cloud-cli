@@ -12,7 +12,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 	"time"
 
@@ -113,7 +112,7 @@ type waitDeps struct {
 	now   func() time.Time
 	sleep func(ctx context.Context, d time.Duration) error // returns ctx.Err() when canceled
 	// progress receives the table-mode progress lines and transient-error
-	// warnings; nil means os.Stderr.
+	// warnings; nil means errw().
 	progress io.Writer
 }
 
@@ -144,7 +143,7 @@ func waitForGroup(
 ) (*shared.ContainerGroup, *clierr.Error) {
 	stderr := d.progress
 	if stderr == nil {
-		stderr = os.Stderr
+		stderr = errw()
 	}
 	start := d.now()
 	deadline := start.Add(timeout)
@@ -175,7 +174,7 @@ func waitForGroup(
 					return nil, aerr
 				}
 			}
-			if printer.Mode() == "table" {
+			if app.printer.Mode() == "table" {
 				// The elapsed suffix is excluded from the change check;
 				// otherwise every poll would print.
 				line := fmt.Sprintf("waiting for %s to %s: %s%s", group, goal, status, instanceCountSummary(g))
@@ -337,8 +336,8 @@ func runGroupWait(
 	if cerr != nil {
 		return nil, cerr
 	}
-	if printer.Mode() == "table" && doneMsg != "" {
-		fprintf(os.Stderr, "%s %s (waited %s)\n", group, doneMsg, time.Since(start).Round(time.Second))
+	if app.printer.Mode() == "table" && doneMsg != "" {
+		fprintf(errw(), "%s %s (waited %s)\n", group, doneMsg, time.Since(start).Round(time.Second))
 	}
 	return final, nil
 }
@@ -364,7 +363,7 @@ func runStatusWait(
 		// instances call; if it fails, the note is skipped, not the wait.
 		if col, cerr := client.ListInstances(cmd.Context(), group); cerr == nil {
 			if note := readinessNote(group, col.Instances); note != "" {
-				fprintln(os.Stderr, note)
+				fprintln(errw(), note)
 			}
 		}
 	}

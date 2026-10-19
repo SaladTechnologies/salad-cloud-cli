@@ -196,7 +196,7 @@ func TestLoadLenient(t *testing.T) {
 		t.Fatal(err)
 	}
 	var req containergroups.ContainerGroupCreationRequest
-	raw, unknowns, cerr := LoadLenient(path, &req)
+	raw, unknowns, cerr := LoadLenient(path, nil, &req)
 	if cerr != nil {
 		t.Fatalf("LoadLenient: %v", cerr)
 	}
@@ -207,7 +207,7 @@ func TestLoadLenient(t *testing.T) {
 		t.Errorf("raw document lost the unknown field: %s", raw)
 	}
 	// And the strict loaders reject the same file with the unknown_field kind.
-	if err := Load(path, &req); err == nil || err.Kind != clierr.KindUnknownField {
+	if err := Load(path, nil, &req); err == nil || err.Kind != clierr.KindUnknownField {
 		t.Errorf("Load kind = %v, want %s", err, clierr.KindUnknownField)
 	}
 }

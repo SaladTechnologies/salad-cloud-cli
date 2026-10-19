@@ -201,7 +201,7 @@ func TestJobsLimitNote(t *testing.T) {
 		{"table", 39, 100, false, ""},
 		{"table", 10000, 10000, false, ""},
 	} {
-		if err := printer.SetMode(tc.mode); err != nil {
+		if err := app.printer.SetMode(tc.mode); err != nil {
 			t.Fatal(err)
 		}
 		var buf bytes.Buffer

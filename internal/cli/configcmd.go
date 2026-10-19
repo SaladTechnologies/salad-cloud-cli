@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -85,12 +84,12 @@ var configKeyEnv = map[string]string{
 // loadConfigFor reads the config file for a config command, with the fix
 // when it cannot be read.
 func loadConfigFor(command string) (config.File, string, *clierr.Error) {
-	path, err := config.Path(procEnv)
+	path, err := config.Path(app.Env)
 	if err != nil {
 		return config.File{}, "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err)).
 			WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder")
 	}
-	f, err := config.Load(procEnv)
+	f, err := config.Load(app.Env)
 	if err != nil {
 		return config.File{}, path, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it, then run saladcloud %s again", command)
@@ -100,7 +99,7 @@ func loadConfigFor(command string) (config.File, string, *clierr.Error) {
 
 // saveConfigFor writes the config file for a config command.
 func saveConfigFor(command, path string, f config.File) *clierr.Error {
-	if err := config.Save(procEnv, f); err != nil {
+	if err := config.Save(app.Env, f); err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
 			WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud %s again", command)
 	}
@@ -188,8 +187,8 @@ config set says so.`,
 				// not the terminal's echo.
 				var line string
 				var err error
-				if con.Terminal() {
-					if line, err = con.ReadHidden(); err != nil {
+				if app.Console.Terminal() {
+					if line, err = app.Console.ReadHidden(); err != nil {
 						return clierr.New(
 							clierr.CodeGeneric,
 							clierr.KindInterrupted,
@@ -197,7 +196,7 @@ config set says so.`,
 						)
 					}
 				} else {
-					line, err = readLine(bufio.NewReader(os.Stdin))
+					line, err = readLine(bufio.NewReader(app.Stdin))
 				}
 				if err != nil || line == "" {
 					return clierr.New(clierr.CodeUsage, clierr.KindUsage, "no %s value on stdin", key).
@@ -232,7 +231,7 @@ config set says so.`,
 			}
 			ovs := overridesOf(f, configKeyEnv[key])
 			result := configSetResult{key, shown, overrideNames(ovs), path, "set", true}
-			if err := printer.Emit(result, func(w *output.Writer) {
+			if err := app.printer.Emit(result, func(w *output.Writer) {
 				w.Printf("Set %s to %s\n", key, shown)
 				w.Printf("Config at: %s\n", path)
 			}); err != nil {
@@ -277,7 +276,7 @@ SALAD_AI_GATEWAY_API_KEY) is still used; config unset says so.`,
 			}
 			ovs := stillSupplied(configKeyEnv[key])
 			result := configUnsetResult{key, overrideNames(ovs), path, "unset", true}
-			if err := printer.Emit(result, func(w *output.Writer) {
+			if err := app.printer.Emit(result, func(w *output.Writer) {
 				w.Printf("Unset %s\n", key)
 				w.Printf("Config at: %s\n", path)
 			}); err != nil {
@@ -310,7 +309,7 @@ Keys: ` + configKeys + `.`,
 				value = maskedOrNil(*field)
 			}
 			result := configGetResult{key, value}
-			return wrapErr(printer.Emit(result, func(w *output.Writer) {
+			return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
 				if value == nil {
 					w.Println("(not set)")
 					return
@@ -330,7 +329,7 @@ Keys: ` + configKeys + `.`,
 				return cerr
 			}
 			result := configListOf(f, path)
-			return wrapErr(printer.Emit(result, func(w *output.Writer) {
+			return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
 				w.Printf("api-key\t%s\n", maskAPIKey(f.APIKey))
 				w.Printf("organization\t%s\n", orNotSet(shownName(f.Organization)))
 				w.Printf("project\t%s\n", orNotSet(shownName(f.Project)))
@@ -345,13 +344,13 @@ Keys: ` + configKeys + `.`,
 		Short: "Print the config file path",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			path, err := config.Path(procEnv)
+			path, err := config.Path(app.Env)
 			if err != nil {
 				return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err)).
 					WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder")
 			}
 			result := configPathResult{path}
-			return wrapErr(printer.Emit(result, func(w *output.Writer) {
+			return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
 				w.Println(path)
 			}))
 		},

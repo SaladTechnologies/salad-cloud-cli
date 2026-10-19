@@ -336,9 +336,9 @@ func TestRenderSSHConfigIdentity(t *testing.T) {
 // ssh reads UserKnownHostsFile as a whitespace-separated list of files, so
 // a path with a space (a Windows profile such as "Jane Doe") is quoted.
 func TestHostKeyOptionsQuoteASpacedPath(t *testing.T) {
-	old := knownHostsPath
-	knownHostsPath = func() string { return `C:\Users\Jane Doe\AppData\Roaming\saladcloud\known_hosts` }
-	t.Cleanup(func() { knownHostsPath = old })
+	old := app.KnownHostsPath
+	app.KnownHostsPath = func() string { return `C:\Users\Jane Doe\AppData\Roaming\saladcloud\known_hosts` }
+	t.Cleanup(func() { app.KnownHostsPath = old })
 	got := hostKeyOptions("aaaa1111")
 	want := []string{
 		"-o", "StrictHostKeyChecking=accept-new",
@@ -353,7 +353,7 @@ func TestHostKeyOptionsQuoteASpacedPath(t *testing.T) {
 // TestHelperExit255 is not a test: runChild runs the test binary with it to
 // get a child that exits 255.
 func TestHelperExit255(t *testing.T) {
-	if procEnv.Getenv("SALAD_CLI_TEST_HELPER_EXIT") == "" {
+	if app.Env.Getenv("SALAD_CLI_TEST_HELPER_EXIT") == "" {
 		t.Skip("a helper for TestRunChildHints")
 	}
 	os.Exit(255) //nolint:revive // deep-exit: the test binary run as a child that exits 255
@@ -368,9 +368,9 @@ func TestRunChildHints(t *testing.T) {
 	if cerr == nil || cerr.Code != 255 || cerr.Kind != clierr.KindChildExit || cerr.HintText() != sessionFailedHint {
 		t.Errorf("exit 255: %+v hint %q", cerr, cerr.HintText())
 	}
-	old := procEnv.GOOS
-	t.Cleanup(func() { procEnv.GOOS = old })
-	procEnv.GOOS = "darwin"
+	old := app.Env.GOOS
+	t.Cleanup(func() { app.Env.GOOS = old })
+	app.Env.GOOS = "darwin"
 	cerr = runChild("saladcloud-test-no-such-ssh", nil)
 	if cerr == nil || cerr.Message != "saladcloud-test-no-such-ssh not found" ||
 		cerr.HintText() != "macOS includes it at /usr/bin/saladcloud-test-no-such-ssh; check that /usr/bin is on "+

@@ -16,14 +16,14 @@ const (
 // atATerminal puts the run at a terminal (or not) on os, in mode.
 func atATerminal(t *testing.T, terminal bool, os, mode string) {
 	t.Helper()
-	oldCon, oldOS := con, procEnv.GOOS
-	con, procEnv.GOOS = &fakeConsole{terminal: terminal}, os
+	oldCon, oldOS := app.Console, app.Env.GOOS
+	app.Console, app.Env.GOOS = &fakeConsole{terminal: terminal}, os
 	t.Setenv("CI", "")
 	t.Setenv("SALAD_CLI_NO_PROMPT", "")
-	if err := printer.SetMode(mode); err != nil {
+	if err := app.printer.SetMode(mode); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { con, procEnv.GOOS = oldCon, oldOS; setOutputMode(t, "table") })
+	t.Cleanup(func() { app.Console, app.Env.GOOS = oldCon, oldOS; setOutputMode(t, "table") })
 }
 
 func setEnv(t *testing.T, kv ...string) {

@@ -25,7 +25,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
 // Credentials the harness hands the CLI. Each has a distinctive word in its
@@ -351,7 +350,7 @@ func (s session) run(t *testing.T) outcome {
 		t.Setenv(k, v)
 	}
 	if s.saved != nil {
-		if err := config.Save(procEnv, *s.saved); err != nil {
+		if err := config.Save(app.Env, *s.saved); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -363,13 +362,7 @@ func (s session) run(t *testing.T) outcome {
 			t.Fatal(err)
 		}
 	}
-	configPath := must(config.Path(procEnv))(t)
-	oldOS := procEnv.GOOS
-	procEnv.GOOS = s.os
-	if procEnv.GOOS == "" {
-		procEnv.GOOS = "windows"
-	}
-	defer func() { procEnv.GOOS = oldOS }()
+	configPath := must(config.Path(app.Env))(t)
 
 	stdin := tempFile(t, dir, "stdin", s.stdin)
 	var hold *os.File // the open end of a never-closed stdin
@@ -386,23 +379,23 @@ func (s session) run(t *testing.T) outcome {
 	fc := &fakeConsole{terminal: s.tty != nil, answers: append([]string(nil), s.tty...), transcript: &transcript}
 	var opened []string
 
-	oldIn, oldErr, oldErrOut, oldOut, oldCon, oldOpen, oldTee := os.Stdin, os.Stderr, errOut, printer, con, openPage, stderrTee
-	tee := io.MultiWriter(stderr, &transcript)
-	os.Stdin, os.Stderr, errOut, printer, con, stderrTee = stdin, stderr, tee, output.NewPrinter(io.MultiWriter(
-		&stdout,
-		&transcript,
-	)), fc, tee
-	openPage = func(url string) error { opened = append(opened, url); return nil }
-	oldBase := baseContext
-	baseContext = func() context.Context { return ctx }
-	defer func() { baseContext = oldBase }()
-	commandLine = s.args
+	d := app.Deps
+	d.Args = s.args
+	d.Stdin = stdin
+	d.Stdout = io.MultiWriter(&stdout, &transcript)
+	d.Stderr = io.MultiWriter(stderr, &transcript)
+	d.Console = fc
+	d.OpenPage = func(url string) error { opened = append(opened, url); return nil }
+	d.Env.GOOS = s.os
+	if d.Env.GOOS == "" {
+		d.Env.GOOS = "windows"
+	}
 	// cobra keeps a command's context from an earlier in-process run and
 	// would hand it to this one, which Ctrl-C (the fake's cancel) could then
 	// not reach.
 	walkTree(rootCmd, func(c *cobra.Command) { c.SetContext(nil) }) //nolint:staticcheck // nil is what cobra checks for
 	done := make(chan int, 1)
-	go func() { done <- Execute() }()
+	go func() { done <- Run(ctx, d) }()
 	var code int
 	hung := false
 	if hold != nil {
@@ -419,13 +412,12 @@ func (s session) run(t *testing.T) outcome {
 	} else {
 		code = <-done
 	}
-	os.Stdin, os.Stderr, errOut, printer, con, openPage, stderrTee = oldIn, oldErr, oldErrOut, oldOut, oldCon, oldOpen, oldTee
 	resetRun(t)
 	noErr(t, stdin.Close())
 	noErr(t, stderr.Close())
 
 	errBytes := must(os.ReadFile(stderr.Name()))(t)
-	after, err := config.Load(procEnv)
+	after, err := config.Load(app.Env)
 	if err != nil && s.rawConfig == "" {
 		t.Fatalf("the config file after the run: %v", err)
 	}
@@ -442,7 +434,7 @@ func resetRun(t *testing.T) {
 	t.Helper()
 	setOutputMode(t, "table")
 	rootCmd.SetArgs(nil)
-	commandLine = nil
+	app.Args = nil
 	resetFlags(t)
 }
 
@@ -573,7 +565,7 @@ func assertAs[T any](t *testing.T, v any) T {
 // setOutputMode selects the output mode, reporting a mode SetMode rejects.
 func setOutputMode(t *testing.T, mode string) {
 	t.Helper()
-	if cerr := printer.SetMode(mode); cerr != nil {
+	if cerr := app.printer.SetMode(mode); cerr != nil {
 		t.Error(cerr)
 	}
 }

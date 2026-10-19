@@ -67,7 +67,7 @@ func overridesOf(f config.File, vars ...string) []override {
 		if !hasString(vars, s.env) {
 			continue
 		}
-		if v := procEnv.Getenv(s.env); v != "" && s.used(v) != s.used(s.saved(f)) {
+		if v := app.Env.Getenv(s.env); v != "" && s.used(v) != s.used(s.saved(f)) {
 			out = append(out, override{s, v, s.saved(f)})
 		}
 	}
@@ -83,7 +83,7 @@ func stillSupplied(vars ...string) []override {
 		if !hasString(vars, s.env) {
 			continue
 		}
-		if v := procEnv.Getenv(s.env); v != "" {
+		if v := app.Env.Getenv(s.env); v != "" {
 			out = append(out, override{setting: s, value: v, saved: ""})
 		}
 	}
@@ -116,7 +116,7 @@ func warnOverrides(w io.Writer, when overrideWhen, ovs []override) {
 	if len(ovs) == 0 {
 		return
 	}
-	steps := printer.Mode() == "table" && atTerminal()
+	steps := app.printer.Mode() == "table" && atTerminal()
 	if len(ovs) == 1 {
 		o := ovs[0]
 		var line string
@@ -188,7 +188,7 @@ func removalSteps(ovs []override) string {
 		it, comes = "them", "they come"
 	}
 	var b strings.Builder
-	if procEnv.GOOS == "windows" {
+	if app.Env.GOOS == "windows" {
 		envs := make([]string, len(names))
 		sets := make([]string, len(names))
 		for i, n := range names {

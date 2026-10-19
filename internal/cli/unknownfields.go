@@ -21,7 +21,6 @@ package cli
 import (
 	"fmt"
 	"io"
-	"os"
 	"reflect"
 	"slices"
 	"strings"
@@ -232,8 +231,8 @@ func rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
 	// thing back as a patch, gets only its diagnosis and the command to start
 	// from; the per-field list goes to --debug.
 	if len(responseOnly) >= 3 {
-		if debugLevel != api.DebugOff {
-			fprintf(os.Stderr, "debug: %s; %s\n", full.Message, full.HintText())
+		if app.debugLevel != api.DebugOff {
+			fprintf(errw(), "debug: %s; %s\n", full.Message, full.HintText())
 		}
 		return clierr.New(clierr.CodeInvalidInput, clierr.KindUnknownField,
 			"this document is a get response, not a patch (%d of its fields only responses carry)", len(responseOnly)).

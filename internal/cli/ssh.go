@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -32,7 +31,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
@@ -156,22 +154,6 @@ func sshTargetOf(inst *containergroups.ContainerGroupInstance, group string) (ss
 	return sshTarget{InstanceID: ptr.Deref(inst.Id), IP: *inst.SshIp, Port: *inst.SshPort}, nil
 }
 
-// knownHostsPath is the known_hosts file ssh, sftp and cp use: the CLI's
-// own, beside the config file, so a relay port reused by another instance
-// never touches the user's ~/.ssh/known_hosts. "" when the config directory
-// cannot be determined; ssh then uses its default. Tests replace it.
-var knownHostsPath = func() string {
-	p, err := config.Path(procEnv)
-	if err != nil {
-		return ""
-	}
-	dir := filepath.Dir(p)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return ""
-	}
-	return filepath.Join(dir, "known_hosts")
-}
-
 // hostKeyOptions are the ssh -o options every relay connection carries:
 // accept a new host key, record it in the CLI's known_hosts (quoted, since
 // ssh reads the value as a list of files and a Windows profile path can
@@ -179,12 +161,12 @@ var knownHostsPath = func() string {
 // ip:port, which a later instance can be given.
 func hostKeyOptions(instanceID string) []string {
 	opts := []string{"-o", "StrictHostKeyChecking=accept-new"}
-	if printer.Machine() {
+	if app.printer.Machine() {
 		// OpenSSH logs "Permanently added ..." at INFO; in json and yaml mode
 		// stderr carries only warnings, notes and the error document.
 		opts = append(opts, "-o", "LogLevel=ERROR")
 	}
-	if p := knownHostsPath(); p != "" {
+	if p := app.KnownHostsPath(); p != "" {
 		opts = append(opts, "-o", "UserKnownHostsFile="+sshConfigQuote(p))
 	}
 	if instanceID != "" {
@@ -264,7 +246,7 @@ func renderSSHConfigIdentity(
 		}
 		fprintf(&b, "\nHost %s\n    HostName %s\n    Port %d\n    User %s\n    StrictHostKeyChecking accept-new\n",
 			sshConfigAlias(group, ptr.Deref(inst.Id)), *inst.SshIp, *inst.SshPort, user)
-		if kh := knownHostsPath(); kh != "" {
+		if kh := app.KnownHostsPath(); kh != "" {
 			fprintf(&b, "    UserKnownHostsFile %s\n", sshConfigQuote(kh))
 		}
 		if id := ptr.Deref(inst.Id); id != "" {
@@ -291,13 +273,13 @@ func sshConfigQuote(v string) string {
 // and maps the outcome onto the CLI's exit-code contract: the child's own
 // exit code is propagated.
 func runChild(name string, args []string) *clierr.Error {
-	return runChildTo(os.Stdout, name, args)
+	return runChildTo(app.Stdout, name, args)
 }
 
 // runChildTo is runChild with the child's stdout sent to stdout: cp sends
 // sftp's batch echo to stderr, so its own stdout carries one result.
 func runChildTo(stdout io.Writer, name string, args []string) *clierr.Error {
-	return runChildWith(stdout, os.Stderr, name, args)
+	return runChildWith(stdout, errw(), name, args)
 }
 
 // runChildQuiet runs a child with its stdout and stderr held back, for cp
@@ -328,7 +310,7 @@ func lastLine(s string) string {
 
 func runChildWith(stdout, stderr io.Writer, name string, args []string) *clierr.Error {
 	child := exec.Command(name, args...)
-	child.Stdin = os.Stdin
+	child.Stdin = app.Stdin
 	child.Stdout = stdout
 	child.Stderr = stderr
 	err := child.Run()
@@ -452,11 +434,11 @@ Host alias.`,
 						"no running SSH-ready instances in container group %s", group).
 						WithHint("to list its instances, run saladcloud container-groups instances list -c %s", group)
 				}
-				_, err := io.WriteString(os.Stdout, text)
+				_, err := io.WriteString(app.Stdout, text)
 				return wrapErr(err)
 			}
 
-			inst, cerr := pickInstance(os.Stderr, collection.Instances, group, instance)
+			inst, cerr := pickInstance(errw(), collection.Instances, group, instance)
 			if cerr != nil {
 				return cerr
 			}
@@ -469,7 +451,7 @@ Host alias.`,
 			runErr := runChild("ssh", sshArgs)
 			if len(command) > 0 {
 				if note := oneShotExitNote(childExitCode(runErr)); note != "" {
-					fprintln(os.Stderr, note)
+					fprintln(errw(), note)
 				}
 			}
 			if runErr != nil {

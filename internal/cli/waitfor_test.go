@@ -319,11 +319,11 @@ func TestHasReadinessProbe(t *testing.T) {
 }
 
 func TestWaitJSONModePrintsNoProgress(t *testing.T) {
-	if err := printer.SetMode("json"); err != nil {
+	if err := app.printer.SetMode("json"); err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := printer.SetMode("table"); err != nil {
+		if err := app.printer.SetMode("table"); err != nil {
 			t.Fatal(err)
 		}
 	}()

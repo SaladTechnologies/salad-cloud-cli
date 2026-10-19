@@ -50,7 +50,7 @@ func resolveIdentity(flag string) string {
 	if flag != "" {
 		return flag
 	}
-	home, err := config.HomeDir(procEnv)
+	home, err := config.HomeDir(app.Env)
 	if err != nil {
 		return ""
 	}
@@ -90,9 +90,8 @@ func warnPassphrase(priv string) {
 // sshKeysPage is the portal page where the account's SSH key is registered.
 const sshKeysPage = "https://portal.salad.com/ssh-keys"
 
-// generateKey runs ssh-keygen for a key without a passphrase at keyPath.
-// Tests replace it.
-var generateKey = func(keyPath string) error {
+// sshKeygen runs ssh-keygen for a key without a passphrase at keyPath.
+func sshKeygen(keyPath string) error {
 	out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "", "-C", "saladcloud-cli").
 		CombinedOutput()
 	if err != nil {
@@ -171,7 +170,7 @@ func runSSHKeySetup(cmd *cobra.Command, _ []string) error {
 	if cerr := fr.Err(); cerr != nil {
 		return cerr
 	}
-	home, err := config.HomeDir(procEnv)
+	home, err := config.HomeDir(app.Env)
 	if err != nil {
 		return clierr.New(
 			clierr.CodeGeneric,
@@ -184,7 +183,7 @@ func runSSHKeySetup(cmd *cobra.Command, _ []string) error {
 	path, found := findLocalPublicKey(home)
 	if found {
 		priv := strings.TrimSuffix(path, ".pub")
-		enc, known := hasPassphrase(priv)
+		enc, known := app.HasPassphrase(priv)
 		if known && enc {
 			warnPassphrase(priv)
 			if !isDedicatedKey(priv) {
@@ -240,7 +239,7 @@ func (k sshKeySetup) generate() error {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot generate a key: %s already exists", k.keyPath).
 			WithHint("register %s.pub, or remove it to generate a new one", k.keyPath)
 	}
-	if _, err := lookPath("ssh-keygen"); err != nil {
+	if _, err := app.LookPath("ssh-keygen"); err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "ssh-keygen not found").
 			WithHint("%s", sshMissingHint("ssh-keygen"))
 	}
@@ -253,7 +252,7 @@ func (k sshKeySetup) generate() error {
 			config.Reason(err),
 		)
 	}
-	if err := generateKey(k.keyPath); err != nil {
+	if err := app.GenerateKey(k.keyPath); err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "ssh-keygen failed: %v", err)
 	}
 	return k.show(k.keyPath+".pub", true, passphraseOf(false, true))
@@ -277,7 +276,7 @@ func (sshKeySetup) show(path string, generated bool, passphrase *bool) error {
 		Action:        action,
 		OK:            true,
 	}
-	err := printer.Emit(v, func(w *output.Writer) {
+	err := app.printer.Emit(v, func(w *output.Writer) {
 		if generated {
 			w.Printf("Generated %s\n\n", strings.TrimSuffix(path, ".pub"))
 		}
@@ -288,7 +287,7 @@ func (sshKeySetup) show(path string, generated bool, passphrase *bool) error {
 	if err != nil {
 		return wrapErr(err)
 	}
-	if printer.Machine() {
+	if app.printer.Machine() {
 		fprintf(
 			errw(),
 			"note: register the public key at %s; your account holds one SSH key, so registering this one replaces any other\n",
@@ -300,7 +299,7 @@ func (sshKeySetup) show(path string, generated bool, passphrase *bool) error {
 }
 
 func runSSHKeyGet(_ *cobra.Command, _ []string) error {
-	home, err := config.HomeDir(procEnv)
+	home, err := config.HomeDir(app.Env)
 	if err != nil {
 		return clierr.New(
 			clierr.CodeGeneric,
@@ -318,12 +317,12 @@ func runSSHKeyGet(_ *cobra.Command, _ []string) error {
 	if cerr != nil {
 		return cerr
 	}
-	enc, known := hasPassphrase(strings.TrimSuffix(path, ".pub"))
+	enc, known := app.HasPassphrase(strings.TrimSuffix(path, ".pub"))
 	if known && enc {
 		warnPassphrase(strings.TrimSuffix(path, ".pub"))
 	}
 	v := sshKeyResult{Path: path, PublicKey: key, HasPassphrase: passphraseOf(enc, known), Generated: false}
-	return wrapErr(printer.Emit(v, func(w *output.Writer) {
+	return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
 		w.Printf("%s\n%s\n", path, key)
 	}))
 }

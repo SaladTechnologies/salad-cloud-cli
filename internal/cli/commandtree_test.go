@@ -195,10 +195,10 @@ func runRoot(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	prepareTree()
 	var buf bytes.Buffer
-	old := printer
-	printer = output.NewPrinter(&buf)
+	old := app.printer
+	app.printer = output.NewPrinter(&buf)
 	t.Cleanup(func() {
-		printer = old
+		app.printer = old
 		resetRun(t)
 	})
 	rootCmd.SetArgs(args)

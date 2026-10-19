@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -78,6 +77,7 @@ func FetchWindow(
 	start, end time.Time,
 	pageSize int,
 	emit func(Entry) error,
+	warnLine func(string),
 ) *clierr.Error {
 	cur := start.UTC().Truncate(time.Millisecond)
 	endStr := CeilRequestTime(end)
@@ -131,12 +131,11 @@ func FetchWindow(
 				// Pathological: more than pageSize entries share one
 				// millisecond, so the boundary cannot advance. Skip 1ms
 				// rather than loop forever, and say so.
-				fmt.Fprintf(
-					os.Stderr,
-					"warning: more than %d log entries share the millisecond at %s; skipping ahead 1ms (some entries in that millisecond may be missed)\n",
+				warn(warnLine, fmt.Sprintf(
+					"warning: more than %d log entries share the millisecond at %s; skipping ahead 1ms (some entries in that millisecond may be missed)",
 					pageSize,
 					FormatRequestTime(cur),
-				)
+				))
 				next = cur.Add(time.Millisecond)
 				for k, t := range newBoundary {
 					if t.Before(next) {
@@ -172,4 +171,11 @@ func asCliErr(err error) *clierr.Error {
 		return ce
 	}
 	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)
+}
+
+// warn hands line to to, a warning: line for stderr, when there is a to.
+func warn(to func(string), line string) {
+	if to != nil {
+		to(line)
+	}
 }

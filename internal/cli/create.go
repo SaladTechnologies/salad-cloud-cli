@@ -8,7 +8,6 @@ package cli
 import (
 	"fmt"
 	"io"
-	"os"
 	"regexp"
 	"strings"
 
@@ -539,7 +538,7 @@ func runCreate(
 		return clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot marshal request: %v", err)
 	}
 	if len(unknowns) > 0 {
-		warnUnknowns(os.Stderr, unknowns, true)
+		warnUnknowns(errw(), unknowns, true)
 		if sent, cerr = input.MergeJSON(baseRaw, sent); cerr != nil {
 			return cerr
 		}
@@ -549,12 +548,12 @@ func runCreate(
 		return cerr
 	}
 	if q := req.QueueConnection; q != nil {
-		noteQueueWorker(os.Stderr, ptr.Deref(q.QueueName))
+		noteQueueWorker(errw(), ptr.Deref(q.QueueName))
 	}
 	// Same "did it actually happen?" check the update path runs: the API
 	// accepts some fields and silently drops them (container.image_caching),
 	// returning 201 either way.
-	warnUnappliedCreateFields(os.Stderr, findUnappliedCreateFields(sent, group))
+	warnUnappliedCreateFields(errw(), findUnappliedCreateFields(sent, group))
 	// --wait (validated pre-flight in RunE): block until the new group runs,
 	// and only then emit — the document must describe the settled state, and
 	// stdout must stay empty if the wait fails (timeout, interrupt). Without
@@ -576,7 +575,7 @@ func runCreate(
 		}
 		group = final
 	}
-	return wrapErr(printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
+	return wrapErr(app.printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
 }
 
 func init() {
@@ -658,7 +657,7 @@ together, so it starts with the program: -- python app.py --port 8080, not
 			if cerr := validateCommand(command, commandGiven); cerr != nil {
 				return cerr
 			}
-			warnCommand(os.Stderr, cmd, command)
+			warnCommand(errw(), cmd, command)
 			// Pre-flight flag validation, before any file or API work.
 			wait, _, cerr := waitFlagValues(cmd)
 			if cerr != nil {
@@ -676,7 +675,7 @@ together, so it starts with the program: -- python app.py --port 8080, not
 				name = args[0]
 			}
 			if from != "" {
-				base, baseRaw, unknowns, cerr = loadFromBase(cmd, from, file, allowUnknown, name, os.Stderr)
+				base, baseRaw, unknowns, cerr = loadFromBase(cmd, from, file, allowUnknown, name, errw())
 				if cerr != nil {
 					return cerr
 				}
@@ -684,7 +683,7 @@ together, so it starts with the program: -- python app.py --port 8080, not
 			}
 			if file != "" {
 				if allowUnknown {
-					raw, u, err := input.LoadLenient(file, &base)
+					raw, u, err := input.LoadLenient(file, app.Stdin, &base)
 					if err != nil {
 						return err
 					}
@@ -693,7 +692,7 @@ together, so it starts with the program: -- python app.py --port 8080, not
 					// Strict: load leniently, then reject with per-field
 					// advice (create-only / response-only fields get a
 					// real explanation instead of the escape-hatch hint).
-					_, u, err := input.LoadLenient(file, &base)
+					_, u, err := input.LoadLenient(file, app.Stdin, &base)
 					if err != nil {
 						return err
 					}

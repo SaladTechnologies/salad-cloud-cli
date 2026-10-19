@@ -144,7 +144,7 @@ func TestSavedProjectStaysWithItsOrg(t *testing.T) {
 	)
 	unsetProject(t)
 	t.Setenv("SALAD_ORGANIZATION", "")
-	if err := config.Save(procEnv, config.File{Organization: "org-a", Project: "prod"}); err != nil {
+	if err := config.Save(app.Env, config.File{Organization: "org-a", Project: "prod"}); err != nil {
 		t.Fatal(err)
 	}
 	stderr := captureStderr(t, func() {

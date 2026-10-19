@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -184,8 +183,8 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 		if cerr := l.askForKey(true); cerr != nil {
 			return cerr
 		}
-	case procEnv.Getenv(envAPIKey) != "":
-		l.key, l.keyFrom = procEnv.Getenv(envAPIKey), envAPIKey
+	case app.Env.Getenv(envAPIKey) != "":
+		l.key, l.keyFrom = app.Env.Getenv(envAPIKey), envAPIKey
 	case l.saved.APIKey != "":
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "no API key provided, and a key is already saved").
 			WithHint("to switch organization or project, run saladcloud use <org>/<project>")
@@ -229,7 +228,7 @@ func namedValue(flag, flagName, env string) (value, from string) {
 	if flag = strings.TrimSpace(flag); flag != "" {
 		return flag, flagName
 	}
-	if v := strings.TrimSpace(procEnv.Getenv(env)); v != "" {
+	if v := strings.TrimSpace(app.Env.Getenv(env)); v != "" {
 		return v, env
 	}
 	return "", ""
@@ -238,15 +237,15 @@ func namedValue(flag, flagName, env string) (value, from string) {
 // keyFromStdin reads --api-key -'s key: one line, hidden at a terminal.
 func (l *login) keyFromStdin() *clierr.Error {
 	var line string
-	if con.Terminal() { // hidden whenever stdin is a terminal, prompts or not
-		answer, err := con.ReadHidden()
+	if app.Console.Terminal() { // hidden whenever stdin is a terminal, prompts or not
+		answer, err := app.Console.ReadHidden()
 		if err != nil {
 			return l.canceled()
 		}
 		line = answer
 	} else {
 		var err error
-		if line, err = readLine(bufio.NewReader(os.Stdin)); err != nil {
+		if line, err = readLine(bufio.NewReader(app.Stdin)); err != nil {
 			line = "" // a failed read is no key; the check below says so
 		}
 	}
@@ -297,10 +296,10 @@ func rejected(cerr *clierr.Error) bool {
 func (l *login) askForKey(first bool) *clierr.Error {
 	if first {
 		ovs := stillSupplied(envAPIKey)
-		if v := procEnv.Getenv(envOrganization); v != "" && l.orgFrom == "--org" && l.orgName != v {
+		if v := app.Env.Getenv(envOrganization); v != "" && l.orgFrom == "--org" && l.orgName != v {
 			ovs = append(ovs, stillSupplied(envOrganization)...)
 		}
-		if v := procEnv.Getenv(envProject); v != "" && l.projectFrom == "--project" && l.projectName != v {
+		if v := app.Env.Getenv(envProject); v != "" && l.projectFrom == "--project" && l.projectName != v {
 			ovs = append(ovs, stillSupplied(envProject)...)
 		}
 		if line := beforePrompt("login", ovs); line != "" {
@@ -809,9 +808,9 @@ func (l *login) save(org, project string) error {
 		f.APIKey = l.key
 	}
 	f.Organization, f.Project = org, project
-	path, err := config.Path(procEnv)
+	path, err := config.Path(app.Env)
 	if err == nil {
-		err = config.Save(procEnv, f)
+		err = config.Save(app.Env, f)
 	}
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
@@ -823,7 +822,7 @@ func (l *login) save(org, project string) error {
 	}
 	ovs := overridesOf(f, vars...)
 	source := "config"
-	if procEnv.Getenv(envAPIKey) != "" {
+	if app.Env.Getenv(envAPIKey) != "" {
 		source = "env"
 	}
 	savedKey := f.APIKey // what commands use where SALAD_API_KEY is not set
@@ -840,7 +839,7 @@ func (l *login) save(org, project string) error {
 		Action:            "logged_in",
 		OK:                true,
 	}
-	if err := printer.Emit(result, func(w *output.Writer) {
+	if err := app.printer.Emit(result, func(w *output.Writer) {
 		if project == "" {
 			w.Printf("Logged in: %s, no project set\n", org)
 		} else {

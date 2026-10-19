@@ -7,31 +7,31 @@ import (
 	"testing"
 )
 
-// stubKeygen makes generateKey write a key pair instead of running
+// stubKeygen makes app.GenerateKey write a key pair instead of running
 // ssh-keygen, and ssh-keygen present or not.
 func stubKeygen(t *testing.T, installed bool) {
 	t.Helper()
-	oldGen, oldLook := generateKey, lookPath
-	generateKey = func(keyPath string) error {
+	oldGen, oldLook := app.GenerateKey, app.LookPath
+	app.GenerateKey = func(keyPath string) error {
 		if err := os.WriteFile(keyPath, []byte("private"), 0o600); err != nil {
 			return err
 		}
 		return os.WriteFile(keyPath+".pub", []byte("ssh-ed25519 AAAAgenerated saladcloud-cli\n"), 0o600)
 	}
-	lookPath = func(name string) (string, error) {
+	app.LookPath = func(name string) (string, error) {
 		if installed {
 			return "/usr/bin/" + name, nil
 		}
 		return "", errors.New("not found")
 	}
-	t.Cleanup(func() { generateKey, lookPath = oldGen, oldLook })
+	t.Cleanup(func() { app.GenerateKey, app.LookPath = oldGen, oldLook })
 }
 
 func stubPassphrase(t *testing.T, has bool) {
 	t.Helper()
-	old := hasPassphrase
-	hasPassphrase = func(string) (bool, bool) { return has, true }
-	t.Cleanup(func() { hasPassphrase = old })
+	old := app.HasPassphrase
+	app.HasPassphrase = func(string) (bool, bool) { return has, true }
+	t.Cleanup(func() { app.HasPassphrase = old })
 }
 
 func TestSSHKeySetupBranches(t *testing.T) {

@@ -125,7 +125,7 @@ func TestWhoamiNamelessOrgRowsAreUnknown(t *testing.T) {
 func TestLogoutKeepsContext(t *testing.T) {
 	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
 	t.Setenv("SALAD_API_KEY", "")
-	if err := config.Save(procEnv,
+	if err := config.Save(app.Env,
 		config.File{APIKey: "k", Organization: "my-org", Project: "p", GatewayAPIKey: "g"},
 	); err != nil {
 		t.Fatal(err)
@@ -138,14 +138,14 @@ func TestLogoutKeepsContext(t *testing.T) {
 		!strings.Contains(out, `"action": "logged_out",`) {
 		t.Errorf("logout -o json = %s", out)
 	}
-	f := must(config.Load(procEnv))(t)
+	f := must(config.Load(app.Env))(t)
 	if f.APIKey != "" || f.Organization != "my-org" || f.Project != "p" || f.GatewayAPIKey != "g" {
 		t.Errorf("after logout the config is %+v; only the API key goes", f)
 	}
 	if _, err := runRoot(t, "ai-gateway", "logout"); err != nil {
 		t.Fatalf("ai-gateway logout: %v", err)
 	}
-	if f = must(config.Load(procEnv))(t); f.GatewayAPIKey != "" || f.Organization != "my-org" {
+	if f = must(config.Load(app.Env))(t); f.GatewayAPIKey != "" || f.Organization != "my-org" {
 		t.Errorf("after ai-gateway logout the config is %+v", f)
 	}
 }

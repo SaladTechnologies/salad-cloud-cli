@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -250,8 +249,8 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		scope = logScope{kind: scopeOrg, name: client.Org()}
 	}
 
-	if printer.Mode() == "table" {
-		fprintln(os.Stderr, scopeLine(scope, client.Org(), res.Project))
+	if app.printer.Mode() == "table" {
+		fprintln(errw(), scopeLine(scope, client.Org(), res.Project))
 	}
 
 	// --instance accepts an ID prefix (like ssh/cp); the log query language
@@ -291,7 +290,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		return page, nil
 	}
 	emit := func(e logsq.Entry) error {
-		return printer.Stream(e.Raw, formatLogLine(e, scope.kind))
+		return app.printer.Stream(e.Raw, formatLogLine(e, scope.kind))
 	}
 
 	if !follow {
@@ -304,14 +303,23 @@ func runLogs(cmd *cobra.Command, args []string) error {
 			emitted++
 			return emit(e)
 		}
-		if err := logsq.FetchWindow(cmd.Context(), fetch, query, since, until, pageSize, countingEmit); err != nil {
+		if err := logsq.FetchWindow(
+			cmd.Context(),
+			fetch,
+			query,
+			since,
+			until,
+			pageSize,
+			countingEmit,
+			stderrLine,
+		); err != nil {
 			return err
 		}
 		// An empty one-shot result is easy to misread as a hang or a bug;
 		// say so on stderr in table mode. JSON/NDJSON stays machine-clean,
 		// and --follow's silence correctly means "waiting".
-		if emitted == 0 && printer.Mode() == "table" {
-			fprintln(os.Stderr, noMatchNote(scope, sinceStr, instance, severity, filter))
+		if emitted == 0 && app.printer.Mode() == "table" {
+			fprintln(errw(), noMatchNote(scope, sinceStr, instance, severity, filter))
 		}
 		return nil
 	}
@@ -319,11 +327,11 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context() // canceled by the one signal handler in Execute
 	if group != "" {
 		if note := followGroupNote(ctx, client, group); note != "" {
-			fprintln(os.Stderr, note)
+			fprintln(errw(), note)
 		}
 	}
-	if printer.Mode() == "table" {
-		fprintln(os.Stderr, "waiting for log entries (Ctrl-C to stop)")
+	if app.printer.Mode() == "table" {
+		fprintln(errw(), "waiting for log entries (Ctrl-C to stop)")
 	}
 	query, cerr := logsq.Compile(baseFilters)
 	if cerr != nil {
@@ -334,6 +342,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		MaxBackoff: logsq.DefaultMaxBackoff,
 		Lookback:   lookback,
 		Clock:      logsq.RealClock{},
+		Warn:       stderrLine,
 	}
 	//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
 	if cerr := follower.Run(ctx, query, fetch, since, pageSize, emit); cerr != nil {

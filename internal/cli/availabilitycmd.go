@@ -7,7 +7,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -378,10 +377,10 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 			return cerr
 		}
 		if w := overloadWarning("CPU", allZeroCPU(avail)); w != "" {
-			fprintln(os.Stderr, w)
+			fprintln(errw(), w)
 		}
 		result := cpuAvailabilityResult{Items: []organizations.CpuAvailability{*avail}, Combined: nil}
-		return wrapErr(printer.Emit(result, func(w *output.Writer) {
+		return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
 			if !reportsOnCall(avail.OnCallCpu) {
 				w.Println("CLASS\tBATCH")
 				w.Printf("CPU\t%s\n", countCell(avail.AvailableCpuBatch))
@@ -404,7 +403,7 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 		}
 		row := gpuAvailabilityRow{GpuClass: id, GpuClassName: className(id), GpuAvailability: *avail}
 		if w := overloadWarning(row.GpuClassName, allZeroGpu(avail)); w != "" {
-			fprintln(os.Stderr, w)
+			fprintln(errw(), w)
 		}
 		result.Items = append(result.Items, row)
 	}
@@ -416,11 +415,11 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 			return cerr
 		}
 		if w := overloadWarning("the combined query", allZeroGpu(avail)); w != "" {
-			fprintln(os.Stderr, w)
+			fprintln(errw(), w)
 		}
 		result.Combined = &gpuCombinedRow{GpuClasses: req.GpuClasses, GpuAvailability: *avail}
 	}
-	return wrapErr(printer.Emit(result, func(w *output.Writer) {
+	return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
 		onCall := []*int64{}
 		for i := range result.Items {
 			onCall = append(onCall, result.Items[i].OnCallGpu)

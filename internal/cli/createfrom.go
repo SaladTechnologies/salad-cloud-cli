@@ -191,7 +191,7 @@ func loadFromBase(cmd *cobra.Command, ref, file string, allowUnknown bool, name 
 	var fileRaw json.RawMessage
 	if file != "" {
 		var probe containergroups.ContainerGroupCreationRequest
-		raw, u, lerr := input.LoadLenient(file, &probe)
+		raw, u, lerr := input.LoadLenient(file, app.Stdin, &probe)
 		if lerr != nil {
 			return base, nil, nil, lerr
 		}

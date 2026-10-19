@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"os"
 	"slices"
 	"strings"
 
@@ -89,7 +88,7 @@ func runGpusList(cmd *cobra.Command, _ []string) error {
 	payload := struct {
 		Items []organizationdata.GpuClass `json:"items"`
 	}{classes}
-	emitErr := printer.Emit(payload, func(w *output.Writer) {
+	emitErr := app.printer.Emit(payload, func(w *output.Writer) {
 		header := "NAME\tTYPE\tHIGH DEMAND\tBATCH\tLOW\tMEDIUM\tHIGH"
 		if allPrices {
 			header += "\tPRICES"
@@ -112,8 +111,8 @@ func runGpusList(cmd *cobra.Command, _ []string) error {
 			w.Println(strings.Join(cells, "\t"))
 		}
 	})
-	if emitErr == nil && printer.Mode() == "table" {
-		fprintln(os.Stderr, gpusLegend)
+	if emitErr == nil && app.printer.Mode() == "table" {
+		fprintln(errw(), gpusLegend)
 	}
 	return wrapErr(emitErr)
 }
@@ -143,7 +142,7 @@ func runGpusGet(cmd *cobra.Command, args []string) error {
 			args[0],
 		).WithHint("to list them, run saladcloud gpus list")
 	}
-	return wrapErr(printer.Emit(class, func(w *output.Writer) {
+	return wrapErr(app.printer.Emit(class, func(w *output.Writer) {
 		row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
 		row("Name", gpuNameCell(class.Name))
 		row("ID", ptr.Deref(class.Id))

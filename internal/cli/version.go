@@ -51,7 +51,7 @@ func runVersion(_ *cobra.Command, _ []string) error {
 		Stage:     version.Stage,
 		IssuesURL: version.IssuesURL,
 	}
-	return wrapErr(printer.Emit(v, func(w *output.Writer) {
+	return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
 		w.Printf("saladcloud %s (%s) %s/%s\n", v.Version, v.Commit, v.OS, v.Arch)
 		w.Printf("This is a %s release; report issues at %s\n", v.Stage, v.IssuesURL)
 	}))

@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -18,23 +17,14 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 )
 
-// stderrTee, when set, is where errw writes instead of [os.Stderr]: the test
-// harness records stderr in order with stdout and the terminal.
-var stderrTee io.Writer
-
-// errw is where a command's stderr lines go.
-func errw() io.Writer {
-	if stderrTee != nil {
-		return stderrTee
-	}
-	return os.Stderr
-}
+// errw is where a command's stderr lines go: the run's stderr.
+func errw() io.Writer { return app.Stderr }
 
 // say writes a readback or status line to stderr, in table mode only: in
 // json and yaml mode stderr carries only warnings, notes and the error
 // document, and the JSON document holds the fact.
 func say(format string, args ...any) {
-	if printer.Mode() == "table" {
+	if app.printer.Mode() == "table" {
 		fprintf(errw(), format+"\n", args...)
 	}
 }
@@ -46,6 +36,10 @@ func say(format string, args ...any) {
 func writeUnreported(w io.Writer, s string) {
 	_, _ = io.WriteString(w, s) //nolint:errcheck // a failed write to stderr has nowhere to be reported
 }
+
+// stderrLine writes line to the run's stderr: a warning a package reports
+// through a callback.
+func stderrLine(line string) { fprintln(errw(), line) }
 
 // fprintf is [fmt.Fprintf] for a stream writeUnreported covers.
 func fprintf(w io.Writer, format string, args ...any) {
@@ -66,7 +60,7 @@ func hintLine(format string, args ...any) { say("hint: "+format, args...) }
 // checked it can be read (configReady) or reported that it cannot; a file
 // that cannot be read reads as empty, as it does to Load's caller anyway.
 func savedConfig() config.File {
-	f, err := config.Load(procEnv)
+	f, err := config.Load(app.Env)
 	if err != nil {
 		return config.File{}
 	}
@@ -76,7 +70,7 @@ func savedConfig() config.File {
 // configPath is the config file's location for a message, or "" when the
 // location itself is unknown (no user config directory).
 func configPath() string {
-	p, err := config.Path(procEnv)
+	p, err := config.Path(app.Env)
 	if err != nil {
 		return ""
 	}
@@ -175,7 +169,7 @@ func looksLikeKey(v string) bool {
 		return false
 	}
 	saved := savedConfig()
-	for _, k := range []string{procEnv.Getenv(envAPIKey), procEnv.Getenv(envGatewayKey), saved.APIKey, saved.GatewayAPIKey} {
+	for _, k := range []string{app.Env.Getenv(envAPIKey), app.Env.Getenv(envGatewayKey), saved.APIKey, saved.GatewayAPIKey} {
 		if key, _ := normalizeKey(k); key != "" && key == v {
 			return true
 		}
@@ -349,16 +343,16 @@ func hintClauses(clauses ...string) string {
 // and never overwrites a corrupt file. command is the one the hint says to
 // run again: "login", "ai-gateway login" or "use".
 func configReady(command string) *clierr.Error {
-	path, err := config.Path(procEnv)
+	path, err := config.Path(app.Env)
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err)).
 			WithHint("%s", unwritableHint(command))
 	}
-	if _, err := config.Load(procEnv); err != nil {
+	if _, err := config.Load(app.Env); err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it, then run saladcloud %s again", command)
 	}
-	if err := config.Writable(procEnv); err != nil {
+	if err := config.Writable(app.Env); err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
 			WithHint("%s", unwritableHint(command))
 	}
@@ -389,7 +383,7 @@ func unwritableHint(command string) string {
 // sshMissingHint says how to get an OpenSSH client tool (ssh, ssh-keygen)
 // on this OS.
 func sshMissingHint(tool string) string {
-	switch procEnv.GOOS {
+	switch app.Env.GOOS {
 	case "windows":
 		return "add the OpenSSH Client optional feature in Windows Settings, then open a new terminal"
 	case "darwin":

@@ -19,9 +19,9 @@ import (
 // and last line; with or without an instance prefix (without one, a note
 // names the instance).
 func TestCpErrorDocument(t *testing.T) {
-	old := sftpProgram
-	sftpProgram = os.Args[0]
-	t.Cleanup(func() { sftpProgram = old })
+	old := app.SFTPProgram
+	app.SFTPProgram = os.Args[0]
+	t.Cleanup(func() { app.SFTPProgram = old })
 	for _, fake := range []string{"ok", "fail"} {
 		for _, src := range []string{"my-app:/etc/hostname", "my-app/8a2f:/etc/hostname"} {
 			for _, mode := range []string{"json", "yaml"} {

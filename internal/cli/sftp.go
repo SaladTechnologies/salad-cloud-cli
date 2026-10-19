@@ -6,8 +6,6 @@
 package cli
 
 import (
-	"os"
-
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +44,7 @@ ssh-key setup.`,
 			if cerr != nil {
 				return groupNotFound(cerr, group, client.Org(), client.Project())
 			}
-			inst, cerr := pickInstance(os.Stderr, collection.Instances, group, instance)
+			inst, cerr := pickInstance(errw(), collection.Instances, group, instance)
 			if cerr != nil {
 				return cerr
 			}

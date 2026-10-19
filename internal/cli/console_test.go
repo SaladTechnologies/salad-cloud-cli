@@ -10,8 +10,8 @@ import (
 // TestAtTerminal: SALAD_CLI_NO_PROMPT, or CI set to anything but empty,
 // false or 0, makes a terminal count as none.
 func TestAtTerminal(t *testing.T) {
-	old := con
-	t.Cleanup(func() { con = old })
+	old := app.Console
+	t.Cleanup(func() { app.Console = old })
 	for _, tc := range []struct {
 		terminal     bool
 		noPrompt, ci string
@@ -31,7 +31,7 @@ func TestAtTerminal(t *testing.T) {
 	} {
 		t.Setenv("SALAD_CLI_NO_PROMPT", tc.noPrompt)
 		t.Setenv("CI", tc.ci)
-		con = &fakeConsole{terminal: tc.terminal}
+		app.Console = &fakeConsole{terminal: tc.terminal}
 		if got := atTerminal(); got != tc.want {
 			t.Errorf(
 				"terminal=%t SALAD_CLI_NO_PROMPT=%q CI=%q: atTerminal() = %t, want %t",
@@ -49,9 +49,9 @@ func TestAtTerminal(t *testing.T) {
 // mode and as the hint key in the error document, which is ASCII.
 func TestErrorHint(t *testing.T) {
 	var buf strings.Builder
-	old := errOut
-	errOut = &buf
-	t.Cleanup(func() { errOut = old; setOutputMode(t, "table") })
+	old := app.Stderr
+	app.Stderr = &buf
+	t.Cleanup(func() { app.Stderr = old; setOutputMode(t, "table") })
 	e := clierr.New(clierr.CodeUsage, clierr.KindUsage, "invalid organization name %q", "Café").
 		WithHint("did you mean %q?", "cafe")
 	printError(e)

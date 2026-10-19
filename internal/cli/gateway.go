@@ -12,7 +12,6 @@ package cli
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"slices"
 	"strings"
 
@@ -57,7 +56,7 @@ type gatewayTestResult struct {
 // newGateway resolves configuration and builds the gateway client. Its
 // errors from the gateway go through gatewayFailed.
 func newGateway() (*api.Gateway, *gatewayKey, *clierr.Error) {
-	res, err := config.Resolve(procEnv, "", "")
+	res, err := config.Resolve(app.Env, "", "")
 	if err != nil {
 		path := configPath()
 		return nil, nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
@@ -185,8 +184,8 @@ every key, so no AI Gateway key is needed; with one set, it is sent.`,
 			if cerr != nil {
 				return cerr
 			}
-			if printer.Mode() == "table" {
-				fprintf(os.Stderr, "pricing and the subscription tier: %s\n", api.GatewayPricingURL)
+			if app.printer.Mode() == "table" {
+				fprintf(errw(), "pricing and the subscription tier: %s\n", api.GatewayPricingURL)
 			}
 			// The list envelope every list has; each model stays the
 			// gateway's own object.
@@ -194,7 +193,7 @@ every key, so no AI Gateway key is needed; with one set, it is sent.`,
 			if result.Items == nil {
 				result.Items = []map[string]any{}
 			}
-			return wrapErr(printer.Emit(result, func(w *output.Writer) {
+			return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
 				w.Println("MODEL\tOWNED BY")
 				for _, m := range result.Items {
 					id := asType[string](m["id"])
@@ -272,9 +271,9 @@ budget then defaults to 1024).`,
 				)
 			}
 			v := gatewayTestResult{Model: chosen, Prompt: prompt, Reply: reply, Usage: c.Usage, OK: true}
-			return wrapErr(printer.Emit(v, func(w *output.Writer) {
+			return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
 				w.Printf("%s\n", reply)
-				fprintf(os.Stderr, "AI Gateway key works: model %s answered (%s)\n", chosen, usageSummary(c.Usage))
+				fprintf(errw(), "AI Gateway key works: model %s answered (%s)\n", chosen, usageSummary(c.Usage))
 			}))
 		},
 	}

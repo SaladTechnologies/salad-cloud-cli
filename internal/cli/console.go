@@ -15,7 +15,7 @@ import (
 
 // console is the person at the keyboard, when there is one: whether stdin is
 // a terminal, where the lines that exist only for a prompt's exchange go, and
-// how an answer is read. Tests replace con with a scripted one, so every
+// how an answer is read. Tests replace app.Console with a scripted one, so every
 // prompt path runs offline.
 type console interface {
 	// Terminal reports whether stdin is a terminal.
@@ -35,28 +35,22 @@ type console interface {
 // single-choice pick, no browser offer, no organization names in hints, no
 // removal steps under a variable warning.
 func atTerminal() bool {
-	if procEnv.Getenv("SALAD_CLI_NO_PROMPT") != "" || inCI() {
+	if app.Env.Getenv("SALAD_CLI_NO_PROMPT") != "" || inCI() {
 		return false
 	}
-	return con.Terminal()
+	return app.Console.Terminal()
 }
 
 // inCI reports whether CI is set to anything but empty, false or 0, as
 // GitHub Actions, GitLab and most CI systems set it.
 func inCI() bool {
-	v := procEnv.Getenv("CI")
+	v := app.Env.Getenv("CI")
 	return v != "" && v != "0" && !strings.EqualFold(v, "false")
 }
 
 // errInterrupt is what a console read returns when the person presses
 // Ctrl-C.
 var errInterrupt = errors.New("interrupted")
-
-// con is the console every prompt goes through.
-var con console = &stdConsole{device: nil, keys: nil, in: nil}
-
-// openPage opens a URL in the user's browser. Tests replace it.
-var openPage = openBrowser
 
 // stdConsole is the process's own terminal: answers come from stdin, prompts
 // go to the terminal device, so they reach the person even when stdout and

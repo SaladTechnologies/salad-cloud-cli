@@ -2,8 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"io"
-	"os"
 	"strings"
 	"testing"
 )
@@ -30,22 +28,13 @@ func runComplete(t *testing.T, args ...string) (stdout, stderr string) {
 		}
 		resetRun(t)
 	})
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	oldStderr := os.Stderr
-	os.Stderr = w
-	osErr := make(chan string)
-	go func() {
-		b := should(io.ReadAll(r))(t)
-		osErr <- string(b)
-	}()
+	var cliErr bytes.Buffer
+	oldStderr := app.Stderr
+	app.Stderr = &cliErr
 	rootCmd.SetArgs(append([]string{"__complete"}, args...))
 	execErr := rootCmd.Execute()
-	noErr(t, w.Close())
-	os.Stderr = oldStderr
-	written := <-osErr
+	app.Stderr = oldStderr
+	written := cliErr.String()
 	if execErr != nil {
 		t.Fatalf("__complete %v: %v", args, execErr)
 	}

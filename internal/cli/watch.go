@@ -43,7 +43,7 @@ func validateWatchFlags(cmd *cobra.Command) *clierr.Error {
 	if !watch {
 		return nil
 	}
-	if printer.Mode() != "table" {
+	if app.printer.Mode() != "table" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage,
 			"--watch is table mode only; in scripts use --wait, or loop over '%s -o json'", cmd.CommandPath())
 	}
@@ -75,9 +75,9 @@ func runMaybeWatch(cmd *cobra.Command, render func(ctx context.Context) *clierr.
 		return cerr
 	}
 	return watchLoop(cmd.Context(), watchDeps{
-		out:     printer.Out(),
-		errOut:  os.Stderr,
-		tty:     isTerminal(printer.Out()),
+		out:     app.printer.Out(),
+		errOut:  errw(),
+		tty:     isTerminal(app.printer.Out()),
 		now:     time.Now,
 		after:   time.After,
 		refresh: interval,
