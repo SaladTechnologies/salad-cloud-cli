@@ -112,8 +112,8 @@ func messageFromBody(status int, body []byte) (msg, hint string) {
 	}
 	var doc problemDoc
 	if err := json.Unmarshal(body, &doc); err == nil {
-		if msg, hint := doc.message(status); msg != "" {
-			return msg, hint
+		if msg := doc.message(status); msg != "" {
+			return msg, doc.hint()
 		}
 	}
 	if len(trimmed) > 200 {
@@ -122,10 +122,10 @@ func messageFromBody(status int, body []byte) (msg, hint string) {
 	return fmt.Sprintf("HTTP %d: %s", status, trimmed), ""
 }
 
-// message is the problem document's message, with its domain type when that carries signal, and the fix for the
-// problem types the CLI knows; the message is "" when the document says nothing the CLI can show.
-func (doc *problemDoc) message(status int) (string, string) {
-	msg, hint := cmp.Or(doc.Detail, doc.Title, doc.Message), ""
+// message is the problem document's message, with its domain type when that carries signal; "" when the document
+// says nothing the CLI can show.
+func (doc *problemDoc) message(status int) string {
+	msg := cmp.Or(doc.Detail, doc.Title, doc.Message)
 	// ASP.NET ValidationProblemDetails carries the actual field-level
 	// messages in an errors dict; without them "One or more validation
 	// errors occurred." says nothing actionable.
@@ -139,18 +139,18 @@ func (doc *problemDoc) message(status int) (string, string) {
 	// Some API 400s carry only a domain type ("Bad Request (type: x)",
 	// or "Entitlement check failed.") with no actionable detail; translate
 	// the known ones into sentences. A real detail or field-error list
-	// always wins; the known type's fix applies either way.
-	if known, ok := typeHints()[doc.Type]; ok {
-		if doc.Detail == "" && flat == "" {
-			msg = known.msg
-		}
-		hint = known.hint
+	// always wins; the known type's fix (hint) applies either way.
+	if known, ok := typeHints()[doc.Type]; ok && doc.Detail == "" && flat == "" {
+		msg = known.msg
 	}
 	if msg != "" && doc.Type != "" && !isRFCTypeURL(doc.Type) {
 		msg = fmt.Sprintf("%s (type: %s)", msg, doc.Type)
 	}
-	return msg, hint
+	return msg
 }
+
+// hint is the fix for the problem document's type when the CLI knows one, else "".
+func (doc *problemDoc) hint() string { return typeHints()[doc.Type].hint }
 
 // typeHints maps the API's opaque problem-document types to a sentence and
 // the fix (the payload is just "Bad Request", or "Entitlement check
