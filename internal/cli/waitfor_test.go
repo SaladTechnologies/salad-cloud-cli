@@ -462,12 +462,11 @@ func TestSettleTimeoutSaysPatchAccepted(t *testing.T) {
 func TestSettleFlags(t *testing.T) {
 	t.Parallel()
 	cmd := &cobra.Command{Use: "x"}
-	var o settleOptions
-	addSettleFlags(cmd, &o)
+	addSettleFlags(cmd, &settleOptions{})
 	if cmd.Flags().Lookup("wait") != nil {
 		t.Error("a settle verb must not carry --wait: waiting is the default")
 	}
-	wait, timeout, cerr := o.values()
+	wait, timeout, cerr := settleValuesWith(t)
 	if cerr != nil || !wait || timeout != settleDefaultTimeout {
 		t.Errorf(
 			"defaults = wait %v timeout %s err %v, want wait true, %s, nil",
@@ -477,19 +476,28 @@ func TestSettleFlags(t *testing.T) {
 			settleDefaultTimeout,
 		)
 	}
-	if err := cmd.Flags().Set("timeout", "0"); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, cerr = o.values(); cerr == nil || cerr.Code != clierr.CodeUsage {
+	if _, _, cerr = settleValuesWith(t, "timeout", "0"); cerr == nil || cerr.Code != clierr.CodeUsage {
 		t.Errorf("zero timeout while waiting = %v, want a usage error", cerr)
 	}
-	if err := cmd.Flags().Set("no-wait", "true"); err != nil {
-		t.Fatal(err)
-	}
-	wait, _, cerr = o.values()
+	wait, _, cerr = settleValuesWith(t, "timeout", "0", "no-wait", "true")
 	if cerr != nil || wait {
 		t.Errorf("--no-wait = wait %v err %v, want false, nil (timeout is irrelevant without a wait)", wait, cerr)
 	}
+}
+
+// settleValuesWith is settleOptions.values on a fresh command after setting
+// the settle flags given as name, value pairs, in order.
+func settleValuesWith(t *testing.T, flagValues ...string) (bool, time.Duration, *clierr.Error) {
+	t.Helper()
+	cmd := &cobra.Command{Use: "x"}
+	var o settleOptions
+	addSettleFlags(cmd, &o)
+	for i := 0; i+1 < len(flagValues); i += 2 {
+		if err := cmd.Flags().Set(flagValues[i], flagValues[i+1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return o.values()
 }
 
 // TestWaitCreateStoppedFailsFast: a group created with autostart on can go

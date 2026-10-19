@@ -148,62 +148,118 @@ func (app *App) waitForGroup(
 	if stderr == nil {
 		stderr = app.errw()
 	}
-	start := d.now()
-	deadline := start.Add(timeout)
-	lastStatus := "-"
-	lastProgress := ""
-	var lastPrinted time.Time
+	s := groupWaitState{
+		w:            stderr,
+		now:          d.now,
+		group:        group,
+		goal:         goal,
+		start:        d.now(),
+		lastStatus:   "-",
+		lastProgress: "",
+		lastPrinted:  time.Time{},
+	}
+	deadline := s.start.Add(timeout)
 	for {
 		g, cerr := d.get(ctx)
-		switch {
-		case cerr != nil && ctx.Err() != nil:
-			return nil, waitInterrupted()
-		case cerr != nil:
-			switch cerr.Code {
-			case clierr.CodeNotFound, clierr.CodeAuth, clierr.CodeUsage, clierr.CodeInvalidInput:
-				return nil, cerr
-			default:
-				// Transient (network, 5xx, rate limit): note it, keep polling.
-				fprintf(stderr, "warning: %s (still waiting)\n", cerr.Message)
-			}
-		default:
-			status := groupStatus(g)
-			lastStatus = status
-			if done(g) {
-				return g, nil
-			}
-			if abort != nil {
-				if aerr := abort(g); aerr != nil {
-					return nil, aerr
-				}
-			}
-			if app.printer.Mode() == "table" {
-				// The elapsed suffix is excluded from the change check;
-				// otherwise every poll would print.
-				line := fmt.Sprintf("waiting for %s to %s: %s%s", group, goal, status, instanceCountSummary(g))
-				if now := d.now(); line != lastProgress || now.Sub(lastPrinted) >= progressRepeat {
-					lastProgress, lastPrinted = line, now
-					fprintf(stderr, "%s (%s elapsed)\n", line, d.now().Sub(start).Round(time.Second))
-				}
-			}
+		final, ferr := app.waitObserve(ctx, &s, g, cerr, done, abort)
+		if final != nil || ferr != nil {
+			return final, ferr
 		}
 		if !d.now().Before(deadline) {
-			if goal == goalSettle {
-				// The write was accepted (HTTP 200) before this wait began;
-				// only the verification ran out of time. Say so, or a
-				// script will retry a patch that already landed.
-				return nil, clierr.New(clierr.CodeGeneric, clierr.KindWaitTimeout,
-					"patch accepted (HTTP 200), but %s is still pending after %s; not verified", group, timeout).
-					WithHint("retry with a longer --timeout, or to check on the group, run saladcloud container-groups get %s", group)
-			}
-			return nil, clierr.New(clierr.CodeGeneric, clierr.KindWaitTimeout,
-				"timed out after %s waiting for %s to %s (last status: %s)", timeout, group, goal, lastStatus).
-				WithHint("retry with a longer --timeout, or to check on the group, run saladcloud container-groups get %s; the group continues server-side", group)
+			return nil, waitTimedOut(group, goal, timeout, s.lastStatus)
 		}
 		if err := d.sleep(ctx, poll); err != nil {
 			return nil, waitInterrupted()
 		}
 	}
+}
+
+// groupWaitState is one waitForGroup loop: where its progress goes, its
+// clock, what it waits for, and what it last saw and printed.
+type groupWaitState struct {
+	w            io.Writer
+	now          func() time.Time
+	group, goal  string
+	start        time.Time
+	lastStatus   string // "-" until a poll succeeds
+	lastProgress string // the last progress line printed, without its elapsed suffix
+	lastPrinted  time.Time
+}
+
+// waitObserve handles one poll: g and cerr are what it returned. It returns
+// the group once done(g) holds, an error when the wait must end, and
+// neither to keep polling (after a transient error, or while the goal is
+// not reached yet).
+func (app *App) waitObserve(
+	ctx context.Context,
+	s *groupWaitState,
+	g *shared.ContainerGroup,
+	cerr *clierr.Error,
+	done func(*shared.ContainerGroup) bool,
+	abort func(*shared.ContainerGroup) *clierr.Error,
+) (*shared.ContainerGroup, *clierr.Error) {
+	switch {
+	case cerr != nil && ctx.Err() != nil:
+		return nil, waitInterrupted()
+	case cerr != nil:
+		return nil, waitPollFailed(s.w, cerr)
+	}
+	s.lastStatus = groupStatus(g)
+	if done(g) {
+		return g, nil
+	}
+	if abort != nil {
+		if aerr := abort(g); aerr != nil {
+			return nil, aerr
+		}
+	}
+	if app.printer.Mode() == "table" {
+		waitProgressLine(s, g)
+	}
+	return nil, nil
+}
+
+// waitPollFailed is the wait's answer to a failed poll: not-found, auth,
+// usage and invalid-input errors end it, because waiting longer cannot fix
+// them; anything else is transient (network, 5xx, rate limit), noted on w,
+// and nil, to keep polling.
+func waitPollFailed(w io.Writer, cerr *clierr.Error) *clierr.Error {
+	switch cerr.Code {
+	case clierr.CodeNotFound, clierr.CodeAuth, clierr.CodeUsage, clierr.CodeInvalidInput:
+		return cerr
+	default:
+		// Transient (network, 5xx, rate limit): note it, keep polling.
+		fprintf(w, "warning: %s (still waiting)\n", cerr.Message)
+		return nil
+	}
+}
+
+// waitProgressLine writes the table-mode progress line for g when the
+// status or instance counts changed, or progressRepeat has passed since the
+// last one.
+func waitProgressLine(s *groupWaitState, g *shared.ContainerGroup) {
+	// The elapsed suffix is excluded from the change check;
+	// otherwise every poll would print.
+	line := fmt.Sprintf("waiting for %s to %s: %s%s", s.group, s.goal, s.lastStatus, instanceCountSummary(g))
+	if now := s.now(); line != s.lastProgress || now.Sub(s.lastPrinted) >= progressRepeat {
+		s.lastProgress, s.lastPrinted = line, now
+		fprintf(s.w, "%s (%s elapsed)\n", line, s.now().Sub(s.start).Round(time.Second))
+	}
+}
+
+// waitTimedOut is the error for a wait that ran out of time.
+func waitTimedOut(group, goal string, timeout time.Duration, lastStatus string) *clierr.Error {
+	if goal == goalSettle {
+		// The write was accepted (HTTP 200) before this wait began;
+		// only the verification ran out of time. Say so, or a
+		// script will retry a patch that already landed.
+		return clierr.New(clierr.CodeGeneric, clierr.KindWaitTimeout,
+			"patch accepted (HTTP 200), but %s is still pending after %s; not verified", group, timeout).
+			WithHint("retry with a longer --timeout, or to check on the group, run saladcloud container-groups get %s", group)
+	}
+	return clierr.New(clierr.CodeGeneric, clierr.KindWaitTimeout,
+		"timed out after %s waiting for %s to %s (last status: %s)", timeout, group, goal, lastStatus).
+		WithHint("retry with a longer --timeout, or to check on the group, run saladcloud container-groups get %s; the group continues server-side", group)
 }
 
 // waitForGroupStatus is waitForGroup with the goal "status == target",
