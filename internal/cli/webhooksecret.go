@@ -31,7 +31,9 @@ Both commands print the key itself; keep their output out of logs.`,
 			w.Println(ptr.Deref(k.SecretKey))
 		}))
 	}
-	run := func(call func(c *api.Client, cmd *cobra.Command) (*webhooksecretkey.WebhookSecretKey, *clierr.Error)) func(*cobra.Command, []string) error {
+	run := func(
+		call func(c *api.Client, cmd *cobra.Command) (*webhooksecretkey.WebhookSecretKey, *clierr.Error),
+	) func(*cobra.Command, []string) error {
 		return func(cmd *cobra.Command, _ []string) error {
 			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
@@ -46,7 +48,7 @@ Both commands print the key itself; keep their output out of logs.`,
 	}
 
 	wsCmd.AddCommand(&cobra.Command{
-		Use:   "get",
+		Use:   verbNameGet,
 		Short: "Print the organization's webhook secret key",
 		Args:  cobra.NoArgs,
 		RunE: run(func(c *api.Client, cmd *cobra.Command) (*webhooksecretkey.WebhookSecretKey, *clierr.Error) {

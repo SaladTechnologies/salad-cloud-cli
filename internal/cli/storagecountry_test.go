@@ -45,13 +45,14 @@ func TestCreateStorageAndCountry(t *testing.T) {
 func TestUpdateStorageAndCountry(t *testing.T) {
 	t.Parallel()
 	flags := updateFlags{Storage: 5, StorageSet: true, Countries: []string{"US"}}
-	if cerr := validateUpdateFlags(flags); cerr != nil {
+	if cerr := validateUpdateFlags(&flags); cerr != nil {
 		t.Fatal(cerr)
 	}
-	wire, _, cerr := buildUpdatePatch(nil, flags, nil)
+	patch, cerr := buildUpdatePatch(nil, &flags, nil)
 	if cerr != nil {
 		t.Fatal(cerr)
 	}
+	wire := patch.wire
 	var doc any
 	if err := json.Unmarshal(wire, &doc); err != nil {
 		t.Fatal(err)
@@ -65,7 +66,7 @@ func TestUpdateStorageAndCountry(t *testing.T) {
 		{Storage: 0, StorageSet: true},
 		{Countries: []string{"u1"}},
 	} {
-		if cerr := validateUpdateFlags(bad); cerr == nil || cerr.Code != clierr.CodeInvalidInput {
+		if cerr := validateUpdateFlags(&bad); cerr == nil || cerr.Code != clierr.CodeInvalidInput {
 			t.Errorf("%+v: error %v, want exit 6", bad, cerr)
 		}
 	}

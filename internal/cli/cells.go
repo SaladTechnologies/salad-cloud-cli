@@ -74,7 +74,7 @@ func jsonLogFieldText(val any) string {
 
 // asType returns v as a T, or T's zero value when v holds something else (a
 // field missing from a decoded document, or of another type).
-func asType[T any](v any) T {
+func asType[T any](v any) T { //nolint:ireturn // T is the concrete type the caller names, not an interface it hides
 	if t, ok := v.(T); ok {
 		return t
 	}

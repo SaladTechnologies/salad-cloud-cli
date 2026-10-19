@@ -155,15 +155,16 @@ func TestCreateCommandArgs(t *testing.T) {
 // patch, over a file's.
 func TestUpdatePatchCommand(t *testing.T) {
 	t.Parallel()
-	wire, _, cerr := buildUpdatePatch([]byte(`{"container":{"command":["old"],"image":"i"}}`),
-		updateFlags{Command: []string{"python", "app.py"}}, nil)
+	patch, cerr := buildUpdatePatch([]byte(`{"container":{"command":["old"],"image":"i"}}`),
+		&updateFlags{Command: []string{"python", "app.py"}}, nil)
 	if cerr != nil {
 		t.Fatal(cerr)
 	}
+	wire := patch.wire
 	if want := `{"container":{"command":["python","app.py"],"image":"i"}}`; string(wire) != want {
 		t.Errorf("patch = %s, want %s", wire, want)
 	}
-	if !(updateFlags{Command: []string{"x"}}).any() {
+	if !(&updateFlags{Command: []string{"x"}}).any() {
 		t.Error("a command alone should count as something to update")
 	}
 }

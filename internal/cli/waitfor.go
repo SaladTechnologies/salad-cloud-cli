@@ -76,7 +76,8 @@ func addSettleFlags(cmd *cobra.Command, o *settleOptions) {
 	cmd.Flags().
 		BoolVar(&o.noWait, "no-wait", false, "return once the API accepts the patch: no settle wait, no verification")
 	cmd.Flags().
-		DurationVar(&o.timeout, "timeout", settleDefaultTimeout, "give up verifying the change after this long (exit 1; the patch was already accepted)")
+		DurationVar(&o.timeout, "timeout", settleDefaultTimeout,
+			"give up verifying the change after this long (exit 1; the patch was already accepted)")
 }
 
 // values checks --no-wait/--timeout for a settle-by-default verb. wait is
@@ -123,13 +124,40 @@ type waitDeps struct {
 // a long pending phase never looks hung.
 const progressRepeat = time.Minute
 
-// waitForGroup polls d.get until done(group) reports true, abort(group)
-// returns an error, the context is canceled, or timeout elapses; on
-// success it returns the group document that satisfied the goal (the
-// settled state — this is what --wait callers emit). goal is the human
-// phrasing for progress and timeout messages, e.g. `be "running"` or
-// "settle". abort may be nil. The first poll is immediate, then one every
-// poll interval.
+// groupWaitGoal is what a wait pursues: goal is the human phrasing for
+// progress and timeout messages, e.g. `be "running"` or "settle"; done
+// reports that a group document reached it; abort, which may be nil, ends
+// the wait early with an error.
+type groupWaitGoal struct {
+	goal  string
+	done  func(*shared.ContainerGroup) bool
+	abort func(*shared.ContainerGroup) *clierr.Error
+}
+
+// statusWaitGoal is the goal "status == target", aborting early per
+// abortUnreachable.
+func statusWaitGoal(group, target string, fromActive bool) groupWaitGoal {
+	return groupWaitGoal{
+		goal:  "be " + target,
+		done:  func(g *shared.ContainerGroup) bool { return groupStatus(g) == target },
+		abort: abortUnreachable(group, target, fromActive),
+	}
+}
+
+// settleWaitGoal is the goal goalSettle: pending_change is false.
+func settleWaitGoal() groupWaitGoal {
+	return groupWaitGoal{
+		goal:  goalSettle,
+		done:  func(g *shared.ContainerGroup) bool { return !ptr.Deref(g.PendingChange) },
+		abort: nil,
+	}
+}
+
+// waitForGroup polls d.get until target.done(group) reports true,
+// target.abort(group) returns an error, the context is canceled, or timeout
+// elapses; on success it returns the group document that satisfied the goal
+// (the settled state — this is what --wait callers emit). The first poll is
+// immediate, then one every poll interval.
 //
 // Transient API errors (network, 5xx, 429) warn on stderr and keep polling;
 // not-found/auth/usage/invalid-input errors abort, because waiting longer
@@ -139,9 +167,8 @@ const progressRepeat = time.Minute
 func (app *App) waitForGroup(
 	ctx context.Context,
 	d waitDeps,
-	group, goal string,
-	done func(*shared.ContainerGroup) bool,
-	abort func(*shared.ContainerGroup) *clierr.Error,
+	group string,
+	target groupWaitGoal,
 	timeout, poll time.Duration,
 ) (*shared.ContainerGroup, *clierr.Error) {
 	stderr := d.progress
@@ -152,7 +179,7 @@ func (app *App) waitForGroup(
 		w:            stderr,
 		now:          d.now,
 		group:        group,
-		goal:         goal,
+		goal:         target.goal,
 		start:        d.now(),
 		lastStatus:   "-",
 		lastProgress: "",
@@ -161,12 +188,12 @@ func (app *App) waitForGroup(
 	deadline := s.start.Add(timeout)
 	for {
 		g, cerr := d.get(ctx)
-		final, ferr := app.waitObserve(ctx, &s, g, cerr, done, abort)
+		final, ferr := app.waitObserve(ctx, &s, g, cerr, target)
 		if final != nil || ferr != nil {
 			return final, ferr
 		}
 		if !d.now().Before(deadline) {
-			return nil, waitTimedOut(group, goal, timeout, s.lastStatus)
+			return nil, waitTimedOut(group, target.goal, timeout, s.lastStatus)
 		}
 		if err := d.sleep(ctx, poll); err != nil {
 			return nil, waitInterrupted()
@@ -187,7 +214,7 @@ type groupWaitState struct {
 }
 
 // waitObserve handles one poll: g and cerr are what it returned. It returns
-// the group once done(g) holds, an error when the wait must end, and
+// the group once target.done(g) holds, an error when the wait must end, and
 // neither to keep polling (after a transient error, or while the goal is
 // not reached yet).
 func (app *App) waitObserve(
@@ -195,8 +222,7 @@ func (app *App) waitObserve(
 	s *groupWaitState,
 	g *shared.ContainerGroup,
 	cerr *clierr.Error,
-	done func(*shared.ContainerGroup) bool,
-	abort func(*shared.ContainerGroup) *clierr.Error,
+	target groupWaitGoal,
 ) (*shared.ContainerGroup, *clierr.Error) {
 	switch {
 	case cerr != nil && ctx.Err() != nil:
@@ -205,15 +231,15 @@ func (app *App) waitObserve(
 		return nil, waitPollFailed(s.w, cerr)
 	}
 	s.lastStatus = groupStatus(g)
-	if done(g) {
+	if target.done(g) {
 		return g, nil
 	}
-	if abort != nil {
-		if aerr := abort(g); aerr != nil {
+	if target.abort != nil {
+		if aerr := target.abort(g); aerr != nil {
 			return nil, aerr
 		}
 	}
-	if app.printer.Mode() == "table" {
+	if !app.printer.Machine() {
 		waitProgressLine(s, g)
 	}
 	return nil, nil
@@ -255,11 +281,13 @@ func waitTimedOut(group, goal string, timeout time.Duration, lastStatus string) 
 		// script will retry a patch that already landed.
 		return clierr.New(clierr.CodeGeneric, clierr.KindWaitTimeout,
 			"patch accepted (HTTP 200), but %s is still pending after %s; not verified", group, timeout).
-			WithHint("retry with a longer --timeout, or to check on the group, run saladcloud container-groups get %s", group)
+			WithHint("retry with a longer --timeout, or to check on the group, "+
+				"run saladcloud container-groups get %s", group)
 	}
 	return clierr.New(clierr.CodeGeneric, clierr.KindWaitTimeout,
 		"timed out after %s waiting for %s to %s (last status: %s)", timeout, group, goal, lastStatus).
-		WithHint("retry with a longer --timeout, or to check on the group, run saladcloud container-groups get %s; the group continues server-side", group)
+		WithHint("retry with a longer --timeout, or to check on the group, "+
+			"run saladcloud container-groups get %s; the group continues server-side", group)
 }
 
 // waitForGroupStatus is waitForGroup with the goal "status == target",
@@ -271,9 +299,7 @@ func (app *App) waitForGroupStatus(
 	fromActive bool,
 	timeout, poll time.Duration,
 ) (*shared.ContainerGroup, *clierr.Error) {
-	return app.waitForGroup(ctx, d, group, "be "+target,
-		func(g *shared.ContainerGroup) bool { return groupStatus(g) == target },
-		abortUnreachable(group, target, fromActive), timeout, poll)
+	return app.waitForGroup(ctx, d, group, statusWaitGoal(group, target, fromActive), timeout, poll)
 }
 
 // abortUnreachable returns the abort check for a wait whose target is
@@ -285,21 +311,23 @@ func (app *App) waitForGroupStatus(
 // already saw the group active (create: the response is pending with
 // autostart on). Other targets get no abort (nil).
 func abortUnreachable(group, target string, fromActive bool) func(*shared.ContainerGroup) *clierr.Error {
-	if target != "running" {
+	if target != string(shared.CONTAINER_GROUP_STATUS_RUNNING) {
 		return nil
 	}
 	seenActive := fromActive
 	return func(g *shared.ContainerGroup) *clierr.Error {
-		switch status := groupStatus(g); status {
-		case "pending", "deploying":
+		switch status := shared.ContainerGroupStatus(groupStatus(g)); status {
+		case shared.CONTAINER_GROUP_STATUS_PENDING, shared.CONTAINER_GROUP_STATUS_DEPLOYING:
 			seenActive = true
-		case "stopped":
+		case shared.CONTAINER_GROUP_STATUS_RUNNING:
+			// The goal itself: done ends the wait before abort runs.
+		case shared.CONTAINER_GROUP_STATUS_STOPPED:
 			if seenActive {
 				return clierr.New(clierr.CodeGeneric, clierr.KindGroupStopped,
 					"%s went to stopped before it was running; the platform stopped it or never started it", group).
 					WithHint("to start it, run saladcloud container-groups start %s", group)
 			}
-		case "failed", "succeeded":
+		case shared.CONTAINER_GROUP_STATUS_FAILED, shared.CONTAINER_GROUP_STATUS_SUCCEEDED:
 			if seenActive {
 				return clierr.New(clierr.CodeGeneric, groupEndKind(status),
 					"%s is %s, not running, and will not get there on its own", group, status).
@@ -312,14 +340,16 @@ func abortUnreachable(group, target string, fromActive bool) func(*shared.Contai
 
 // groupEndKind is the error kind for a group that settled in a status the
 // wait cannot get past.
-func groupEndKind(status string) clierr.Kind {
+func groupEndKind(status shared.ContainerGroupStatus) clierr.Kind {
 	switch status {
-	case "stopped":
+	case shared.CONTAINER_GROUP_STATUS_STOPPED:
 		return clierr.KindGroupStopped
-	case "failed":
+	case shared.CONTAINER_GROUP_STATUS_FAILED:
 		return clierr.KindGroupFailed
-	case "succeeded":
+	case shared.CONTAINER_GROUP_STATUS_SUCCEEDED:
 		return clierr.KindGroupSucceeded
+	case shared.CONTAINER_GROUP_STATUS_PENDING, shared.CONTAINER_GROUP_STATUS_RUNNING,
+		shared.CONTAINER_GROUP_STATUS_DEPLOYING:
 	}
 	return clierr.KindAPIError
 }
@@ -374,28 +404,26 @@ func liveWaitDeps(client *api.Client, group string) waitDeps {
 	}
 }
 
-// runGroupWait runs one --wait loop against the live API (Ctrl-C aware) and
-// returns the group document that satisfied the goal. goal phrases the
-// pursuit ("be \"running\""), doneMsg the arrival ("is running") for the
-// table-mode confirmation on stderr ("" for none, when the caller's own
-// stdout line says it); abort (may be nil) ends the wait early.
+// runGroupWait runs one --wait loop for target against the live API (Ctrl-C
+// aware) and returns the group document that satisfied the goal. doneMsg
+// phrases the arrival ("is running") for the table-mode confirmation on
+// stderr ("" for none, when the caller's own stdout line says it).
 // The caller emits its stdout payload only after this returns nil error —
 // see the package comment for why.
 func (app *App) runGroupWait(
 	cmd *cobra.Command,
 	client *api.Client,
-	group, goal, doneMsg string,
-	done func(*shared.ContainerGroup) bool,
-	abort func(*shared.ContainerGroup) *clierr.Error,
+	group, doneMsg string,
+	target groupWaitGoal,
 	timeout time.Duration,
 ) (*shared.ContainerGroup, error) {
 	ctx := cmd.Context() // canceled by the one signal handler in Execute
 	start := time.Now()
-	final, cerr := app.waitForGroup(ctx, liveWaitDeps(client, group), group, goal, done, abort, timeout, waitPoll)
+	final, cerr := app.waitForGroup(ctx, liveWaitDeps(client, group), group, target, timeout, waitPoll)
 	if cerr != nil {
 		return nil, cerr
 	}
-	if app.printer.Mode() == "table" && doneMsg != "" {
+	if !app.printer.Machine() && doneMsg != "" {
 		fprintf(app.errw(), "%s %s (waited %s)\n", group, doneMsg, time.Since(start).Round(time.Second))
 	}
 	return final, nil
@@ -410,13 +438,11 @@ func (app *App) runStatusWait(
 	fromActive bool,
 	timeout time.Duration,
 ) (*shared.ContainerGroup, error) {
-	final, err := app.runGroupWait(cmd, client, group, "be "+target, "is "+target,
-		func(g *shared.ContainerGroup) bool { return groupStatus(g) == target },
-		abortUnreachable(group, target, fromActive), timeout)
+	final, err := app.runGroupWait(cmd, client, group, "is "+target, statusWaitGoal(group, target, fromActive), timeout)
 	if err != nil {
 		return nil, err
 	}
-	if target == "running" && hasReadinessProbe(final) {
+	if target == string(shared.CONTAINER_GROUP_STATUS_RUNNING) && hasReadinessProbe(final) {
 		// The group document counts running instances, not ready ones, so a
 		// probe that never passes would otherwise look like success. One
 		// instances call; if it fails, the note is skipped, not the wait.
@@ -440,7 +466,8 @@ func hasReadinessProbe(g *shared.ContainerGroup) bool {
 // probe is not passing yet; "" when every running instance is ready.
 func readinessNote(group string, instances []containergroups.ContainerGroupInstance) string {
 	running, ready := 0, 0
-	for _, in := range instances {
+	for i := range instances {
+		in := &instances[i]
 		if in.State == nil || *in.State != containergroups.THE_CONTAINER_GROUP_INSTANCE_STATE_RUNNING {
 			continue
 		}
@@ -453,7 +480,8 @@ func readinessNote(group string, instances []containergroups.ContainerGroupInsta
 		return ""
 	}
 	return fmt.Sprintf(
-		"note: %d of %d running instances ready (the readiness probe is not passing yet); to list them, run saladcloud container-groups instances list -c %s",
+		"note: %d of %d running instances ready (the readiness probe is not passing yet); "+
+			"to list them, run saladcloud container-groups instances list -c %s",
 		ready,
 		running,
 		group,

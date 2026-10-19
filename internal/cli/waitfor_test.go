@@ -285,10 +285,14 @@ func TestWaitProgressRepeatsEveryMinute(t *testing.T) {
 
 func TestReadinessNote(t *testing.T) {
 	t.Parallel()
-	inst := func(state containergroups.TheContainerGroupInstanceState, ready bool) containergroups.ContainerGroupInstance {
+	inst := func(
+		state containergroups.TheContainerGroupInstanceState,
+		ready bool,
+	) containergroups.ContainerGroupInstance {
 		return containergroups.ContainerGroupInstance{State: &state, Ready: &ready}
 	}
-	running, creating := containergroups.THE_CONTAINER_GROUP_INSTANCE_STATE_RUNNING, containergroups.THE_CONTAINER_GROUP_INSTANCE_STATE_CREATING
+	running := containergroups.THE_CONTAINER_GROUP_INSTANCE_STATE_RUNNING
+	creating := containergroups.THE_CONTAINER_GROUP_INSTANCE_STATE_CREATING
 	cases := []struct {
 		name string
 		in   []containergroups.ContainerGroupInstance
@@ -386,9 +390,7 @@ func TestWaitForGroupSettlePredicate(t *testing.T) {
 		allowedSleeps: 10,
 		cancel:        cancel,
 	}
-	final, cerr := app.waitForGroup(ctx, h.deps(), "demo", "settle",
-		func(g *shared.ContainerGroup) bool { return !ptr.Deref(g.PendingChange) }, nil,
-		time.Hour, 5*time.Second)
+	final, cerr := app.waitForGroup(ctx, h.deps(), "demo", settleWaitGoal(), time.Hour, 5*time.Second)
 	if cerr != nil {
 		t.Fatalf("waitForGroup returned %v, want nil", cerr)
 	}
@@ -436,9 +438,7 @@ func TestSettleTimeoutSaysPatchAccepted(t *testing.T) {
 		allowedSleeps: 10,
 		cancel:        cancel,
 	}
-	_, cerr := app.waitForGroup(ctx, h.deps(), "demo", goalSettle,
-		func(g *shared.ContainerGroup) bool { return !ptr.Deref(g.PendingChange) }, nil,
-		10*time.Second, 5*time.Second)
+	_, cerr := app.waitForGroup(ctx, h.deps(), "demo", settleWaitGoal(), 10*time.Second, 5*time.Second)
 	if cerr == nil {
 		t.Fatal("waitForGroup returned nil, want wait_timeout")
 	}

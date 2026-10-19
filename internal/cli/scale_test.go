@@ -114,19 +114,16 @@ func TestShouldReenableSchedule(t *testing.T) {
 	t.Parallel()
 	on := &shared.ContainerGroup{ScheduledScalingEnabled: ptr.To(true)}
 	off := &shared.ContainerGroup{ScheduledScalingEnabled: ptr.To(false)}
-	if !shouldReenableSchedule(true, on, off) {
+	if !shouldReenableSchedule(on, off) {
 		t.Error("on -> off with --keep-schedule must re-enable")
 	}
-	if shouldReenableSchedule(false, on, off) {
-		t.Error("without the flag nothing is re-enabled")
-	}
-	if shouldReenableSchedule(true, off, off) {
+	if shouldReenableSchedule(off, off) {
 		t.Error("a schedule that was already off is not 'kept'")
 	}
-	if shouldReenableSchedule(true, on, on) {
+	if shouldReenableSchedule(on, on) {
 		t.Error("nothing to do when the flag survived")
 	}
-	if shouldReenableSchedule(true, nil, off) || shouldReenableSchedule(true, on, nil) {
+	if shouldReenableSchedule(nil, off) || shouldReenableSchedule(on, nil) {
 		t.Error("missing state must not trigger a write")
 	}
 	if string(reenableSchedulePatch()) != `{"scheduled-scaling-enabled":true}` {

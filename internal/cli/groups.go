@@ -94,10 +94,15 @@ func groupStatus(g *shared.ContainerGroup) string {
 	return string(*g.CurrentState.Status)
 }
 
+// scheduledActionsShown is how many scaling actions the "Scheduled scaling"
+// detail row lists before it says how many more there are.
+const scheduledActionsShown = 3
+
 // scheduledScalingString renders the "Scheduled scaling" detail-row value,
 // or "" when the group has neither the flag nor any actions (no row).
-// Enabled with actions lists up to 3 of them; disabled with actions still
-// surfaces that they exist — they silently do nothing until re-enabled.
+// Enabled with actions lists up to scheduledActionsShown of them; disabled
+// with actions still surfaces that they exist — they silently do nothing
+// until re-enabled.
 func scheduledScalingString(g *shared.ContainerGroup) string {
 	enabled := g.ScheduledScalingEnabled != nil && *g.ScheduledScalingEnabled
 	n := len(g.ScalingActions)
@@ -107,14 +112,18 @@ func scheduledScalingString(g *shared.ContainerGroup) string {
 	}
 	switch {
 	case enabled && n > 0:
-		parts := make([]string, 0, 4)
+		parts := make([]string, 0, scheduledActionsShown+1)
 		for i := range g.ScalingActions {
-			if i == 3 {
-				parts = append(parts, fmt.Sprintf("and %d more", n-3))
+			if i == scheduledActionsShown {
+				parts = append(parts, fmt.Sprintf("and %d more", n-scheduledActionsShown))
 				break
 			}
 			a := &g.ScalingActions[i]
-			parts = append(parts, fmt.Sprintf(`%d replicas @ "%s"`, ptr.Deref(a.Replicas), ptr.Deref(a.Schedule)))
+			parts = append(
+				parts,
+				fmt.Sprintf(`%d replicas @ "%s"`, //nolint:gocritic // shows the schedule as typed; %q would escape it
+					ptr.Deref(a.Replicas), ptr.Deref(a.Schedule)),
+			)
 		}
 		return fmt.Sprintf("enabled (%d %s: %s)", n, noun, strings.Join(parts, "; "))
 	case enabled:
@@ -179,7 +188,8 @@ func writeGroupDetail(w *output.Writer, g *shared.ContainerGroup) {
 	// A group created without autostart reports "pending" for a few seconds
 	// before the backend settles it to "stopped"; note that so the status
 	// isn't mistaken for a stuck deploy.
-	if groupStatus(g) == "pending" && g.AutostartPolicy != nil && !*g.AutostartPolicy {
+	if groupStatus(g) == string(shared.CONTAINER_GROUP_STATUS_PENDING) && g.AutostartPolicy != nil &&
+		!*g.AutostartPolicy {
 		row("Note", `settles to "stopped" shortly (created without autostart)`)
 	}
 	if g.CurrentState != nil && g.CurrentState.InstanceStatusCounts != nil {
@@ -243,12 +253,8 @@ func (app *App) startStopRunE(
 		if cerr != nil {
 			return cerr
 		}
-		if err := groupNotFound(
-			verb(client, cmd.Context(), args[0]),
-			args[0],
-			client.Org(),
-			client.Project(),
-		); err != nil {
+		err := groupNotFound(verb(client, cmd.Context(), args[0]), args[0], client.Org(), client.Project())
+		if err != nil {
 			return err
 		}
 		if wait {
@@ -266,8 +272,12 @@ func (app *App) startStopRunE(
 // validGroupStatuses is the set of --status values list accepts.
 func validGroupStatuses() map[string]bool {
 	return map[string]bool{
-		"pending": true, "running": true, "stopped": true,
-		"succeeded": true, "failed": true, "deploying": true,
+		string(shared.CONTAINER_GROUP_STATUS_PENDING):   true,
+		string(shared.CONTAINER_GROUP_STATUS_RUNNING):   true,
+		string(shared.CONTAINER_GROUP_STATUS_STOPPED):   true,
+		string(shared.CONTAINER_GROUP_STATUS_SUCCEEDED): true,
+		string(shared.CONTAINER_GROUP_STATUS_FAILED):    true,
+		string(shared.CONTAINER_GROUP_STATUS_DEPLOYING): true,
 	}
 }
 
@@ -282,7 +292,12 @@ func (app *App) addGroupsCommands(cg *cobra.Command) {
 		Use:   "start <group>",
 		Short: "Start a container group (--wait blocks until it is running)",
 		Args:  cobra.ExactArgs(1),
-		RunE:  app.startStopRunE("started", "running", (*api.Client).StartGroup, &startWait),
+		RunE: app.startStopRunE(
+			"started",
+			string(shared.CONTAINER_GROUP_STATUS_RUNNING),
+			(*api.Client).StartGroup,
+			&startWait,
+		),
 	}
 	addWaitFlags(startCmd, "the group is running", &startWait)
 	cg.AddCommand(startCmd)
@@ -292,7 +307,12 @@ func (app *App) addGroupsCommands(cg *cobra.Command) {
 		Use:   "stop <group>",
 		Short: "Stop a container group (--wait blocks until it is stopped)",
 		Args:  cobra.ExactArgs(1),
-		RunE:  app.startStopRunE("stopped", "stopped", (*api.Client).StopGroup, &stopWait),
+		RunE: app.startStopRunE(
+			"stopped",
+			string(shared.CONTAINER_GROUP_STATUS_STOPPED),
+			(*api.Client).StopGroup,
+			&stopWait,
+		),
 	}
 	addWaitFlags(stopCmd, "the group is stopped", &stopWait)
 	cg.AddCommand(stopCmd)
@@ -334,7 +354,7 @@ type groupsListOptions struct {
 func (app *App) addGroupsListCommand(cg *cobra.Command) {
 	var listOpts groupsListOptions
 	listCmd := &cobra.Command{
-		Use:   "list",
+		Use:   verbNameList,
 		Short: "List container groups (current project, or --projects for several)",
 		Long: `List the container groups in the current project.
 
@@ -348,9 +368,12 @@ the projects you want listed.`,
 		},
 	}
 	listCmd.Flags().
-		StringVar(&listOpts.status, "status", "", "filter by status: pending|running|stopped|succeeded|failed|deploying")
+		StringVar(&listOpts.status, "status", "",
+			"filter by status: pending|running|stopped|succeeded|failed|deploying")
 	listCmd.Flags().
-		StringArrayVar(&listOpts.projects, "projects", nil, "list this project instead of the current one, repeatable (--projects a --projects b); adds a PROJECT column")
+		StringArrayVar(&listOpts.projects, "projects", nil,
+			"list this project instead of the current one, repeatable (--projects a --projects b); "+
+				"adds a PROJECT column")
 	app.addWatchFlags(listCmd, &listOpts.watch)
 	cg.AddCommand(listCmd)
 }
@@ -409,7 +432,7 @@ func (app *App) listGroupsInProjects(
 	var items []shared.ContainerGroup
 	for _, proj := range projects {
 		r := *res
-		r.Project, r.ProjectSource = proj, "flag"
+		r.Project, r.ProjectSource = proj, flagProvenance
 		pc, cerr := api.New(r, app.apiOptions())
 		if cerr != nil {
 			return nil, cerr
@@ -458,7 +481,7 @@ func (app *App) emitGroupList(
 	// A bare header is ambiguous for humans; disambiguate an
 	// empty listing on stderr so the stdout contract (and json
 	// mode) stays unchanged.
-	if len(items) == 0 && app.printer.Mode() == "table" {
+	if len(items) == 0 && !app.printer.Machine() {
 		app.noteEmptyGroupList(opts, res)
 	}
 	return nil
@@ -538,7 +561,8 @@ group has scheduled scaling enabled.`,
 		},
 	}
 	getCmd.Flags().
-		BoolVar(&getOpts.writable, "writable", false, "emit a JSON patch document for update -f (response-only and create-only fields removed)")
+		BoolVar(&getOpts.writable, "writable", false,
+			"emit a JSON patch document for update -f (response-only and create-only fields removed)")
 	app.addWatchFlags(getCmd, &getOpts.watch)
 	cg.AddCommand(getCmd)
 }
@@ -610,7 +634,8 @@ func (app *App) noteWritableReplicas(doc any) {
 	if _, has := m["replicas"]; has {
 		fprintln(
 			app.errw(),
-			"note: replicas is included; writing it puts scheduled scaling on hold, so drop it unless you mean to change it",
+			"note: replicas is included; writing it puts scheduled scaling on hold, "+
+				"so drop it unless you mean to change it",
 		)
 	}
 }
@@ -710,11 +735,14 @@ func (app *App) runGroupsUpdate(cmd *cobra.Command, opts *groupsUpdateOptions, a
 		if eerr != nil {
 			return eerr
 		}
-		if raw, intent, cerr = buildUpdatePatch(raw, flags, env); cerr != nil {
-			return cerr
+		patch, perr := buildUpdatePatch(raw, &flags, env)
+		if perr != nil {
+			return perr
 		}
+		raw, intent = patch.wire, patch.intent
 	}
-	group, err := app.applyPatch(cmd, client, args[0], raw, intent, wait, timeout, "update settled")
+	settle := patchSettle{wait: wait, timeout: timeout, doneMsg: "update settled"}
+	group, err := app.applyPatch(cmd, client, args[0], raw, intent, settle)
 	if err != nil {
 		return err
 	}
@@ -724,15 +752,16 @@ func (app *App) runGroupsUpdate(cmd *cobra.Command, opts *groupsUpdateOptions, a
 // updateCheckFlags is update's flags, checked pre-flight: their values, and
 // that there is something to update at all.
 func updateCheckFlags(cmd *cobra.Command, opts *groupsUpdateOptions, command []string) (updateFlags, *clierr.Error) {
-	flags := collectUpdateFlags(cmd, opts.flags)
+	flags := collectUpdateFlags(cmd, &opts.flags)
 	flags.Command = command
-	if cerr := validateUpdateFlags(flags); cerr != nil {
+	if cerr := validateUpdateFlags(&flags); cerr != nil {
 		return flags, cerr
 	}
 	if opts.file == "" && !flags.any() {
 		return flags, clierr.New(clierr.CodeUsage, clierr.KindUsage,
 			"nothing to update").
-			WithHint("pass -f <file>, a flag such as --image, or both; to see the flags, run saladcloud container-groups update --help")
+			WithHint("pass -f <file>, a flag such as --image, or both; " +
+				"to see the flags, run saladcloud container-groups update --help")
 	}
 	return flags, nil
 }
@@ -787,6 +816,15 @@ func updateCurrentEnv(
 	return envOf(current), nil
 }
 
+// patchSettle is how applyPatch settles a patch: whether to wait (unless
+// --no-wait), for how long, and the table-mode line when it has settled (""
+// for none).
+type patchSettle struct {
+	wait    bool
+	timeout time.Duration
+	doneMsg string
+}
+
 // applyPatch is the one write path for merge patches: update -f and scale
 // both go through it, so every patch gets the same before-GET, the same
 // settle-by-default, and the same two intent-diff checks. Having scale on a
@@ -807,9 +845,7 @@ func (app *App) applyPatch(
 	client *api.Client,
 	name string,
 	raw, intent []byte,
-	wait bool,
-	timeout time.Duration,
-	doneMsg string,
+	settle patchSettle,
 ) (*shared.ContainerGroup, error) {
 	if intent == nil {
 		intent = raw
@@ -822,9 +858,8 @@ func (app *App) applyPatch(
 	if cerr != nil {
 		return nil, groupNotFound(cerr, name, client.Org(), client.Project())
 	}
-	if wait {
-		final, err := app.runGroupWait(cmd, client, name, goalSettle, doneMsg,
-			func(g *shared.ContainerGroup) bool { return !ptr.Deref(g.PendingChange) }, nil, timeout)
+	if settle.wait {
+		final, err := app.runGroupWait(cmd, client, name, settle.doneMsg, settleWaitGoal(), settle.timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -832,7 +867,8 @@ func (app *App) applyPatch(
 	} else if ptr.Deref(group.PendingChange) {
 		fprintf(
 			app.errw(),
-			"note: change accepted, still pending, not verified (--no-wait); to check it, run saladcloud container-groups get %s\n",
+			"note: change accepted, still pending, not verified (--no-wait); "+
+				"to check it, run saladcloud container-groups get %s\n",
 			name,
 		)
 	}

@@ -25,13 +25,17 @@ type updateFlags struct {
 	Storage                                 int64 // GB
 	StorageSet                              bool
 	Countries                               []string
-	Env                                     []string                                   // KEY=VALUE, merged into the group's current variables
-	Command                                 []string                                   // the container command after "--"; nil when none was given
-	ResolveGpu                              func(value string) (string, *clierr.Error) // injected; nil when no --gpu is a name
+	// Env is the -e values, KEY=VALUE, merged into the group's current
+	// variables.
+	Env []string
+	// Command is the container command after "--"; nil when none was given.
+	Command []string
+	// ResolveGpu is injected; nil when no --gpu is a name.
+	ResolveGpu func(value string) (string, *clierr.Error)
 }
 
 // any reports whether at least one update flag was given.
-func (f updateFlags) any() bool {
+func (f *updateFlags) any() bool {
 	return slices.Contains([]bool{
 		f.ImageSet, f.PrioritySet, f.DisplayNameSet, f.CPUSet, f.MemorySet,
 		f.ReplicasSet, f.PortSet, len(f.Gpus) > 0, len(f.Env) > 0, f.StorageSet, len(f.Countries) > 0,
@@ -71,10 +75,11 @@ func addUpdateFlags(cmd *cobra.Command, u *updateFlags) {
 	f.StringVar(&u.DisplayName, "display-name", "", "human-readable display name")
 }
 
-// collectUpdateFlags is u, the bound update flags, with the ones given on the
-// command line marked set.
-func collectUpdateFlags(cmd *cobra.Command, u updateFlags) updateFlags {
+// collectUpdateFlags is a copy of the update flags bound to bound, with the
+// ones given on the command line marked set.
+func collectUpdateFlags(cmd *cobra.Command, bound *updateFlags) updateFlags {
 	f := cmd.Flags()
+	u := *bound
 	u.StorageSet = f.Changed("storage")
 	u.ImageSet, u.CPUSet, u.MemorySet = f.Changed("image"), f.Changed("cpu"), f.Changed("memory")
 	u.ReplicasSet, u.PrioritySet = f.Changed("replicas"), f.Changed("priority")
@@ -84,17 +89,17 @@ func collectUpdateFlags(cmd *cobra.Command, u updateFlags) updateFlags {
 
 // validateUpdateFlags checks the flag values before any file or API work,
 // so bad input exits 2 or 6 even with no API key set.
-func validateUpdateFlags(u updateFlags) *clierr.Error {
+func validateUpdateFlags(u *updateFlags) *clierr.Error {
 	if u.ImageSet && u.Image == "" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--image cannot be empty")
 	}
-	if cerr := updateValidateResources(&u); cerr != nil {
+	if cerr := updateValidateResources(u); cerr != nil {
 		return cerr
 	}
 	if _, cerr := normalizeCountries(u.Countries); cerr != nil {
 		return cerr
 	}
-	if cerr := updateValidateScheduling(&u); cerr != nil {
+	if cerr := updateValidateScheduling(u); cerr != nil {
 		return cerr
 	}
 	for _, kv := range u.Env {
@@ -157,6 +162,13 @@ func updateValidateScheduling(u *updateFlags) *clierr.Error {
 	return nil
 }
 
+// updatePatch is what buildUpdatePatch builds: wire is the merge patch to
+// send, and intent what the caller asked for, which the post-write checks
+// compare against.
+type updatePatch struct {
+	wire, intent json.RawMessage
+}
+
 // buildUpdatePatch lays the flags over the patch file (fileRaw may be nil)
 // and returns the merge patch to send; flags win over the file. With -e,
 // currentEnv is the group's present variables: the API replaces the whole
@@ -170,34 +182,34 @@ func updateValidateScheduling(u *updateFlags) *clierr.Error {
 // to know the removal was requested, or they report it as a side effect.
 func buildUpdatePatch(
 	fileRaw []byte,
-	u updateFlags,
+	u *updateFlags,
 	currentEnv map[string]*string,
-) (wire, intent json.RawMessage, cerr *clierr.Error) {
+) (updatePatch, *clierr.Error) {
 	doc, cerr := updateDecodePatchFile(fileRaw)
 	if cerr != nil {
-		return nil, nil, cerr
+		return updatePatch{}, cerr
 	}
-	updateSetContainerFlags(doc, &u)
-	if perr := updateSetPlacementFlags(doc, &u); perr != nil {
-		return nil, nil, perr
+	updateSetContainerFlags(doc, u)
+	if perr := updateSetPlacementFlags(doc, u); perr != nil {
+		return updatePatch{}, perr
 	}
-	updateSetGroupFlags(doc, &u)
+	updateSetGroupFlags(doc, u)
 	var removed []string // variables the file set to null, under -e
 	if len(u.Env) > 0 {
 		removed = updateMergeEnv(doc, u.Env, currentEnv)
 	}
 	wire, err := json.Marshal(doc)
 	if err != nil {
-		return nil, nil, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot encode the patch: %v", err)
+		return updatePatch{}, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot encode the patch: %v", err)
 	}
 	if len(removed) == 0 {
-		return wire, wire, nil
+		return updatePatch{wire: wire, intent: wire}, nil
 	}
-	intent, cerr = updateIntentPatch(doc, removed)
-	if cerr != nil {
-		return nil, nil, cerr
+	intent, ierr := updateIntentPatch(doc, removed)
+	if ierr != nil {
+		return updatePatch{}, ierr
 	}
-	return wire, intent, nil
+	return updatePatch{wire: wire, intent: intent}, nil
 }
 
 // updateDecodePatchFile decodes the patch file (fileRaw may be nil, for an
@@ -356,17 +368,23 @@ func lazyGpuResolver(cmd *cobra.Command, client *api.Client) func(string) (strin
 	}
 }
 
+// groupEnvDocument is the part of a group document envOf reads.
+type groupEnvDocument struct {
+	Container groupEnvContainer `json:"container"`
+}
+
+// groupEnvContainer is the part of a group's container envOf reads.
+type groupEnvContainer struct {
+	Env map[string]*string `json:"environment_variables"`
+}
+
 // envOf reads container.environment_variables from a group document.
 func envOf(group any) map[string]*string {
 	b, err := json.Marshal(group)
 	if err != nil {
 		return nil
 	}
-	var g struct {
-		Container struct {
-			Env map[string]*string `json:"environment_variables"`
-		} `json:"container"`
-	}
+	var g groupEnvDocument
 	if json.Unmarshal(b, &g) != nil {
 		return nil
 	}

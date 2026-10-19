@@ -47,12 +47,12 @@ func reenableSchedulePatch() []byte {
 	return []byte(`{"scheduled-scaling-enabled":true}`)
 }
 
-// shouldReenableSchedule decides whether --keep-schedule has work to do:
-// the schedule was on before the replicas write and the write put it on
-// hold. A group whose schedule was already off is left alone — keeping a
-// schedule is not the same as enabling one.
-func shouldReenableSchedule(keep bool, before, after *shared.ContainerGroup) bool {
-	if !keep || before == nil || after == nil {
+// shouldReenableSchedule decides whether --keep-schedule, once given, has
+// work to do: the schedule was on before the replicas write and the write
+// put it on hold. A group whose schedule was already off is left alone —
+// keeping a schedule is not the same as enabling one.
+func shouldReenableSchedule(before, after *shared.ContainerGroup) bool {
+	if before == nil || after == nil {
 		return false
 	}
 	return ptr.Deref(before.ScheduledScalingEnabled) && !ptr.Deref(after.ScheduledScalingEnabled)
@@ -94,7 +94,8 @@ write (the API does not honor the flag in the same patch as replicas), for
 	}
 	scaleCmd.Flags().Int64Var(&scaleOpts.replicas, "replicas", 0, "desired replica count (0-500)")
 	scaleCmd.Flags().
-		BoolVar(&scaleOpts.keepSchedule, "keep-schedule", false, "re-enable scheduled scaling after the write (setting replicas puts it on hold)")
+		BoolVar(&scaleOpts.keepSchedule, "keep-schedule", false,
+			"re-enable scheduled scaling after the write (setting replicas puts it on hold)")
 	addSettleFlags(scaleCmd, &scaleOpts.settle)
 	cg.AddCommand(scaleCmd)
 }
@@ -111,15 +112,22 @@ func (app *App) runScale(cmd *cobra.Command, opts *scaleOptions, name string) er
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing required flag: --replicas <n>")
 	}
 	n := opts.replicas
-	if cerr = validateScaleReplicas(n); cerr != nil {
-		return cerr
+	if verr := validateScaleReplicas(n); verr != nil {
+		return verr
 	}
 	client, _, cerr := app.NewClient(cmd)
 	if cerr != nil {
 		return cerr
 	}
 	write := func(patch []byte, doneMsg string) (*shared.ContainerGroup, error) {
-		return app.applyPatch(cmd, client, name, patch, nil, wait, timeout, doneMsg)
+		return app.applyPatch(
+			cmd,
+			client,
+			name,
+			patch,
+			nil,
+			patchSettle{wait: wait, timeout: timeout, doneMsg: doneMsg},
+		)
 	}
 	var before *shared.ContainerGroup
 	if keep {
@@ -151,7 +159,7 @@ func (app *App) scaleKeepSchedule(
 	write func(patch []byte, doneMsg string) (*shared.ContainerGroup, error),
 ) error {
 	switch {
-	case shouldReenableSchedule(true, before, after): // true: --keep-schedule was given
+	case shouldReenableSchedule(before, after):
 		if _, err := write(reenableSchedulePatch(), "scheduled scaling re-enabled"); err != nil {
 			return err
 		}

@@ -15,6 +15,9 @@ import (
 // watchMinInterval is the smallest allowed --interval.
 const watchMinInterval = 2 * time.Second
 
+// watchDefaultInterval is --interval's default.
+const watchDefaultInterval = 5 * time.Second
+
 // watchOptions are a read command's -w/--watch and --interval.
 type watchOptions struct {
 	watch    bool
@@ -24,8 +27,9 @@ type watchOptions struct {
 // addWatchFlags registers -w/--watch and --interval on a read command.
 func (app *App) addWatchFlags(cmd *cobra.Command, o *watchOptions) {
 	cmd.Flags().
-		BoolVarP(&o.watch, "watch", "w", false, "poll and re-render the table until interrupted (Windows-friendly watch(1); table mode only)")
-	cmd.Flags().DurationVar(&o.interval, "interval", 5*time.Second, "poll interval for --watch (minimum 2s)")
+		BoolVarP(&o.watch, "watch", "w", false,
+			"poll and re-render the table until interrupted (Windows-friendly watch(1); table mode only)")
+	cmd.Flags().DurationVar(&o.interval, "interval", watchDefaultInterval, "poll interval for --watch (minimum 2s)")
 	// Check the watch flags before the command builds its client, so a bad
 	// combination is a usage error even with no API key set.
 	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
@@ -44,7 +48,7 @@ func (app *App) validateWatchFlags(cmd *cobra.Command, o watchOptions) *clierr.E
 	if !watch {
 		return nil
 	}
-	if app.printer.Mode() != "table" {
+	if app.printer.Machine() {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage,
 			"--watch is table mode only; in scripts use --wait, or loop over '%s -o json'", cmd.CommandPath())
 	}

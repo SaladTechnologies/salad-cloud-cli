@@ -208,11 +208,14 @@ func (app *App) instanceVerb(
 	return cmd
 }
 
+// instancesSingular is the instances noun's singular alias.
+const instancesSingular = "instance"
+
 // addInstancesCommands adds instances.go's commands to the tree.
 func (app *App) addInstancesCommands(cg *cobra.Command) {
 	instancesCmd := &cobra.Command{
 		Use:     "instances",
-		Aliases: []string{"instance"},
+		Aliases: []string{instancesSingular},
 		Short:   "Inspect and manage the instances of a container group",
 		Long: `Inspect and manage the instances of a container group. The instance is the
 positional argument (its ID, or a unique prefix of it) and the group is
@@ -251,7 +254,8 @@ so raising it protects an instance doing long work. 0-100000.`,
 	}
 	app.addGroupFlag(updateCmd)
 	updateCmd.Flags().
-		Int64Var(&deletionCost, "deletion-cost", 0, "deletion cost, 0-100000 (required); lower is removed first on scale-down")
+		Int64Var(&deletionCost, "deletion-cost", 0,
+			"deletion cost, 0-100000 (required); lower is removed first on scale-down")
 	app.noteTreeErr(updateCmd.MarkFlagRequired("deletion-cost"))
 	instancesCmd.AddCommand(updateCmd)
 
@@ -311,7 +315,8 @@ func (app *App) listInstancesOnce(ctx context.Context, client *api.Client, group
 		Items []containergroups.ContainerGroupInstance `json:"items"`
 	}{instances.Instances}
 	if payload.Items == nil {
-		payload.Items = []containergroups.ContainerGroupInstance{}
+		// The JSON contract renders an empty list as [], never null.
+		payload.Items = []containergroups.ContainerGroupInstance{} //nolint:revive // must encode as []
 	}
 	err := app.printer.Emit(payload, func(w *output.Writer) { writeInstanceList(w, instances.Instances) })
 	if err != nil {
@@ -321,7 +326,7 @@ func (app *App) listInstancesOnce(ctx context.Context, client *api.Client, group
 	// have no machines yet, so the instances endpoint omits them
 	// entirely. Best-effort: fetch the group's status counts and
 	// explain on stderr (stdout stays a clean, parseable table).
-	if app.printer.Mode() == "table" && len(instances.Instances) == 0 {
+	if !app.printer.Machine() && len(instances.Instances) == 0 {
 		app.noteEmptyInstances(ctx, client, group)
 	}
 	return nil

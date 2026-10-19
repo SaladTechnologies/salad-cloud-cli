@@ -58,9 +58,8 @@ func (app *App) validateCommand(c containerCommand) *clierr.Error {
 	if len(words) == 0 {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage,
 			"nothing after --").
-			WithHint(
-				"give the container command, for example -- python app.py; it replaces the image's ENTRYPOINT and CMD", //nolint:lll // one literal, so validation_test.go reads the hint at its call site
-			)
+			WithHint("give the container command, for example -- python app.py; " +
+				"it replaces the image's ENTRYPOINT and CMD")
 	}
 	if cerr := app.checkCommandRewrites(words); cerr != nil {
 		return cerr

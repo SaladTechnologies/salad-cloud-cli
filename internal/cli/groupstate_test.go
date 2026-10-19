@@ -98,16 +98,13 @@ func TestFollowSilentGroupNote(t *testing.T) {
 		shared.CONTAINER_GROUP_STATUS_FAILED,
 		&util.Nullable[string]{Value: "Access Denied, Check Permissions"},
 	)
-	if got, want := groupSilentNote(
-		failed,
-	), `note: group my-app is failed: Access Denied, Check Permissions; nothing will be logged until it `+
-		`runs`; got != want {
+	want := `note: group my-app is failed: Access Denied, Check Permissions; nothing will be logged until it runs`
+	if got := groupSilentNote(failed); got != want {
 		t.Errorf("note = %q, want %q", got, want)
 	}
 	stopped := failedGroup(shared.CONTAINER_GROUP_STATUS_STOPPED, nil)
-	if got, want := groupSilentNote(
-		stopped,
-	), `note: group my-app is stopped; nothing will be logged until it runs`; got != want {
+	want = `note: group my-app is stopped; nothing will be logged until it runs`
+	if got := groupSilentNote(stopped); got != want {
 		t.Errorf("note = %q, want %q", got, want)
 	}
 	if got := groupSilentNote(failedGroup(shared.CONTAINER_GROUP_STATUS_RUNNING, nil)); got != "" {

@@ -788,7 +788,7 @@ func (app *App) createAwaitRunning(
 	}
 	// fromActive: the create response is pending with autostart on, so a
 	// stopped group from here on was never started, not merely slow.
-	return app.runStatusWait(cmd, c, name, "running", true, timeout)
+	return app.runStatusWait(cmd, c, name, string(shared.CONTAINER_GROUP_STATUS_RUNNING), true, timeout)
 }
 
 // addCreateCommands adds create.go's commands to the tree.

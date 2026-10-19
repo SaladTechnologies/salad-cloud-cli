@@ -28,7 +28,7 @@ which costs a platform query and so is never run implicitly.`,
 
 	var allPrices bool
 	listCmd := &cobra.Command{
-		Use:   "list",
+		Use:   verbNameList,
 		Short: "List GPU classes with their prices per priority tier",
 		Long: `List the GPU classes available to the organization, with their $/hr
 prices per priority tier, shown verbatim as the API reports them. The table
@@ -108,7 +108,7 @@ func (app *App) runGpusList(cmd *cobra.Command, _ []string, allPrices bool) erro
 			w.Println(strings.Join(cells, "\t"))
 		}
 	})
-	if emitErr == nil && app.printer.Mode() == "table" {
+	if emitErr == nil && !app.printer.Machine() {
 		fprintln(app.errw(), gpusLegend)
 	}
 	return wrapErr(emitErr)

@@ -14,6 +14,21 @@ import (
 // nothing useful and the bare unknown-command message stands.
 const maxSuggestions = 4
 
+// The verbs several resource nouns take, spelled once.
+const (
+	verbNameList = "list"
+	verbNameGet  = "get"
+)
+
+// Edit distances nearNames accepts: a word of shortNameLen characters or
+// fewer is matched within shortNameDistance edits, a longer one within
+// nameDistance.
+const (
+	shortNameLen      = 3
+	shortNameDistance = 1
+	nameDistance      = 2
+)
+
 // requireVerbs makes every command that only groups others (a resource
 // noun, a product area) a usage error when run bare: exit 2 with the error
 // document, never help on stdout with exit 0, which would make
@@ -97,9 +112,9 @@ func pathWithSubcommand(c *cobra.Command, next string) string {
 // nearNames returns the full paths of parent's subcommands nearest word by
 // edit distance, within a small limit, for typos ('cg lst' finds 'cg list').
 func nearNames(parent *cobra.Command, word string) []string {
-	best := 2
-	if len(word) <= 3 {
-		best = 1
+	best := nameDistance
+	if len(word) <= shortNameLen {
+		best = shortNameDistance
 	}
 	var paths []string
 	for _, sub := range parent.Commands() {

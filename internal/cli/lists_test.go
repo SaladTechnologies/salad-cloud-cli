@@ -72,12 +72,8 @@ func TestAIGatewayModelsListNeedsNoKey(t *testing.T) {
 	}
 
 	// A bare 'models' is a noun now.
-	if _, err := app.runRoot(
-		t,
-		"ai-gateway",
-		"models",
-	); err == nil ||
-		!strings.Contains(err.Error(), "ai-gateway models needs a verb: list") {
+	_, err = app.runRoot(t, "ai-gateway", "models")
+	if err == nil || !strings.Contains(err.Error(), "ai-gateway models needs a verb: list") {
 		t.Errorf("bare ai-gateway models = %v, want a usage error listing list", err)
 	}
 }
@@ -89,8 +85,9 @@ func TestListEnvelopesAreItemsOnly(t *testing.T) {
 	t.Parallel()
 	parent := newTestRun(t)
 	parent.stubAPI(t, map[string]string{
-		"/inference-endpoints":                 `{"items":[{"name":"transcribe"}],"page":1,"page_size":25,"total_size":null}`,
-		"/inference-endpoints/transcribe/jobs": `{"items":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","create_time":"2026-10-01T00:00:00Z"}],"page":1,"page_size":25,"total_size":null}`,
+		"/inference-endpoints": `{"items":[{"name":"transcribe"}],"page":1,"page_size":25,"total_size":null}`,
+		"/inference-endpoints/transcribe/jobs": `{"items":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37",` +
+			`"create_time":"2026-10-01T00:00:00Z"}],"page":1,"page_size":25,"total_size":null}`,
 	})
 	for _, args := range [][]string{
 		{"inference", "list", "-o", "json"},

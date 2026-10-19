@@ -18,7 +18,7 @@ func (app *App) addQuotasCommands(root *cobra.Command) {
 		Short: "The organization's container group quotas (get)",
 	}
 	cmd := &cobra.Command{
-		Use:   "get",
+		Use:   verbNameGet,
 		Short: "Show the organization's container group quotas",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

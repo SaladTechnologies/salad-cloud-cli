@@ -17,18 +17,21 @@ const orgsLong = `This uses an organizations endpoint that is not part of the do
 so it may change without notice; if it does, this command may fail until the
 CLI catches up. The documented commands do not depend on it.`
 
+// orgsSingular is the orgs noun's singular alias.
+const orgsSingular = "org"
+
 // addOrgsCommands adds orgs.go's commands to the tree.
 func (app *App) addOrgsCommands(root *cobra.Command) {
 	orgsCmd := &cobra.Command{
 		Use:     "orgs",
-		Aliases: []string{"org", "organizations"},
+		Aliases: []string{orgsSingular, "organizations"},
 		Short:   "Your organizations (list, get)",
 		Long:    "The organizations the API key's account is a member of.\n\n" + orgsLong,
 	}
 
 	var listWatch watchOptions
 	listCmd := &cobra.Command{
-		Use:   "list",
+		Use:   verbNameList,
 		Short: "List your organizations",
 		Long:  "List the organizations the API key's account is a member of.\n\n" + orgsLong,
 		Args:  cobra.NoArgs,
@@ -140,6 +143,7 @@ func unreadableListing(l *api.OrganizationList) *clierr.Error {
 	if l == nil || l.Usable() {
 		return nil
 	}
-	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "the list of your organizations came back in a form this CLI cannot read").
+	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
+		"the list of your organizations came back in a form this CLI cannot read").
 		WithHint("update the CLI, or report it at %s", version.IssuesURL)
 }
