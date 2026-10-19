@@ -120,28 +120,7 @@ func (app *App) warnOverrides(w io.Writer, when overrideWhen, ovs []override) {
 	}
 	steps := app.printer.Mode() == "table" && app.atTerminal()
 	if len(ovs) == 1 {
-		o := ovs[0]
-		var line string
-		switch {
-		case when == afterRemove || o.saved == "" && when == afterSave:
-			line = fmt.Sprintf("warning: commands still use %s (%s)", o.setting.env, o.setting.show(app, o.value))
-		case when == asSaved:
-			line = fmt.Sprintf(
-				"warning: commands use %s (%s) instead of the saved %s (%s)",
-				o.setting.env,
-				o.setting.show(app, o.value),
-				o.setting.what,
-				o.setting.show(app, o.saved),
-			)
-		default:
-			line = fmt.Sprintf(
-				"warning: commands will use %s (%s) instead of the %s you just saved (%s)",
-				o.setting.env,
-				o.setting.show(app, o.value),
-				o.setting.what,
-				o.setting.show(app, o.saved),
-			)
-		}
+		line := app.overrideLine(when, &ovs[0])
 		if !steps {
 			fprintln(w, line)
 			return
@@ -150,14 +129,51 @@ func (app *App) warnOverrides(w io.Writer, when overrideWhen, ovs []override) {
 		fprint(w, app.removalSteps(ovs))
 		return
 	}
+	fprintln(w, overridesHeading(when))
+	app.writeOverrideRows(w, when, ovs)
+	if steps {
+		fprintln(w, "To remove the variables:")
+		fprint(w, app.removalSteps(ovs))
+	}
+}
+
+// overrideLine is the warning for a single variable, on one line.
+func (app *App) overrideLine(when overrideWhen, o *override) string {
+	switch {
+	case when == afterRemove || o.saved == "" && when == afterSave:
+		return fmt.Sprintf("warning: commands still use %s (%s)", o.setting.env, o.setting.show(app, o.value))
+	case when == asSaved:
+		return fmt.Sprintf(
+			"warning: commands use %s (%s) instead of the saved %s (%s)",
+			o.setting.env,
+			o.setting.show(app, o.value),
+			o.setting.what,
+			o.setting.show(app, o.saved),
+		)
+	}
+	return fmt.Sprintf(
+		"warning: commands will use %s (%s) instead of the %s you just saved (%s)",
+		o.setting.env,
+		o.setting.show(app, o.value),
+		o.setting.what,
+		o.setting.show(app, o.saved),
+	)
+}
+
+// overridesHeading is the first line of the warning for several variables.
+func overridesHeading(when overrideWhen) string {
 	switch when {
 	case afterRemove:
-		fprintln(w, "warning: commands still use these environment variables:")
+		return "warning: commands still use these environment variables:"
 	case asSaved:
-		fprintln(w, "warning: commands use these environment variables instead of what is saved:")
-	default:
-		fprintln(w, "warning: commands will use these environment variables instead of what you just saved:")
+		return "warning: commands use these environment variables instead of what is saved:"
 	}
+	return "warning: commands will use these environment variables instead of what you just saved:"
+}
+
+// writeOverrideRows writes one aligned warning: line per variable, with the saved value it hides unless the value
+// was just removed.
+func (app *App) writeOverrideRows(w io.Writer, when overrideWhen, ovs []override) {
 	nameWidth, valueWidth := 0, 0
 	for _, o := range ovs {
 		nameWidth = max(nameWidth, len(o.setting.env))
@@ -173,10 +189,6 @@ func (app *App) warnOverrides(w io.Writer, when overrideWhen, ovs []override) {
 			row += "  (saved: " + o.setting.show(app, o.saved) + ")"
 		}
 		fprintln(w, strings.TrimRight(row, " "))
-	}
-	if steps {
-		fprintln(w, "To remove the variables:")
-		fprint(w, app.removalSteps(ovs))
 	}
 }
 
