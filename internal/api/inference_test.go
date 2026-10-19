@@ -86,19 +86,25 @@ func TestCreateInferenceJobRoundTrip(t *testing.T) {
 	if want := "/organizations/my-org/inference-endpoints/transcribe/jobs"; gotPath != want {
 		t.Errorf("path = %s, want %s", gotPath, want)
 	}
-	var sent map[string]any
-	if err := json.Unmarshal(gotBody, &sent); err != nil {
-		t.Fatalf("request body is not JSON: %v (%s)", err, gotBody)
-	}
-	in := valueAs[map[string]any](sent["input"])
-	if in == nil || in["url"] != "https://example.com/a.mp3" || in["language_code"] != "en" {
-		t.Errorf("sent input = %v, want the prototype's input object", sent["input"])
-	}
+	checkSentInput(t, gotBody)
 	if job.Id == nil || *job.Id != "job-1" {
 		t.Errorf("Id = %v, want job-1", job.Id)
 	}
 	if job.Status == nil || *job.Status != inferenceendpoints.STATUS_PENDING {
 		t.Errorf("Status = %v, want pending", job.Status)
+	}
+}
+
+// checkSentInput checks that TestCreateInferenceJobRoundTrip's request body carries the prototype's input object.
+func checkSentInput(t *testing.T, body []byte) {
+	t.Helper()
+	var sent map[string]any
+	if err := json.Unmarshal(body, &sent); err != nil {
+		t.Fatalf("request body is not JSON: %v (%s)", err, body)
+	}
+	in := valueAs[map[string]any](sent["input"])
+	if in == nil || in["url"] != "https://example.com/a.mp3" || in["language_code"] != "en" {
+		t.Errorf("sent input = %v, want the prototype's input object", sent["input"])
 	}
 }
 

@@ -102,28 +102,34 @@ func TestOrganizationListingByStatus(t *testing.T) {
 			if (list != nil) != tc.list {
 				t.Errorf("list = %v, want a list: %t", list, tc.list)
 			}
-			switch {
-			case tc.code == 0 && err != nil:
-				t.Errorf("err = %v, want none", err)
-			case tc.code != 0 && (err == nil || err.Code != tc.code):
-				t.Errorf("err = %v, want exit %d", err, tc.code)
-			}
+			wantExit(t, err, tc.code)
 			if tc.status == 401 && (err == nil || err.HTTPStatus == nil || *err.HTTPStatus != 401) {
 				t.Errorf("a 401 must keep its status: %v", err)
 			}
 		})
 	}
-	t.Run("network", func(t *testing.T) {
-		t.Parallel()
-		c, cerr := New(config.Resolved{APIKey: "k"}, testOptions(baseURLs("http://127.0.0.1:1")))
-		if cerr != nil {
-			t.Fatal(cerr)
-		}
-		if list, err := c.OrganizationListing(
-			t.Context(),
-		); list != nil || err == nil ||
-			err.Code != clierr.CodeNetwork {
-			t.Errorf("list %v, err %v; want a network error", list, err)
-		}
-	})
+}
+
+// TestOrganizationListingNetworkError: an unreachable API is a network error and no list.
+func TestOrganizationListingNetworkError(t *testing.T) {
+	t.Parallel()
+	c, cerr := New(config.Resolved{APIKey: "k"}, testOptions(baseURLs("http://127.0.0.1:1")))
+	if cerr != nil {
+		t.Fatal(cerr)
+	}
+	list, err := c.OrganizationListing(t.Context())
+	if list != nil || err == nil || err.Code != clierr.CodeNetwork {
+		t.Errorf("list %v, err %v; want a network error", list, err)
+	}
+}
+
+// wantExit fails the test unless err has exit code code, or is nil when code is 0.
+func wantExit(t *testing.T, err *clierr.Error, code int) {
+	t.Helper()
+	switch {
+	case code == 0 && err != nil:
+		t.Errorf("err = %v, want none", err)
+	case code != 0 && (err == nil || err.Code != code):
+		t.Errorf("err = %v, want exit %d", err, code)
+	}
 }

@@ -79,16 +79,7 @@ const liveGroupBody = `{
 func TestGetGroupDecodesLiveWireFormat(t *testing.T) {
 	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Errorf("method = %s, want GET", r.Method)
-		}
-		wantPath := "/organizations/my-org/projects/default/containers/my-app"
-		if r.URL.Path != wantPath {
-			t.Errorf("path = %s, want %s", r.URL.Path, wantPath)
-		}
-		if got := r.Header.Get("Salad-Api-Key"); got != "test-key" {
-			t.Errorf("Salad-Api-Key = %q, want %q", got, "test-key")
-		}
+		checkRequest(t, r, http.MethodGet, "/organizations/my-org/projects/default/containers/my-app")
 		w.Header().Set("Content-Type", "application/json")
 		respond(t, w, liveGroupBody)
 	}))
@@ -378,6 +369,20 @@ func respond(t *testing.T, w io.Writer, body string) {
 	t.Helper()
 	if _, err := io.WriteString(w, body); err != nil {
 		t.Errorf("writing the response: %v", err)
+	}
+}
+
+// checkRequest checks an httptest handler's request: its method and path, and the API key newRestTestClient sends.
+func checkRequest(t *testing.T, r *http.Request, method, path string) {
+	t.Helper()
+	if r.Method != method {
+		t.Errorf("method = %s, want %s", r.Method, method)
+	}
+	if r.URL.Path != path {
+		t.Errorf("path = %s, want %s", r.URL.Path, path)
+	}
+	if got := r.Header.Get("Salad-Api-Key"); got != "test-key" {
+		t.Errorf("Salad-Api-Key = %q, want %q", got, "test-key")
 	}
 }
 

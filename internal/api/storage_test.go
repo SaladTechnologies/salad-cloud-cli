@@ -20,29 +20,17 @@ func TestUploadFile(t *testing.T) {
 	t.Parallel()
 	fileBytes := []byte("fake-mp3-bytes")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut {
-			t.Errorf("method = %s, want PUT", r.Method)
-		}
-		if want := "/organizations/my-org/files/saladcloud-cli/transcribe/meeting-123.mp3"; r.URL.Path != want {
-			t.Errorf("path = %s, want %s", r.URL.Path, want)
-		}
-		if got := r.Header.Get("Salad-Api-Key"); got != "test-key" {
-			t.Errorf("Salad-Api-Key = %q, want %q", got, "test-key")
-		}
+		checkRequest(t, r, http.MethodPut, "/organizations/my-org/files/saladcloud-cli/transcribe/meeting-123.mp3")
 		if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "multipart/form-data") {
 			t.Errorf("Content-Type = %q, want multipart/form-data", ct)
 		}
 		if err := r.ParseMultipartForm(1 << 20); err != nil {
 			t.Fatalf("ParseMultipartForm: %v", err)
 		}
-		if got := r.FormValue("mimeType"); got != "audio/mpeg" {
-			t.Errorf("mimeType = %q, want audio/mpeg", got)
-		}
-		if got := r.FormValue("sign"); got != "true" {
-			t.Errorf("sign = %q, want true", got)
-		}
-		if got := r.FormValue("signatureExp"); got != "86400" {
-			t.Errorf("signatureExp = %q, want 86400", got)
+		for field, want := range map[string]string{"mimeType": "audio/mpeg", "sign": "true", "signatureExp": "86400"} {
+			if got := r.FormValue(field); got != want {
+				t.Errorf("%s = %q, want %s", field, got, want)
+			}
 		}
 		f, _, err := r.FormFile("file")
 		if err != nil {

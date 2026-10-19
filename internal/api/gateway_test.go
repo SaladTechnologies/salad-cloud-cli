@@ -40,42 +40,7 @@ func TestNewGatewayNeedsItsOwnKey(t *testing.T) {
 
 func TestGatewayListModelsAndComplete(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "Bearer gw-key" {
-			t.Errorf("Authorization = %q, want bearer gateway key", got)
-		}
-		switch r.URL.Path {
-		case "/models":
-			respond(
-				t,
-				w,
-				`{"object":"list","data":[{"id":"qwen3.6-35b-a3b","object":"model","owned_by":"salad"},{"id":"gemma-4-26b","object":"model"}]}`,
-			)
-		case "/chat/completions":
-			var req map[string]any
-			reportErr(t, json.NewDecoder(r.Body).Decode(&req))
-			if req["model"] != "qwen3.6-35b-a3b" {
-				t.Errorf("model = %v", req["model"])
-			}
-			msgs := assertAsOrError[[]any](t, req["messages"])
-			if len(msgs) != 1 || assertAsOrError[map[string]any](t, msgs[0])["content"] != "say hi" {
-				t.Errorf("messages = %v, want one user message", msgs)
-			}
-			// thinking=false must send the one switch the gateway honors.
-			kw := valueAs[map[string]any](req["chat_template_kwargs"])
-			if kw == nil || kw["enable_thinking"] != false {
-				t.Errorf("chat_template_kwargs = %v, want enable_thinking false", req["chat_template_kwargs"])
-			}
-			respond(t, w,
-				`{"model":"qwen3.6-35b-a3b","choices":[{"message":{"role":"assistant","content":"  Hi `+
-					`there.\n"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":3}}`,
-			)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(srv.Close)
-	g := newTestGateway(t, srv.URL)
+	g := newTestGateway(t, modelsAndCompletionServer(t).URL)
 
 	models, cerr := g.ListModels(t.Context())
 	if cerr != nil {
@@ -90,6 +55,55 @@ func TestGatewayListModelsAndComplete(t *testing.T) {
 	}
 	if c.Reply() != "Hi there." || c.Usage["completion_tokens"] != float64(3) {
 		t.Errorf("reply %q usage %v", c.Reply(), c.Usage)
+	}
+}
+
+// modelsAndCompletionServer is TestGatewayListModelsAndComplete's gateway: two models, and a reply to the one
+// completion it expects. Every request must carry the gateway key.
+func modelsAndCompletionServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer gw-key" {
+			t.Errorf("Authorization = %q, want bearer gateway key", got)
+		}
+		switch r.URL.Path {
+		case "/models":
+			respond(
+				t,
+				w,
+				`{"object":"list","data":[{"id":"qwen3.6-35b-a3b","object":"model","owned_by":"salad"},{"id":"gemma-4-26b","object":"model"}]}`,
+			)
+		case "/chat/completions":
+			checkCompletionRequest(t, r)
+			respond(t, w,
+				`{"model":"qwen3.6-35b-a3b","choices":[{"message":{"role":"assistant","content":"  Hi `+
+					`there.\n"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":3}}`,
+			)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// checkCompletionRequest checks the body of TestGatewayListModelsAndComplete's completion: the model, one user
+// message, and thinking switched off.
+func checkCompletionRequest(t *testing.T, r *http.Request) {
+	t.Helper()
+	var req map[string]any
+	reportErr(t, json.NewDecoder(r.Body).Decode(&req))
+	if req["model"] != "qwen3.6-35b-a3b" {
+		t.Errorf("model = %v", req["model"])
+	}
+	msgs := assertAsOrError[[]any](t, req["messages"])
+	if len(msgs) != 1 || assertAsOrError[map[string]any](t, msgs[0])["content"] != "say hi" {
+		t.Errorf("messages = %v, want one user message", msgs)
+	}
+	// thinking=false must send the one switch the gateway honors.
+	kw := valueAs[map[string]any](req["chat_template_kwargs"])
+	if kw == nil || kw["enable_thinking"] != false {
+		t.Errorf("chat_template_kwargs = %v, want enable_thinking false", req["chat_template_kwargs"])
 	}
 }
 
