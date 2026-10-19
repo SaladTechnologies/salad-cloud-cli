@@ -182,7 +182,12 @@ func TestStreamYAML(t *testing.T) {
 // keeps the characters as they are.
 func TestJSONIsASCII(t *testing.T) {
 	t.Parallel()
-	doc := map[string]any{"name": "Café 東京", "emoji": "🎉 ok", "Größe": "ü", "plain": "<a&b>"}
+	doc := map[string]any{
+		"name":  "Café 東京", //nolint:gosmopolitan // non-Latin text on purpose
+		"emoji": "🎉 ok",
+		"Größe": "ü",
+		"plain": "<a&b>",
+	}
 	isASCIIDoc := func(t *testing.T, out []byte) { t.Helper(); checkASCIIDoc(t, out, doc) }
 	for _, tc := range []struct {
 		name, mode string
@@ -239,7 +244,8 @@ func checkASCIIDoc(t *testing.T, out []byte, doc map[string]any) {
 // checkYAMLKeepsCharacters checks that TestJSONIsASCII's yaml output keeps its non-ASCII characters as they are.
 func checkYAMLKeepsCharacters(t *testing.T, out []byte) {
 	t.Helper()
-	if !strings.Contains(string(out), "Café 東京") || !strings.Contains(string(out), "ü") {
+	kept := "Café 東京" //nolint:gosmopolitan // non-Latin text on purpose
+	if !strings.Contains(string(out), kept) || !strings.Contains(string(out), "ü") {
 		t.Errorf("yaml changed the characters:\n%s", out)
 	}
 }

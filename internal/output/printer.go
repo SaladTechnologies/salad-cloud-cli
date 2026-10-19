@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"unicode"
 	"unicode/utf16"
 	"unicode/utf8"
 
@@ -15,6 +16,16 @@ import (
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 )
+
+// The output modes.
+const (
+	modeTable = "table"
+	modeJSON  = "json"
+	modeYAML  = "yaml"
+)
+
+// escapeHeadroom is the room ASCII leaves for escapes beyond the document's own length before append must grow.
+const escapeHeadroom = 16
 
 // Printer is one run's render path: where rendered output goes and the mode
 // it is rendered in, table (the default), json or yaml.
@@ -24,7 +35,7 @@ type Printer struct {
 }
 
 // NewPrinter returns a Printer writing to w in table mode.
-func NewPrinter(w io.Writer) *Printer { return &Printer{w: w, mode: "table"} }
+func NewPrinter(w io.Writer) *Printer { return &Printer{w: w, mode: modeTable} }
 
 // Out is where p writes.
 func (p *Printer) Out() io.Writer { return p.w }
@@ -33,7 +44,7 @@ func (p *Printer) Out() io.Writer { return p.w }
 // Any other value returns a usage error and leaves the mode as it was.
 func (p *Printer) SetMode(m string) *clierr.Error {
 	switch m {
-	case "table", "json", "yaml":
+	case modeTable, modeJSON, modeYAML:
 		p.mode = m
 		return nil
 	default:
@@ -44,7 +55,7 @@ func (p *Printer) SetMode(m string) *clierr.Error {
 
 // Machine reports whether the mode is a document mode (json or yaml), the
 // modes errors are reported in as a JSON document on stderr.
-func (p *Printer) Machine() bool { return p.mode != "table" }
+func (p *Printer) Machine() bool { return p.mode != modeTable }
 
 // Mode returns the current output mode.
 func (p *Printer) Mode() string { return p.mode }
@@ -57,9 +68,9 @@ func (p *Printer) Mode() string { return p.mode }
 // flushes afterward, and returns the first write error.
 func (p *Printer) Emit(v any, table func(w *Writer)) error {
 	switch p.mode {
-	case "yaml":
+	case modeYAML:
 		return p.emitYAML(v)
-	case "json":
+	case modeJSON:
 		return p.emitJSON(v)
 	}
 	return p.emitTable(table)
@@ -70,7 +81,7 @@ func (p *Printer) Emit(v any, table func(w *Writer)) error {
 // line (NDJSON) with every json-tagged key present, as Emit does; in table
 // mode it prints line as-is.
 func (p *Printer) Stream(v any, line string) error {
-	if p.mode == "yaml" {
+	if p.mode == modeYAML {
 		// A YAML stream: one document per record, each opened with ---.
 		data, err := encodeFilled(v)
 		if err != nil {
@@ -85,7 +96,7 @@ func (p *Printer) Stream(v any, line string) error {
 		}
 		return flush(p.w)
 	}
-	if p.mode == "json" {
+	if p.mode == modeJSON {
 		data, err := encodeFilled(v)
 		if err != nil {
 			return err
@@ -172,7 +183,7 @@ func ASCII(doc []byte) []byte {
 	if i == len(doc) {
 		return doc
 	}
-	out := make([]byte, 0, len(doc)+16)
+	out := make([]byte, 0, len(doc)+escapeHeadroom)
 	out = append(out, doc[:i]...)
 	for i < len(doc) {
 		if doc[i] < utf8.RuneSelf {
@@ -182,8 +193,7 @@ func ASCII(doc []byte) []byte {
 		}
 		r, size := utf8.DecodeRune(doc[i:])
 		i += size
-		if r > 0xFFFF {
-			hi, lo := utf16.EncodeRune(r)
+		if hi, lo := utf16.EncodeRune(r); hi != unicode.ReplacementChar { // outside the BMP: a surrogate pair
 			out = fmt.Appendf(out, `\u%04x\u%04x`, hi, lo)
 			continue
 		}

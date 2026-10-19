@@ -76,7 +76,7 @@ type object struct {
 	vals map[string]any
 }
 
-func (o *object) MarshalJSON() ([]byte, error) {
+func (o object) MarshalJSON() ([]byte, error) {
 	var b bytes.Buffer
 	b.WriteByte('{')
 	for i, k := range o.keys {
@@ -99,7 +99,7 @@ func (o *object) MarshalJSON() ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-func (o *object) has(k string) bool { _, ok := o.vals[k]; return ok }
+func (o object) has(k string) bool { _, ok := o.vals[k]; return ok }
 
 // errKeyNotString is an object key the JSON decoder did not return as a
 // string. It does not happen: JSON keys are strings.
@@ -150,7 +150,7 @@ func decodeObject(dec *json.Decoder) (any, error) {
 
 // decodeArray is decodeOrdered for an array, its '[' already read.
 func decodeArray(dec *json.Decoder) (any, error) {
-	arr := []any{}
+	arr := []any{} //nolint:revive // an empty array decodes as [], never null
 	for dec.More() {
 		v, err := decodeOrdered(dec)
 		if err != nil {
@@ -223,6 +223,11 @@ func fillComposite(doc any, v reflect.Value, mode fillMode) {
 		if o, ok := doc.(*object); ok && v.Type().Key().Kind() == reflect.String {
 			fillMapValues(o, v, mode)
 		}
+	case reflect.Invalid, reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Float32,
+		reflect.Float64, reflect.Complex64, reflect.Complex128, reflect.Chan, reflect.Func, reflect.Interface,
+		reflect.Pointer, reflect.String, reflect.UnsafePointer:
+		// nothing inside to fill
 	}
 }
 
@@ -280,7 +285,7 @@ type structField struct {
 func structFields(v reflect.Value, t reflect.Type, depth int, fields []structField) []structField {
 	for i := range t.NumField() {
 		f := t.Field(i)
-		name, ok := jsonName(f)
+		name, ok := jsonName(&f)
 		if !ok {
 			continue
 		}
@@ -373,7 +378,7 @@ func appendUnclaimed(keys, others []string) []string {
 
 // jsonName returns the key encoding/json uses for f, "" for an embedded
 // struct whose fields are promoted, and false for a field it never writes.
-func jsonName(f reflect.StructField) (string, bool) {
+func jsonName(f *reflect.StructField) (string, bool) {
 	tag := f.Tag.Get("json")
 	if tag == "-" {
 		return "", false
@@ -405,16 +410,10 @@ func setEmpty(v reflect.Value) (any, bool) {
 	if !ok || opaque(v.Type()) {
 		return nil, false
 	}
-	switch v.Kind() {
-	case reflect.Slice:
-		if v.IsNil() || v.Len() > 0 || v.Type().Elem().Kind() == reflect.Uint8 {
-			return nil, false
-		}
-		return []any{}, true
-	case reflect.Map:
-		if v.IsNil() || v.Len() > 0 {
-			return nil, false
-		}
+	if v.Kind() == reflect.Slice && !v.IsNil() && v.Len() == 0 && v.Type().Elem().Kind() != reflect.Uint8 {
+		return []any{}, true //nolint:revive // a set, empty slice renders [], never null
+	}
+	if v.Kind() == reflect.Map && !v.IsNil() && v.Len() == 0 {
 		return &object{vals: make(map[string]any), keys: nil}, true
 	}
 	return nil, false
@@ -445,11 +444,16 @@ func filler(t reflect.Type) any {
 		if t.Elem().Kind() == reflect.Uint8 { // []byte encodes as a string
 			return nil
 		}
-		return []any{}
+		return []any{} //nolint:revive // an absent list renders [], never null
 	case reflect.Array:
-		return []any{}
+		return []any{} //nolint:revive // an absent array renders [], never null
 	case reflect.Map:
 		return &object{vals: make(map[string]any), keys: nil}
+	case reflect.Struct, reflect.Invalid, reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32,
+		reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr,
+		reflect.Float32, reflect.Float64, reflect.Complex64, reflect.Complex128, reflect.Chan, reflect.Func,
+		reflect.Interface, reflect.Pointer, reflect.String, reflect.UnsafePointer:
+		return nil
 	}
 	return nil
 }

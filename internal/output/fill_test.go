@@ -23,6 +23,7 @@ func (selfEncoded) MarshalJSON() ([]byte, error) { return []byte(`"custom"`), ni
 
 type fillOuter struct {
 	fillBase
+
 	Name    *string           `json:"name,omitempty"`
 	Count   int               `json:"count,omitempty"`
 	List    []fillInner       `json:"list,omitempty"`
@@ -86,7 +87,7 @@ func TestFillLeavesExplicitValues(t *testing.T) {
 		Empty   []string          `json:"empty"`
 		Map     map[string]string `json:"map"`
 	}
-	got := fill(t, own{Empty: []string{}})
+	got := fill(t, own{Empty: []string{}}) //nolint:revive // a set, empty slice is the case under test
 	if want := `{"unknown":null,"empty":[],"map":null}`; got != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
@@ -152,7 +153,7 @@ type nullable[T any] struct {
 	IsNull bool
 }
 
-func (n *nullable[T]) MarshalJSON() ([]byte, error) {
+func (n *nullable[T]) MarshalJSON() ([]byte, error) { //nolint:revive // mirrors util.Nullable's pointer receiver
 	if n.IsNull {
 		return []byte("null"), nil
 	}
@@ -188,13 +189,14 @@ func TestMarshalRequestKeepsSetEmpties(t *testing.T) {
 		t.Errorf("zero value = %s, want only the keys the encoder writes itself", got)
 	}
 	s := "x"
+	empty := []int{} //nolint:revive // set, empty slices are the case under test
 	v := fillOuter{
 		Name:   &s,
-		List:   []fillInner{{Tags: []int{}}, {ID: &s}},
+		List:   []fillInner{{Tags: empty}, {ID: &s}},
 		Labels: make(map[string]string),
-		Nested: &fillInner{Tags: []int{}},
-		ByKey:  map[string]fillInner{"k": {Tags: []int{}}},
-		Bytes:  []byte{},
+		Nested: &fillInner{Tags: empty},
+		ByKey:  map[string]fillInner{"k": {Tags: empty}},
+		Bytes:  []byte{}, //nolint:revive // a set, empty []byte encodes as "" and stays out of the fill
 		Custom: &selfEncoded{Hidden: &s},
 	}
 	want := `{"name":"x","list":[{"tags":[]},{"id":"x"}],"labels":{},"nested":{"tags":[]},` +
@@ -207,7 +209,7 @@ func TestMarshalRequestKeepsSetEmpties(t *testing.T) {
 		Null  *nullable[fillInner] `json:"null,omitempty"`
 	}
 	got := enc(
-		probe{Probe: &nullable[fillInner]{Value: fillInner{Tags: []int{}}}, Null: &nullable[fillInner]{IsNull: true}},
+		probe{Probe: &nullable[fillInner]{Value: fillInner{Tags: empty}}, Null: &nullable[fillInner]{IsNull: true}},
 	)
 	if want := `{"probe":{"tags":[]},"null":null}`; got != want {
 		t.Errorf("through Nullable = %s, want %s", got, want)
