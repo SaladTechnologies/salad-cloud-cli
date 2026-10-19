@@ -241,7 +241,7 @@ func sweep() {
 }
 
 // TestPreflight: the environment is usable at all.
-func TestPreflight(t *testing.T) {
+func TestPreflight(t *testing.T) { //nolint:paralleltest // runs first so a bad environment fails fast
 	if r := run(t, "doctor"); r.Code != 0 {
 		t.Fatalf("doctor exit %d: %s", r.Code, r.Stderr)
 	}
@@ -264,6 +264,7 @@ func TestPreflight(t *testing.T) {
 // and an explicit --project narrows it to that project. Every entry must
 // carry the matching labels. Read-only; passes with no logs in the window.
 func TestLogScopes(t *testing.T) {
+	t.Parallel()
 	org := os.Getenv("SALAD_ORGANIZATION")
 	project := os.Getenv("SALAD_PROJECT")
 	if project == "" {
@@ -286,6 +287,7 @@ func TestLogScopes(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			r := run(t, tc.args...)
 			if r.Code != 0 {
 				t.Fatalf("exit %d: %s", r.Code, r.Stderr)
@@ -314,7 +316,7 @@ func TestLogScopes(t *testing.T) {
 
 // TestGroupLifecycle is the spine: create stopped, read it back, patch it,
 // scale it, then delete. Nothing here runs, so it costs nothing.
-func TestGroupLifecycle(t *testing.T) {
+func TestGroupLifecycle(t *testing.T) { //nolint:paralleltest // writes to the live account, one at a time
 	g := name("life")
 	r := run(t, "container-groups", "create", g, "--image", "docker.io/library/busybox:1.36",
 		"--no-autostart", "--replicas", "2", "-e", "A=1", "-o", "json")
@@ -459,7 +461,7 @@ func TestGroupLifecycle(t *testing.T) {
 // run here uses unique names. This is deliberate platform behavior
 // (docs/notes.md). If a deleted name ever becomes reusable,
 // the rule itself has changed and the naming convention can be relaxed.
-func TestDeletedNameStaysTaken(t *testing.T) {
+func TestDeletedNameStaysTaken(t *testing.T) { //nolint:paralleltest // writes to the live account, one at a time
 	g := name("resv")
 	if r := run(
 		t,
@@ -493,6 +495,7 @@ func TestDeletedNameStaysTaken(t *testing.T) {
 // TestErrorContract covers the exit codes and stream discipline that scripts
 // depend on. All client-side or 404 paths, so nothing is created.
 func TestErrorContract(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		args     []string
@@ -540,6 +543,7 @@ func TestErrorContract(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			r := run(t, tc.args...)
 			if r.Code != tc.wantCode {
 				t.Errorf("exit = %d, want %d (stderr: %s)", r.Code, tc.wantCode, r.Stderr)
@@ -584,7 +588,7 @@ func TestErrorContract(t *testing.T) {
 
 // TestGpuConfigCreatesStopped exercises GPU class resolution against the real
 // catalog. Created stopped, so no GPU is ever allocated and it costs nothing.
-func TestGpuConfigCreatesStopped(t *testing.T) {
+func TestGpuConfigCreatesStopped(t *testing.T) { //nolint:paralleltest // writes to the live account, one at a time
 	time.Sleep(createSpacing)
 	g := name("gpu")
 	r := run(t, "container-groups", "create", g, "--image", "docker.io/library/busybox:1.36",
@@ -610,7 +614,7 @@ func TestGpuConfigCreatesStopped(t *testing.T) {
 
 // TestContainerCommand: words after -- set container.command on create and
 // replace it on update, reaching the API as the shell split them.
-func TestContainerCommand(t *testing.T) {
+func TestContainerCommand(t *testing.T) { //nolint:paralleltest // writes to the live account, one at a time
 	time.Sleep(createSpacing)
 	g := name("cmd")
 	script := `echo "hi there"; sleep 2147483647`
@@ -681,7 +685,7 @@ func TestContainerCommand(t *testing.T) {
 
 // TestCreateFrom copies a stopped group whose settings are all non-default,
 // so a field that fails to come across shows up as the default.
-func TestCreateFrom(t *testing.T) {
+func TestCreateFrom(t *testing.T) { //nolint:paralleltest // writes to the live account, one at a time
 	time.Sleep(createSpacing)
 	src, cp := name("from-src"), name("from-copy")
 	// An HTTP probe with no headers: the API rejects the probe unless the
@@ -774,7 +778,7 @@ func TestCreateFrom(t *testing.T) {
 // far sooner than one (a single batch-priority replica can wait many
 // minutes). Cost is still cents. This is what cannot be faked: real
 // capacity, real instance states, real logs.
-func TestRunningLifecycle(t *testing.T) {
+func TestRunningLifecycle(t *testing.T) { //nolint:paralleltest // writes to the live account, one at a time
 	if testing.Short() {
 		t.Skip("-short: skipping the workload that actually runs")
 	}
@@ -1015,7 +1019,7 @@ func firstRunningInstance(t *testing.T, g string) string {
 // TestWaitTimeoutContract: a deliberately short --wait must exit 1 and leave
 // stdout empty. This is the regression that mattered most in live testing —
 // scripts reading stdout would otherwise act on a group that is not running.
-func TestWaitTimeoutContract(t *testing.T) {
+func TestWaitTimeoutContract(t *testing.T) { //nolint:paralleltest // writes to the live account, one at a time
 	if testing.Short() {
 		t.Skip("-short: skipping the workload that actually runs")
 	}
@@ -1047,7 +1051,7 @@ func TestWaitTimeoutContract(t *testing.T) {
 //
 // A transcription job can fail transiently, with no error detail in the job
 // document, so a single failure is retried once before the test is believed.
-func TestTranscribe(t *testing.T) {
+func TestTranscribe(t *testing.T) { //nolint:paralleltest // writes to the live account, one at a time
 	audio := os.Getenv("SALAD_CLI_TEST_AUDIO")
 	if audio == "" {
 		t.Skip("SALAD_CLI_TEST_AUDIO unset (path to a short wav); skipping transcription")
@@ -1109,7 +1113,7 @@ func TestTranscribe(t *testing.T) {
 // 'en'), and audio_stream_index is honored. It needs a non-English clip,
 // because English audio cannot tell detection from a forced en. A
 // single-track clip makes stream 1 invalid.
-func TestTranscribeLanguageAndStream(t *testing.T) {
+func TestTranscribeLanguageAndStream(t *testing.T) { //nolint:paralleltest // writes to the live account, one at a time
 	audio := os.Getenv("SALAD_CLI_TEST_AUDIO_FOREIGN")
 	if audio == "" {
 		t.Skip("SALAD_CLI_TEST_AUDIO_FOREIGN unset (path to a short single-track non-English clip); skipping")
@@ -1168,6 +1172,7 @@ func TestTranscribeLanguageAndStream(t *testing.T) {
 // TestGateway smoke-tests the AI Gateway commands. It needs a gateway key,
 // which is a separate credential, so it skips without one.
 func TestGateway(t *testing.T) {
+	t.Parallel()
 	if os.Getenv("SALAD_AI_GATEWAY_API_KEY") == "" {
 		t.Skip("SALAD_AI_GATEWAY_API_KEY unset; skipping the AI Gateway smoke test")
 	}
@@ -1222,6 +1227,7 @@ func TestGateway(t *testing.T) {
 // resource noun is a usage error, every list is an items envelope, and the
 // read verbs of the nouns answer. Read-only.
 func TestGrammar(t *testing.T) {
+	t.Parallel()
 	for _, noun := range []string{"gpus", "orgs", "quotas", "queues", "inference"} {
 		r := run(t, noun, "-o", "json")
 		if r.Code != 2 || strings.TrimSpace(r.Stdout) != "" || !strings.Contains(r.Stderr, "needs a verb") {
@@ -1274,6 +1280,7 @@ func TestGrammar(t *testing.T) {
 
 // TestAvailability asks once per class, as the command is meant to be used.
 func TestAvailability(t *testing.T) {
+	t.Parallel()
 	one := run(t, "availability", "--gpu", "rtx 3060 (12 gb)", "-o", "json")
 	if one.Code != 0 {
 		t.Fatalf("availability exit %d: %s", one.Code, one.Stderr)
@@ -1307,7 +1314,7 @@ func TestAvailability(t *testing.T) {
 // TestQueues drives the queue plumbing without a worker: a job submitted to
 // a queue with no container group stays pending, so it can be read back and
 // canceled. Queues cost nothing.
-func TestQueues(t *testing.T) {
+func TestQueues(t *testing.T) { //nolint:paralleltest // writes to the live account, one at a time
 	q := name("q")
 	r := run(t, "queues", "create", q, "--display-name", "Live test queue", "-o", "json")
 	if r.Code != 0 {
@@ -1405,6 +1412,7 @@ func TestQueues(t *testing.T) {
 // TestWebhookSecretGet reads the organization's webhook secret. It never
 // rotates: that would break every receiver verifying with the current key.
 func TestWebhookSecretGet(t *testing.T) {
+	t.Parallel()
 	r := run(t, "webhook-secret", "get", "-o", "json")
 	if r.Code != 0 {
 		t.Fatalf("webhook-secret get exit %d: %s", r.Code, r.Stderr)

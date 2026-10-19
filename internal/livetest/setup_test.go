@@ -205,10 +205,12 @@ func machineStderr(t *testing.T, r result) {
 // TestSetupLogin: the two scripted logins, a piped key with --org and
 // --project, and the variables alone; and a key the API rejects.
 func TestSetupLogin(t *testing.T) {
+	t.Parallel()
 	org, project := liveContext()
 	k := apiKey()
 
 	t.Run("a piped key with --org and --project", func(t *testing.T) {
+		t.Parallel()
 		d := newCfg(t)
 		r := d.run(t, nil, k+"\n", "login", "--api-key", "-", "--org", org, "--project", project)
 		if r.Code != 0 {
@@ -233,6 +235,7 @@ func TestSetupLogin(t *testing.T) {
 	})
 
 	t.Run("a piped key, -o json", func(t *testing.T) {
+		t.Parallel()
 		d := newCfg(t)
 		r := d.run(t, nil, k+"\n", "login", "--api-key", "-", "--org", org, "--project", project, "-o", "json")
 		if r.Code != 0 {
@@ -254,6 +257,7 @@ func TestSetupLogin(t *testing.T) {
 		projectLine = fmt.Sprintf("Project: %s (from SALAD_PROJECT)\n", p)
 	}
 	t.Run("the variables alone", func(t *testing.T) {
+		t.Parallel()
 		d := newCfg(t)
 		r := d.run(t, env, "", "login")
 		if r.Code != 0 {
@@ -278,6 +282,7 @@ func TestSetupLogin(t *testing.T) {
 		})
 	})
 	t.Run("the variables alone, -o json", func(t *testing.T) {
+		t.Parallel()
 		d := newCfg(t)
 		r := d.run(t, env, "", "login", "-o", "json")
 		if r.Code != 0 {
@@ -291,6 +296,7 @@ func TestSetupLogin(t *testing.T) {
 	})
 
 	t.Run("a rejected key", func(t *testing.T) {
+		t.Parallel()
 		d := newCfg(t)
 		r := d.run(t, nil, badKey()+"\n", "login", "--api-key", "-", "--org", org, "-o", "json")
 		if r.Code != 3 {
@@ -324,6 +330,7 @@ func TestSetupLogin(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			d := newCfg(t)
 			r := d.run(t, nil, k+"\n", append([]string{"login", "--api-key", "-", "-o", "json"}, tc.args...)...)
 			if r.Code != 4 {
@@ -344,6 +351,7 @@ func TestSetupLogin(t *testing.T) {
 // TestSetupUse switches the saved context with the saved key, and checks
 // that a miss changes nothing.
 func TestSetupUse(t *testing.T) {
+	t.Parallel()
 	org, project := liveContext()
 	d := loggedIn(t)
 
@@ -449,6 +457,7 @@ func TestSetupUse(t *testing.T) {
 // TestSetupWhoami reports the saved context, and a rejected key without
 // failing.
 func TestSetupWhoami(t *testing.T) {
+	t.Parallel()
 	org, project := liveContext()
 	k := apiKey()
 	d := loggedIn(t)
@@ -489,6 +498,7 @@ func TestSetupWhoami(t *testing.T) {
 // TestSetupDoctor passes on a fresh login, and names the failed check with
 // a rejected key.
 func TestSetupDoctor(t *testing.T) {
+	t.Parallel()
 	k := apiKey()
 	d := loggedIn(t)
 	r := d.run(t, nil, "", "doctor", "-o", "json")
@@ -592,6 +602,7 @@ func doctorRows(t *testing.T, r result) []map[string]any {
 // TestSetupLogout removes the key and keeps the context, and warns about
 // a variable that still supplies a key.
 func TestSetupLogout(t *testing.T) {
+	t.Parallel()
 	org, project := liveContext()
 	k := apiKey()
 	d := loggedIn(t)
@@ -647,6 +658,7 @@ func TestSetupLogout(t *testing.T) {
 // TestRunTimeRejectedKey: a key the API rejects, from each source, is
 // named masked with its source and the fix there. Nothing is created.
 func TestRunTimeRejectedKey(t *testing.T) {
+	t.Parallel()
 	org, _ := liveContext()
 	k := apiKey()
 	rejected := fmt.Sprintf("API key %s (from %%s) was rejected", mask(badKey()))
@@ -702,6 +714,7 @@ func TestRunTimeRejectedKey(t *testing.T) {
 // request (the organization check), or none when the request that failed
 // was the check itself. --debug prints one line per request.
 func TestRunTimeMissingOrganization(t *testing.T) {
+	t.Parallel()
 	d := loggedIn(t)
 	missing := prefix + "-nope"
 	want := fmt.Sprintf(
@@ -751,6 +764,7 @@ func TestRunTimeMissingOrganization(t *testing.T) {
 // API's pattern fails before any request. --debug prints a line for every
 // request, which the control shows.
 func TestRunTimeInvalidName(t *testing.T) {
+	t.Parallel()
 	d := loggedIn(t)
 	if r := d.run(t, nil, "", "quotas", "get", "--debug"); r.Code != 0 || !strings.Contains(r.Stderr, "debug: GET ") {
 		t.Fatalf("control: quotas get --debug exit %d, no request line in: %s", r.Code, r.Stderr)
@@ -781,6 +795,7 @@ func TestRunTimeInvalidName(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			r := d.run(t, tc.env, "", append(tc.args, "--debug")...)
 			if r.Code != 6 {
 				t.Errorf("exit %d, want 6", r.Code)
@@ -799,6 +814,7 @@ func TestRunTimeInvalidName(t *testing.T) {
 // terminal, ai-gateway login checks the key (one billed completion) and
 // saves nothing.
 func TestSetupGatewayLogin(t *testing.T) {
+	t.Parallel()
 	gw := os.Getenv("SALAD_AI_GATEWAY_API_KEY")
 	if gw == "" {
 		t.Skip("SALAD_AI_GATEWAY_API_KEY unset; skipping ai-gateway login (one billed request)")
