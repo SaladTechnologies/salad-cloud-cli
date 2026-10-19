@@ -30,24 +30,29 @@ func declared(t *testing.T, prefix string) map[string]string {
 			continue
 		}
 		for _, s := range g.Specs {
-			vs := assertAs[*ast.ValueSpec](t, s)
-			for i, n := range vs.Names {
-				if !strings.HasPrefix(n.Name, prefix) || i >= len(vs.Values) {
-					continue
-				}
-				lit, ok := vs.Values[i].(*ast.BasicLit)
-				if !ok {
-					t.Fatalf("%s is not a literal", n.Name)
-				}
-				v := lit.Value
-				if lit.Kind == token.STRING {
-					v = must(strconv.Unquote(v))(t)
-				}
-				out[n.Name] = v
-			}
+			addConstants(t, assertAs[*ast.ValueSpec](t, s), prefix, out)
 		}
 	}
 	return out
+}
+
+// addConstants adds to out the constants vs declares with the given prefix, name to value (a string unquoted).
+func addConstants(t *testing.T, vs *ast.ValueSpec, prefix string, out map[string]string) {
+	t.Helper()
+	for i, n := range vs.Names {
+		if !strings.HasPrefix(n.Name, prefix) || i >= len(vs.Values) {
+			continue
+		}
+		lit, ok := vs.Values[i].(*ast.BasicLit)
+		if !ok {
+			t.Fatalf("%s is not a literal", n.Name)
+		}
+		v := lit.Value
+		if lit.Kind == token.STRING {
+			v = must(strconv.Unquote(v))(t)
+		}
+		out[n.Name] = v
+	}
 }
 
 func TestKindsListsEveryConstant(t *testing.T) {
@@ -83,137 +88,191 @@ type pair struct{ code, kind, pos string }
 func TestKindCallSites(t *testing.T) {
 	t.Parallel()
 	kindConsts := declared(t, "Kind")
-	var pairs []pair
-	fset := token.NewFileSet()
-	err := filepath.WalkDir(moduleRoot, func(path string, d fs.DirEntry, err error) error {
+	paths, err := moduleSources(moduleRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := &siteChecker{t: t, fset: token.NewFileSet(), kindConsts: kindConsts, inClierr: false, pairs: nil}
+	for _, path := range paths {
+		f, err := parser.ParseFile(c.fset, path, nil, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.inClierr = f.Name.Name == "clierr"
+		ast.Inspect(f, c.visit)
+	}
+	if len(c.pairs) < 50 {
+		t.Fatalf("found only %d clierr.New/HTTP sites; is the walk reaching internal/?", len(c.pairs))
+	}
+	checkGuide(t, kindConsts, c.pairs)
+}
+
+// moduleSources lists the non-test Go files under root, in walk order.
+func moduleSources(root string) ([]string, error) {
+	var paths []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			// Hidden directories hold other checkouts (.claude/worktrees)
-			// and tooling, not this module's code; go ./... skips them too.
-			name := d.Name()
-			if path != moduleRoot &&
-				(strings.HasPrefix(name, ".") || name == "dist" || name == "vendor" || name == "node_modules") {
+			if path != root && skippedDir(d.Name()) {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return nil
+		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+			paths = append(paths, path)
 		}
-		f, err := parser.ParseFile(fset, path, nil, 0)
-		if err != nil {
-			return err
+		return nil
+	})
+	return paths, err
+}
+
+// skippedDir reports whether the walk skips a directory: hidden directories hold other checkouts
+// (.claude/worktrees) and tooling, not this module's code, and go ./... skips them too, as it does the others.
+func skippedDir(name string) bool {
+	return strings.HasPrefix(name, ".") || name == "dist" || name == "vendor" || name == "node_modules"
+}
+
+// siteChecker checks the kinds in one parsed file at a time, and collects the constant code/kind pairs passed to
+// clierr.New and clierr.HTTP across them.
+type siteChecker struct {
+	t          *testing.T
+	fset       *token.FileSet
+	kindConsts map[string]string
+	inClierr   bool // the file is clierr's own, where its identifiers are bare
+	pairs      []pair
+}
+
+// ref reports whether e names clierr's identifier name ("clierr.X", or bare "X" inside the package).
+func (c *siteChecker) ref(e ast.Expr) (string, bool) {
+	switch x := e.(type) {
+	case *ast.SelectorExpr:
+		if id, ok := x.X.(*ast.Ident); ok && id.Name == "clierr" {
+			return x.Sel.Name, true
 		}
-		inClierr := f.Name.Name == "clierr"
-		// ref reports whether e names clierr's identifier name ("clierr.X",
-		// or bare "X" inside the package).
-		ref := func(e ast.Expr) (string, bool) {
-			switch x := e.(type) {
-			case *ast.SelectorExpr:
-				if id, ok := x.X.(*ast.Ident); ok && id.Name == "clierr" {
-					return x.Sel.Name, true
-				}
-			case *ast.Ident:
-				if inClierr {
-					return x.Name, true
-				}
+	case *ast.Ident:
+		if c.inClierr {
+			return x.Name, true
+		}
+	}
+	return "", false
+}
+
+// checkKind fails the test when e, an expression used as a kind, is a literal or names an undeclared Kind constant.
+func (c *siteChecker) checkKind(e ast.Expr) {
+	pos := c.fset.Position(e.Pos()).String()
+	if lit, ok := e.(*ast.BasicLit); ok {
+		c.t.Errorf("%s: kind %s is a literal; use a clierr.Kind constant", pos, lit.Value)
+		return
+	}
+	if name, ok := c.ref(e); ok && strings.HasPrefix(name, "Kind") && name != "Kind" {
+		if _, ok := c.kindConsts[name]; !ok {
+			c.t.Errorf("%s: %s is not a declared kind", pos, name)
+		}
+	}
+}
+
+// isKindType reports whether e names the clierr.Kind type.
+func (c *siteChecker) isKindType(e ast.Expr) bool { name, ok := c.ref(e); return ok && name == "Kind" }
+
+// isKindField reports whether e selects a field named Kind.
+func isKindField(e ast.Expr) bool {
+	sel, ok := e.(*ast.SelectorExpr)
+	return ok && sel.Sel.Name == "Kind"
+}
+
+// visit is the ast.Inspect visitor: it checks each node a hand-spelled kind can appear in.
+func (c *siteChecker) visit(n ast.Node) bool {
+	switch x := n.(type) {
+	case *ast.FuncDecl:
+		c.checkKindResults(x)
+	case *ast.BinaryExpr:
+		c.checkComparison(x)
+	case *ast.AssignStmt:
+		for i, l := range x.Lhs {
+			if isKindField(l) && i < len(x.Rhs) {
+				c.checkKind(x.Rhs[i])
 			}
-			return "", false
 		}
-		checkKind := func(e ast.Expr) {
-			pos := fset.Position(e.Pos()).String()
-			if lit, ok := e.(*ast.BasicLit); ok {
-				t.Errorf("%s: kind %s is a literal; use a clierr.Kind constant", pos, lit.Value)
-				return
-			}
-			if name, ok := ref(e); ok && strings.HasPrefix(name, "Kind") && name != "Kind" {
-				if _, ok := kindConsts[name]; !ok {
-					t.Errorf("%s: %s is not a declared kind", pos, name)
-				}
-			}
+	case *ast.CallExpr:
+		c.checkCall(x)
+	case *ast.CompositeLit:
+		c.checkErrorLiteral(x)
+	}
+	return true
+}
+
+// checkKindResults checks that a function returning a Kind returns constants.
+func (c *siteChecker) checkKindResults(x *ast.FuncDecl) {
+	if x.Body == nil || x.Type.Results == nil {
+		return
+	}
+	for i, res := range x.Type.Results.List {
+		if !c.isKindType(res.Type) {
+			continue
 		}
-		isKindType := func(e ast.Expr) bool { name, ok := ref(e); return ok && name == "Kind" }
-		isKindField := func(e ast.Expr) bool { sel, ok := e.(*ast.SelectorExpr); return ok && sel.Sel.Name == "Kind" }
-		ast.Inspect(f, func(n ast.Node) bool {
-			switch x := n.(type) {
-			case *ast.FuncDecl:
-				// A function returning a Kind returns constants.
-				if x.Body == nil || x.Type.Results == nil {
-					break
-				}
-				for i, res := range x.Type.Results.List {
-					if !isKindType(res.Type) {
-						continue
-					}
-					ast.Inspect(x.Body, func(n ast.Node) bool {
-						if r, ok := n.(*ast.ReturnStmt); ok && i < len(r.Results) {
-							checkKind(r.Results[i])
-						}
-						return true
-					})
-				}
-			case *ast.BinaryExpr:
-				// err.Kind == "..." compares against a hand-spelled kind.
-				if x.Op == token.EQL || x.Op == token.NEQ {
-					if isKindField(x.X) {
-						checkKind(x.Y)
-					}
-					if isKindField(x.Y) {
-						checkKind(x.X)
-					}
-				}
-			case *ast.AssignStmt:
-				for i, l := range x.Lhs {
-					if isKindField(l) && i < len(x.Rhs) {
-						checkKind(x.Rhs[i])
-					}
-				}
-			case *ast.CallExpr:
-				name, ok := ref(x.Fun)
-				if !ok {
-					break
-				}
-				switch name {
-				case "Kind":
-					if !inClierr {
-						t.Errorf("%s: conversion to clierr.Kind; use a constant", fset.Position(x.Pos()))
-					}
-				case "New", "HTTP":
-					if len(x.Args) < 2 {
-						break
-					}
-					checkKind(x.Args[1])
-					code, cok := ref(x.Args[0])
-					kind, kok := ref(x.Args[1])
-					if cok && kok && strings.HasPrefix(code, "Code") && strings.HasPrefix(kind, "Kind") {
-						pairs = append(pairs, pair{code, kind, fset.Position(x.Pos()).String()})
-					}
-				}
-			case *ast.CompositeLit:
-				if name, ok := ref(x.Type); !ok || name != "Error" {
-					break
-				}
-				for _, el := range x.Elts {
-					if kv, ok := el.(*ast.KeyValueExpr); ok {
-						if k, ok := kv.Key.(*ast.Ident); ok && k.Name == "Kind" {
-							checkKind(kv.Value)
-						}
-					}
-				}
+		ast.Inspect(x.Body, func(n ast.Node) bool {
+			if r, ok := n.(*ast.ReturnStmt); ok && i < len(r.Results) {
+				c.checkKind(r.Results[i])
 			}
 			return true
 		})
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
-	if len(pairs) < 50 {
-		t.Fatalf("found only %d clierr.New/HTTP sites; is the walk reaching internal/?", len(pairs))
+}
+
+// checkComparison checks err.Kind == "...", a comparison against a hand-spelled kind.
+func (c *siteChecker) checkComparison(x *ast.BinaryExpr) {
+	if x.Op != token.EQL && x.Op != token.NEQ {
+		return
 	}
-	checkGuide(t, kindConsts, pairs)
+	if isKindField(x.X) {
+		c.checkKind(x.Y)
+	}
+	if isKindField(x.Y) {
+		c.checkKind(x.X)
+	}
+}
+
+// checkCall checks a conversion to clierr.Kind outside clierr, and the kind passed to clierr.New and clierr.HTTP,
+// collecting the pair when both code and kind are constants.
+func (c *siteChecker) checkCall(x *ast.CallExpr) {
+	name, ok := c.ref(x.Fun)
+	if !ok {
+		return
+	}
+	switch name {
+	case "Kind":
+		if !c.inClierr {
+			c.t.Errorf("%s: conversion to clierr.Kind; use a constant", c.fset.Position(x.Pos()))
+		}
+	case "New", "HTTP":
+		if len(x.Args) < 2 {
+			return
+		}
+		c.checkKind(x.Args[1])
+		code, cok := c.ref(x.Args[0])
+		kind, kok := c.ref(x.Args[1])
+		if cok && kok && strings.HasPrefix(code, "Code") && strings.HasPrefix(kind, "Kind") {
+			c.pairs = append(c.pairs, pair{code, kind, c.fset.Position(x.Pos()).String()})
+		}
+	}
+}
+
+// checkErrorLiteral checks the Kind field of a clierr.Error literal.
+func (c *siteChecker) checkErrorLiteral(x *ast.CompositeLit) {
+	if name, ok := c.ref(x.Type); !ok || name != "Error" {
+		return
+	}
+	for _, el := range x.Elts {
+		kv, ok := el.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		if k, ok := kv.Key.(*ast.Ident); ok && k.Name == "Kind" {
+			c.checkKind(kv.Value)
+		}
+	}
 }
 
 var kindRow = regexp.MustCompile("^\\| `([a-z_]+)` \\| ([^|]+) \\|")
@@ -226,21 +285,7 @@ func checkGuide(t *testing.T, kindConsts map[string]string, pairs []pair) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	table := make(map[string]string) // kind value -> exit code cell
-	inKinds := false                 // only the Error kinds section: other tables name other things
-	for line := range strings.SplitSeq(string(data), "\n") {
-		if strings.HasPrefix(line, "#") {
-			inKinds = strings.TrimSpace(line) == "### Error kinds"
-		}
-		m := kindRow.FindStringSubmatch(line)
-		if m == nil || !inKinds {
-			continue
-		}
-		if _, dup := table[m[1]]; dup {
-			t.Errorf("guide lists kind %q twice", m[1])
-		}
-		table[m[1]] = strings.TrimSpace(m[2])
-	}
+	table := guideKinds(t, string(data))
 	values := make(map[string]bool)
 	for _, v := range kindConsts {
 		values[v] = true
@@ -264,6 +309,28 @@ func checkGuide(t *testing.T, kindConsts map[string]string, pairs []pair) {
 				p.pos, p.code, p.kind, got, kindConsts[p.kind], want)
 		}
 	}
+}
+
+// guideKinds reads the guide's Error kinds table, kind value to exit code cell, and fails the test on a kind listed
+// twice. Only that section counts: other tables name other things.
+func guideKinds(t *testing.T, guide string) map[string]string {
+	t.Helper()
+	table := make(map[string]string)
+	inKinds := false
+	for line := range strings.SplitSeq(guide, "\n") {
+		if strings.HasPrefix(line, "#") {
+			inKinds = strings.TrimSpace(line) == "### Error kinds"
+		}
+		m := kindRow.FindStringSubmatch(line)
+		if m == nil || !inKinds {
+			continue
+		}
+		if _, dup := table[m[1]]; dup {
+			t.Errorf("guide lists kind %q twice", m[1])
+		}
+		table[m[1]] = strings.TrimSpace(m[2])
+	}
+	return table
 }
 
 // must returns v and fails the test when err is set, on the test goroutine:
