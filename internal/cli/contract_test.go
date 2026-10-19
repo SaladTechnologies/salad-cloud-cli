@@ -19,12 +19,13 @@ import (
 // and last line; with or without an instance prefix (without one, a note
 // names the instance).
 func TestCpErrorDocument(t *testing.T) {
+	t.Parallel()
 	for _, fake := range []string{"ok", "fail"} {
 		for _, src := range []string{"my-app:/etc/hostname", "my-app/8a2f:/etc/hostname"} {
 			for _, mode := range []string{"json", "yaml"} {
 				o := session{
 					args: []string{"cg", "cp", src, filepath.Join(t.TempDir(), "h"), "-o", mode},
-					env:  with(keyEnv, "SALAD_CLI_TEST_FAKE_SFTP", fake),
+					env:  with(keyEnv(), "SALAD_CLI_TEST_FAKE_SFTP", fake),
 					deps: func(d *Deps) { d.SFTPProgram = os.Args[0] },
 				}.run(t)
 				checkMachineStderr(t, o)
@@ -51,6 +52,7 @@ func TestCpErrorDocument(t *testing.T) {
 // --org on a command that reads neither are unknown flags whose hint says
 // why.
 func TestShadowedFlagSaysWhy(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, tc := range []struct {
 		args []string
@@ -62,6 +64,8 @@ func TestShadowedFlagSaysWhy(t *testing.T) {
 			"<org>[/<project>]"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			_, err := app.runRoot(t, tc.args...)
 			var cerr *clierr.Error
 			if !errors.As(err, &cerr) || cerr.Code != clierr.CodeUsage ||
@@ -79,6 +83,7 @@ func TestShadowedFlagSaysWhy(t *testing.T) {
 // commands offer exactly the flags they read; a new command must be added
 // here, so it cannot offer a flag it ignores by default.
 func TestEveryCommandIsClassified(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	classes := map[string]string{
 		"availability": "both", "container-groups": "both", "doctor": "both", "login": "both",
@@ -118,6 +123,7 @@ func TestEveryCommandIsClassified(t *testing.T) {
 // project, and one already saved is hidden by the config commands, logout,
 // doctor and the run-time warning; only config get returns it.
 func TestKeyLikeSavedNames(t *testing.T) {
+	t.Parallel()
 	k := testAPIKey
 	o := session{args: []string{"config", "set", "organization", k}, saved: savedLogin()}.run(t)
 	if o.code != 6 || !strings.Contains(o.stderr, "that looks like an API key, not an organization name") ||
@@ -162,6 +168,7 @@ func TestKeyLikeSavedNames(t *testing.T) {
 // TestHiddenKeyReadWithCI: with CI set, a key piped to --api-key - at a real
 // terminal is still read hidden, never echoed.
 func TestHiddenKeyReadWithCI(t *testing.T) {
+	t.Parallel()
 	o := session{
 		args: []string{"config", "set", "api-key", "-"},
 		tty:  []string{testAPIKey},
@@ -177,6 +184,7 @@ func TestHiddenKeyReadWithCI(t *testing.T) {
 // TestSSHQuietInMachineMode: in json and yaml mode OpenSSH's informational
 // lines (the first-connection host key line) are kept off stderr.
 func TestSSHQuietInMachineMode(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	t.Cleanup(func() { app.setOutputMode(t, "table") })
 	for _, mode := range []string{"table", "json", "yaml"} {
@@ -191,6 +199,7 @@ func TestSSHQuietInMachineMode(t *testing.T) {
 // TestOrgsListingWithoutItems: orgs list and orgs get report a listing that
 // came back without its items as an error, not as no organizations.
 func TestOrgsListingWithoutItems(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAPI(t, map[string]string{"/v1/organizations": `{}`})
 	for _, args := range [][]string{{"orgs", "list"}, {"orgs", "get", "my-org"}} {

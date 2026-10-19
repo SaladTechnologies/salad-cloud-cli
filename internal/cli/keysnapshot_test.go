@@ -30,57 +30,68 @@ import (
 // compares the list with testdata/json-keys.golden: a difference fails CI
 // until the golden file is regenerated and the CHANGELOG says what
 // changed. Regenerate it with `go test ./internal/cli -run TestJSONKeySnapshot -update-keys`.
-var updateKeys = flag.Bool("update-keys", false, "rewrite testdata/json-keys.golden")
+var updateKeys = flag.Bool(
+	"update-keys",
+	false,
+	"rewrite testdata/json-keys.golden",
+) //nolint:gochecknoglobals // a test flag registers when the package loads
 
 // keySnapshotRoots are the documents commands emit, by command.
-var keySnapshotRoots = []struct {
+func keySnapshotRoots() []struct {
 	name string
 	v    any
-}{
-	{"agent init", agentInitResult{}},
-	{"ai-gateway login", gatewayLoginResult{}},
-	{"ai-gateway logout", gatewayLogoutResult{}},
-	{"ai-gateway models list", gatewayModelsResult{}},
-	{"ai-gateway test", gatewayTestResult{}},
-	{"availability (cpu)", cpuAvailabilityResult{}},
-	{"availability (gpu)", gpuAvailabilityResult{}},
-	{"changelog", changelogResult{}},
-	{"config get", configGetResult{}},
-	{"config list", configListResult{}},
-	{"config path", configPathResult{}},
-	{"config set", configSetResult{}},
-	{"config unset", configUnsetResult{}},
-	{"container-groups cp", cpResult{}},
-	{"container-groups get/create/update", shared.ContainerGroup{}},
-	{"container-groups instances get/update", containergroups.ContainerGroupInstance{}},
-	{"container-groups start/stop/delete", groupActionResult{}},
-	{"container-groups instances restart/recreate/reallocate", instanceActionResult{}},
-	{"container-groups scale", scaleResult{}},
-	{"doctor", doctorResult{}},
-	{"doctor (item)", checkResult{}},
-	{"gpus get", organizationdata.GpuClass{}},
-	{"inference get", inferenceendpoints.InferenceEndpoint{}},
-	{"inference jobs get/create", inferenceendpoints.InferenceEndpointJob{}},
-	{"inference jobs cancel", jobActionResult{}},
-	{"login", loginResult{}},
-	{"logout", logoutResult{}},
-	{"logs (entry)", logs.LogEntry{}},
-	{"orgs list", api.OrganizationList{}},
-	{"queues get/create/update", queues.Queue{}},
-	{"queues delete", queueActionResult{}},
-	{"queues jobs get/create", queues.QueueJob{}},
-	{"queues jobs cancel", queueJobActionResult{}},
-	{"quotas get", quotas.Quotas{}},
-	{"ssh-key get", sshKeyResult{}},
-	{"ssh-key setup", sshKeySetupResult{}},
-	{"use", useResult{}},
-	{"version", versionInfo{}},
-	{"webhook-secret get/rotate", webhooksecretkey.WebhookSecretKey{}},
-	{"whoami", whoamiResult{}},
-	{"(cpu availability row)", organizations.CpuAvailability{}},
+} {
+	return []struct {
+		name string
+		v    any
+	}{
+		{"agent init", agentInitResult{}},
+		{"ai-gateway login", gatewayLoginResult{}},
+		{"ai-gateway logout", gatewayLogoutResult{}},
+		{"ai-gateway models list", gatewayModelsResult{}},
+		{"ai-gateway test", gatewayTestResult{}},
+		{"availability (cpu)", cpuAvailabilityResult{}},
+		{"availability (gpu)", gpuAvailabilityResult{}},
+		{"changelog", changelogResult{}},
+		{"config get", configGetResult{}},
+		{"config list", configListResult{}},
+		{"config path", configPathResult{}},
+		{"config set", configSetResult{}},
+		{"config unset", configUnsetResult{}},
+		{"container-groups cp", cpResult{}},
+		{"container-groups get/create/update", shared.ContainerGroup{}},
+		{"container-groups instances get/update", containergroups.ContainerGroupInstance{}},
+		{"container-groups start/stop/delete", groupActionResult{}},
+		{"container-groups instances restart/recreate/reallocate", instanceActionResult{}},
+		{"container-groups scale", scaleResult{}},
+		{"doctor", doctorResult{}},
+		{"doctor (item)", checkResult{}},
+		{"gpus get", organizationdata.GpuClass{}},
+		{"inference get", inferenceendpoints.InferenceEndpoint{}},
+		{"inference jobs get/create", inferenceendpoints.InferenceEndpointJob{}},
+		{"inference jobs cancel", jobActionResult{}},
+		{"login", loginResult{}},
+		{"logout", logoutResult{}},
+		{"logs (entry)", logs.LogEntry{}},
+		{"orgs list", api.OrganizationList{}},
+		{"queues get/create/update", queues.Queue{}},
+		{"queues delete", queueActionResult{}},
+		{"queues jobs get/create", queues.QueueJob{}},
+		{"queues jobs cancel", queueJobActionResult{}},
+		{"quotas get", quotas.Quotas{}},
+		{"ssh-key get", sshKeyResult{}},
+		{"ssh-key setup", sshKeySetupResult{}},
+		{"use", useResult{}},
+		{"version", versionInfo{}},
+		{"webhook-secret get/rotate", webhooksecretkey.WebhookSecretKey{}},
+		{"whoami", whoamiResult{}},
+		{"(cpu availability row)", organizations.CpuAvailability{}},
+	}
 }
 
-var jsonMarshaler = reflect.TypeFor[json.Marshaler]()
+func jsonMarshaler() reflect.Type {
+	return reflect.TypeFor[json.Marshaler]()
+}
 
 // keyPaths appends every key path typ can carry under prefix: "[]" marks an
 // array element, "{}" a map value; a type already open on the current path
@@ -89,7 +100,7 @@ func keyPaths(typ reflect.Type, prefix string, open map[reflect.Type]bool, out *
 	for typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
 	}
-	if typ.Implements(jsonMarshaler) || reflect.PointerTo(typ).Implements(jsonMarshaler) {
+	if typ.Implements(jsonMarshaler()) || reflect.PointerTo(typ).Implements(jsonMarshaler()) {
 		return // encodes itself: a leaf
 	}
 	switch typ.Kind() {
@@ -138,10 +149,11 @@ func keyPaths(typ reflect.Type, prefix string, open map[reflect.Type]bool, out *
 }
 
 func TestJSONKeySnapshot(t *testing.T) {
+	t.Parallel()
 	var b strings.Builder
 	b.WriteString("# Every JSON key path each command can emit. Generated by TestJSONKeySnapshot;\n")
 	b.WriteString("# regenerate with -update-keys, and record any change in CHANGELOG.md.\n")
-	for _, root := range keySnapshotRoots {
+	for _, root := range keySnapshotRoots() {
 		var paths []string
 		keyPaths(reflect.TypeOf(root.v), "", make(map[reflect.Type]bool), &paths)
 		slices.Sort(paths)

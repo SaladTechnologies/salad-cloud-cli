@@ -18,6 +18,7 @@ func errLines(msg, hint string) string { return "saladcloud: error: " + msg + "\
 // project checks, rejected keys, a variable that overrides what was saved,
 // and failed or canceled requests.
 func TestUseBranches(t *testing.T) {
+	t.Parallel()
 	k := testAPIKey
 	saved := &config.File{APIKey: k, Organization: "my-org", Project: "default"}
 	use := func(target string) []string { return []string{"use", target} }
@@ -214,6 +215,7 @@ func TestUseBranches(t *testing.T) {
 // from stdin, a variable that overrides what was written, and a saved project
 // carried over to another organization.
 func TestConfigSetUnsetBranches(t *testing.T) {
+	t.Parallel()
 	saved := &config.File{Organization: "my-org", Project: "staging"}
 	cfg := func(args ...string) []string { return append([]string{"config"}, args...) }
 	runBranches(t, []branchCase{

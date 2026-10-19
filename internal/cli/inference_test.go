@@ -49,6 +49,7 @@ func scriptedJobWaitDeps(
 }
 
 func TestWaitForJobTerminalSucceeded(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	var progress bytes.Buffer
 	d := scriptedJobWaitDeps([]inferenceendpoints.Status{
@@ -77,6 +78,7 @@ func TestWaitForJobTerminalSucceeded(t *testing.T) {
 }
 
 func TestWaitForJobTerminalFailed(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	var progress bytes.Buffer
 	d := scriptedJobWaitDeps([]inferenceendpoints.Status{
@@ -99,6 +101,7 @@ func TestWaitForJobTerminalFailed(t *testing.T) {
 }
 
 func TestWaitForJobTerminalTimeout(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	var progress bytes.Buffer
 	d := scriptedJobWaitDeps([]inferenceendpoints.Status{
@@ -119,6 +122,7 @@ func TestWaitForJobTerminalTimeout(t *testing.T) {
 // TestWaitForJobTransientErrorsKeepPolling: network/5xx errors must warn and
 // continue; the wait still succeeds once the job does.
 func TestWaitForJobTransientErrorsKeepPolling(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	var progress bytes.Buffer
 	clock := time.Date(2026, time.September, 2, 0, 0, 0, 0, time.UTC)
@@ -155,6 +159,7 @@ func TestWaitForJobTransientErrorsKeepPolling(t *testing.T) {
 // TestWaitForJobFatalErrorAborts: a 404 must abort immediately — waiting
 // longer cannot fix it.
 func TestWaitForJobFatalErrorAborts(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	d := jobWaitDeps[inferenceendpoints.InferenceEndpointJob]{
 		view: inferenceJobView,
@@ -172,6 +177,7 @@ func TestWaitForJobFatalErrorAborts(t *testing.T) {
 }
 
 func TestCompactJSON(t *testing.T) {
+	t.Parallel()
 	if got := compactJSON(nil, 200); got != "-" {
 		t.Errorf("compactJSON(nil) = %q, want -", got)
 	}
@@ -190,6 +196,7 @@ func TestCompactJSON(t *testing.T) {
 // mode (the caller asked for more than one listing returns), below it in
 // table mode when --limit kept the newest.
 func TestJobsLimitNote(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, tc := range []struct {
 		mode         string
@@ -230,6 +237,7 @@ func TestJobsLimitNote(t *testing.T) {
 // TestJobTablesShareTheirWording: both job tables word the events row the
 // same way and say input or output was cut only when it was.
 func TestJobTablesShareTheirWording(t *testing.T) {
+	t.Parallel()
 	var rows []string
 	row := func(k, v string) { rows = append(rows, k+"="+v) }
 	writeJobBody(row, map[string]any{"x": 1}, nil, 1, " (last event: created @ t)")

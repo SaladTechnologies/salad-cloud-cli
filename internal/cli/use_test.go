@@ -3,6 +3,7 @@ package cli
 import "testing"
 
 func TestParseUseTarget(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		arg     string
@@ -20,6 +21,7 @@ func TestParseUseTarget(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			org, project, err := parseUseTarget(tt.arg)
 			if tt.wantErr {
 				if err == nil {

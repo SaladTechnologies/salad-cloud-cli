@@ -49,6 +49,7 @@ const richResponse = `{
 }`
 
 func TestWritableDocument(t *testing.T) {
+	t.Parallel()
 	doc, dropped, err := writableDocument(grp(t, richResponse))
 	if err != nil {
 		t.Fatalf("writableDocument: %v", err)
@@ -121,6 +122,7 @@ func TestWritableDocument(t *testing.T) {
 }
 
 func TestSetAndDeletePath(t *testing.T) {
+	t.Parallel()
 	tree := map[string]any{"a": map[string]any{"b": 1}}
 	setPath(tree, "a.c.d", "x")
 	if v, ok := lookupPath(tree, "a.c.d"); !ok || v != "x" {

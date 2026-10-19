@@ -28,6 +28,7 @@ func (app *testRun) parsedTranscribeCmd(
 // A flag that is not set is not sent: the input carries url plus what the
 // user passed, so the endpoint's own defaults govern the rest.
 func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	tests := []struct {
 		name  string
@@ -80,6 +81,8 @@ func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			set := app.parsedTranscribeCmd(t, "transcribe", transcribeFields(), tt.args...)
 			got, cerr := buildTranscribeInput("u", transcribeFields(), set, tt.extra)
 			if cerr != nil {
@@ -93,6 +96,7 @@ func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
 }
 
 func TestBuildTranscribeInputRejectsBadExtra(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	set := app.parsedTranscribeCmd(t, "transcribe", transcribeFields())
 	for _, extra := range []string{"{not json", `"a string"`, "[1,2]"} {
@@ -110,6 +114,7 @@ func TestBuildTranscribeInputRejectsBadExtra(t *testing.T) {
 // kebab-cased: lite rejects a full-only flag by itself, and the two never
 // spell one input differently.
 func TestTranscribeFlagsAreTheEndpointFields(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	if len(transcribeFields())+1 != 20 || len(transcriptionLiteFields())+1 != 9 {
 		t.Errorf("fields with url: transcribe %d, transcription-lite %d; want 20 and 9",
@@ -139,6 +144,7 @@ func TestTranscribeFlagsAreTheEndpointFields(t *testing.T) {
 }
 
 func TestIsHTTPURLDispatch(t *testing.T) {
+	t.Parallel()
 	for s, want := range map[string]bool{
 		"https://example.com/a.mp3": true,
 		"http://example.com/a.mp3":  true,
@@ -154,6 +160,7 @@ func TestIsHTTPURLDispatch(t *testing.T) {
 }
 
 func TestTranscribeMime(t *testing.T) {
+	t.Parallel()
 	for path, want := range map[string]string{
 		"meeting.mp3":     "audio/mpeg",
 		"clip.WAV":        "audio/wav",
@@ -170,6 +177,7 @@ func TestTranscribeMime(t *testing.T) {
 }
 
 func TestTranscribeRemoteName(t *testing.T) {
+	t.Parallel()
 	now := time.Unix(1756800000, 0)
 	got := transcribeRemoteName("testdata/meeting.mp3", now)
 	want := "saladcloud-cli/transcribe/meeting-1756800000.mp3"
@@ -183,6 +191,7 @@ func TestTranscribeRemoteName(t *testing.T) {
 }
 
 func TestTranscriptText(t *testing.T) {
+	t.Parallel()
 	srtDoc := "1\n00:00:00,000 --> 00:00:01,000\nhello\n"
 	// The endpoint returns the SRT under "srt_content" (verified live).
 	out := map[string]any{"text": "hello world", "srt_content": srtDoc}
@@ -226,6 +235,7 @@ func TestTranscriptText(t *testing.T) {
 }
 
 func TestJobOutputError(t *testing.T) {
+	t.Parallel()
 	// The API marks some failed transcriptions `succeeded` with the failure
 	// embedded in the output; the CLI must surface it as a real error.
 	msg, code := jobOutputError(map[string]any{
@@ -243,6 +253,7 @@ func TestJobOutputError(t *testing.T) {
 }
 
 func TestHumanSize(t *testing.T) {
+	t.Parallel()
 	for n, want := range map[int64]string{
 		512:             "512 B",
 		2048:            "2.0 KB",
@@ -257,6 +268,7 @@ func TestHumanSize(t *testing.T) {
 // TestListFieldsHelpNamesOnlyTheEndpointsFlags: each porcelain command's
 // help names the list flags its own endpoint takes, and no others.
 func TestListFieldsHelpNamesOnlyTheEndpointsFlags(t *testing.T) {
+	t.Parallel()
 	for _, ep := range transcribeEndpoints() {
 		help := listFieldsHelp(ep.fields)
 		isList := make(map[string]bool)

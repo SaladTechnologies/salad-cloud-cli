@@ -36,7 +36,9 @@ const (
 )
 
 // testSecrets are the credentials no output may print whole.
-var testSecrets = []string{testAPIKey, testOtherAPIKey, testGatewayKey, testOtherGatewayKey}
+func testSecrets() []string {
+	return []string{testAPIKey, testOtherAPIKey, testGatewayKey, testOtherGatewayKey}
+}
 
 // fakeAPI is the SaladCloud API and AI Gateway as the harness serves them:
 // every API key in keys sees the organizations in orgs, each with its
@@ -71,6 +73,15 @@ func newFakeAPI() *fakeAPI {
 		display:     map[string]string{"my-org": "My Org", "acme-prod": "Acme Production"},
 		status:      make(map[string]int),
 		gatewayKeys: map[string]int{testGatewayKey: http.StatusOK},
+	}
+}
+
+// clone is f's setup with no requests received yet. The maps are shared:
+// a run only reads them.
+func (f *fakeAPI) clone() *fakeAPI {
+	return &fakeAPI{
+		keys: f.keys, orgs: f.orgs, orgOrder: f.orgOrder, display: f.display, listing: f.listing, status: f.status,
+		gatewayKeys: f.gatewayKeys, cancelOn: f.cancelOn, cancel: nil, t: nil, mu: sync.Mutex{}, requests: nil,
 	}
 }
 
@@ -301,9 +312,9 @@ type outcome struct {
 
 func (s session) run(t *testing.T) outcome {
 	t.Helper()
-	api := s.api
-	if api == nil {
-		api = newFakeAPI()
+	api := newFakeAPI()
+	if s.api != nil {
+		api = s.api.clone() // a session's fake is its own, so cases can share one setup
 	}
 	// The run's context, which the fake cancels at cancelOn; set before the
 	// server starts, so its handlers see it.

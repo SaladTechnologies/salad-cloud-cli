@@ -77,6 +77,7 @@ func rowWords(cell string) map[string]bool {
 }
 
 func TestEveryCommandIsDocumented(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	rows, _ := commandDocRows(t)
 	for _, c := range app.documentedLeaves() {
@@ -105,6 +106,7 @@ func TestEveryCommandIsDocumented(t *testing.T) {
 }
 
 func TestEveryDocumentedCommandExists(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.root.InitDefaultHelpCmd() // cobra adds these two at Execute time
 	app.root.InitDefaultCompletionCmd()
@@ -142,6 +144,7 @@ func TestEveryDocumentedCommandExists(t *testing.T) {
 }
 
 func TestAliasTableMatchesTheTree(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	_, aliasRows := commandDocRows(t)
 	documented := make(map[string][]string)

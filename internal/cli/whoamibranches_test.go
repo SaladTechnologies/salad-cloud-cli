@@ -23,6 +23,7 @@ func whoamiTable(apiKey, org, project, gateway, auth, orgs string) string {
 }
 
 func TestWhoamiBranches(t *testing.T) {
+	t.Parallel()
 	k := testAPIKey
 	twelve := make(map[string][]string)
 	for i := 1; i <= 12; i++ {
@@ -192,6 +193,7 @@ func TestWhoamiBranches(t *testing.T) {
 // TestWhoamiNetworkError: whoami reports a missing or rejected key, but a
 // network error is still an error (exit 7).
 func TestWhoamiNetworkError(t *testing.T) {
+	t.Parallel()
 	o := withMode(session{
 		args: []string{"whoami"}, saved: &config.File{APIKey: testAPIKey},
 		env: map[string]string{"SALAD_CLI_API_BASE_URL": "http://127.0.0.1:1"},
@@ -202,6 +204,7 @@ func TestWhoamiNetworkError(t *testing.T) {
 }
 
 func TestLogoutBranches(t *testing.T) {
+	t.Parallel()
 	k := testAPIKey
 	logout := []string{"logout"}
 	const removed = "Logged out: removed the saved API key (****...H13m)\n"

@@ -9,6 +9,7 @@ import (
 // set, every key is still present and unset values are null. Agents parse
 // this shape — keys must never appear or disappear based on state.
 func TestWhoamiResultStableJSONShape(t *testing.T) {
+	t.Parallel()
 	data, err := json.Marshal(whoamiResult{ConfigPath: "/tmp/config.toml"})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -47,6 +48,7 @@ func TestWhoamiResultStableJSONShape(t *testing.T) {
 // TestWhoamiResultSetValues checks the set side of the contract: values
 // render as their JSON types, and an empty org listing renders as [].
 func TestWhoamiResultSetValues(t *testing.T) {
+	t.Parallel()
 	authed := true
 	data, err := json.Marshal(whoamiResult{
 		APIKey:             maskedOrNil("salad_cloud_user_1234567890"),

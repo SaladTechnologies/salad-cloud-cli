@@ -42,6 +42,7 @@ func runBranches(t *testing.T, cases []branchCase) {
 	t.Helper()
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {
+			t.Parallel()
 			before := config.File{}
 			if tc.s.saved != nil {
 				before = *tc.s.saved

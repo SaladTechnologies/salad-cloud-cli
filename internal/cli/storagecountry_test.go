@@ -15,6 +15,7 @@ import (
 // --storage is GB on the command line and bytes on the wire; --country is
 // normalized to the API's lowercase two-letter codes.
 func TestCreateStorageAndCountry(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Name: "web", Image: "busybox",
@@ -45,6 +46,7 @@ func TestCreateStorageAndCountry(t *testing.T) {
 }
 
 func TestUpdateStorageAndCountry(t *testing.T) {
+	t.Parallel()
 	flags := updateFlags{Storage: 5, StorageSet: true, Countries: []string{"US"}}
 	if cerr := validateUpdateFlags(flags); cerr != nil {
 		t.Fatal(cerr)

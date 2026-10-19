@@ -58,6 +58,7 @@ func postedPath(t *testing.T, body []byte, path string) (any, bool) {
 // An empty list in a definition file reaches the API: the SDK's omitempty
 // used to drop it, and the API rejects an HTTP probe without its headers.
 func TestCreateSendsEmptyListsFromFile(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	posted := app.stubCreate(t)
 	file := filepath.Join(t.TempDir(), "g.yaml")
@@ -93,6 +94,7 @@ func TestCreateSendsEmptyListsFromFile(t *testing.T) {
 
 // --from sends back the empty lists the API returned for the source.
 func TestCreateFromKeepsSourceEmptyLists(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	posted := app.stubCreate(t)
 	_, err := app.runRoot(
@@ -119,6 +121,7 @@ func TestCreateFromKeepsSourceEmptyLists(t *testing.T) {
 // A create that connects a queue says on stderr that the image must run the
 // worker, since nothing reports a missing one; one without a queue does not.
 func TestCreateQueueNotesTheWorker(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubCreate(t)
 	var err error

@@ -694,8 +694,10 @@ func loginCases() []loginCase {
 // mode (the error document or the login document, and nothing else on
 // stderr but warnings).
 func TestLoginBranches(t *testing.T) {
+	t.Parallel()
 	for _, tc := range loginCases() {
 		t.Run(tc.id, func(t *testing.T) {
+			t.Parallel()
 			before := config.File{}
 			if tc.s.saved != nil {
 				before = *tc.s.saved
@@ -802,6 +804,7 @@ func tableError(stderr string) (msg, hint string) {
 // person sees, prompts and answers, stdout and stderr in the order they were
 // written.
 func TestLoginWholeSessions(t *testing.T) {
+	t.Parallel()
 	oneOrg := withOrgs(map[string][]string{"my-org": {"default"}})
 	twoOrgs := newFakeAPI()
 	twoOrgs.keys[keyRotated] = true
@@ -883,6 +886,7 @@ hint: to save it, pipe it to saladcloud login --api-key -
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			o := tc.s.run(t)
 			if o.code != 0 {
 				t.Fatalf("exit %d:\n%s", o.code, o.stderr)

@@ -14,6 +14,7 @@ import (
 )
 
 func TestParseFromRef(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		ref, project, group string
 	}{
@@ -38,6 +39,7 @@ func TestParseFromRef(t *testing.T) {
 }
 
 func TestCheckCopyTarget(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		same    bool
 		name    string
@@ -69,6 +71,7 @@ func copySource(t *testing.T) string {
 }
 
 func TestCopyDocument(t *testing.T) {
+	t.Parallel()
 	raw, err := copyDocument(grp(t, copySource(t)), "my-copy", false)
 	if err != nil {
 		t.Fatalf("copyDocument: %v", err)
@@ -113,6 +116,7 @@ func TestCopyDocument(t *testing.T) {
 }
 
 func TestCopyDocumentDisplayName(t *testing.T) {
+	t.Parallel()
 	g := grp(t, copySource(t))
 	for _, tc := range []struct {
 		name       string
@@ -143,6 +147,7 @@ func TestCopyDocumentDisplayName(t *testing.T) {
 }
 
 func TestCopyDocumentBuildsARequest(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	raw, err := copyDocument(grp(t, copySource(t)), "my-copy", false)
 	if err != nil {
@@ -169,6 +174,7 @@ func TestCopyDocumentBuildsARequest(t *testing.T) {
 }
 
 func TestNoteRegistryCredentials(t *testing.T) {
+	t.Parallel()
 	const private = "registry.example.com/team/app:1"
 	var buf bytes.Buffer
 	noteRegistryCredentials(&buf, nil, private)
@@ -205,6 +211,7 @@ func TestNoteRegistryCredentials(t *testing.T) {
 }
 
 func TestPlural(t *testing.T) {
+	t.Parallel()
 	if replicas(1) != "1 replica" || replicas(0) != "0 replicas" || replicas(3) != "3 replicas" {
 		t.Errorf("replicas: %q %q %q", replicas(1), replicas(0), replicas(3))
 	}

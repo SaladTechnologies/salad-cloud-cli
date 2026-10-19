@@ -23,6 +23,7 @@ func grp(t *testing.T, doc string) *shared.ContainerGroup {
 }
 
 func TestFindIgnoredFields(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		patch  string
@@ -169,6 +170,7 @@ func TestFindIgnoredFields(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := findIgnoredFields([]byte(tt.patch), grp(t, tt.before), grp(t, tt.after))
 			paths := make([]string, 0, len(got))
 			for _, f := range got {
@@ -185,6 +187,7 @@ func TestFindIgnoredFields(t *testing.T) {
 // container change settles asynchronously and the response lags a version,
 // so diffing mid-flight would report a queued write as dropped.
 func TestFindIgnoredFieldsSkipsPending(t *testing.T) {
+	t.Parallel()
 	before := grp(t, `{"name":"g","container":{"image":"x"}}`)
 	after := grp(t, `{"name":"g","container":{"image":"x"}}`)
 	after.PendingChange = ptr.To(true)
@@ -199,6 +202,7 @@ func TestFindIgnoredFieldsSkipsPending(t *testing.T) {
 }
 
 func TestFindIgnoredFieldsMissingStateOrBadPatch(t *testing.T) {
+	t.Parallel()
 	g := grp(t, `{"name":"g","replicas":1}`)
 	// A failed pre-state GET must not produce warnings.
 	if got := findIgnoredFields([]byte(`{"replicas":3}`), nil, g); got != nil {
@@ -213,6 +217,7 @@ func TestFindIgnoredFieldsMissingStateOrBadPatch(t *testing.T) {
 }
 
 func TestWarnIgnoredFieldsOutput(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	warnIgnoredFields(&buf, nil)
 	if buf.Len() != 0 {
@@ -245,6 +250,7 @@ func TestWarnIgnoredFieldsOutput(t *testing.T) {
 // a group document churns on its own, so a naive diff would cry wolf on
 // every update.
 func TestFindUnrequestedChanges(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		patch  string
@@ -315,6 +321,7 @@ func TestFindUnrequestedChanges(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := findUnrequestedChanges([]byte(tt.patch), grp(t, tt.before), grp(t, tt.after))
 			paths := make([]string, 0, len(got))
 			for _, c := range got {
@@ -329,6 +336,7 @@ func TestFindUnrequestedChanges(t *testing.T) {
 
 // TestFindUnrequestedChangesGuards: same two guards as the forward direction.
 func TestFindUnrequestedChangesGuards(t *testing.T) {
+	t.Parallel()
 	before := grp(t, `{"name":"g","replicas":1,"scheduled-scaling-enabled":true}`)
 	after := grp(t, `{"name":"g","replicas":3,"scheduled-scaling-enabled":false}`)
 	after.PendingChange = ptr.To(true)
@@ -345,6 +353,7 @@ func TestFindUnrequestedChangesGuards(t *testing.T) {
 }
 
 func TestWarnUnrequestedChangesOutput(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	warnUnrequestedChanges(&buf, nil)
 	if buf.Len() != 0 {
@@ -379,6 +388,7 @@ func TestWarnUnrequestedChangesOutput(t *testing.T) {
 // stays a warning. A flag flip without replicas in the patch is NOT the
 // rule and stays a warning.
 func TestHoldRuleIsANote(t *testing.T) {
+	t.Parallel()
 	changes := findUnrequestedChanges(
 		[]byte(`{"replicas":3}`),
 		grp(t, `{"name":"g","replicas":1,"scheduled-scaling-enabled":true,"country_codes":["us"]}`),
@@ -425,6 +435,7 @@ func TestHoldRuleIsANote(t *testing.T) {
 // TestWarnIgnoredFieldsMovedWording: a field that moved to the wrong value
 // reads "got", one that stayed put reads "still".
 func TestWarnIgnoredFieldsMovedWording(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	warnIgnoredFields(&buf, []ignoredField{
 		{Path: "scheduled-scaling-enabled", Requested: "true", Actual: "false", Moved: true},
@@ -445,6 +456,7 @@ func TestWarnIgnoredFieldsMovedWording(t *testing.T) {
 // Without ancestors of named leaves counting as requested, deliberately
 // adding a probe was reported as an unrequested side effect.
 func TestFindUnrequestedChangesCoversAncestors(t *testing.T) {
+	t.Parallel()
 	patch := `{"liveness_probe":{"tcp":{"port":8080},"initial_delay_seconds":5}}`
 	before := grp(t, `{"name":"g"}`)
 	after := grp(t, `{"name":"g","liveness_probe":{"tcp":{"port":8080},"initial_delay_seconds":5}}`)
@@ -469,6 +481,7 @@ func TestFindUnrequestedChangesCoversAncestors(t *testing.T) {
 // vanishes under a parent the patch named), so either both are reported or
 // neither is. Both are reported, because the env case is the valuable one.
 func TestFindUnrequestedChangesProbeSwitchIsSameShapeAsEnvLoss(t *testing.T) {
+	t.Parallel()
 	probe := findUnrequestedChanges(
 		[]byte(`{"startup_probe":{"grpc":{"port":8080},"period_seconds":3}}`),
 		grp(t, `{"name":"g","startup_probe":{"http":{"path":"/h","port":8080},"period_seconds":3}}`),
@@ -491,6 +504,7 @@ func TestFindUnrequestedChangesProbeSwitchIsSameShapeAsEnvLoss(t *testing.T) {
 // values and credential fields never reach a warning; the key is named and
 // the change is described instead. The sentinel must not appear.
 func TestDriftWarningsNeverPrintSecrets(t *testing.T) {
+	t.Parallel()
 	const sentinel = "sentinel-s3cret-value"
 	before := grp(
 		t,
@@ -545,6 +559,7 @@ func TestDriftWarningsNeverPrintSecrets(t *testing.T) {
 // on create), once, and nothing for what the response never shows or
 // for empty lists it echoes.
 func TestFindUnappliedCreateFieldsDroppedObject(t *testing.T) {
+	t.Parallel()
 	created := grp(t, `{"name":"g","container":{"image":"x","command":[]},"country_codes":[],
 		"readiness_probe":{"http":{"path":"/","port":8000,"scheme":"http","headers":[]},"period_seconds":5}}`)
 	req := `{"name":"g","container":{"image":"x","registry_authentication":{"basic":{"username":"u","password":"p"}}},

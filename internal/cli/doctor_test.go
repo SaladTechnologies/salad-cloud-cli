@@ -30,15 +30,14 @@ func doctorTable(rows ...dRow) string {
 
 // The rows most cases share; every run here goes to a stand-in API through
 // SALAD_CLI_API_BASE_URL, which api-reachable reports.
-var (
-	rConfig    = dRow{"config", "PASS", "<path>"}
-	rReachable = dRow{"api-reachable", "WARN", "<api> (from SALAD_CLI_API_BASE_URL)"}
-	rKey       = dRow{"api-key", "PASS", "****...H13m (from config)"}
-	rOrg       = dRow{"organization", "PASS", "my-org (from config)"}
-	rProject   = dRow{"project", "PASS", "default (from config)"}
-	rGateway   = dRow{"ai-gateway-api-key-present", "SKIP", "none (optional)"}
-	rSSH       = dRow{"local-ssh-key-present", "SKIP", "none (optional)"}
-)
+func rConfig() dRow { return dRow{"config", "PASS", "<path>"} }
+
+func rReachable() dRow { return dRow{"api-reachable", "WARN", "<api> (from SALAD_CLI_API_BASE_URL)"} }
+func rKey() dRow       { return dRow{"api-key", "PASS", "****...H13m (from config)"} }
+func rOrg() dRow       { return dRow{"organization", "PASS", "my-org (from config)"} }
+func rProject() dRow   { return dRow{"project", "PASS", "default (from config)"} }
+func rGateway() dRow   { return dRow{"ai-gateway-api-key-present", "SKIP", "none (optional)"} }
+func rSSH() dRow       { return dRow{"local-ssh-key-present", "SKIP", "none (optional)"} }
 
 const (
 	hReachable = "hint: api-reachable: every command uses this server; remove SALAD_CLI_API_BASE_URL to use " +
@@ -72,6 +71,7 @@ func failed(n int, names string) string {
 }
 
 func TestDoctorRows(t *testing.T) {
+	t.Parallel()
 	k, o := testAPIKey, testOtherAPIKey
 	good := &config.File{APIKey: k, Organization: "my-org", Project: "default"}
 	doctor := []string{"doctor"}
@@ -91,21 +91,21 @@ func TestDoctorRows(t *testing.T) {
 			id: "all good",
 			s:  session{args: doctor, saved: good},
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
-				rOrg,
-				rProject,
-				rGateway,
-				rSSH,
+				rConfig(),
+				rReachable(),
+				rKey(),
+				rOrg(),
+				rProject(),
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + hGateway + hSSH,
 		},
 		{
-			id: "no config file yet", s: session{args: doctor, env: keyEnv},
+			id: "no config file yet", s: session{args: doctor, env: keyEnv()},
 			stdout: doctorTable(
 				dRow{"config", "PASS", "none yet at <path>; using flags and environment"},
-				rReachable,
+				rReachable(),
 				dRow{
 					"api-key",
 					"PASS",
@@ -113,19 +113,19 @@ func TestDoctorRows(t *testing.T) {
 				},
 				dRow{"organization", "PASS", "my-org (from SALAD_ORGANIZATION)"},
 				dRow{"project", "PASS", "default (from SALAD_PROJECT)"},
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + hGateway + hSSH,
 		},
 		{
 			id:   "a corrupt config file",
-			s:    session{args: doctor, rawConfig: "{", env: keyEnv},
+			s:    session{args: doctor, rawConfig: "{", env: keyEnv()},
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
 				dRow{"config", "FAIL", "<path> cannot be read: unexpected end of JSON input"},
-				rReachable,
+				rReachable(),
 				dRow{
 					"api-key",
 					"PASS",
@@ -133,8 +133,8 @@ func TestDoctorRows(t *testing.T) {
 				},
 				dRow{"organization", "PASS", "my-org (from SALAD_ORGANIZATION)"},
 				dRow{"project", "PASS", "default (from SALAD_PROJECT)"},
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: "hint: config: fix or delete it, then run saladcloud login " +
 				"again\n" + hReachable + hGateway + hSSH + failed(
@@ -147,8 +147,8 @@ func TestDoctorRows(t *testing.T) {
 			s:    session{args: doctor},
 			code: 1,
 			kind: "api_error",
-			stdout: doctorTable(dRow{"config", "PASS", "none yet at <path>; using flags and environment"}, rReachable,
-				dRow{"api-key", "FAIL", "not set"}, skipNone, skipProject, rGateway, rSSH),
+			stdout: doctorTable(dRow{"config", "PASS", "none yet at <path>; using flags and environment"}, rReachable(),
+				dRow{"api-key", "FAIL", "not set"}, skipNone, skipProject, rGateway(), rSSH()),
 			stderr: hReachable + "hint: api-key: run saladcloud login, or set SALAD_API_KEY; for the AI Gateway " +
 				"only, run saladcloud ai-gateway login\n" +
 				hGateway + hSSH + failed(
@@ -161,7 +161,7 @@ func TestDoctorRows(t *testing.T) {
 			s:  session{args: doctor, env: map[string]string{"SALAD_AI_GATEWAY_API_KEY": testGatewayKey}},
 			stdout: doctorTable(
 				dRow{"config", "PASS", "none yet at <path>; using flags and environment"},
-				rReachable,
+				rReachable(),
 				dRow{"api-key", "WARN", "not set; only the AI Gateway is set up"},
 				skipNone,
 				skipProject,
@@ -170,7 +170,7 @@ func TestDoctorRows(t *testing.T) {
 					"PASS",
 					"****...EFGH (from SALAD_AI_GATEWAY_API_KEY; not tested)",
 				},
-				rSSH,
+				rSSH(),
 			),
 			stderr: hReachable + "hint: api-key: to use SaladCloud beyond the AI Gateway, run saladcloud " +
 				"login\n" + hSSH,
@@ -181,13 +181,13 @@ func TestDoctorRows(t *testing.T) {
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
+				rConfig(),
+				rReachable(),
 				dRow{"api-key", "FAIL", "****...ABCD (from config) rejected"},
 				skipOrg,
 				skipProject,
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: api-key: run saladcloud login to save a new key\n" + hGateway + hSSH + failed(
 				1,
@@ -200,13 +200,13 @@ func TestDoctorRows(t *testing.T) {
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
+				rConfig(),
+				rReachable(),
 				dRow{"api-key", "FAIL", "****...ABCD (from SALAD_API_KEY) rejected"},
 				skipOrg,
 				skipProjectSet,
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: api-key: remove SALAD_API_KEY to use the saved API key (****...H13m), or set " +
 				"it to a working key\n" + hGateway + hSSH +
@@ -223,7 +223,7 @@ func TestDoctorRows(t *testing.T) {
 			kind: "api_error",
 			stdout: doctorTable(
 				dRow{"config", "PASS", "none yet at <path>; using flags and environment"},
-				rReachable,
+				rReachable(),
 				dRow{
 					"api-key",
 					"FAIL",
@@ -231,8 +231,8 @@ func TestDoctorRows(t *testing.T) {
 				},
 				skipNone,
 				skipProject,
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: api-key: set SALAD_API_KEY to a working key, or remove it and run saladcloud " +
 				"login\n" + hGateway + hSSH + failed(
@@ -247,7 +247,7 @@ func TestDoctorRows(t *testing.T) {
 			kind: "api_error",
 			stdout: doctorTable(
 				dRow{"config", "PASS", "none yet at <path>; using flags and environment"},
-				rReachable,
+				rReachable(),
 				dRow{
 					"api-key",
 					"FAIL",
@@ -255,8 +255,8 @@ func TestDoctorRows(t *testing.T) {
 				},
 				skipNone,
 				skipProject,
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: api-key: check for quotes or stray characters in " +
 				"it\n" + hGateway + hSSH + failed(
@@ -268,13 +268,13 @@ func TestDoctorRows(t *testing.T) {
 			id: "no listing, no organization",
 			s:  session{args: doctor, saved: &config.File{APIKey: k}, api: noListing},
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
+				rConfig(),
+				rReachable(),
 				dRow{"api-key", "WARN", "****...H13m (from config); cannot be checked without an organization"},
 				skipNone,
 				skipProject,
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: api-key: to set one, run saladcloud use <org>\n" + hGateway + hSSH,
 		},
@@ -282,13 +282,13 @@ func TestDoctorRows(t *testing.T) {
 			id: "no listing, through the organization",
 			s:  session{args: doctor, saved: good, api: noListing},
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
-				rOrg,
-				rProject,
-				rGateway,
-				rSSH,
+				rConfig(),
+				rReachable(),
+				rKey(),
+				rOrg(),
+				rProject(),
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + hGateway + hSSH,
 		},
@@ -298,13 +298,13 @@ func TestDoctorRows(t *testing.T) {
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
+				rConfig(),
+				rReachable(),
+				rKey(),
 				dRow{"organization", "FAIL", "none set"},
 				skipProject,
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: organization: to list yours, run saladcloud orgs list; to set one, run " +
 				"saladcloud use <org>\n" + hGateway + hSSH + failed(
@@ -318,13 +318,13 @@ func TestDoctorRows(t *testing.T) {
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
+				rConfig(),
+				rReachable(),
+				rKey(),
 				dRow{"organization", "FAIL", "none set"},
 				skipProject,
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: organization: your organizations: acme-prod, my-org; to set one, run " +
 				"saladcloud use <org>\n" + hGateway + hSSH + failed(
@@ -342,13 +342,13 @@ func TestDoctorRows(t *testing.T) {
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
+				rConfig(),
+				rReachable(),
+				rKey(),
 				dRow{"organization", "FAIL", `"acme-stagng" (from SALAD_ORGANIZATION) not found`},
 				dRow{"project", "SKIP", "none set"},
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: organization: to list yours, run saladcloud orgs list; fix or remove " +
 				"SALAD_ORGANIZATION\n" + hGateway + hSSH + failed(
@@ -362,13 +362,13 @@ func TestDoctorRows(t *testing.T) {
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
+				rConfig(),
+				rReachable(),
+				rKey(),
 				dRow{"organization", "FAIL", `"old-org" (from config) not found`},
 				skipProject,
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: organization: your organizations: acme-prod, my-org; to switch, run " +
 				"saladcloud use <org>\n" + hGateway + hSSH + failed(
@@ -386,13 +386,13 @@ func TestDoctorRows(t *testing.T) {
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
+				rConfig(),
+				rReachable(),
+				rKey(),
 				dRow{"organization", "FAIL", `"Acme Prod" (from SALAD_ORGANIZATION) is not a valid organization name`},
 				skipProject,
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: organization: it looks like a display name; use the name from the portal " +
 				"URL, the part after /organizations/\n" + hGateway + hSSH + failed(
@@ -404,13 +404,13 @@ func TestDoctorRows(t *testing.T) {
 			id: "the organization could not be checked",
 			s:  session{args: doctor, saved: good, api: orgDown},
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
+				rConfig(),
+				rReachable(),
+				rKey(),
 				dRow{"organization", "WARN", "my-org (from config); could not be checked: the API answered 503"},
 				skipProjectSet,
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: organization: try again in a minute\n" + hGateway + hSSH,
 		},
@@ -418,13 +418,13 @@ func TestDoctorRows(t *testing.T) {
 			id: "no project, default exists",
 			s:  session{args: doctor, saved: &config.File{APIKey: k, Organization: "my-org"}},
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
-				rOrg,
+				rConfig(),
+				rReachable(),
+				rKey(),
+				rOrg(),
 				dRow{"project", "WARN", `none set, using "default"`},
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: project: container group and queue commands warn each time; to choose one, " +
 				"set SALAD_PROJECT or run saladcloud use my-org/<project>\n" + hGateway + hSSH,
@@ -433,13 +433,13 @@ func TestDoctorRows(t *testing.T) {
 			id: "no project, no default",
 			s:  session{args: doctor, saved: &config.File{APIKey: k, Organization: "my-org"}, api: noDefault},
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
-				rOrg,
+				rConfig(),
+				rReachable(),
+				rKey(),
+				rOrg(),
 				dRow{"project", "WARN", `none set; my-org has no "default" project`},
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: project: container groups and queues need one; create one at " +
 				"https://portal.salad.com/organizations/my-org/projects/new, then run saladcloud use " +
@@ -452,17 +452,17 @@ func TestDoctorRows(t *testing.T) {
 				saved: &config.File{APIKey: k, Organization: "my-org", Project: "staging"},
 			},
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
+				rConfig(),
+				rReachable(),
+				rKey(),
 				dRow{"organization", "PASS", "acme-prod (from --org)"},
 				dRow{
 					"project",
 					"WARN",
 					`none set for acme-prod, using "default"; the saved project "staging" is for my-org`,
 				},
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: project: to choose one for acme-prod, run saladcloud use " +
 				"acme-prod/<project>\n" + hGateway + hSSH,
@@ -473,13 +473,13 @@ func TestDoctorRows(t *testing.T) {
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
-				rOrg,
+				rConfig(),
+				rReachable(),
+				rKey(),
+				rOrg(),
 				dRow{"project", "FAIL", `"stagng" (from config) not found in my-org`},
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: project: to switch, run saladcloud use " +
 				"my-org/<project>\n" + hGateway + hSSH + failed(
@@ -493,13 +493,13 @@ func TestDoctorRows(t *testing.T) {
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
-				rOrg,
+				rConfig(),
+				rReachable(),
+				rKey(),
+				rOrg(),
 				dRow{"project", "FAIL", `"stagng" (from SALAD_PROJECT) not found in my-org`},
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: project: fix or remove SALAD_PROJECT, or create it at " +
 				"https://portal.salad.com/organizations/my-org/projects/new\n" + hGateway + hSSH +
@@ -518,13 +518,13 @@ func TestDoctorRows(t *testing.T) {
 			code: 1,
 			kind: "api_error",
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
-				rOrg,
+				rConfig(),
+				rReachable(),
+				rKey(),
+				rOrg(),
 				dRow{"project", "FAIL", `"Staging Env" (from SALAD_PROJECT) is not a valid project name`},
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: project: it looks like a display name; use the name from the portal URL, the " +
 				"part after /projects/\n" + hGateway + hSSH + failed(
@@ -536,13 +536,13 @@ func TestDoctorRows(t *testing.T) {
 			id: "the project could not be checked",
 			s:  session{args: doctor, saved: good, api: projectDown},
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
-				rOrg,
+				rConfig(),
+				rReachable(),
+				rKey(),
+				rOrg(),
 				dRow{"project", "WARN", "default (from config); could not be checked: the API answered 503"},
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: project: try again in a minute\n" + hGateway + hSSH,
 		},
@@ -559,11 +559,11 @@ func TestDoctorRows(t *testing.T) {
 				},
 			},
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
-				rOrg,
-				rProject,
+				rConfig(),
+				rReachable(),
+				rKey(),
+				rOrg(),
+				rProject(),
 				dRow{"ai-gateway-api-key-present", "PASS", "****...EFGH (from config; not tested)"},
 				dRow{"local-ssh-key-present", "PASS", homeSSH("id_ed25519.pub") + " (registration not checked)"},
 			),
@@ -578,17 +578,17 @@ func TestDoctorRows(t *testing.T) {
 				env:   map[string]string{"SALAD_ORGANIZATION": "acme-prod"},
 			},
 			stdout: doctorTable(
-				rConfig,
-				rReachable,
-				rKey,
+				rConfig(),
+				rReachable(),
+				rKey(),
 				dRow{"organization", "PASS", "acme-prod (from SALAD_ORGANIZATION)"},
 				dRow{
 					"project",
 					"WARN",
 					`none set for acme-prod, using "default"; the saved project "default" is for my-org`,
 				},
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: hReachable + "hint: project: to choose one for acme-prod, run saladcloud use " +
 				"acme-prod/<project>\n" + hGateway + hSSH +
@@ -602,12 +602,12 @@ func TestDoctorRows(t *testing.T) {
 			kind: "api_error",
 			stdout: doctorTable(
 				dRow{"config", "FAIL", "<path> cannot be read: unexpected end of JSON input"},
-				rReachable,
+				rReachable(),
 				dRow{"api-key", "FAIL", "not set"},
 				skipNone,
 				skipProject,
-				rGateway,
-				rSSH,
+				rGateway(),
+				rSSH(),
 			),
 			stderr: "hint: config: fix or delete it, then run saladcloud login again\n" + hReachable +
 				"hint: api-key: run saladcloud login, or set SALAD_API_KEY; for the AI Gateway only, run saladcloud " +
@@ -629,19 +629,21 @@ func failingHint(cases []branchCase) []branchCase {
 
 // TestDoctorSSHRows: the local SSH key row's warnings.
 func TestDoctorSSHRows(t *testing.T) {
+	t.Parallel()
 	good := &config.File{APIKey: testAPIKey, Organization: "my-org", Project: "default", GatewayAPIKey: testGatewayKey}
 	rG := dRow{"ai-gateway-api-key-present", "PASS", "****...EFGH (from config; not tested)"}
 	t.Run("a passphrase", func(t *testing.T) {
+		t.Parallel()
 		runBranches(t, withDeps(func(d *Deps) { stubSSH(d, true, true) }, []branchCase{
 			{
 				id: "a key of your own",
 				s:  session{args: []string{"doctor"}, saved: good, sshKey: true},
 				stdout: doctorTable(
-					rConfig,
-					rReachable,
-					rKey,
-					rOrg,
-					rProject,
+					rConfig(),
+					rReachable(),
+					rKey(),
+					rOrg(),
+					rProject(),
 					rG,
 					dRow{
 						"local-ssh-key-present",
@@ -659,11 +661,11 @@ func TestDoctorSSHRows(t *testing.T) {
 				id: "the CLI's own key",
 				s:  session{args: []string{"doctor"}, saved: good, sshKey: true, sshKeyName: "saladcloud_ed25519.pub"},
 				stdout: doctorTable(
-					rConfig,
-					rReachable,
-					rKey,
-					rOrg,
-					rProject,
+					rConfig(),
+					rReachable(),
+					rKey(),
+					rOrg(),
+					rProject(),
 					rG,
 					dRow{
 						"local-ssh-key-present",
@@ -680,6 +682,7 @@ func TestDoctorSSHRows(t *testing.T) {
 		}))
 	})
 	t.Run("ssh not installed", func(t *testing.T) {
+		t.Parallel()
 		for _, tc := range []struct{ os, hint string }{
 			{"windows", "add the OpenSSH Client optional feature in Windows Settings, then open a new terminal"},
 			{"darwin", "macOS includes it at /usr/bin/ssh; check that /usr/bin is on your PATH"},
@@ -691,11 +694,11 @@ func TestDoctorSSHRows(t *testing.T) {
 					id: tc.os,
 					s:  session{args: []string{"doctor"}, saved: good, sshKey: true, os: tc.os},
 					stdout: doctorTable(
-						rConfig,
-						rReachable,
-						rKey,
-						rOrg,
-						rProject,
+						rConfig(),
+						rReachable(),
+						rKey(),
+						rOrg(),
+						rProject(),
 						rG,
 						dRow{"local-ssh-key-present", "WARN", "key found, but ssh is not installed"},
 					),
@@ -709,6 +712,7 @@ func TestDoctorSSHRows(t *testing.T) {
 // TestDoctorJSON: rows carry their hint (null under a PASS row), and a
 // failing run's error says the rows' hints say how to fix it.
 func TestDoctorJSON(t *testing.T) {
+	t.Parallel()
 	o := withMode(session{
 		args: []string{"doctor"}, saved: &config.File{APIKey: testOtherAPIKey},
 		deps: func(d *Deps) { stubSSH(d, true, false) },
@@ -730,6 +734,7 @@ func TestDoctorJSON(t *testing.T) {
 // TestDoctorReachable: the API row names https://api.salad.com when no
 // stand-in is set, and a failure says to check the network.
 func TestDoctorReachable(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	old := app.ProductionAPI
 	t.Cleanup(func() { app.ProductionAPI = old })
@@ -737,7 +742,7 @@ func TestDoctorReachable(t *testing.T) {
 	srv := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) }),
 	)
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	app.ProductionAPI = srv.URL
 	d := &doctorRun{ctx: t.Context(), app: app.App}
 	if r := d.reachableRow(); r.Status != checkPass || r.Detail != "https://api.salad.com" || r.Hint != nil ||

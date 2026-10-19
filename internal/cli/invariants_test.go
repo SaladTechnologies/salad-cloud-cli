@@ -24,7 +24,9 @@ import (
 )
 
 // keyEnv is a working key, organization and project in the environment.
-var keyEnv = map[string]string{"SALAD_API_KEY": testAPIKey, "SALAD_ORGANIZATION": "my-org", "SALAD_PROJECT": "default"}
+func keyEnv() map[string]string {
+	return map[string]string{"SALAD_API_KEY": testAPIKey, "SALAD_ORGANIZATION": "my-org", "SALAD_PROJECT": "default"}
+}
 
 // with returns env plus the given name/value pairs.
 func with(env map[string]string, kv ...string) map[string]string {
@@ -59,7 +61,7 @@ func errDocCases() []errDocCase {
 		{name: "unknown flag", s: session{args: []string{"cg", "list", "--bogus"}}},
 		{name: "missing positional", s: session{args: []string{"cg", "get"}}},
 		{name: "bare noun", s: session{args: []string{"gpus"}}},
-		{name: "invalid value", s: session{args: []string{"cg", "create", "Bad_Name", "--image", "x"}, env: keyEnv}},
+		{name: "invalid value", s: session{args: []string{"cg", "create", "Bad_Name", "--image", "x"}, env: keyEnv()}},
 		{
 			name: "no API key",
 			s:    session{args: []string{"cg", "list"}, env: map[string]string{"SALAD_ORGANIZATION": "my-org"}},
@@ -68,27 +70,27 @@ func errDocCases() []errDocCase {
 			name: "no organization",
 			s:    session{args: []string{"quotas", "get"}, env: map[string]string{"SALAD_API_KEY": testAPIKey}},
 		},
-		{name: "not found", s: session{args: []string{"cg", "get", "missing"}, env: keyEnv}},
+		{name: "not found", s: session{args: []string{"cg", "get", "missing"}, env: keyEnv()}},
 		{
 			name: "rejected key",
-			s:    session{args: []string{"cg", "list"}, env: with(keyEnv, "SALAD_API_KEY", testOtherAPIKey)},
+			s:    session{args: []string{"cg", "list"}, env: with(keyEnv(), "SALAD_API_KEY", testOtherAPIKey)},
 		},
-		{name: "forbidden", s: session{args: []string{"gpus", "list"}, env: keyEnv, api: forbidden}},
-		{name: "server error", s: session{args: []string{"quotas", "get"}, env: keyEnv, api: serverError}},
+		{name: "forbidden", s: session{args: []string{"gpus", "list"}, env: keyEnv(), api: forbidden}},
+		{name: "server error", s: session{args: []string{"quotas", "get"}, env: keyEnv(), api: serverError}},
 		{
 			name: "network error",
 			s: session{
 				args: []string{"quotas", "get"},
-				env:  with(keyEnv, "SALAD_CLI_API_BASE_URL", "http://127.0.0.1:1"),
+				env:  with(keyEnv(), "SALAD_CLI_API_BASE_URL", "http://127.0.0.1:1"),
 			},
 		},
 		{
 			name: "assumed project missing",
-			s:    session{args: []string{"cg", "list"}, env: with(keyEnv, "SALAD_PROJECT", ""), api: noDefault},
+			s:    session{args: []string{"cg", "list"}, env: with(keyEnv(), "SALAD_PROJECT", ""), api: noDefault},
 		},
 		{
 			name: "assumed project warning",
-			s:    session{args: []string{"cg", "list"}, env: with(keyEnv, "SALAD_PROJECT", "")},
+			s:    session{args: []string{"cg", "list"}, env: with(keyEnv(), "SALAD_PROJECT", "")},
 		},
 		{name: "login, no key", s: session{args: []string{"login", "--org", "my-org"}}},
 		{
@@ -134,9 +136,11 @@ func errDocCases() []errDocCase {
 // table mode a failure is one saladcloud: error: line and at most one hint:
 // line.
 func TestErrorDocumentInvariant(t *testing.T) {
+	t.Parallel()
 	for _, tc := range errDocCases() {
 		for _, mode := range []string{"table", "json", "yaml"} {
 			t.Run(tc.name+"/"+mode, func(t *testing.T) {
+				t.Parallel()
 				s := tc.s
 				s.args = append(append([]string(nil), s.args...), "-o", mode)
 				o := s.run(t)
@@ -214,6 +218,7 @@ func checkMachineStderr(t *testing.T, o outcome) {
 		t.Errorf("message %q: want one non-empty line", msg)
 	}
 	t.Run("five keys", func(t *testing.T) {
+		t.Parallel()
 		keys := make([]string, 0, len(doc))
 		for k := range doc {
 			keys = append(keys, k)
@@ -243,6 +248,7 @@ func checkNoPasteInHints(t *testing.T, o outcome) {
 // TestLoginNeverWaitsOnStdin: without --api-key - and without a terminal,
 // the logins return without reading a stdin that never closes.
 func TestLoginNeverWaitsOnStdin(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		args []string
@@ -256,6 +262,7 @@ func TestLoginNeverWaitsOnStdin(t *testing.T) {
 			"set", []string{"ai-gateway", "login"}, map[string]string{"SALAD_AI_GATEWAY_API_KEY": testGatewayKey}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			o := session{args: tc.args, env: tc.env, openStdin: true}.run(t)
 			if o.hung {
 				t.Fatalf("still reading stdin after %s", stdinPatience)
@@ -359,7 +366,7 @@ func credentialCases() []credentialCase {
 		},
 		credentialCase{
 			name: "a rejected key at run time",
-			s:    session{args: []string{"cg", "list"}, env: with(keyEnv, "SALAD_API_KEY", testOtherAPIKey)},
+			s:    session{args: []string{"cg", "list"}, env: with(keyEnv(), "SALAD_API_KEY", testOtherAPIKey)},
 		},
 		credentialCase{name: "ai-gateway test", s: session{args: []string{"ai-gateway", "test"}, env: varKeys}},
 		credentialCase{
@@ -375,32 +382,37 @@ func credentialCases() []credentialCase {
 
 // secretWords are the distinctive middles of the test credentials: no output
 // may hold one, even cut short.
-var secretWords = []string{"SentinelApiKey", "OtherApiKey", "SentinelGatewayKey", "OtherGatewayKey"}
+func secretWords() []string {
+	return []string{"SentinelApiKey", "OtherApiKey", "SentinelGatewayKey", "OtherGatewayKey"}
+}
 
 // TestCredentialsNeverPrinted: an API key and an AI Gateway key, given by
 // flag, stdin, variable or the prompt, through every setup command, never
 // appear whole in stdout, stderr or on the terminal, only as ****...ABCD; no
 // hint asks for a key's value.
 func TestCredentialsNeverPrinted(t *testing.T) {
+	t.Parallel()
 	for _, tc := range credentialCases() {
 		for _, mode := range []string{"table", "json"} {
 			t.Run(tc.name+"/"+mode, func(t *testing.T) {
+				t.Parallel()
 				s := tc.s
 				s.args = append(append([]string(nil), s.args...), "-o", mode)
 				o := s.run(t)
 				all := o.all()
-				for _, k := range testSecrets {
+				for _, k := range testSecrets() {
 					if strings.Contains(all, k[:len(k)-4]) {
 						t.Errorf("output holds the key %s:\n%s", k, all)
 					}
 				}
-				for _, w := range secretWords {
+				for _, w := range secretWords() {
 					if strings.Contains(all, w) {
 						t.Errorf("output holds part of a key (%s):\n%s", w, all)
 					}
 				}
 				checkNoPasteInHints(t, o)
 				t.Run("mask", func(t *testing.T) {
+					t.Parallel()
 					if strings.Contains(all, "****\u2026") {
 						t.Errorf("a key is masked as ****\u2026, not ****...:\n%s", all)
 					}
@@ -413,6 +425,7 @@ func TestCredentialsNeverPrinted(t *testing.T) {
 // TestNoHelpAsksForAKey: no --help text and not the agent block asks for a
 // key's value (the word "paste").
 func TestNoHelpAsksForAKey(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	if strings.Contains(strings.ToLower(agentdoc.Body()), "paste") {
 		t.Error("the agent block mentions paste")
@@ -422,6 +435,8 @@ func TestNoHelpAsksForAKey(t *testing.T) {
 	for _, c := range all {
 		path := c.CommandPath()
 		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			var out bytes.Buffer
 			_, root := app.fresh()
 			root.SetOut(&out)
@@ -507,9 +522,11 @@ var varName = regexp.MustCompile(`\bSALAD_[A-Z_]+\b`)
 // warning naming exactly the variables in its env_overrides (one warning:
 // row each when there are several), and none when env_overrides is [].
 func TestConfigWritesNameOverridingVariables(t *testing.T) {
+	t.Parallel()
 	for _, tc := range overrideCases() {
 		for _, mode := range []string{"table", "json"} {
 			t.Run(tc.name+"/"+mode, func(t *testing.T) {
+				t.Parallel()
 				s := tc.s
 				s.args = append(append([]string(nil), s.args...), "-o", mode)
 				o := s.run(t)

@@ -10,6 +10,7 @@ import (
 // TestOutcomeFactsInJSON: facts login and doctor state on stderr in table
 // mode are keys in their documents too.
 func TestOutcomeFactsInJSON(t *testing.T) {
+	t.Parallel()
 	k, other := testAPIKey, testOtherAPIKey
 	login := func(saved *config.File, extra ...string) map[string]any {
 		t.Helper()

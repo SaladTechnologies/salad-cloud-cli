@@ -22,6 +22,7 @@ func writeKey(t *testing.T, home, name string) string {
 }
 
 func TestFindLocalPublicKeyNone(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	if path, ok := findLocalPublicKey(home); ok {
 		t.Errorf("found %q in empty home, want none", path)
@@ -29,6 +30,7 @@ func TestFindLocalPublicKeyNone(t *testing.T) {
 }
 
 func TestFindLocalPublicKeyOrder(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	rsa := writeKey(t, home, "id_rsa.pub")
 	salad := writeKey(t, home, "saladcloud_ed25519.pub")
@@ -54,6 +56,7 @@ func TestFindLocalPublicKeyOrder(t *testing.T) {
 }
 
 func TestFindLocalPublicKeyIgnoresDirectories(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, ".ssh", "id_ed25519.pub"), 0o700); err != nil {
 		t.Fatal(err)
@@ -66,6 +69,7 @@ func TestFindLocalPublicKeyIgnoresDirectories(t *testing.T) {
 // TestResolveIdentity: the flag wins; else the dedicated key when present;
 // else "" so OpenSSH uses its own defaults.
 func TestResolveIdentity(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	home := t.TempDir()
 	app.setenv("HOME", home)
@@ -94,6 +98,7 @@ func TestResolveIdentity(t *testing.T) {
 // TestKeyHasPassphrase generates real keys with and without a passphrase
 // and checks the detection; skipped where ssh-keygen is unavailable.
 func TestKeyHasPassphrase(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("ssh-keygen"); err != nil {
 		t.Skip("ssh-keygen not on PATH")
 	}

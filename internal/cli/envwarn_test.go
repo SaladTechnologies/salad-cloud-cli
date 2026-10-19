@@ -43,6 +43,7 @@ func (app *testRun) warned(when overrideWhen, ovs []override) string {
 }
 
 func TestOverrideWarnings(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	saved := config.File{APIKey: key9QxZ, Organization: "my-org", Project: "default"}
 	for _, tc := range []struct {
@@ -174,6 +175,8 @@ Then open a new terminal (restart VS Code if you use its terminal).
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			app.atATerminal(t, tc.terminal, tc.os, tc.mode)
 			app.setEnv(t, tc.env...)
 			if got := app.warned(tc.when, app.overridesOf(tc.file, tc.vars...)); got != tc.want {
@@ -184,6 +187,7 @@ Then open a new terminal (restart VS Code if you use its terminal).
 }
 
 func TestRemovalWarnings(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, tc := range []struct {
 		name, os, mode string
@@ -219,6 +223,8 @@ Then open a new terminal (restart VS Code if you use its terminal).
 		{"logout, nothing set", "windows", "table", true, nil, []string{"SALAD_API_KEY"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			app.atATerminal(t, tc.terminal, tc.os, tc.mode)
 			app.setEnv(t, tc.env...)
 			ovs := app.stillSupplied(tc.vars...)
@@ -235,6 +241,7 @@ Then open a new terminal (restart VS Code if you use its terminal).
 // TestNoPromptAndCIDropTheSteps: SALAD_CLI_NO_PROMPT and CI make the warning
 // the line alone, as no terminal does.
 func TestNoPromptAndCIDropTheSteps(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, v := range []string{"SALAD_CLI_NO_PROMPT", "CI"} {
 		app.atATerminal(t, true, "windows", "table")
@@ -251,6 +258,7 @@ func TestNoPromptAndCIDropTheSteps(t *testing.T) {
 }
 
 func TestBeforePrompt(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.setEnv(
 		t,
@@ -294,6 +302,7 @@ func TestBeforePrompt(t *testing.T) {
 }
 
 func TestOverrideNames(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.setEnv(t, "SALAD_ORGANIZATION", "my-org")
 	if got := overrideNames(

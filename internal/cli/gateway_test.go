@@ -9,6 +9,7 @@ import (
 )
 
 func TestPickModel(t *testing.T) {
+	t.Parallel()
 	ids := []string{"b", "a"}
 	if m, cerr := pickModel("", ids); cerr != nil || m != "a" {
 		t.Errorf("default = %q %v, want the first model in sorted order (listing order is unstable)", m, cerr)
@@ -33,6 +34,7 @@ func TestPickModel(t *testing.T) {
 }
 
 func TestGatewayTestResultShape(t *testing.T) {
+	t.Parallel()
 	b, err := json.Marshal(
 		gatewayTestResult{
 			Model:  "m",
@@ -55,6 +57,7 @@ func TestGatewayTestResultShape(t *testing.T) {
 }
 
 func TestUsageSummary(t *testing.T) {
+	t.Parallel()
 	if got := usageSummary(nil); got != "no usage reported" {
 		t.Errorf("nil usage = %q", got)
 	}
@@ -69,6 +72,7 @@ func TestUsageSummary(t *testing.T) {
 // TestAIGatewayHelpPointsAtWhoami: there is no gateway status verb; the help
 // says where the key in effect is shown.
 func TestAIGatewayHelpPointsAtWhoami(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	c, _, err := app.root.Find([]string{"ai-gateway"})
 	if err != nil ||

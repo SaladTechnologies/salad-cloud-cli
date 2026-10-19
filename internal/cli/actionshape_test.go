@@ -17,6 +17,7 @@ import (
 // Every no-body-response verb must carry "action" and "ok", plus whatever
 // identity fields name the thing acted on.
 func TestActionResultsShareActionAndOK(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		payload  any
@@ -65,6 +66,7 @@ func TestActionResultsShareActionAndOK(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			b, err := json.Marshal(tt.payload)
 			if err != nil {
 				t.Fatalf("marshal: %v", err)
@@ -113,6 +115,7 @@ func TestActionResultsShareActionAndOK(t *testing.T) {
 // forgets to populate Action — that needs the command driven end-to-end
 // against a fake server.
 func TestActionResultJSONTags(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		typ      reflect.Type
@@ -129,6 +132,7 @@ func TestActionResultJSONTags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			tags := make(map[string]string) // json name -> full tag
 			for i := range tt.typ.NumField() {
 				raw := tt.typ.Field(i).Tag.Get("json")

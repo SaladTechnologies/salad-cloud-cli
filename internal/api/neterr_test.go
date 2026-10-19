@@ -8,8 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
-	"io"
-	"log"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -48,7 +47,7 @@ func tlsGetWithCert(t *testing.T, notBefore, notAfter time.Time) error {
 	leaf := must(x509.ParseCertificate(der))(t)
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	srv.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
-	srv.Config.ErrorLog = log.New(io.Discard, "", 0)
+	srv.Config.ErrorLog = slog.NewLogLogger(slog.DiscardHandler, slog.LevelError)
 	srv.StartTLS()
 	defer srv.Close()
 

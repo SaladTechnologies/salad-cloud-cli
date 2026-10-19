@@ -9,6 +9,7 @@ import (
 // commands take --project but never read it, so their help does not offer
 // it; logs and availability say what it means there.
 func TestProjectFlagHiddenWhereNothingReadsIt(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, path := range [][]string{
 		{"inference", "list"},
@@ -45,6 +46,7 @@ func TestProjectFlagHiddenWhereNothingReadsIt(t *testing.T) {
 // TestFlagHelpShowsOneDefault: a default that depends on another flag is
 // stated once, by the help, never beside cobra's own "(default ...)".
 func TestFlagHelpShowsOneDefault(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	c := app.findCommand(t, "ai-gateway", "test")
 	f := c.Flag("max-tokens")
@@ -59,6 +61,7 @@ func TestFlagHelpShowsOneDefault(t *testing.T) {
 // TestConfigGetSaysKeysAreMasked: webhook-secret get prints a whole secret,
 // so masking is not something to assume; config get says it masks.
 func TestConfigGetSaysKeysAreMasked(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	c := app.findCommand(t, "config", "get")
 	if !strings.Contains(c.Short, "masked") || !strings.Contains(c.Long, "masked to their last four characters") {

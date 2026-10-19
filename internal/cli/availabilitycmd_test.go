@@ -13,6 +13,7 @@ import (
 )
 
 func TestValidateAvailabilityFlags(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		f    availabilityFlags
@@ -26,6 +27,7 @@ func TestValidateAvailabilityFlags(t *testing.T) {
 		{"upper country ok", availabilityFlags{Countries: []string{"US"}}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			cerr := validateAvailabilityFlags(tc.f)
 			switch {
 			case tc.code == 0 && cerr != nil:
@@ -40,6 +42,7 @@ func TestValidateAvailabilityFlags(t *testing.T) {
 // --from's requirements are the base; explicit flags override them and
 // --gpu replaces the classes.
 func TestApplyAvailabilityFlagsOverFrom(t *testing.T) {
+	t.Parallel()
 	g := &shared.ContainerGroup{
 		Container: &shared.Container{Resources: &shared.ContainerResourceRequirements{
 			Cpu: ptr.To(int64(4)), Memory: ptr.To(int64(8192)), StorageAmount: ptr.To(2 * bytesPerGB),
@@ -68,6 +71,7 @@ func TestApplyAvailabilityFlagsOverFrom(t *testing.T) {
 }
 
 func TestOverloadWarning(t *testing.T) {
+	t.Parallel()
 	if w := overloadWarning(
 		"RTX 4090",
 		true,
@@ -82,6 +86,7 @@ func TestOverloadWarning(t *testing.T) {
 
 // An all-zero answer is asked once more; a real answer is not.
 func TestAskTwiceIfZero(t *testing.T) {
+	t.Parallel()
 	answers := []*organizations.GpuAvailability{{OnCallGpu: ptr.To(int64(0))}, {AvailableGpuHigh: ptr.To(int64(7))}}
 	calls := 0
 	ask := func() (*organizations.GpuAvailability, *clierr.Error) {

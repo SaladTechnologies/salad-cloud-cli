@@ -29,6 +29,7 @@ func (app *testRun) unsetProject(t *testing.T) {
 // TestAssumedProjectWarnsOnce: a project-scoped command on the fallback
 // prints one warning, and none when the project was set.
 func TestAssumedProjectWarnsOnce(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAPI(t, map[string]string{defaultListRoute: emptyListBody})
 	app.unsetProject(t)
@@ -55,6 +56,7 @@ func TestAssumedProjectWarnsOnce(t *testing.T) {
 // TestAssumedProjectWarningIsOrgScopedOnly: org-scoped commands never use a
 // project, so they never warn about one.
 func TestAssumedProjectWarningIsOrgScopedOnly(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAPI(t, map[string]string{quotasRoute: `{}`})
 	app.unsetProject(t)
@@ -73,6 +75,7 @@ func TestAssumedProjectWarningIsOrgScopedOnly(t *testing.T) {
 // with where to find names; a missing group in an existing "default" stays
 // not found, and so does a 404 whose organization is the problem.
 func TestAssumedProjectMissing(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	cases := []struct {
 		name     string
@@ -114,6 +117,8 @@ func TestAssumedProjectMissing(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			app.stubAPI(t, tc.routes)
 			app.unsetProject(t)
 			_, err := app.runRoot(t, tc.args...)
@@ -138,6 +143,7 @@ func TestAssumedProjectMissing(t *testing.T) {
 // another organization named by a flag; the fallback applies instead, and
 // its warning names the project it skipped.
 func TestSavedProjectStaysWithItsOrg(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAPI(
 		t,
@@ -166,12 +172,15 @@ func TestSavedProjectStaysWithItsOrg(t *testing.T) {
 // warns, and exits 2 when the organization has no "default" instead of
 // returning nothing.
 func TestGroupLogsCheckTheAssumedProject(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, args := range [][]string{
 		{"container-groups", "logs", "g", "--since", "5m", "-o", "json"},
 		{"logs", "-c", "g", "--since", "5m", "-o", "json"},
 	} {
 		t.Run(strings.Join(args[:2], " "), func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			app.stubAPI(
 				t,
 				map[string]string{quotasRoute: `{}`, defaultListRoute: emptyListBody, "/log-entries": `{"items":[]}`},

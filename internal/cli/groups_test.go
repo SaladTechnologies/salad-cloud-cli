@@ -32,6 +32,7 @@ func validCreateRequest() containergroups.ContainerGroupCreationRequest {
 }
 
 func TestValidateCreateRequestValid(t *testing.T) {
+	t.Parallel()
 	req := validCreateRequest()
 	if err := validateCreateRequest(&req); err != nil {
 		t.Fatalf("validateCreateRequest returned %v for a valid request", err)
@@ -39,6 +40,7 @@ func TestValidateCreateRequestValid(t *testing.T) {
 }
 
 func TestValidateCreateRequestMissingFields(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		field  string // the field named in the error message
 		mutate func(*containergroups.ContainerGroupCreationRequest)
@@ -63,6 +65,7 @@ func TestValidateCreateRequestMissingFields(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.field, func(t *testing.T) {
+			t.Parallel()
 			req := validCreateRequest()
 			tt.mutate(&req)
 			err := validateCreateRequest(&req)
@@ -85,6 +88,7 @@ func scalingAction(replicas int64, schedule string) shared.ContainerGroupScaling
 }
 
 func TestScheduledScalingString(t *testing.T) {
+	t.Parallel()
 	weekdayPair := []shared.ContainerGroupScalingAction{
 		scalingAction(2, "0 9 * * 1-5"),
 		scalingAction(0, "0 17 * * 1-5"),
@@ -126,6 +130,7 @@ func TestScheduledScalingString(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			g := &shared.ContainerGroup{
 				ScheduledScalingEnabled: tt.enabled,
 				ScalingActions:          tt.actions,
@@ -140,6 +145,7 @@ func TestScheduledScalingString(t *testing.T) {
 // TestWriteGroupDetailScheduledScalingRow pins the row's presence contract:
 // shown when the group has the flag or actions, absent otherwise.
 func TestWriteGroupDetailScheduledScalingRow(t *testing.T) {
+	t.Parallel()
 	with := &shared.ContainerGroup{
 		Name:                    ptr.To("demo"),
 		ScheduledScalingEnabled: ptr.To(true),
@@ -170,6 +176,7 @@ func detailGroup(status shared.ContainerGroupStatus, autostart bool) *shared.Con
 }
 
 func TestWriteGroupDetailPendingAutostartNote(t *testing.T) {
+	t.Parallel()
 	note := `settles to "stopped" shortly (created without autostart)`
 
 	tests := []struct {
@@ -190,6 +197,7 @@ func TestWriteGroupDetailPendingAutostartNote(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var buf strings.Builder
 			writeGroupDetail(output.NewWriter(&buf), tt.group)
 			got := strings.Contains(buf.String(), note)
@@ -206,6 +214,7 @@ func TestWriteGroupDetailPendingAutostartNote(t *testing.T) {
 // scheduled-scaling-enabled to false while leaving the actions configured,
 // so a schedule silently stops firing.
 func TestScheduledScalingResetStillWarns(t *testing.T) {
+	t.Parallel()
 	group := func(enabled bool) *shared.ContainerGroup {
 		return &shared.ContainerGroup{
 			Name:                    ptr.To("demo"),
@@ -233,6 +242,7 @@ func TestScheduledScalingResetStillWarns(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var buf strings.Builder
 			warnUnrequestedChanges(&buf, findUnrequestedChanges([]byte(tt.patch), tt.before, tt.after))
 			got := strings.Contains(buf.String(), "scheduled-scaling-enabled")

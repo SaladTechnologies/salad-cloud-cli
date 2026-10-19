@@ -19,6 +19,7 @@ import (
 // about this build.
 
 func TestRejectUnknownsNoHatchForTypos(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	cerr := app.rejectUnknowns([]input.Unknown{
 		{
@@ -42,6 +43,7 @@ func TestRejectUnknownsNoHatchForTypos(t *testing.T) {
 }
 
 func TestRejectUnknownsHatchNamesOnlyNovelFields(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	cerr := app.rejectUnknowns([]input.Unknown{
 		{
@@ -63,6 +65,7 @@ func TestRejectUnknownsHatchNamesOnlyNovelFields(t *testing.T) {
 }
 
 func TestRejectUnknownsSingleNovelDoesNotRepeat(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	cerr := app.rejectUnknowns([]input.Unknown{
 		{Desc: `unknown field "gpu_sharing" in "container"`, Path: "container.gpu_sharing"},
@@ -79,6 +82,7 @@ func TestRejectUnknownsSingleNovelDoesNotRepeat(t *testing.T) {
 }
 
 func TestRejectUnknownsGetResponseTellLeads(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	paths := []string{
 		"id", "create_time", "update_time", "version", "pending_change", "current_state", "organization_name",
@@ -138,6 +142,7 @@ func (app *testRun) captureStderr(t *testing.T, fn func()) string {
 }
 
 func TestRejectUnknownsHedgesSchemaFacts(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, tt := range []struct{ path, want, mustNot string }{
 		{"restart_policy", "not in this CLI's update schema (create accepts it)", "cannot be changed by update"},
@@ -156,6 +161,7 @@ func TestRejectUnknownsHedgesSchemaFacts(t *testing.T) {
 }
 
 func TestWarnUnknownsLenientTypo(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	warnUnknowns(&buf, []input.Unknown{
 		{
@@ -177,6 +183,7 @@ func TestWarnUnknownsLenientTypo(t *testing.T) {
 // queue_connection is create-only, and update says why and what to do
 // instead of offering the escape hatch.
 func TestRejectUnknownsExplainsQueueConnection(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	cerr := app.rejectUnknowns([]input.Unknown{
 		{Desc: `unknown field "queue_connection" at the top level`, Path: "queue_connection"},
@@ -197,6 +204,7 @@ func TestRejectUnknownsExplainsQueueConnection(t *testing.T) {
 // TestUpdateNamesTheGroupToStartFrom: update knows the group, so a get
 // response given as its patch gets the exact command to start from.
 func TestUpdateNamesTheGroupToStartFrom(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	doc := filepath.Join(t.TempDir(), "g.json")
 	if err := os.WriteFile(

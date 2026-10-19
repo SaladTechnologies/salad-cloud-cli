@@ -30,6 +30,7 @@ func stubPassphrase(d *Deps, has bool) {
 }
 
 func TestSSHKeySetupBranches(t *testing.T) {
+	t.Parallel()
 	own := filepath.Join("<home>", ".ssh", "saladcloud_ed25519")
 	found := filepath.Join("<home>", ".ssh", "id_ed25519")
 	setup := []string{"ssh-key", "setup"}
@@ -51,6 +52,7 @@ func TestSSHKeySetupBranches(t *testing.T) {
 		"ok":             true,
 	}
 	t.Run("no passphrase", func(t *testing.T) {
+		t.Parallel()
 		runBranches(t, withDeps(func(d *Deps) { stubKeygen(d, true); stubPassphrase(d, false) }, []branchCase{
 			{
 				id:     "no key, Enter",
@@ -134,6 +136,7 @@ func TestSSHKeySetupBranches(t *testing.T) {
 		}))
 	})
 	t.Run("a passphrase", func(t *testing.T) {
+		t.Parallel()
 		warn := "warning: " + found + " has a passphrase, which cp and one-shot ssh commands cannot ask for\nhint: " +
 			"to use it with those, run ssh-add " + found + " first\n"
 		offer := "Generate a key without a passphrase at " + own + "? The CLI will use it instead, and registering " +
@@ -176,6 +179,7 @@ func TestSSHKeySetupBranches(t *testing.T) {
 		}))
 	})
 	t.Run("ssh-keygen missing", func(t *testing.T) {
+		t.Parallel()
 		for _, tc := range []struct{ os, hint string }{
 			{"windows", "add the OpenSSH Client optional feature in Windows Settings, then open a new terminal"},
 			{"darwin", "macOS includes it at /usr/bin/ssh-keygen; check that /usr/bin is on your PATH"},

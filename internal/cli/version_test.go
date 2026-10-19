@@ -11,6 +11,7 @@ import (
 // TestVersionJSONShape pins version's JSON document: every key present,
 // including the beta stage and the issues URL bug reports should go to.
 func TestVersionJSONShape(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	out, err := app.runRoot(t, "version", "-o", "json")
 	if err != nil {
@@ -38,6 +39,7 @@ func TestVersionJSONShape(t *testing.T) {
 
 // TestRootHelpNamesBetaAndIssues: --help is where a new user looks first.
 func TestRootHelpNamesBetaAndIssues(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, want := range []string{version.Stage + " release", version.IssuesURL, "saladcloud version"} {
 		if !strings.Contains(app.root.Long, want) {

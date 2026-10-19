@@ -38,6 +38,7 @@ func testResolver(t *testing.T) func(string) (string, *clierr.Error) {
 }
 
 func TestValidateGroupName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		valid bool
@@ -55,6 +56,7 @@ func TestValidateGroupName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := validateGroupName(tt.name)
 			if tt.valid {
 				if err != nil {
@@ -78,6 +80,7 @@ func TestValidateGroupName(t *testing.T) {
 // TestValidateCreateRequestBadName pins that the name rule runs as part of
 // create's pre-validation and surfaces as exit 2, offline.
 func TestValidateCreateRequestBadName(t *testing.T) {
+	t.Parallel()
 	req := validCreateRequest()
 	req.Name = ptr.To("bad_NAME")
 	err := validateCreateRequest(&req)
@@ -90,6 +93,7 @@ func TestValidateCreateRequestBadName(t *testing.T) {
 }
 
 func TestResolveGpuClassName(t *testing.T) {
+	t.Parallel()
 	classes := testGpuClasses()
 	tests := []struct {
 		name    string
@@ -107,6 +111,7 @@ func TestResolveGpuClassName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			id, cerr := resolveGpuClassName(tt.value, classes)
 			if tt.wantErr == "" {
 				if cerr != nil {
@@ -131,6 +136,7 @@ func TestResolveGpuClassName(t *testing.T) {
 }
 
 func TestResolveGpuClassNameAmbiguousListsCandidates(t *testing.T) {
+	t.Parallel()
 	_, cerr := resolveGpuClassName("3060", testGpuClasses())
 	if cerr == nil {
 		t.Fatal("expected an ambiguity error")
@@ -147,6 +153,7 @@ func TestResolveGpuClassNameAmbiguousListsCandidates(t *testing.T) {
 // and the user's input are trimmed, so an exact match still wins over a
 // would-be-ambiguous substring match.
 func TestResolveGpuClassNameTrimsStoredAndInput(t *testing.T) {
+	t.Parallel()
 	classes := []organizationdata.GpuClass{
 		{Name: ptr.To(" RTX 5080 (16 GB)"), Id: ptr.To("id-5080")},
 		{Name: ptr.To("RTX 5080 Ti (16 GB)"), Id: ptr.To("id-5080ti")},
@@ -162,6 +169,7 @@ func TestResolveGpuClassNameTrimsStoredAndInput(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			id, cerr := resolveGpuClassName(tt.value, classes)
 			if cerr != nil {
 				t.Fatalf("resolveGpuClassName(%q) error: %v", tt.value, cerr)
@@ -204,6 +212,7 @@ func fileBase() containergroups.ContainerGroupCreationRequest {
 }
 
 func TestBuildCreateRequestFlagsOnlyMinimal(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Name:  "web",
@@ -246,6 +255,7 @@ func TestBuildCreateRequestFlagsOnlyMinimal(t *testing.T) {
 }
 
 func TestBuildCreateRequestDefaultsOnlyWhenUnset(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	// A fully-specified base with no flags must come through untouched.
 	req, cerr := app.buildCreateRequest(fileBase(), createFlags{HasBase: true})
@@ -273,6 +283,7 @@ func TestBuildCreateRequestDefaultsOnlyWhenUnset(t *testing.T) {
 }
 
 func TestBuildCreateRequestFileWithOverrides(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	req, cerr := app.buildCreateRequest(fileBase(), createFlags{
 		HasBase:          true,
@@ -318,6 +329,7 @@ func TestBuildCreateRequestFileWithOverrides(t *testing.T) {
 }
 
 func TestBuildCreateRequestEnvMerge(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	req, cerr := app.buildCreateRequest(fileBase(), createFlags{
 		HasBase: true,
@@ -344,6 +356,7 @@ func TestBuildCreateRequestEnvMerge(t *testing.T) {
 }
 
 func TestBuildCreateRequestPortAndAuth(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Image:   "ghcr.io/me/app",
@@ -400,6 +413,7 @@ func TestBuildCreateRequestPortAndAuth(t *testing.T) {
 }
 
 func TestBuildCreateRequestGpuFlag(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	uuid := "ed563892-aacd-40f5-80b7-90c9be6c759b"
 	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
@@ -423,6 +437,7 @@ func TestBuildCreateRequestGpuFlag(t *testing.T) {
 }
 
 func TestBuildCreateRequestGpuResolverErrors(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, value := range []string{"3060", "H100"} {
 		_, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
@@ -440,6 +455,7 @@ func TestBuildCreateRequestGpuResolverErrors(t *testing.T) {
 }
 
 func TestBuildCreateRequestNoAutostart(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Image:       "ghcr.io/me/app",
@@ -454,6 +470,7 @@ func TestBuildCreateRequestNoAutostart(t *testing.T) {
 }
 
 func TestBuildCreateRequestValidationFailures(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.setenv("MSYSTEM", "MINGW64") // the Git Bash check runs only under Git Bash
 	tests := []struct {
@@ -520,6 +537,8 @@ func TestBuildCreateRequestValidationFailures(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			_, cerr := app.buildCreateRequest(tt.base, tt.opts)
 			if cerr == nil {
 				t.Fatal("buildCreateRequest returned nil error")
@@ -535,6 +554,7 @@ func TestBuildCreateRequestValidationFailures(t *testing.T) {
 }
 
 func TestBuildCreateRequestPriorityNullable(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	// The priority flag must land as a non-null Nullable on the container.
 	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
@@ -553,6 +573,7 @@ func TestBuildCreateRequestPriorityNullable(t *testing.T) {
 }
 
 func TestIsUUID(t *testing.T) {
+	t.Parallel()
 	if !isUUID("f51baccc-dc95-40fb-a5d1-6d0ee0db31d2") {
 		t.Error("isUUID rejected a valid UUID")
 	}
@@ -567,6 +588,7 @@ func TestIsUUID(t *testing.T) {
 // keys within the flag slice, as opposed to TestBuildCreateRequestEnvMerge's
 // file-vs-flag precedence. Verified live: the last occurrence wins.
 func TestBuildCreateRequestEnvLastFlagWins(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Image: "x",
@@ -593,6 +615,7 @@ func TestBuildCreateRequestEnvLastFlagWins(t *testing.T) {
 // "helpfully" replaced by the default of 1. A refactor to
 // `if req.Replicas == nil || *req.Replicas == 0` would silently break this.
 func TestBuildCreateRequestReplicasZeroSurvivesDefaulting(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
 		Image:       "x",
@@ -613,6 +636,7 @@ func TestBuildCreateRequestReplicasZeroSurvivesDefaulting(t *testing.T) {
 // TestBuildCreateRequestReplicasDefaultsWhenUnset is the other half: with
 // the flag untouched, the default of 1 still applies.
 func TestBuildCreateRequestReplicasDefaultsWhenUnset(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{Image: "x"})
 	if cerr != nil {
@@ -628,6 +652,7 @@ func TestBuildCreateRequestReplicasDefaultsWhenUnset(t *testing.T) {
 // out. Exit code must be usage (2), and the check must run before any file
 // read or API call.
 func TestValidateWaitAutostart(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		wait        bool
@@ -641,6 +666,7 @@ func TestValidateWaitAutostart(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cerr := validateWaitAutostart(tt.wait, tt.noAutostart)
 			if !tt.wantErr {
 				if cerr != nil {
@@ -669,6 +695,7 @@ func TestValidateWaitAutostart(t *testing.T) {
 // sent the field, the API discarded it, and the caller got exit 0 believing
 // the write landed — the exact silent no-op strict checking exists to stop.
 func TestRejectUnknownsOffersHatchOnlyForNovelFields(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	const hatch = "--allow-unknown-fields"
 	tests := []struct {
@@ -742,6 +769,8 @@ func TestRejectUnknownsOffersHatchOnlyForNovelFields(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			cerr := app.rejectUnknowns([]input.Unknown{
 				{Desc: `unknown field "x"`, Path: tt.path},
 			})
@@ -767,6 +796,7 @@ func TestRejectUnknownsOffersHatchOnlyForNovelFields(t *testing.T) {
 // only the first offender used to be named, so cleaning a document piped
 // from `get -o json` took one round-trip per field.
 func TestRejectUnknownsListsEveryField(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	cerr := app.rejectUnknowns([]input.Unknown{
 		{Desc: `unknown field "id" at the top level`, Path: "id"},
@@ -805,6 +835,7 @@ func TestRejectUnknownsListsEveryField(t *testing.T) {
 // through with the flag, the warning must say it will be ignored rather than
 // just "sent to the API anyway".
 func TestWarnUnknownsFlagsIgnoredFields(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	warnUnknowns(&buf, []input.Unknown{
 		{Desc: `unknown field "auth" in "networking"`, Path: "networking.auth"},
@@ -820,6 +851,7 @@ func TestWarnUnknownsFlagsIgnoredFields(t *testing.T) {
 // TestWarnUnknowns: create mode flags array-nested fields as dropped; update
 // mode passes everything through.
 func TestWarnUnknowns(t *testing.T) {
+	t.Parallel()
 	unknowns := []input.Unknown{
 		{Desc: `unknown field "a" at the top level`},
 		{Desc: `unknown field "b" in "scaling-actions[0]"`, InArray: true},
@@ -844,6 +876,7 @@ func TestWarnUnknowns(t *testing.T) {
 // build AND the JSON marshal that goes on the wire — a stopped group created
 // from a true file would be the defect.
 func TestBuildCreateRequestAutostartTrueBaseSurvives(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	base := fileBase()
 	base.AutostartPolicy = ptr.To(true) // file said autostart: true

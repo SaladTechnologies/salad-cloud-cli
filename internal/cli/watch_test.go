@@ -25,6 +25,7 @@ func fakeWatchDeps(out *bytes.Buffer, tty bool, tick chan time.Time) watchDeps {
 }
 
 func TestWatchLoopStopsCleanlyOnCancel(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	tick := make(chan time.Time)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -54,6 +55,7 @@ func TestWatchLoopStopsCleanlyOnCancel(t *testing.T) {
 }
 
 func TestWatchLoopClearsATerminal(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -64,6 +66,7 @@ func TestWatchLoopClearsATerminal(t *testing.T) {
 }
 
 func TestWatchLoopEndsOnFatalError(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	err := watchLoop(t.Context(), fakeWatchDeps(&out, false, nil), func(context.Context) *clierr.Error {
 		return clierr.New(clierr.CodeNotFound, clierr.KindNotFound, "gone")
@@ -75,6 +78,7 @@ func TestWatchLoopEndsOnFatalError(t *testing.T) {
 }
 
 func TestWatchIsTableModeOnly(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	_, err := app.runRoot(t, "container-groups", "list", "-w", "-o", "json")
 	var cerr *clierr.Error

@@ -12,6 +12,7 @@ import (
 // usage error (exit 2) that names the input and prints the command to type,
 // in one phrasing, never cobra's or pflag's.
 func TestUsageErrorsPrintWhatToType(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, tc := range []struct {
 		args []string
@@ -145,6 +146,8 @@ func TestUsageErrorsPrintWhatToType(t *testing.T) {
 	} {
 		// A subtest each: runRoot resets the tree's flags when its test ends.
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			_, err := app.runRoot(t, tc.args...)
 			var cerr *clierr.Error
 			ok := errors.As(err, &cerr)
@@ -166,6 +169,7 @@ func TestUsageErrorsPrintWhatToType(t *testing.T) {
 }
 
 func TestEditDistance(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		a, b string
 		want int

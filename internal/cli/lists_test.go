@@ -14,6 +14,7 @@ import (
 // TestJobIDsMustBeFullUUIDs: jobs are not resolved by prefix, so a prefix
 // is rejected before any request, with where to find the full ID.
 func TestJobIDsMustBeFullUUIDs(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, tc := range []struct {
 		args []string
@@ -27,6 +28,8 @@ func TestJobIDsMustBeFullUUIDs(t *testing.T) {
 			"list --endpoint transcribe"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			app.stubAPI(t, make(map[string]string)) // any request would 404
 			_, err := app.runRoot(t, tc.args...)
 			want := `job IDs must be full UUIDs, not "c39e9f69"; to list them, run ` + tc.list
@@ -43,13 +46,14 @@ func TestJobIDsMustBeFullUUIDs(t *testing.T) {
 // TestAIGatewayModelsListNeedsNoKey: the model list is public, so it works
 // with no gateway key and sends none.
 func TestAIGatewayModelsListNeedsNoKey(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	var auth []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth = append(auth, r.Header.Get("Authorization"))
 		respond(t, w, `{"object":"list","data":[{"id":"m1","owned_by":"salad"}]}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	app.setenv("SALAD_CLI_AI_GATEWAY_BASE_URL", srv.URL)
 	app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
 	app.setenv("SALAD_AI_GATEWAY_API_KEY", "")
@@ -83,6 +87,7 @@ func TestAIGatewayModelsListNeedsNoKey(t *testing.T) {
 // collection's paging keys would always be null; the envelope is items
 // alone, as on every other list.
 func TestListEnvelopesAreItemsOnly(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAPI(t, map[string]string{
 		"/inference-endpoints":                 `{"items":[{"name":"transcribe"}],"page":1,"page_size":25,"total_size":null}`,
@@ -93,6 +98,8 @@ func TestListEnvelopesAreItemsOnly(t *testing.T) {
 		{"inference", "jobs", "list", "--endpoint", "transcribe", "-o", "json"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			out, err := app.runRoot(t, args...)
 			if err != nil {
 				t.Fatal(err)
@@ -115,6 +122,7 @@ func TestListEnvelopesAreItemsOnly(t *testing.T) {
 // TestQueuesListSaysWhenEmpty: an empty table keeps its header on stdout and
 // says so on stderr, as every other list does.
 func TestQueuesListSaysWhenEmpty(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAPI(t, map[string]string{"/queues": `{"items":[]}`})
 	stderr := app.captureStderr(t, func() {

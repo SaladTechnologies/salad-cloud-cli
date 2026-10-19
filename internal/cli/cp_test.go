@@ -13,6 +13,7 @@ import (
 )
 
 func TestParseRemoteSpec(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	cases := []struct {
 		in   string
@@ -47,6 +48,7 @@ func TestParseRemoteSpec(t *testing.T) {
 }
 
 func TestParseRemoteSpecErrors(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, in := range []string{
 		"my-app:",            // empty remote path
@@ -70,6 +72,7 @@ func TestParseRemoteSpecErrors(t *testing.T) {
 // into a Windows path list before the CLI runs; the CLI says so and how to
 // stop it, instead of reading both sides as local.
 func TestParseRemoteSpecGitBashRewrite(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.setenv("MSYSTEM", "MINGW64") // the check runs only under Git Bash
 	for _, in := range []string{
@@ -121,6 +124,7 @@ func (app *testRun) runCp(t *testing.T, fake string, mode ...string) (out, stder
 // in table mode sftp's batch echo reaches stderr, and in json and yaml mode
 // stderr stays empty, as it does for every command that succeeds there.
 func TestCpStdoutCarriesOnlyTheResult(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	out, stderr, err := app.runCp(t, "ok", "-o", "json")
 	if err != nil {
@@ -145,6 +149,7 @@ func TestCpStdoutCarriesOnlyTheResult(t *testing.T) {
 // TestCpFailureInJSON: a failing sftp's output stays off stderr in json
 // mode, and its last line ends the error's message.
 func TestCpFailureInJSON(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	_, stderr, err := app.runCp(t, "fail", "-o", "json")
 	var cerr *clierr.Error
@@ -163,6 +168,7 @@ func TestCpFailureInJSON(t *testing.T) {
 
 // TestCpResultShape: cp -o json emits its own result, never sftp's echo.
 func TestCpResultShape(t *testing.T) {
+	t.Parallel()
 	v := cpResult{Group: "g", Instance: "8a2f13ba-0000", Action: "copied", OK: true, Src: "g:/etc/x", Dst: "./x"}
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -175,6 +181,7 @@ func TestCpResultShape(t *testing.T) {
 }
 
 func TestBuildSFTPBatchPut(t *testing.T) {
+	t.Parallel()
 	got := buildSFTPBatch(true, false, `C:\Users\me\model.bin`, "/models/model.bin")
 	want := "put \"C:/Users/me/model.bin\" \"/models/model.bin\"\n"
 	if got != want {
@@ -183,6 +190,7 @@ func TestBuildSFTPBatchPut(t *testing.T) {
 }
 
 func TestBuildSFTPBatchGetRecursive(t *testing.T) {
+	t.Parallel()
 	got := buildSFTPBatch(false, true, "./outputs", "/outputs")
 	want := "get -r \"/outputs\" \"./outputs\"\n"
 	if got != want {
@@ -191,6 +199,7 @@ func TestBuildSFTPBatchGetRecursive(t *testing.T) {
 }
 
 func TestBuildSFTPBatchQuoting(t *testing.T) {
+	t.Parallel()
 	got := buildSFTPBatch(true, false, `my "quoted" file`, `/data/back\slash`)
 	want := "put \"my \\\"quoted\\\" file\" \"/data/back\\\\slash\"\n"
 	if got != want {
@@ -199,6 +208,7 @@ func TestBuildSFTPBatchQuoting(t *testing.T) {
 }
 
 func TestBuildSFTPArgs(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
 	got := app.buildSFTPArgs(target, "root", "", "/tmp/batch")
@@ -221,6 +231,7 @@ func TestBuildSFTPArgs(t *testing.T) {
 }
 
 func TestBuildSFTPArgsInteractive(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	// Empty batchPath = interactive 'saladcloud container-groups sftp' session: no -b flag.
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
@@ -242,6 +253,7 @@ func TestBuildSFTPArgsInteractive(t *testing.T) {
 }
 
 func TestBuildSFTPArgsInteractiveIdentity(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	target := sshTarget{IP: "203.0.113.7", Port: 22}
 	got := app.buildSFTPArgs(target, "worker", "/home/me/.ssh/key", "")
@@ -257,6 +269,7 @@ func TestBuildSFTPArgsInteractiveIdentity(t *testing.T) {
 }
 
 func TestBuildSFTPArgsIdentity(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	target := sshTarget{IP: "203.0.113.7", Port: 22}
 	got := app.buildSFTPArgs(target, "worker", "/home/me/.ssh/key", "/tmp/batch")

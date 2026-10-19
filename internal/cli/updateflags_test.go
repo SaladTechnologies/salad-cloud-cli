@@ -28,6 +28,7 @@ func samePatch(t *testing.T, got json.RawMessage, want string) {
 }
 
 func TestBuildUpdatePatch(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		file    string
@@ -98,6 +99,7 @@ func TestBuildUpdatePatch(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var file []byte
 			if tt.file != "" {
 				file = []byte(tt.file)
@@ -112,6 +114,7 @@ func TestBuildUpdatePatch(t *testing.T) {
 }
 
 func TestValidateUpdateFlags(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		flags updateFlags
@@ -129,6 +132,7 @@ func TestValidateUpdateFlags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cerr := validateUpdateFlags(tt.flags)
 			switch {
 			case tt.code == 0 && cerr != nil:
@@ -143,6 +147,7 @@ func TestValidateUpdateFlags(t *testing.T) {
 // TestUpdateWithNothingToDoIsUsage: no -f and no flag is a usage error,
 // before any client or API work.
 func TestUpdateWithNothingToDoIsUsage(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	_, err := app.runRoot(t, "container-groups", "update", "my-app")
 	var cerr *clierr.Error
@@ -156,6 +161,7 @@ func TestUpdateWithNothingToDoIsUsage(t *testing.T) {
 // variable under -e is sent as a full map without it, and the post-write
 // check must still see the removal as requested.
 func TestUpdateEnvRemovalIsNotReportedAsASideEffect(t *testing.T) {
+	t.Parallel()
 	file := []byte(`{"container":{"environment_variables":{"A":null}}}`)
 	flags := updateFlags{Env: []string{"C=3"}}
 	wire, intent, cerr := buildUpdatePatch(file, flags, map[string]*string{"A": ptr.To("1")})

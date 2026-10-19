@@ -13,18 +13,25 @@ import (
 )
 
 // copyNames are the names a message may start with in capitals.
-var copyNames = []string{"API key", "AI Gateway key", "SSH key", "S4", "HTTP", "TLS", "AI Gateway", "GPU"}
+func copyNames() []string {
+	return []string{"API key", "AI Gateway key", "SSH key", "S4", "HTTP", "TLS", "AI Gateway", "GPU"}
+}
 
 // formatCalls name the calls whose string argument at the given index is a
 // format that reaches output, and whether that text is an error message or
 // a hint (held to the error rules: lowercase, no final period).
-var formatCalls = map[string]struct {
+func formatCalls() map[string]struct {
 	arg  int
 	kind string // "error", "hint" or ""
-}{
-	"Sprintf": {0, ""}, "Printf": {0, ""}, "Errorf": {0, ""}, "Fprintf": {1, ""}, "Appendf": {1, ""},
-	"New": {2, "error"}, "HTTP": {3, "error"}, "WithHint": {0, "hint"},
-	"tell": {0, ""}, "say": {0, ""}, "hintLine": {0, "hint"},
+} {
+	return map[string]struct {
+		arg  int
+		kind string // "error", "hint" or ""
+	}{
+		"Sprintf": {0, ""}, "Printf": {0, ""}, "Errorf": {0, ""}, "Fprintf": {1, ""}, "Appendf": {1, ""},
+		"New": {2, "error"}, "HTTP": {3, "error"}, "WithHint": {0, "hint"},
+		"tell": {0, ""}, "say": {0, ""}, "hintLine": {0, "hint"},
+	}
 }
 
 // TestCopyRules scans the strings in the CLI's Go sources that reach output:
@@ -33,6 +40,7 @@ var formatCalls = map[string]struct {
 // quotes names with plain double quotes rather than %q, and an error or hint
 // starts lowercase (or with a name) and ends without a period.
 func TestCopyRules(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	err := filepath.WalkDir("..", func(path string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
@@ -63,7 +71,7 @@ func TestCopyRules(t *testing.T) {
 					}
 				}
 			}
-			fc, ok := formatCalls[name]
+			fc, ok := formatCalls()[name]
 			if !ok || len(call.Args) <= fc.arg {
 				return true
 			}
@@ -119,7 +127,7 @@ func TestCopyRules(t *testing.T) {
 			}
 			if unicode.IsUpper(rune(s[0])) {
 				named := false
-				for _, n := range copyNames {
+				for _, n := range copyNames() {
 					named = named || strings.HasPrefix(s, n)
 				}
 				if !named {

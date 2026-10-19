@@ -34,6 +34,7 @@ const orgsBody = `{"items":[{"organization_name":"my-org","display_name":"My ` +
 	`Org","organization_id":"o-1","create_time":"2026-01-01T00:00:00Z"}]}`
 
 func TestOrgsListAndGet(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAPI(t, map[string]string{"/v1/organizations": orgsBody})
 
@@ -70,6 +71,7 @@ func TestOrgsListAndGet(t *testing.T) {
 }
 
 func TestQuotasGet(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAPI(
 		t,
@@ -109,6 +111,7 @@ func TestQuotasGet(t *testing.T) {
 // A 200 whose rows have no organization_name means the endpoint changed
 // shape: whoami reports the listing as unavailable, not as zero orgs.
 func TestWhoamiNamelessOrgRowsAreUnknown(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAPI(t, map[string]string{"/v1/organizations": `{"items":[{"id":"x"}]}`, "/quotas": `{}`})
 	out, err := app.runRoot(t, "whoami", "-o", "json", "--org", "", "--project", "")
@@ -126,6 +129,7 @@ func TestWhoamiNamelessOrgRowsAreUnknown(t *testing.T) {
 
 // logout removes the key and leaves the organization and project.
 func TestLogoutKeepsContext(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
 	app.setenv("SALAD_API_KEY", "")

@@ -14,6 +14,7 @@ import (
 // says the job has finished and in what status, keeping the 409's exit code
 // and kind.
 func TestQueueJobCancelFinishedSaysWhy(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	const id = "30add6e3-6f35-49a1-9905-dfc21805a783"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

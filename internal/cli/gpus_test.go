@@ -16,6 +16,7 @@ import (
 // TestGpusGetNamesTheClass: 'gpus get' takes the class as its argument, so
 // a name that resolves to several names the class, not --gpu.
 func TestGpusGetNamesTheClass(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAPI(t, map[string]string{"/gpu-classes": `{"items":[` +
 		`{"id":"11111111-1111-4111-8111-111111111111","name":"RTX 3060 (12 GB)"},` +
@@ -40,6 +41,7 @@ func price(priority shared.ContainerGroupPriority, p string) organizationdata.Gp
 // TestGpuNameCellTrims: the API has returned class names with a leading
 // space; display (and sorting) must trim them.
 func TestGpuNameCellTrims(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		in   *string
@@ -54,6 +56,7 @@ func TestGpuNameCellTrims(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := gpuNameCell(tt.in); got != tt.want {
 				t.Errorf("gpuNameCell = %q, want %q", got, tt.want)
 			}
@@ -62,6 +65,7 @@ func TestGpuNameCellTrims(t *testing.T) {
 }
 
 func TestPriceColumnAssembly(t *testing.T) {
+	t.Parallel()
 	// Fixture in the shape ListGpuClasses returns.
 	list := organizationdata.GpuClassesList{
 		Items: []organizationdata.GpuClass{
@@ -89,6 +93,7 @@ func TestPriceColumnAssembly(t *testing.T) {
 }
 
 func TestPriceColumnAssemblyMissingTiers(t *testing.T) {
+	t.Parallel()
 	prices := pricesByPriority([]organizationdata.GpuClassPrice{
 		price(shared.CONTAINER_GROUP_PRIORITY_HIGH, "1.50"),
 	})
@@ -104,6 +109,7 @@ func TestPriceColumnAssemblyMissingTiers(t *testing.T) {
 }
 
 func TestFormatAllPrices(t *testing.T) {
+	t.Parallel()
 	prices := []organizationdata.GpuClassPrice{
 		price(shared.CONTAINER_GROUP_PRIORITY_BATCH, "0.08"),
 		{Price: ptr.To("0.99"), Priority: &util.Nullable[shared.ContainerGroupPriority]{IsNull: true}},

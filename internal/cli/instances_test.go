@@ -19,6 +19,7 @@ func counts(allocating, creating, running, stopping int64) *shared.ContainerGrou
 }
 
 func TestEmptyInstancesNote(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		counts *shared.ContainerGroupInstanceStatusCount
@@ -67,6 +68,7 @@ func TestEmptyInstancesNote(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := emptyInstancesNote(tt.counts); got != tt.want {
 				t.Errorf("emptyInstancesNote() = %q, want %q", got, tt.want)
 			}
@@ -75,6 +77,7 @@ func TestEmptyInstancesNote(t *testing.T) {
 }
 
 func TestInstanceNotFound(t *testing.T) {
+	t.Parallel()
 	const (
 		group = "my-app"
 		id    = "f51baccc-dc95-40fb-a5d1-6d0ee0db31d2"
@@ -104,6 +107,7 @@ func TestInstanceNotFound(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := instanceNotFound(tt.in, group, id)
 			if tt.in == nil {
 				if got != nil {

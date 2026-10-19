@@ -33,6 +33,7 @@ func failedGroup(status shared.ContainerGroupStatus, reason *util.Nullable[strin
 // TestGetShowsTheReason: a failed group's reason is in the get table, not
 // only in -o json's current_state.description.
 func TestGetShowsTheReason(t *testing.T) {
+	t.Parallel()
 	g := failedGroup(
 		shared.CONTAINER_GROUP_STATUS_FAILED,
 		&util.Nullable[string]{Value: "Access Denied, Check Permissions"},
@@ -54,6 +55,7 @@ func TestGetShowsTheReason(t *testing.T) {
 // TestListColumns: list shows running instances against replicas, and the
 // image.
 func TestListColumns(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	g := failedGroup(shared.CONTAINER_GROUP_STATUS_RUNNING, nil)
 	if got := runningCell(g); got != "1/2" {
@@ -91,6 +93,7 @@ func TestListColumns(t *testing.T) {
 // TestFollowSilentGroupNote: following a failed or stopped group says it
 // will stay silent, and why when the platform says.
 func TestFollowSilentGroupNote(t *testing.T) {
+	t.Parallel()
 	failed := failedGroup(
 		shared.CONTAINER_GROUP_STATUS_FAILED,
 		&util.Nullable[string]{Value: "Access Denied, Check Permissions"},
@@ -115,6 +118,7 @@ func TestFollowSilentGroupNote(t *testing.T) {
 // TestDeleteHelpSaysNamesAreKept: a kubectl habit is delete then create
 // with the same name; the help says that cannot work.
 func TestDeleteHelpSaysNamesAreKept(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	c, _, err := app.root.Find([]string{"container-groups", "delete"})
 	if err != nil || !strings.Contains(c.Long, "name is never released") {

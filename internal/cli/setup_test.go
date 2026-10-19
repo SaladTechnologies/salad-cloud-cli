@@ -14,6 +14,7 @@ import (
 )
 
 func TestMaskShowsTheLastFourInASCII(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ key, want string }{
 		{"", "(not set)"},
 		{"12345678", "****"},
@@ -30,6 +31,7 @@ func TestMaskShowsTheLastFourInASCII(t *testing.T) {
 }
 
 func TestFromTag(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ source, want string }{
 		{"flag", " (from --org)"}, {"env", " (from SALAD_ORGANIZATION)"}, {"config", " (from config)"}, {"default", ""}, {"", ""},
 	} {
@@ -45,6 +47,7 @@ func TestFromTag(t *testing.T) {
 // TestNameCheck covers every branch of the name check, as an error from a
 // flag or variable and as a retry line at a prompt.
 func TestNameCheck(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, tc := range []struct {
 		kind, name, origin string
@@ -98,6 +101,8 @@ func TestNameCheck(t *testing.T) {
 			`--project)`, `did you mean "staging"?`, ""},
 	} {
 		t.Run(tc.kind+" "+tc.name, func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			err := app.checkName(tc.kind, tc.name, tc.origin)
 			if tc.msg == "" {
 				if err != nil {
@@ -122,6 +127,7 @@ func TestNameCheck(t *testing.T) {
 // TestNameRetryNeverQuotesAKey: a prompt answer that is the key just read,
 // or too long to be a name, is not quoted back.
 func TestNameRetryNeverQuotesAKey(t *testing.T) {
+	t.Parallel()
 	key := "salad_cloud_user_SecretKeyValue000H13m"
 	if got := nameRetry(
 		"organization",
@@ -148,6 +154,7 @@ func TestNameRetryNeverQuotesAKey(t *testing.T) {
 }
 
 func TestNormalizeKey(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		raw, want string
 		ok        bool
@@ -178,6 +185,7 @@ func TestNormalizeKey(t *testing.T) {
 }
 
 func TestMalformedKey(t *testing.T) {
+	t.Parallel()
 	err := malformedKey(labelAPIKey, "salad_cloud_user_000000000éDTb9", "SALAD_API_KEY")
 	if err.Code != clierr.CodeAuth || err.Kind != clierr.KindAuth ||
 		err.Message != "API key ****...DTb9 (from SALAD_API_KEY) contains characters an API key cannot have" ||
@@ -199,6 +207,7 @@ func TestMalformedKey(t *testing.T) {
 }
 
 func TestOrgsClause(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	names := func(n int) []string {
 		out := make([]string, n)
@@ -241,6 +250,7 @@ func TestOrgsClause(t *testing.T) {
 }
 
 func TestConfigReady(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	dir := t.TempDir()
 	app.setenv("SALAD_CLI_CONFIG_DIR", dir)
@@ -302,6 +312,7 @@ func TestConfigReady(t *testing.T) {
 // Backspace, cancels on Ctrl-C and ends on Ctrl-D or Ctrl-Z at the start of
 // a line, echoing only what is visible.
 func TestReadKeys(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, keys, want, echo string
 		err                    error
@@ -321,6 +332,7 @@ func TestReadKeys(t *testing.T) {
 		{"escape kept, not echoed", "ab\x1b[Ac\r", "ab\x1b[Ac", "ab[Ac", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			var echo strings.Builder
 			got, err := (&keyReader{r: strings.NewReader(tc.keys)}).readLine(&echo)
 			if got != tc.want || !errors.Is(err, tc.err) && (err != nil || tc.err != nil) || echo.String() != tc.echo {
@@ -333,6 +345,7 @@ func TestReadKeys(t *testing.T) {
 // TestReadKeysCRLF: a line ending in \r\n is one Enter, so the next prompt
 // does not read an empty answer; a \n on its own still ends a line.
 func TestReadKeysCRLF(t *testing.T) {
+	t.Parallel()
 	k := &keyReader{r: strings.NewReader("key\r\nmy-org\r\n\nnext\r")}
 	const lines = 4
 	got := make([]string, 0, lines)
@@ -349,6 +362,7 @@ func TestReadKeysCRLF(t *testing.T) {
 }
 
 func TestBrowserOffer(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, tc := range []struct {
 		os  string
@@ -384,6 +398,7 @@ func TestBrowserOffer(t *testing.T) {
 }
 
 func TestOpener(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	const url = "https://portal.salad.com/api-key"
 	app.setenv("WSL_DISTRO_NAME", "")
@@ -407,6 +422,7 @@ func TestOpener(t *testing.T) {
 }
 
 func TestOpenOffered(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	const url = "https://portal.salad.com/api-key"
 	fc := &fakeConsole{terminal: true}
@@ -427,6 +443,7 @@ func TestOpenOffered(t *testing.T) {
 // TestAskUntil: prompts and retry lines go to the terminal device, answers
 // are re-asked until accepted, and Ctrl-C or end of input end the exchange.
 func TestAskUntil(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	old := app.Console
 	t.Cleanup(func() { app.Console = old })

@@ -36,6 +36,7 @@ func cliStderr(stderr string) string {
 }
 
 func TestCompleteInstanceIDsSilently(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAPI(t, map[string]string{
 		"/containers/my-app/instances": `{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37"},{"id":"1111aaaa-01c2-4a29-9c4d-52c7e5a44e37"}]}`,
@@ -51,6 +52,7 @@ func TestCompleteInstanceIDsSilently(t *testing.T) {
 
 // With no API key, completion offers nothing and still says nothing.
 func TestCompleteWithoutKeyIsEmptyAndSilent(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
 	app.setenv("SALAD_API_KEY", "")
@@ -64,6 +66,7 @@ func TestCompleteWithoutKeyIsEmptyAndSilent(t *testing.T) {
 }
 
 func TestCompleteEnumFlags(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	out, _ := app.runComplete(t, "container-groups", "create", "x", "--priority", "")
 	for _, want := range []string{"high", "medium", "low", "batch"} {
@@ -80,6 +83,7 @@ func TestCompleteEnumFlags(t *testing.T) {
 // The project fallback and other notes stay off stderr during completion,
 // where the shell would print them under the prompt.
 func TestCompleteWithProjectFallbackIsSilent(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAPI(t, map[string]string{"/containers": `{"items":[{"name":"my-app"}]}`})
 	app.setenv("SALAD_PROJECT", "")

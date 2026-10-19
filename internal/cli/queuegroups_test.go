@@ -10,6 +10,7 @@ import (
 // while a connected group runs, so `queues list` shows "-" (unknown) for an
 // empty list rather than claiming 0 groups.
 func TestQueueGroupsCell(t *testing.T) {
+	t.Parallel()
 	if got := queueGroupsCell(nil); got != "-" {
 		t.Errorf("nil list = %q, want -", got)
 	}

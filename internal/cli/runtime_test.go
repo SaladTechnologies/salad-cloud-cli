@@ -11,6 +11,7 @@ import (
 // can meet after login (a rejected key, no key, organization or project, an
 // invalid name), as every command reports them.
 func TestRunTimeErrors(t *testing.T) {
+	t.Parallel()
 	k, o := testAPIKey, testOtherAPIKey
 	saved := &config.File{APIKey: k, Organization: "my-org", Project: "default"}
 	quotas := []string{"quotas", "get"}
@@ -192,6 +193,7 @@ func TestRunTimeErrors(t *testing.T) {
 // variable fails before any request, and a project only where the command
 // uses one.
 func TestRunTimeNameCheckMakesNoRequest(t *testing.T) {
+	t.Parallel()
 	saved := &config.File{APIKey: testAPIKey, Organization: "my-org", Project: "default"}
 	o := session{args: []string{"quotas", "get", "--org", "Acme Prod"}, saved: saved}.run(t)
 	if o.code != 6 || len(o.api.Requests()) != 0 {
@@ -215,6 +217,7 @@ func TestRunTimeNameCheckMakesNoRequest(t *testing.T) {
 // reported as the organization, with the fix for where it came from; names
 // are listed only at a terminal (which costs the listing).
 func TestVanishedOrganization(t *testing.T) {
+	t.Parallel()
 	k := testAPIKey
 	gone := &config.File{APIKey: k, Organization: "old-org", Project: "default"}
 	list := []string{"cg", "list"}

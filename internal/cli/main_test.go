@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -90,6 +91,23 @@ func newTestRun(t *testing.T) *testRun {
 	r := &testRun{App: newApp(testDeps(env)), env: env, root: nil}
 	r.root = New(r.App)
 	return r
+}
+
+// clone is a run with r's environment, seams and output mode that the test
+// changes without changing r: a parallel subtest's own copy of its parent's
+// setup.
+func (r *testRun) clone(t *testing.T) *testRun {
+	t.Helper()
+	env := maps.Clone(r.env)
+	d := r.Deps
+	own := testDeps(env)
+	d.Env.Getenv, d.Environ = own.Env.Getenv, own.Environ
+	c := &testRun{App: newApp(d), env: env, root: nil}
+	if cerr := c.printer.SetMode(r.printer.Mode()); cerr != nil {
+		t.Fatal(cerr)
+	}
+	c.root = New(c.App)
+	return c
 }
 
 // setenv sets the variable k to v for the run's later reads.

@@ -23,6 +23,7 @@ func gatewayFake() *fakeAPI {
 }
 
 func TestGatewayLoginBranches(t *testing.T) {
+	t.Parallel()
 	k, w := testGatewayKey, testOtherGatewayKey
 	gw := func(args ...string) []string { return append([]string{"ai-gateway", "login"}, args...) }
 	piped := gw("--api-key", "-")
@@ -283,6 +284,7 @@ func TestGatewayLoginBranches(t *testing.T) {
 }
 
 func TestGatewayLogoutBranches(t *testing.T) {
+	t.Parallel()
 	k, w := testGatewayKey, testOtherGatewayKey
 	both := &config.File{APIKey: testAPIKey, Organization: "my-org", GatewayAPIKey: k}
 	runBranches(t, []branchCase{

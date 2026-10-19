@@ -154,6 +154,7 @@ func validationSites(t *testing.T, root string) []validationSite {
 // Rows must also still match a check somewhere in internal/, so the table
 // cannot keep a check that is gone.
 func TestValidationTable(t *testing.T) {
+	t.Parallel()
 	rows := readValidationTable(t)
 	match := func(s validationSite) []*validationRow {
 		var out []*validationRow
@@ -198,6 +199,7 @@ func TestValidationTable(t *testing.T) {
 // TestValidationSitesReadHints: a hint chained onto a check is read as the
 // site's hint, so a row can name the hint as the field its fragment is in.
 func TestValidationSitesReadHints(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	src := `package x
 

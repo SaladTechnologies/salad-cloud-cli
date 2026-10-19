@@ -10,6 +10,7 @@ import (
 // TestAtTerminal: SALAD_CLI_NO_PROMPT, or CI set to anything but empty,
 // false or 0, makes a terminal count as none.
 func TestAtTerminal(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	old := app.Console
 	t.Cleanup(func() { app.Console = old })
@@ -49,6 +50,7 @@ func TestAtTerminal(t *testing.T) {
 // TestErrorHint: a hint prints as a hint: line under the error in table
 // mode and as the hint key in the error document, which is ASCII.
 func TestErrorHint(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	var buf strings.Builder
 	old := app.Stderr

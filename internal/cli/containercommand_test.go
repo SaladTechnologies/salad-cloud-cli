@@ -11,6 +11,7 @@ import (
 // TestValidateCommand: the words after -- reach the node unchanged, where
 // the first runs as the program in place of the image's ENTRYPOINT and CMD.
 func TestValidateCommand(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	tests := []struct {
 		name     string
@@ -36,6 +37,8 @@ func TestValidateCommand(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			cerr := app.validateCommand(tt.words, tt.given)
 			if tt.wantCode == 0 {
 				if cerr != nil {
@@ -53,6 +56,7 @@ func TestValidateCommand(t *testing.T) {
 // TestValidateCommandGitBash: rewritten words are caught only under Git Bash,
 // and never inside a script word, whose text is literal.
 func TestValidateCommandGitBash(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	rewritten := []string{"C:/Program-Files/Git/usr/bin/bash", "-c", "x"}
 	app.setenv("MSYSTEM", "")
@@ -77,6 +81,7 @@ func TestValidateCommandGitBash(t *testing.T) {
 // TestWarnCommand: a spaced first word and saladcloud's own flags after --
 // draw a warning; ordinary commands do not.
 func TestWarnCommand(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	create, _, err := app.root.Find([]string{"container-groups", "create"})
 	if err != nil {
@@ -115,6 +120,7 @@ func make101() []string {
 // TestCreateSendsCommand: the words after -- become container.command,
 // exactly as given, and a positional after them is not taken for the name.
 func TestCreateSendsCommand(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	posted := app.stubCreate(t)
 	script := `echo "hi there"; sleep 5`
@@ -134,6 +140,7 @@ func TestCreateSendsCommand(t *testing.T) {
 
 // TestCreateCommandArgs: one positional before --, any number after.
 func TestCreateCommandArgs(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	_, err := app.runRoot(t, "container-groups", "create", "a", "b", "--image", "x", "--", "sleep", "1")
 	var cerr *clierr.Error
@@ -150,6 +157,7 @@ func TestCreateCommandArgs(t *testing.T) {
 // TestUpdatePatchCommand: update -- <words> puts container.command in the
 // patch, over a file's.
 func TestUpdatePatchCommand(t *testing.T) {
+	t.Parallel()
 	wire, _, cerr := buildUpdatePatch([]byte(`{"container":{"command":["old"],"image":"i"}}`),
 		updateFlags{Command: []string{"python", "app.py"}}, nil)
 	if cerr != nil {

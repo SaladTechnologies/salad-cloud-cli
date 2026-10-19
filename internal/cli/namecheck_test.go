@@ -13,6 +13,7 @@ import (
 // (equal to a key in use or saved, or longer than any name) fails before any
 // request, by where it came from, without the value.
 func TestKeyLikeNamesAreNeverShown(t *testing.T) {
+	t.Parallel()
 	k := testAPIKey
 	saved := &config.File{APIKey: k, Organization: "my-org", Project: "default"}
 	long := strings.Repeat("a", 64)
@@ -120,6 +121,7 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 // without sending it, and orgs, which never uses the organization, lists
 // regardless.
 func TestInvalidOrganizationName(t *testing.T) {
+	t.Parallel()
 	saved := &config.File{APIKey: testAPIKey}
 	env := map[string]string{"SALAD_ORGANIZATION": "Acme Prod"}
 	o := session{args: []string{"whoami"}, saved: saved, env: env}.run(t)
@@ -145,6 +147,7 @@ func TestInvalidOrganizationName(t *testing.T) {
 // TestTrimmedValues: a trailing carriage return (a Windows-saved file
 // sourced in WSL or Git Bash) neither breaks a name nor reads as another key.
 func TestTrimmedValues(t *testing.T) {
+	t.Parallel()
 	saved := &config.File{APIKey: testAPIKey, Organization: "my-org", Project: "default"}
 	o := session{
 		args:  []string{"quotas", "get"},
@@ -172,6 +175,7 @@ func TestTrimmedValues(t *testing.T) {
 // organization or the project neither offers nor accepts --org or
 // --project.
 func TestFlagsACommandDoesNotRead(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	saved := &config.File{APIKey: testAPIKey, Organization: "my-org", Project: "default"}
 	for _, args := range [][]string{

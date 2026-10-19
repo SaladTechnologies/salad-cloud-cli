@@ -10,6 +10,7 @@ import (
 )
 
 func TestDescribeNotFound(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		in   *clierr.Error
@@ -78,6 +79,7 @@ func TestDescribeNotFound(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := describeNotFound(tt.in, "", `container group "%s" not found in %s/%s`, "demo", "acme", "prod")
 			if got == nil {
 				t.Fatal("describeNotFound returned nil")
@@ -96,6 +98,7 @@ func TestDescribeNotFound(t *testing.T) {
 // missing one the same way, cp and ssh included (they list the group's
 // instances first, and used to print the API's bare "Not Found").
 func TestGroupNotFoundEverywhere(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	want := `container group "nosuch" not found in my-org/default`
 	for _, args := range [][]string{
@@ -106,6 +109,8 @@ func TestGroupNotFoundEverywhere(t *testing.T) {
 		{"cg", "logs", "nosuch", "--instance", "8a2f"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			app.stubAPI(t, map[string]string{quotasRoute: `{}`}) // the organization exists
 			_, err := app.runRoot(t, args...)
 			var cerr *clierr.Error
@@ -119,6 +124,7 @@ func TestGroupNotFoundEverywhere(t *testing.T) {
 }
 
 func TestDescribeNotFoundNon404Untouched(t *testing.T) {
+	t.Parallel()
 	in := &clierr.Error{Code: clierr.CodeAuth, Kind: clierr.KindAuth, Message: "Unauthorized", HTTPStatus: ptr.To(401)}
 	got := describeNotFound(in, "", `container group "%s" not found in %s/%s`, "demo", "acme", "prod")
 	if got != in {
@@ -130,12 +136,14 @@ func TestDescribeNotFoundNon404Untouched(t *testing.T) {
 }
 
 func TestDescribeNotFoundNil(t *testing.T) {
+	t.Parallel()
 	if got := describeNotFound(nil, "", "context %s", "x"); got != nil {
 		t.Errorf("describeNotFound(nil) = %v, want nil", got)
 	}
 }
 
 func TestDescribeNotFoundDoesNotMutateInput(t *testing.T) {
+	t.Parallel()
 	in := &clierr.Error{
 		Code:       clierr.CodeNotFound,
 		Kind:       clierr.KindNotFound,
@@ -153,6 +161,7 @@ func TestDescribeNotFoundDoesNotMutateInput(t *testing.T) {
 // TestDescribeNotFoundSetsTheHint: the one fix replaces any other; with
 // none, the error keeps what it had.
 func TestDescribeNotFoundSetsTheHint(t *testing.T) {
+	t.Parallel()
 	nf := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, "Not Found").WithHint("old")
 	if got := describeNotFound(nf, "new", "x"); got.HintText() != "new" {
 		t.Errorf("hint %q, want new", got.HintText())

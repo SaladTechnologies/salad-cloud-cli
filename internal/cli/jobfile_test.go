@@ -16,6 +16,7 @@ import (
 // fails on its first field (`unknown field "prompt"`), so the error also
 // says what a job file looks like, without changing its exit code or kind.
 func TestLoadJobFileShapeHint(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	dir := t.TempDir()
 	write := func(name, body string) string {
@@ -38,6 +39,8 @@ func TestLoadJobFileShapeHint(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			var proto queues.QueueJobPrototype
 			cerr := app.loadJobFile(write(strings.ReplaceAll(tt.name, " ", "-")+".yaml", tt.body), &proto)
 			if (cerr != nil) != tt.wantErr {

@@ -50,6 +50,7 @@ func (app *testRun) stubAvailability(t *testing.T) *[]int {
 }
 
 func TestAvailabilityCombinedIsThePlatformsAnswer(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	counts := app.stubAvailability(t)
 	out, err := app.runRoot(t, "availability", "--gpu", classA, "--gpu", classB, "-o", "json")
@@ -78,6 +79,7 @@ func TestAvailabilityCombinedIsThePlatformsAnswer(t *testing.T) {
 }
 
 func TestAvailabilityOneClassHasNullCombined(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAvailability(t)
 	out, err := app.runRoot(t, "availability", "--gpu", classA, "-o", "json")
@@ -92,6 +94,7 @@ func TestAvailabilityOneClassHasNullCombined(t *testing.T) {
 }
 
 func TestAvailabilityCombinedTableRow(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAvailability(t)
 	out, err := app.runRoot(t, "availability", "--gpu", classA, "--gpu", classB)
@@ -106,6 +109,7 @@ func TestAvailabilityCombinedTableRow(t *testing.T) {
 // A CPU-only answer carries combined too, always null, so .combined exists
 // in every availability document.
 func TestAvailabilityCPUHasNullCombined(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAvailability(t)
 	out, err := app.runRoot(t, "availability", "--cpu", "2", "-o", "json")
@@ -122,6 +126,7 @@ func TestAvailabilityCPUHasNullCombined(t *testing.T) {
 // TestAvailabilityOnCallColumn: the table shows ON-CALL only when a row
 // reports an on-call count other than 0; the JSON keeps the field.
 func TestAvailabilityOnCallColumn(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.stubAvailability(t) // on-call counts 7 and 99
 	if out, err := app.runRoot(

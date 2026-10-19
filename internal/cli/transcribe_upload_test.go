@@ -16,6 +16,7 @@ import (
 // When the job cannot be created, nothing will read the local file's S4
 // upload, so transcribe deletes it rather than leave a signed copy behind.
 func TestTranscribeDeletesUploadWhenJobCreateFails(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	var mu sync.Mutex
 	var seen []string
@@ -35,7 +36,7 @@ func TestTranscribeDeletesUploadWhenJobCreateFails(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	app.stubAPI(t, nil)
 	app.setenv("SALAD_CLI_API_BASE_URL", srv.URL)
 	app.setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
@@ -63,6 +64,7 @@ func TestTranscribeDeletesUploadWhenJobCreateFails(t *testing.T) {
 }
 
 func TestTranscriptionKind(t *testing.T) {
+	t.Parallel()
 	failed := clierr.New(clierr.CodeGeneric, clierr.KindJobFailed, "job failed")
 	if got := transcriptionKind(failed); got.Kind != clierr.KindTranscriptionFailed || got.Code != clierr.CodeGeneric {
 		t.Errorf("failed job = %s/%d, want transcription_failed/1", got.Kind, got.Code)
@@ -79,6 +81,7 @@ func TestTranscriptionKind(t *testing.T) {
 // kind, not the generic job_failed, which is the wiring transcriptionKind's
 // unit test cannot see.
 func TestTranscribeFailedJobIsTranscriptionFailed(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	const id = "8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -94,7 +97,7 @@ func TestTranscribeFailedJobIsTranscriptionFailed(t *testing.T) {
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	app.stubAPI(t, nil)
 	app.setenv("SALAD_CLI_API_BASE_URL", srv.URL)
 	_, err := app.runRoot(t, "inference", "transcribe", "https://example.com/a.wav", "-o", "json")

@@ -10,6 +10,7 @@ import (
 // network error; the command is named by its full path even when an alias
 // ran it.
 func TestCtrlCDuringARequest(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		args     []string
 		cancelOn string
@@ -21,11 +22,12 @@ func TestCtrlCDuringARequest(t *testing.T) {
 	} {
 		for _, mode := range []string{"table", "json"} {
 			t.Run(strings.Join(tc.args, " ")+"/"+mode, func(t *testing.T) {
+				t.Parallel()
 				api := newFakeAPI()
 				api.cancelOn = tc.cancelOn
 				o := session{
 					args: append(append([]string{}, tc.args...), "-o", mode), api: api,
-					env: with(keyEnv, "SALAD_AI_GATEWAY_API_KEY", testGatewayKey),
+					env: with(keyEnv(), "SALAD_AI_GATEWAY_API_KEY", testGatewayKey),
 				}.run(t)
 				if o.code != 1 {
 					t.Fatalf("exit %d, want 1:\n%s", o.code, o.stderr)
@@ -52,6 +54,7 @@ func TestCtrlCDuringARequest(t *testing.T) {
 // TestCtrlCEndsOpenEndedCommandsCleanly: logs --follow and --watch stop with
 // exit 0 when Ctrl-C lands mid-request, as before.
 func TestCtrlCEndsOpenEndedCommandsCleanly(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		args     []string
 		cancelOn string
@@ -61,9 +64,10 @@ func TestCtrlCEndsOpenEndedCommandsCleanly(t *testing.T) {
 		{[]string{"cg", "list", "--watch"}, "/containers"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
+			t.Parallel()
 			api := newFakeAPI()
 			api.cancelOn = tc.cancelOn
-			o := session{args: tc.args, api: api, env: keyEnv}.run(t)
+			o := session{args: tc.args, api: api, env: keyEnv()}.run(t)
 			if o.code != 0 {
 				t.Errorf("exit %d, want 0:\n%s", o.code, o.stderr)
 			}

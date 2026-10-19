@@ -24,6 +24,7 @@ func (app *testRun) runExecute(t *testing.T, args ...string) (code int, stdout, 
 // TestErrorDocumentIsNotHTMLEscaped: a placeholder in a message reads as
 // typed, not as the HTML-safe escape json.Marshal would write.
 func TestErrorDocumentIsNotHTMLEscaped(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	_, _, stderr := app.runExecute(t, "container-groups", "scale", "sr-ex2", "-o", "json")
 	escaped := `\` + "u003c"
@@ -36,6 +37,7 @@ func TestErrorDocumentIsNotHTMLEscaped(t *testing.T) {
 // before PersistentPreRunE sets the output mode, so Execute must still report
 // an argument error as the one-line JSON error document under -o json.
 func TestCommandLineErrorsHonourJSONMode(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	cases := []struct {
 		name string
@@ -52,6 +54,8 @@ func TestCommandLineErrorsHonourJSONMode(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			code, stdout, stderr := app.runExecute(t, tc.args...)
 			if code != clierr.CodeUsage {
 				t.Errorf("exit = %d, want %d", code, clierr.CodeUsage)
@@ -91,6 +95,7 @@ func TestCommandLineErrorsHonourJSONMode(t *testing.T) {
 // errors stay in table form — including an invalid -o, which cannot itself
 // select json.
 func TestCommandLineErrorsInTableMode(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	cases := []struct {
 		name string
@@ -103,6 +108,8 @@ func TestCommandLineErrorsInTableMode(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			code, stdout, stderr := app.runExecute(t, tc.args...)
 			if code != clierr.CodeUsage {
 				t.Errorf("exit = %d, want %d", code, clierr.CodeUsage)
@@ -123,6 +130,7 @@ func TestCommandLineErrorsInTableMode(t *testing.T) {
 // Errors stay the one-line JSON document under -o yaml, so a script parses
 // one error shape in every machine mode.
 func TestErrorsAreJSONUnderYAML(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	code, stdout, stderr := app.runExecute(t, "container-groups", "get", "-o", "yaml")
 	if code != clierr.CodeUsage || stdout != "" {
@@ -141,9 +149,12 @@ func TestErrorsAreJSONUnderYAML(t *testing.T) {
 
 // --version is 'version': the same document under -o json, wherever -o sits.
 func TestVersionFlag(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	for _, args := range [][]string{{"--version", "-o", "json"}, {"-o", "json", "--version"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+			app := app.clone(t)
 			code, stdout, stderr := app.runExecute(t, args...)
 			var doc map[string]any
 			if code != clierr.CodeOK || json.Unmarshal([]byte(stdout), &doc) != nil {
@@ -155,6 +166,8 @@ func TestVersionFlag(t *testing.T) {
 		})
 	}
 	t.Run("table", func(t *testing.T) {
+		t.Parallel()
+		app := app.clone(t)
 		code, stdout, _ := app.runExecute(t, "--version")
 		if code != clierr.CodeOK || !strings.HasPrefix(stdout, "saladcloud") {
 			t.Errorf("exit %d, stdout %q", code, stdout)

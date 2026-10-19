@@ -21,6 +21,7 @@ func (app *testRun) runAgentInitCmd(t *testing.T, args ...string) (stdout string
 }
 
 func TestAgentInitResultStableJSONShape(t *testing.T) {
+	t.Parallel()
 	data, err := json.Marshal(agentInitResult{Action: "printed", Reason: "--print", Version: "dev"})
 	if err != nil {
 		t.Fatal(err)
@@ -43,6 +44,7 @@ func TestAgentInitResultStableJSONShape(t *testing.T) {
 }
 
 func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.setenv(agentdoc.EnvClaudeCode, "")
 	dir := t.TempDir()
@@ -118,6 +120,7 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 }
 
 func TestAgentInitClaudeCodeTargetsCLAUDEmd(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.setenv(agentdoc.EnvClaudeCode, "1")
 	dir := t.TempDir()
@@ -141,6 +144,7 @@ func TestAgentInitClaudeCodeTargetsCLAUDEmd(t *testing.T) {
 }
 
 func TestAgentInitPrintWritesNothing(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.setenv(agentdoc.EnvClaudeCode, "")
 	dir := t.TempDir()
@@ -170,6 +174,7 @@ func TestAgentInitPrintWritesNothing(t *testing.T) {
 }
 
 func TestAgentInitMalformedIsInvalidInput(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.setenv(agentdoc.EnvClaudeCode, "")
 	dir := t.TempDir()
@@ -190,6 +195,7 @@ func TestAgentInitMalformedIsInvalidInput(t *testing.T) {
 }
 
 func TestAgentInitFileOverrideCreatesParentDir(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	app.setenv(agentdoc.EnvClaudeCode, "")
 	dir := t.TempDir()
@@ -210,6 +216,7 @@ func TestAgentInitFileOverrideCreatesParentDir(t *testing.T) {
 }
 
 func TestAgentInitBadDir(t *testing.T) {
+	t.Parallel()
 	app := newTestRun(t)
 	_, err := app.runAgentInitCmd(
 		t,
