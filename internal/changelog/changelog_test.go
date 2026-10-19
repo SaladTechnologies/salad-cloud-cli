@@ -2,6 +2,7 @@ package changelog
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -33,24 +34,31 @@ Preamble that is not part of any release.
 func TestParse(t *testing.T) {
 	t.Parallel()
 	rs := Parse(sample)
-	if len(rs) != 4 {
-		t.Fatalf("got %d releases, want 4: %+v", len(rs), rs)
+	want := []string{
+		`version Unreleased, date <nil>, title first release, body "### Added\n- unreleased thing"`,
+		`version 1.2.0, date 2026-10-01, title <nil>, body "- one two"`,
+		`version 1.1.0, date 2026-09-15, title the middle one, body "- one point one"`,
+		`version 1.0.0, date 2026-09-01, title <nil>, body "- one oh"`,
 	}
-	if rs[0].Version != "Unreleased" || rs[0].Date != nil || rs[0].Title == nil || *rs[0].Title != "first release" {
-		t.Errorf("unreleased = %+v", rs[0])
+	if len(rs) != len(want) {
+		t.Fatalf("got %d releases, want %d: %+v", len(rs), len(want), rs)
 	}
-	if !strings.Contains(rs[0].Body, "unreleased thing") || strings.Contains(rs[0].Body, "one two") {
-		t.Errorf("unreleased body wrong: %q", rs[0].Body)
+	for i, r := range rs {
+		if got := describe(r); got != want[i] {
+			t.Errorf("release %d = %s, want %s", i, got, want[i])
+		}
 	}
-	if rs[1].Version != "1.2.0" || rs[1].Date == nil || *rs[1].Date != "2026-10-01" || rs[1].Title != nil {
-		t.Errorf("1.2.0 = %+v", rs[1])
+}
+
+// describe renders a release's fields on one line, an unset one as <nil>.
+func describe(r Release) string {
+	opt := func(s *string) string {
+		if s == nil {
+			return "<nil>"
+		}
+		return *s
 	}
-	if rs[2].Title == nil || *rs[2].Title != "the middle one" {
-		t.Errorf("1.1.0 title = %v", rs[2].Title)
-	}
-	if rs[3].Body != "- one oh" {
-		t.Errorf("1.0.0 body = %q", rs[3].Body)
-	}
+	return fmt.Sprintf("version %s, date %s, title %s, body %q", r.Version, opt(r.Date), opt(r.Title), r.Body)
 }
 
 func TestParseCRLF(t *testing.T) {

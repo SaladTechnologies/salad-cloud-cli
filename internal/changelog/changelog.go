@@ -75,38 +75,36 @@ func Since(releases []Release, since string) ([]Release, error) {
 		return releases, nil
 	}
 	if d, err := time.Parse(time.DateOnly, since); err == nil {
-		var out []Release
-		for _, r := range releases {
-			if r.Unreleased() {
-				out = append(out, r)
-				continue
-			}
-			if r.Date == nil {
-				continue
-			}
-			rd, err := time.Parse(time.DateOnly, *r.Date)
-			if err == nil && rd.After(d) {
-				out = append(out, r)
-			}
-		}
-		return out, nil
+		return keepNewer(releases, func(r Release) bool { return datedAfter(r, d) }), nil
 	}
 	want, ok := parseSemver(since)
 	if !ok {
 		return nil, ErrBadSince
 	}
+	return keepNewer(releases, func(r Release) bool {
+		v, ok := parseSemver(r.Version)
+		return ok && compare(v, want) > 0
+	}), nil
+}
+
+// keepNewer is the releases newer reports true for, plus the Unreleased section, in their order.
+func keepNewer(releases []Release, newer func(Release) bool) []Release {
 	var out []Release
 	for _, r := range releases {
-		if r.Unreleased() {
-			out = append(out, r)
-			continue
-		}
-		v, ok := parseSemver(r.Version)
-		if ok && compare(v, want) > 0 {
+		if r.Unreleased() || newer(r) {
 			out = append(out, r)
 		}
 	}
-	return out, nil
+	return out
+}
+
+// datedAfter reports whether r has a date, and one after d.
+func datedAfter(r Release, d time.Time) bool {
+	if r.Date == nil {
+		return false
+	}
+	rd, err := time.Parse(time.DateOnly, *r.Date)
+	return err == nil && rd.After(d)
 }
 
 // Render prints releases back as markdown, for table (human) mode.
