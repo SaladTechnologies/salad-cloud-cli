@@ -130,7 +130,7 @@ func TestEveryLeafDeclaresItsOutputKind(t *testing.T) {
 			t.Fatalf("%s: %v", path, err)
 		}
 		var m map[string]json.RawMessage
-		_ = json.Unmarshal(data, &m)
+		noErr(t, json.Unmarshal(data, &m))
 		for _, key := range []string{"action", "ok"} {
 			if _, ok := m[key]; !ok {
 				t.Errorf("%s changes state but its result lacks %q", path, key)

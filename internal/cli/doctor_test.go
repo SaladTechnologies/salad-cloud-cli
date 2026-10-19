@@ -718,8 +718,8 @@ func TestDoctorJSON(t *testing.T) {
 	stubSSH(t, true, false)
 	o := withMode(session{args: []string{"doctor"}, saved: &config.File{APIKey: testOtherAPIKey}}, "json").run(t)
 	doc := o.document(t)
-	items := doc["items"].([]any)
-	first, key := items[0].(map[string]any), items[2].(map[string]any)
+	items := assertAs[[]any](t, doc["items"])
+	first, key := assertAs[map[string]any](t, items[0]), assertAs[map[string]any](t, items[2])
 	if first["name"] != "config" || first["hint"] != nil || key["name"] != "api-key" ||
 		key["hint"] != "run saladcloud login to save a new key" {
 		t.Errorf("rows %v / %v", first, key)

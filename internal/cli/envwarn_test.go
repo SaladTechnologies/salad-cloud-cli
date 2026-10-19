@@ -24,7 +24,7 @@ func atATerminal(t *testing.T, terminal bool, os, mode string) {
 	if err := output.SetMode(mode); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { con, goos = oldCon, oldOS; _ = output.SetMode("table") })
+	t.Cleanup(func() { con, goos = oldCon, oldOS; setOutputMode(t, "table") })
 }
 
 func setEnv(t *testing.T, kv ...string) {

@@ -40,31 +40,29 @@ func TestGatewayListModelsAndComplete(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/models":
-			w.Write(
-				[]byte(
-					`{"object":"list","data":[{"id":"qwen3.6-35b-a3b","object":"model","owned_by":"salad"},{"id":"gemma-4-26b","object":"model"}]}`,
-				),
+			respond(
+				t,
+				w,
+				`{"object":"list","data":[{"id":"qwen3.6-35b-a3b","object":"model","owned_by":"salad"},{"id":"gemma-4-26b","object":"model"}]}`,
 			)
 		case "/chat/completions":
 			var req map[string]any
-			json.NewDecoder(r.Body).Decode(&req)
+			reportErr(t, json.NewDecoder(r.Body).Decode(&req))
 			if req["model"] != "qwen3.6-35b-a3b" {
 				t.Errorf("model = %v", req["model"])
 			}
-			msgs := req["messages"].([]any)
-			if len(msgs) != 1 || msgs[0].(map[string]any)["content"] != "say hi" {
+			msgs := assertAsOrError[[]any](t, req["messages"])
+			if len(msgs) != 1 || assertAsOrError[map[string]any](t, msgs[0])["content"] != "say hi" {
 				t.Errorf("messages = %v, want one user message", msgs)
 			}
 			// thinking=false must send the one switch the gateway honors.
-			kw, _ := req["chat_template_kwargs"].(map[string]any)
+			kw := valueAs[map[string]any](req["chat_template_kwargs"])
 			if kw == nil || kw["enable_thinking"] != false {
 				t.Errorf("chat_template_kwargs = %v, want enable_thinking false", req["chat_template_kwargs"])
 			}
-			w.Write(
-				[]byte(
-					`{"model":"qwen3.6-35b-a3b","choices":[{"message":{"role":"assistant","content":"  Hi ` +
-						`there.\n"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":3}}`,
-				),
+			respond(t, w,
+				`{"model":"qwen3.6-35b-a3b","choices":[{"message":{"role":"assistant","content":"  Hi `+
+					`there.\n"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":3}}`,
 			)
 		default:
 			http.NotFound(w, r)
@@ -97,11 +95,11 @@ func TestGatewayCheckKeyUsesACompletion(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/models":
-			w.Write([]byte(`{"object":"list","data":[{"id":"small"},{"id":"big"}]}`))
+			respond(t, w, `{"object":"list","data":[{"id":"small"},{"id":"big"}]}`)
 		case "/chat/completions":
 			sawCompletion = true
 			var req map[string]any
-			json.NewDecoder(r.Body).Decode(&req)
+			reportErr(t, json.NewDecoder(r.Body).Decode(&req))
 			if req["model"] != "big" || req["max_tokens"] != float64(1) {
 				t.Errorf(
 					"probe = model %v max_tokens %v, want the first model in sorted order (DefaultModel) and 1 token",
@@ -110,7 +108,7 @@ func TestGatewayCheckKeyUsesACompletion(t *testing.T) {
 				)
 			}
 			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(`{"error":{"message":"invalid api key"}}`))
+			respond(t, w, `{"error":{"message":"invalid api key"}}`)
 		}
 	}))
 	defer srv.Close()
@@ -158,7 +156,7 @@ func TestGatewayErrorMapping(t *testing.T) {
 	for _, tt := range tests {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(tt.status)
-			w.Write([]byte(tt.body))
+			respond(t, w, tt.body)
 		}))
 		g := newTestGateway(t, srv.URL)
 		_, cerr := g.ListModels(t.Context())

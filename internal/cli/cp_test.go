@@ -120,19 +120,19 @@ func runCp(t *testing.T, fake string, mode ...string) (out, stderr string, err e
 	t.Setenv("SALAD_CLI_TEST_FAKE_SFTP", fake)
 
 	realOut, realErr := os.Stdout, os.Stderr
-	outFile, _ := os.CreateTemp(t.TempDir(), "stdout")
-	errFile, _ := os.CreateTemp(t.TempDir(), "stderr")
+	outFile := must(os.CreateTemp(t.TempDir(), "stdout"))(t)
+	errFile := must(os.CreateTemp(t.TempDir(), "stderr"))(t)
 	os.Stdout, os.Stderr = outFile, errFile
 	out, err = runRoot(t, append([]string{"cg", "cp", "my-app/8a2f:/etc/hostname", "./h"}, mode...)...)
 	os.Stdout, os.Stderr = realOut, realErr
 	// Closed before TempDir's cleanup: Windows cannot remove an open file.
-	outFile.Close()
-	errFile.Close()
-	childOut, _ := os.ReadFile(outFile.Name())
+	noErr(t, outFile.Close())
+	noErr(t, errFile.Close())
+	childOut := must(os.ReadFile(outFile.Name()))(t)
 	if len(childOut) != 0 {
 		t.Errorf("sftp wrote %q to stdout; stdout carries only the result", childOut)
 	}
-	childErr, _ := os.ReadFile(errFile.Name())
+	childErr := must(os.ReadFile(errFile.Name()))(t)
 	return out, string(childErr), err
 }
 

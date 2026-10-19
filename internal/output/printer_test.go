@@ -33,7 +33,11 @@ func capture(t *testing.T) *bytes.Buffer {
 }
 
 func TestSetMode(t *testing.T) {
-	t.Cleanup(func() { _ = SetMode("table") })
+	t.Cleanup(func() {
+		if cerr := SetMode("table"); cerr != nil {
+			t.Error(cerr)
+		}
+	})
 
 	if err := SetMode("json"); err != nil {
 		t.Fatalf(`SetMode("json") error: %v`, err)
@@ -231,5 +235,17 @@ func TestJSONIsASCII(t *testing.T) {
 	bs := string(rune(92)) // a backslash
 	if got, want := string(ASCII([]byte(`"🎉"`))), `"`+bs+`ud83c`+bs+`udf89"`; got != want {
 		t.Errorf("ASCII = %s, want the surrogate pair %s", got, want)
+	}
+}
+
+// must returns v and fails the test when err is set, on the test goroutine:
+// must(os.ReadFile(p))(t).
+func must[T any](v T, err error) func(*testing.T) T {
+	return func(t *testing.T) T {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
 	}
 }

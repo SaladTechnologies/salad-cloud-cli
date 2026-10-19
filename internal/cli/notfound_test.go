@@ -141,7 +141,9 @@ func TestDescribeNotFoundDoesNotMutateInput(t *testing.T) {
 		Message:    "Not Found",
 		HTTPStatus: ptr.To(404),
 	}
-	_ = describeNotFound(in, "", `container group "%s" not found in %s/%s`, "demo", "acme", "prod")
+	if out := describeNotFound(in, "", `container group "%s" not found in %s/%s`, "demo", "acme", "prod"); out == in {
+		t.Error("describeNotFound returned its input, not a copy")
+	}
 	if in.Message != "Not Found" {
 		t.Errorf("input error was mutated to %q", in.Message)
 	}

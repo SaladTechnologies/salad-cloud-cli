@@ -30,8 +30,8 @@ func TestGetGpuAvailabilityRequest(t *testing.T) {
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod, gotPath, gotKey = r.Method, r.URL.EscapedPath(), r.Header.Get("Salad-Api-Key")
-		gotBody, _ = io.ReadAll(r.Body)
-		w.Write([]byte(`{"available_gpu_high":9,"available_gpu_low":30,"unknown_field":true}`))
+		gotBody = should(io.ReadAll(r.Body))(t)
+		respond(t, w, `{"available_gpu_high":9,"available_gpu_low":30,"unknown_field":true}`)
 	}))
 	defer srv.Close()
 
@@ -69,8 +69,8 @@ func TestGetCPUAvailabilityDropsGpuClasses(t *testing.T) {
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		w.Write([]byte(`{"available_cpu_batch":120,"on_call_cpu":40}`))
+		reportErr(t, json.NewDecoder(r.Body).Decode(&body))
+		respond(t, w, `{"available_cpu_batch":120,"on_call_cpu":40}`)
 	}))
 	defer srv.Close()
 
@@ -103,7 +103,7 @@ func TestGetGpuAvailabilityRetries429(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusTooManyRequests)
-		w.Write([]byte(`{"title":"slow down"}`))
+		respond(t, w, `{"title":"slow down"}`)
 	}))
 	defer srv.Close()
 

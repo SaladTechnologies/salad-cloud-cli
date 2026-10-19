@@ -78,7 +78,7 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 	if res.Action != "unchanged" {
 		t.Errorf("second run action = %q, want unchanged", res.Action)
 	}
-	again, _ := os.ReadFile(filepath.Join(dir, agentdoc.FileAgents))
+	again := must(os.ReadFile(filepath.Join(dir, agentdoc.FileAgents)))(t)
 	if !bytes.Equal(again, content) {
 		t.Error("second run modified the file")
 	}
@@ -101,7 +101,7 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 	if res.Action != "updated" {
 		t.Errorf("third run action = %q, want updated", res.Action)
 	}
-	final, _ := os.ReadFile(filepath.Join(dir, agentdoc.FileAgents))
+	final := must(os.ReadFile(filepath.Join(dir, agentdoc.FileAgents)))(t)
 	s := string(final)
 	for _, keep := range []string{"# Project\n\nUser intro.\n\n", "\n## Testing\nUser outro.\n"} {
 		if !strings.Contains(s, keep) {
@@ -148,7 +148,7 @@ func TestAgentInitPrintWritesNothing(t *testing.T) {
 	if !strings.HasPrefix(out, "<!-- SALADCLOUD START") || !strings.HasSuffix(out, "<!-- SALADCLOUD END -->\n") {
 		t.Errorf("--print should emit exactly the block:\n%s", out)
 	}
-	entries, _ := os.ReadDir(dir)
+	entries := must(os.ReadDir(dir))(t)
 	if len(entries) != 0 {
 		t.Errorf("--print wrote files: %v", entries)
 	}
@@ -179,7 +179,7 @@ func TestAgentInitMalformedIsInvalidInput(t *testing.T) {
 	if err == nil || !asClierr(err, &ce) || ce.Code != clierr.CodeInvalidInput || ce.Kind != clierr.KindInvalidInput {
 		t.Fatalf("err = %v, want invalid_input exit 6", err)
 	}
-	after, _ := os.ReadFile(p)
+	after := must(os.ReadFile(p))(t)
 	if string(after) != broken {
 		t.Error("a malformed file must be left untouched")
 	}

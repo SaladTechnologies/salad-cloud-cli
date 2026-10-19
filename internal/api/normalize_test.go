@@ -23,14 +23,14 @@ func TestNormalizeNumericEnums(t *testing.T) {
 	if err := json.Unmarshal(fixed, &doc); err != nil {
 		t.Fatalf("fixed doc invalid: %v", err)
 	}
-	items := doc["items"].([]any)
-	if got := items[0].(map[string]any)["restart_policy"]; got != "always" {
+	items := assertAs[[]any](t, doc["items"])
+	if got := assertAs[map[string]any](t, items[0])["restart_policy"]; got != "always" {
 		t.Errorf("restart_policy 1 = %v, want always", got)
 	}
-	if got := items[1].(map[string]any)["restart_policy"]; got != "never" {
+	if got := assertAs[map[string]any](t, items[1])["restart_policy"]; got != "never" {
 		t.Errorf("string restart_policy = %v, want unchanged never", got)
 	}
-	if got := items[2].(map[string]any)["nested"].(map[string]any)["restart_policy"]; got != "never" {
+	if got := assertAs[map[string]any](t, assertAs[map[string]any](t, items[2])["nested"])["restart_policy"]; got != "never" {
 		t.Errorf("nested restart_policy 3 = %v, want never", got)
 	}
 
@@ -60,7 +60,7 @@ func TestNormalizeNumericEnums(t *testing.T) {
 func TestRestJSONNumericEnumRetry(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"items":[{"name":"legacy","restart_policy":2}]}`))
+		respond(t, w, `{"items":[{"name":"legacy","restart_policy":2}]}`)
 	}))
 	defer srv.Close()
 	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)

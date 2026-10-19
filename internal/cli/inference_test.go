@@ -219,7 +219,7 @@ func TestJobsLimitNote(t *testing.T) {
 			)
 		}
 	}
-	_ = output.SetMode("table")
+	setOutputMode(t, "table")
 }
 
 // TestJobTablesShareTheirWording: both job tables word the events row the

@@ -54,7 +54,7 @@ func TestConfigListResultStableJSONShape(t *testing.T) {
 	keys := make([]string, 0, len(doc.Items))
 	for _, item := range doc.Items {
 		var key string
-		_ = json.Unmarshal(item["key"], &key)
+		noErr(t, json.Unmarshal(item["key"], &key))
 		keys = append(keys, key)
 		if raw, ok := item["value"]; !ok || string(raw) != "null" {
 			t.Errorf("%s: value = %s (present %v), want null when unset", key, raw, ok)
@@ -70,7 +70,7 @@ func TestConfigListResultStableJSONShape(t *testing.T) {
 		t.Errorf("path = %q, want /tmp/config.json", doc.Path)
 	}
 	var top map[string]json.RawMessage
-	_ = json.Unmarshal(data, &top)
+	noErr(t, json.Unmarshal(data, &top))
 	if len(top) != 2 {
 		t.Errorf("got %d top-level keys, want items and path", len(top))
 	}

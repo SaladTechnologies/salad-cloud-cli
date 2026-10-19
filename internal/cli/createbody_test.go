@@ -26,13 +26,13 @@ func stubCreate(t *testing.T) *[]byte {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers"):
-			posted, _ = io.ReadAll(r.Body)
+			posted = should(io.ReadAll(r.Body))(t)
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"name":"new","current_state":{"status":"pending"},"version":1}`))
+			respond(t, w, `{"name":"new","current_state":{"status":"pending"},"version":1}`)
 		case strings.HasSuffix(r.URL.Path, "/containers/src"):
-			_, _ = w.Write([]byte(probeSource))
+			respond(t, w, probeSource)
 		case strings.HasSuffix(r.URL.Path, "/queues/jobs"):
-			_, _ = w.Write([]byte(`{"name":"jobs","container_groups":[]}`))
+			respond(t, w, `{"name":"jobs","container_groups":[]}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -131,7 +131,7 @@ func TestCreateQueueNotesTheWorker(t *testing.T) {
 		t.Errorf("stderr = %q, want the worker note", errOut)
 	}
 
-	resetFlags() // the first run's --queue would otherwise carry over
+	resetFlags(t) // the first run's --queue would otherwise carry over
 	stubCreate(t)
 	errOut = captureStderr(t, func() {
 		_, err = runRoot(

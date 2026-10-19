@@ -46,7 +46,7 @@ func TestGatewayTestResultShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got map[string]any
-	json.Unmarshal(b, &got)
+	noErr(t, json.Unmarshal(b, &got))
 	for _, k := range []string{"model", "prompt", "reply", "usage", "ok"} {
 		if _, ok := got[k]; !ok {
 			t.Errorf("key %q missing from %s", k, b)

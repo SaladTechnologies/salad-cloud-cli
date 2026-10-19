@@ -61,7 +61,12 @@ func TestLoadStdin(t *testing.T) {
 	}
 	orig := os.Stdin
 	os.Stdin = f
-	defer func() { os.Stdin = orig; f.Close() }()
+	defer func() {
+		os.Stdin = orig
+		if err := f.Close(); err != nil {
+			t.Error(err)
+		}
+	}()
 
 	var d demo
 	if cerr := Load("-", &d); cerr != nil {

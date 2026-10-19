@@ -73,7 +73,7 @@ func TestGetGroupDecodesLiveWireFormat(t *testing.T) {
 			t.Errorf("Salad-Api-Key = %q, want %q", got, "test-key")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(liveGroupBody))
+		respond(t, w, liveGroupBody)
 	}))
 	defer srv.Close()
 
@@ -104,7 +104,7 @@ func TestUpdateGroupSendsMergePatchContentType(t *testing.T) {
 		gotMethod = r.Method
 		gotContentType = r.Header.Get("Content-Type")
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(liveGroupBody))
+		respond(t, w, liveGroupBody)
 	}))
 	defer srv.Close()
 
@@ -131,9 +131,9 @@ func TestUpdateGroupRawSendsBodyVerbatim(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotContentType = r.Header.Get("Content-Type")
-		gotBody, _ = io.ReadAll(r.Body)
+		gotBody = should(io.ReadAll(r.Body))(t)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(liveGroupBody))
+		respond(t, w, liveGroupBody)
 	}))
 	defer srv.Close()
 
@@ -208,11 +208,11 @@ func TestRetryOn429ThenSuccess(t *testing.T) {
 		if calls == 1 {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte(`{"title":"Too Many Requests"}`))
+			respond(t, w, `{"title":"Too Many Requests"}`)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(liveGroupBody))
+		respond(t, w, liveGroupBody)
 	}))
 	defer srv.Close()
 
@@ -270,9 +270,9 @@ func TestCreateGroupPreservesExplicitFalseOnTheWire(t *testing.T) {
 	var gotMethod, gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod, gotPath = r.Method, r.URL.Path
-		gotBody, _ = io.ReadAll(r.Body)
+		gotBody = should(io.ReadAll(r.Body))(t)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(liveGroupBody))
+		respond(t, w, liveGroupBody)
 	}))
 	defer srv.Close()
 
@@ -308,7 +308,7 @@ func TestCreateGroupPreservesExplicitFalseOnTheWire(t *testing.T) {
 	if got, ok := sent["autostart_policy"]; !ok || got != false {
 		t.Errorf("autostart_policy on the wire = %v (present=%t), want false", got, ok)
 	}
-	container, _ := sent["container"].(map[string]any)
+	container := valueAs[map[string]any](sent["container"])
 	if container == nil {
 		t.Fatalf("no container on the wire: %s", gotBody)
 	}
@@ -333,9 +333,9 @@ func TestCreateGroupRawSendsBodyVerbatim(t *testing.T) {
 	var gotMethod string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
-		gotBody, _ = io.ReadAll(r.Body)
+		gotBody = should(io.ReadAll(r.Body))(t)
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(liveGroupBody))
+		respond(t, w, liveGroupBody)
 	}))
 	defer srv.Close()
 
@@ -353,3 +353,75 @@ func TestCreateGroupRawSendsBodyVerbatim(t *testing.T) {
 
 func strPtr(s string) *string { return &s }
 func int64Ptr(i int64) *int64 { return &i }
+
+// respond writes body as an httptest handler's response. The handler runs on
+// its own goroutine, so a failed write is reported, not fatal.
+func respond(t *testing.T, w io.Writer, body string) {
+	t.Helper()
+	if _, err := io.WriteString(w, body); err != nil {
+		t.Errorf("writing the response: %v", err)
+	}
+}
+
+// must returns v and fails the test when err is set, on the test goroutine:
+// must(os.ReadFile(p))(t).
+func must[T any](v T, err error) func(*testing.T) T {
+	return func(t *testing.T) T {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+}
+
+// should is must for code off the test goroutine (a handler, a cleanup): it
+// reports err and carries on.
+func should[T any](v T, err error) func(*testing.T) T {
+	return func(t *testing.T) T {
+		t.Helper()
+		if err != nil {
+			t.Error(err)
+		}
+		return v
+	}
+}
+
+// reportErr reports err without stopping the test, for a handler or a cleanup.
+func reportErr(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+// assertAs returns v as a T and fails the test when it holds something else.
+func assertAs[T any](t *testing.T, v any) T {
+	t.Helper()
+	x, ok := v.(T)
+	if !ok {
+		t.Fatalf("got %T, want %T", v, x)
+	}
+	return x
+}
+
+// assertAsOrError is assertAs for a handler: it reports a mismatch and returns
+// T's zero value.
+func assertAsOrError[T any](t *testing.T, v any) T {
+	t.Helper()
+	x, ok := v.(T)
+	if !ok {
+		t.Errorf("got %T, want %T", v, x)
+	}
+	return x
+}
+
+// valueAs returns v as a T, or T's zero value when it holds something else
+// (a field missing from a decoded document).
+func valueAs[T any](v any) T {
+	if x, ok := v.(T); ok {
+		return x
+	}
+	var zero T
+	return zero
+}

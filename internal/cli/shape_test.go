@@ -33,7 +33,7 @@ func emitJSON(t *testing.T, v any, stream bool, mode string) any {
 	output.Stdout = &buf
 	t.Cleanup(func() {
 		output.Stdout = old
-		_ = output.SetMode("table")
+		setOutputMode(t, "table")
 	})
 	if err := output.SetMode(mode); err != nil {
 		t.Fatal(err)
@@ -223,10 +223,10 @@ func TestWhoamiOrganizationsUnavailableVsEmpty(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if strings.HasSuffix(r.URL.Path, "/v1/organizations") {
 					w.WriteHeader(tc.status)
-					_, _ = w.Write([]byte(tc.body))
+					respond(t, w, tc.body)
 					return
 				}
-				_, _ = w.Write([]byte(`{}`)) // the quotas probe
+				respond(t, w, `{}`) // the quotas probe
 			}))
 			defer srv.Close()
 			t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)

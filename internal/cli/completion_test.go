@@ -25,7 +25,7 @@ func runComplete(t *testing.T, args ...string) (stdout, stderr string) {
 		if c, _, err := rootCmd.Find([]string{"__complete"}); err == nil && c != rootCmd {
 			rootCmd.RemoveCommand(c)
 		}
-		resetRun()
+		resetRun(t)
 	})
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -35,12 +35,12 @@ func runComplete(t *testing.T, args ...string) (stdout, stderr string) {
 	os.Stderr = w
 	osErr := make(chan string)
 	go func() {
-		b, _ := io.ReadAll(r)
+		b := should(io.ReadAll(r))(t)
 		osErr <- string(b)
 	}()
 	rootCmd.SetArgs(append([]string{"__complete"}, args...))
 	execErr := rootCmd.Execute()
-	w.Close()
+	noErr(t, w.Close())
 	os.Stderr = oldStderr
 	written := <-osErr
 	if execErr != nil {

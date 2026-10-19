@@ -99,7 +99,11 @@ func TestRejectUnknownsGetResponseTellLeads(t *testing.T) {
 	// --debug adds the per-field list on stderr.
 	api.SetDebug(api.DebugRequests)
 	t.Cleanup(func() { api.SetDebug(api.DebugOff) })
-	stderr := captureStderr(t, func() { rejectUnknowns(us) })
+	stderr := captureStderr(t, func() {
+		if rejectUnknowns(us) == nil {
+			t.Error("the unknown fields were not rejected")
+		}
+	})
 	for _, want := range []string{"debug: 14 unknown fields", "not in this CLI's update schema", "response-only in this CLI's API model", `"priority" belongs at "container.priority"`} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("--debug output lacks %q: %s", want, stderr)
@@ -129,8 +133,8 @@ func captureStderr(t *testing.T, fn func()) string {
 	os.Stderr = f
 	fn()
 	os.Stderr = old
-	f.Close() // before TempDir's cleanup: Windows cannot remove an open file
-	b, _ := os.ReadFile(f.Name())
+	noErr(t, f.Close()) // before TempDir's cleanup: Windows cannot remove an open file
+	b := must(os.ReadFile(f.Name()))(t)
 	return string(b)
 }
 

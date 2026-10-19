@@ -757,8 +757,8 @@ func TestLoginBranches(t *testing.T) {
 				wantOverrides = []string{}
 			}
 			var gotOverrides []string
-			for _, v := range doc["env_overrides"].([]any) {
-				gotOverrides = append(gotOverrides, v.(string))
+			for _, v := range assertAs[[]any](t, doc["env_overrides"]) {
+				gotOverrides = append(gotOverrides, assertAs[string](t, v))
 			}
 			slices.Sort(gotOverrides)
 			project := any(nil)

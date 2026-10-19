@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
 // TestAtTerminal: SALAD_CLI_NO_PROMPT, or CI set to anything but empty,
@@ -52,7 +51,7 @@ func TestErrorHint(t *testing.T) {
 	var buf strings.Builder
 	old := errOut
 	errOut = &buf
-	t.Cleanup(func() { errOut = old; _ = output.SetMode("table") })
+	t.Cleanup(func() { errOut = old; setOutputMode(t, "table") })
 	e := clierr.New(clierr.CodeUsage, clierr.KindUsage, "invalid organization name %q", "Café").
 		WithHint("did you mean %q?", "cafe")
 	printError(e)
@@ -61,7 +60,7 @@ func TestErrorHint(t *testing.T) {
 		t.Errorf("table mode:\n%q\nwant\n%q", got, want)
 	}
 	buf.Reset()
-	_ = output.SetMode("json")
+	setOutputMode(t, "json")
 	printError(e)
 	want := `{"error":{"exit_code":2,"kind":"usage","message":"invalid organization name \"Caf\u00e9\"","hint":"did ` +
 		`you mean \"cafe\"?","http_status":null}}` + "\n"

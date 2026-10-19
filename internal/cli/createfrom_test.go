@@ -64,7 +64,7 @@ func copySource(t *testing.T) string {
 	}
 	m["queue_connection"] = map[string]any{"path": "/job", "port": 8080, "queue_name": "jobs"}
 	m["restart_policy"] = "on_failure"
-	b, _ := json.Marshal(m)
+	b := must(json.Marshal(m))(t)
 	return string(b)
 }
 
@@ -107,7 +107,7 @@ func TestCopyDocument(t *testing.T) {
 		}
 	}
 	env, _ := lookupPath(doc, "container.environment_variables")
-	if env.(map[string]any)["weird.KEY-2"] != "x" {
+	if assertAs[map[string]any](t, env)["weird.KEY-2"] != "x" {
 		t.Errorf("env var with a dotted key not copied: %v", env)
 	}
 }
@@ -129,7 +129,7 @@ func TestCopyDocumentDisplayName(t *testing.T) {
 			t.Fatal(err)
 		}
 		var doc map[string]any
-		_ = json.Unmarshal(raw, &doc)
+		noErr(t, json.Unmarshal(raw, &doc))
 		if doc["display_name"] != tc.want {
 			t.Errorf(
 				"copyDocument(%q, %v) display_name = %v, want %q",

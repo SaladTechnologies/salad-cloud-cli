@@ -96,7 +96,7 @@ func TestFillPreservesNumbersAndEscapes(t *testing.T) {
 		Text string  `json:"text"`
 	}
 	v := nums{Big: 9007199254740993, F: 0.1, Text: "<a&b>"}
-	plain, _ := Marshal(v)
+	plain := must(Marshal(v))(t)
 	if got := fill(t, v); got != string(plain) {
 		t.Errorf("got %s, want %s (the encoder's own bytes)", got, plain)
 	}

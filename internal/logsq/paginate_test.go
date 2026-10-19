@@ -328,7 +328,8 @@ func TestDedupKeyUsesRawTimestampStrings(t *testing.T) {
 // pageSize entries whose emission Time is at or after start, ascending,
 // with PageMinTime/PageMaxTime set to the first and last entries'
 // RECEIVE time, which runs behind emission.
-func realisticFetcher(all []Entry) Fetcher {
+func realisticFetcher(t *testing.T, all []Entry) Fetcher {
+	t.Helper()
 	return func(_ context.Context, _, start, _ string, pageSize int) (*Page, *clierr.Error) {
 		from, err := time.Parse(time.RFC3339Nano, start)
 		if err != nil {
@@ -336,8 +337,12 @@ func realisticFetcher(all []Entry) Fetcher {
 		}
 		page := &Page{}
 		for _, e := range all {
-			t, _ := time.Parse(time.RFC3339Nano, e.Time)
-			if t.Before(from) {
+			emitted, err := time.Parse(time.RFC3339Nano, e.Time)
+			if err != nil {
+				t.Error(err)
+				continue
+			}
+			if emitted.Before(from) {
 				continue
 			}
 			page.Items = append(page.Items, e)
@@ -377,7 +382,7 @@ func TestFetchWindowResumesFromEmissionTimeNotPageMaxTime(t *testing.T) {
 		var got []Entry
 		cerr := FetchWindow(
 			t.Context(),
-			realisticFetcher(all),
+			realisticFetcher(t, all),
 			"q",
 			winStart,
 			winEnd,

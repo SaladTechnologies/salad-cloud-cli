@@ -30,7 +30,7 @@ func declared(t *testing.T, prefix string) map[string]string {
 			continue
 		}
 		for _, s := range g.Specs {
-			vs := s.(*ast.ValueSpec)
+			vs := assertAs[*ast.ValueSpec](t, s)
 			for i, n := range vs.Names {
 				if !strings.HasPrefix(n.Name, prefix) || i >= len(vs.Values) {
 					continue
@@ -41,7 +41,7 @@ func declared(t *testing.T, prefix string) map[string]string {
 				}
 				v := lit.Value
 				if lit.Kind == token.STRING {
-					v, _ = strconv.Unquote(v)
+					v = must(strconv.Unquote(v))(t)
 				}
 				out[n.Name] = v
 			}
@@ -262,4 +262,26 @@ func checkGuide(t *testing.T, kindConsts map[string]string, pairs []pair) {
 				p.pos, p.code, p.kind, got, kindConsts[p.kind], want)
 		}
 	}
+}
+
+// must returns v and fails the test when err is set, on the test goroutine:
+// must(os.ReadFile(p))(t).
+func must[T any](v T, err error) func(*testing.T) T {
+	return func(t *testing.T) T {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+}
+
+// assertAs returns v as a T and fails the test when it holds something else.
+func assertAs[T any](t *testing.T, v any) T {
+	t.Helper()
+	x, ok := v.(T)
+	if !ok {
+		t.Fatalf("got %T, want %T", v, x)
+	}
+	return x
 }

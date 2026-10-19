@@ -188,7 +188,10 @@ func TestUpdateEnvRemovalIsNotReportedAsASideEffect(t *testing.T) {
 		t.Error("expected the wire patch alone to flag the removal; the test no longer covers the bug")
 	}
 	// Without a removal there is nothing to add: intent is the wire patch.
-	w2, i2, _ := buildUpdatePatch(nil, updateFlags{Env: []string{"B=2"}}, map[string]*string{"A": ptr.To("1")})
+	w2, i2, cerr := buildUpdatePatch(nil, updateFlags{Env: []string{"B=2"}}, map[string]*string{"A": ptr.To("1")})
+	if cerr != nil {
+		t.Fatal(cerr)
+	}
 	if string(w2) != string(i2) {
 		t.Errorf("intent %s differs from wire %s with nothing removed", i2, w2)
 	}

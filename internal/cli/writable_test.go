@@ -53,7 +53,7 @@ func TestWritableDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("writableDocument: %v", err)
 	}
-	m := doc.(map[string]any)
+	m := assertAs[map[string]any](t, doc)
 
 	// Dropped: everything the patch schema cannot take.
 	for _, want := range []string{
@@ -79,20 +79,20 @@ func TestWritableDocument(t *testing.T) {
 	if m["scheduled-scaling-enabled"] != true {
 		t.Errorf("scheduled-scaling-enabled = %v, want true", m["scheduled-scaling-enabled"])
 	}
-	if acts, _ := m["scaling-actions"].([]any); len(acts) != 1 {
+	if acts := asType[[]any](m["scaling-actions"]); len(acts) != 1 {
 		t.Errorf("scaling-actions = %v, want one action", m["scaling-actions"])
 	}
 	if v, ok := m["liveness_probe"]; !ok || v != nil {
 		t.Errorf("liveness_probe = %v (present %v), want an explicit null", v, ok)
 	}
-	c := m["container"].(map[string]any)
-	if env, _ := c["environment_variables"].(map[string]any); env["A"] != "1" || env["weird.KEY-2"] != "x" {
+	c := assertAs[map[string]any](t, m["container"])
+	if env := asType[map[string]any](c["environment_variables"]); env["A"] != "1" || env["weird.KEY-2"] != "x" {
 		t.Errorf("environment_variables not preserved verbatim: %v", c["environment_variables"])
 	}
 	if c["image_caching"] != true {
 		t.Errorf("image_caching (patchable, even if the API ignores it) dropped: %v", c["image_caching"])
 	}
-	if net, _ := m["networking"].(map[string]any); len(net) != 1 || net["port"] != float64(8080) {
+	if net := asType[map[string]any](m["networking"]); len(net) != 1 || net["port"] != float64(8080) {
 		t.Errorf("networking = %v, want only port", m["networking"])
 	}
 

@@ -42,7 +42,7 @@ func readValidationTable(t *testing.T) []*validationRow {
 			in = false
 		case in:
 			if m := tableRow.FindStringSubmatch(line); m != nil {
-				code, _ := strconv.Atoi(m[1])
+				code := must(strconv.Atoi(m[1]))(t)
 				rows = append(rows, &validationRow{code: code, field: m[2], fragment: m[3]})
 			}
 		}

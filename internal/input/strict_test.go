@@ -225,7 +225,7 @@ func TestFilterTree(t *testing.T) {
 		"scaling-actions": []any{map[string]any{"replicas": float64(1), "schedule": "* * * * *", "when": "noon"}},
 	}
 	var dropped []string
-	out := FilterTree(doc, patchT, "", &dropped).(map[string]any)
+	out := assertAs[map[string]any](t, FilterTree(doc, patchT, "", &dropped))
 	slices.Sort(dropped)
 	if want := []string{
 		"container.hash",
@@ -243,14 +243,14 @@ func TestFilterTree(t *testing.T) {
 	if out["replicas"] != float64(2) {
 		t.Errorf("replicas = %v, want 2", out["replicas"])
 	}
-	c := out["container"].(map[string]any)
-	if c["image"] != "x" || c["environment_variables"].(map[string]any)["K"] != "v" {
+	c := assertAs[map[string]any](t, out["container"])
+	if c["image"] != "x" || assertAs[map[string]any](t, c["environment_variables"])["K"] != "v" {
 		t.Errorf("container not preserved: %v", c)
 	}
 	if _, has := c["hash"]; has {
 		t.Error("container.hash survived")
 	}
-	act := out["scaling-actions"].([]any)[0].(map[string]any)
+	act := assertAs[map[string]any](t, assertAs[[]any](t, out["scaling-actions"])[0])
 	if _, has := act["when"]; has || act["schedule"] != "* * * * *" {
 		t.Errorf("array element not filtered correctly: %v", act)
 	}
@@ -304,4 +304,14 @@ func TestEditDistance(t *testing.T) {
 			t.Errorf("editDistance(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
 		}
 	}
+}
+
+// assertAs returns v as a T and fails the test when it holds something else.
+func assertAs[T any](t *testing.T, v any) T {
+	t.Helper()
+	x, ok := v.(T)
+	if !ok {
+		t.Fatalf("got %T, want %T", v, x)
+	}
+	return x
 }

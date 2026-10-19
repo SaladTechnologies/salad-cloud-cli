@@ -28,10 +28,10 @@ func TestListInferenceEndpointsWirePath(t *testing.T) {
 			t.Errorf("Salad-Api-Key = %q, want %q", got, "test-key")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{
+		respond(t, w, `{
 		  "items": [{"name": "transcribe", "display_name": "Transcription", "description": "Speech to text"}],
 		  "page": 1, "page_size": 100, "total_size": 1
-		}`))
+		}`)
 	}))
 	defer srv.Close()
 
@@ -54,10 +54,10 @@ func TestCreateInferenceJobRoundTrip(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		gotBody, _ = io.ReadAll(r.Body)
+		gotBody = should(io.ReadAll(r.Body))(t)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(`{
+		respond(t, w, `{
 		  "id": "job-1",
 		  "inference_endpoint_name": "transcribe",
 		  "organization_name": "my-org",
@@ -66,7 +66,7 @@ func TestCreateInferenceJobRoundTrip(t *testing.T) {
 		  "events": [{"action": "created", "time": "2026-09-02T00:00:00Z"}],
 		  "create_time": "2026-09-02T00:00:00Z",
 		  "update_time": "2026-09-02T00:00:00Z"
-		}`))
+		}`)
 	}))
 	defer srv.Close()
 
@@ -88,7 +88,7 @@ func TestCreateInferenceJobRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(gotBody, &sent); err != nil {
 		t.Fatalf("request body is not JSON: %v (%s)", err, gotBody)
 	}
-	in, _ := sent["input"].(map[string]any)
+	in := valueAs[map[string]any](sent["input"])
 	if in == nil || in["url"] != "https://example.com/a.mp3" || in["language_code"] != "en" {
 		t.Errorf("sent input = %v, want the prototype's input object", sent["input"])
 	}
@@ -110,7 +110,7 @@ func TestGetAndCancelInferenceJobPaths(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"id": "job-1", "status": "running"}`))
+		respond(t, w, `{"id": "job-1", "status": "running"}`)
 	}))
 	defer srv.Close()
 
@@ -134,7 +134,7 @@ func TestInferenceEndpoint404Maps(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"title": "Not Found"}`))
+		respond(t, w, `{"title": "Not Found"}`)
 	}))
 	defer srv.Close()
 

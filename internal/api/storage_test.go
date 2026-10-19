@@ -47,16 +47,16 @@ func TestUploadFile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("FormFile: %v", err)
 		}
-		defer f.Close()
-		got, _ := io.ReadAll(f)
+		defer func() { reportErr(t, f.Close()) }()
+		got := should(io.ReadAll(f))(t)
 		if !bytes.Equal(got, fileBytes) {
 			t.Errorf("file part = %q, want %q", got, fileBytes)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(
-			[]byte(
-				`{"url": "https://storage-api.salad.com/organizations/my-org/files/saladcloud-cli/transcribe/meeting-123.mp3?token=abc"}`,
-			),
+		respond(
+			t,
+			w,
+			`{"url": "https://storage-api.salad.com/organizations/my-org/files/saladcloud-cli/transcribe/meeting-123.mp3?token=abc"}`,
 		)
 	}))
 	defer srv.Close()
@@ -87,7 +87,7 @@ func TestUploadFileUnsigned(t *testing.T) {
 			t.Error("signatureExp field sent, want absent for an unsigned upload")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"url": "https://storage-api.salad.com/x"}`))
+		respond(t, w, `{"url": "https://storage-api.salad.com/x"}`)
 	}))
 	defer srv.Close()
 
@@ -110,7 +110,7 @@ func TestUploadFileNon2xxMapsStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(`{"title": "Forbidden"}`))
+		respond(t, w, `{"title": "Forbidden"}`)
 	}))
 	defer srv.Close()
 

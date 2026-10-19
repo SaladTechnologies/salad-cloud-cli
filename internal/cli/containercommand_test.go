@@ -137,7 +137,7 @@ func TestCreateCommandArgs(t *testing.T) {
 	if !ok || cerr.Code != clierr.CodeUsage || !strings.Contains(cerr.Message, `unexpected argument "b"`) {
 		t.Errorf("two positionals: %v", err)
 	}
-	resetFlags()
+	resetFlags(t)
 	_, err = runRoot(t, "container-groups", "update", "a", "--")
 	if !errors.As(err, &cerr) || !strings.Contains(cerr.Message, "nothing after --") {
 		t.Errorf("update with nothing after --: %v", err)

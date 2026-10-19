@@ -199,10 +199,10 @@ func checkMachineStderr(t *testing.T, o outcome) {
 	if err != nil {
 		t.Fatalf("exit %d, but the last stderr line is not the error document (%v):\n%s", o.code, err, o.stderr)
 	}
-	if code, _ := doc["exit_code"].(float64); int(code) != o.code {
+	if code := asType[float64](doc["exit_code"]); int(code) != o.code {
 		t.Errorf("exit_code %v, process exited %d", doc["exit_code"], o.code)
 	}
-	kind, _ := doc["kind"].(string)
+	kind := asType[string](doc["kind"])
 	known := false
 	for _, k := range clierr.Kinds {
 		known = known || string(k) == kind
@@ -210,7 +210,7 @@ func checkMachineStderr(t *testing.T, o outcome) {
 	if !known {
 		t.Errorf("kind %q is not in clierr.Kinds", kind)
 	}
-	if msg, _ := doc["message"].(string); msg == "" || strings.Contains(msg, "\n") {
+	if msg := asType[string](doc["message"]); msg == "" || strings.Contains(msg, "\n") {
 		t.Errorf("message %q: want one non-empty line", msg)
 	}
 	t.Run("five keys", func(t *testing.T) {
@@ -234,7 +234,7 @@ func checkNoPasteInHints(t *testing.T, o outcome) {
 		}
 	}
 	if doc, err := o.errorDocument(); err == nil {
-		if h, _ := doc["hint"].(string); strings.Contains(strings.ToLower(h), "paste") {
+		if h := asType[string](doc["hint"]); strings.Contains(strings.ToLower(h), "paste") {
 			t.Errorf("hint mentions paste: %q", h)
 		}
 	}
@@ -524,7 +524,7 @@ func TestConfigWritesNameOverridingVariables(t *testing.T) {
 					}
 					var got []string
 					for _, v := range raw {
-						s, _ := v.(string)
+						s := asType[string](v)
 						got = append(got, s)
 					}
 					slices.Sort(got)

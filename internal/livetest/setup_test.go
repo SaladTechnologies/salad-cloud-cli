@@ -458,7 +458,7 @@ func TestSetupWhoami(t *testing.T) {
 		"ai_gateway_api_key": nil, "saved_ai_gateway_api_key": nil,
 		"authenticated": true, "config_path": d.path(),
 	})
-	if orgs, _ := doc["organizations"].([]any); !slices.Contains(orgs, any(org)) {
+	if orgs := valueAs[[]any](doc["organizations"]); !slices.Contains(orgs, any(org)) {
 		t.Errorf("whoami organizations = %v, want it to include %s", doc["organizations"], org)
 	}
 
@@ -497,7 +497,7 @@ func TestSetupDoctor(t *testing.T) {
 	rows := doctorRows(t, r)
 	names := make([]string, 0, len(rows))
 	for _, row := range rows {
-		names = append(names, row["name"].(string))
+		names = append(names, assertAs[string](t, row["name"]))
 		if _, ok := row["hint"]; !ok {
 			t.Errorf("doctor row %v has no hint key", row["name"])
 		}
@@ -516,7 +516,7 @@ func TestSetupDoctor(t *testing.T) {
 		pass = append(pass, "api-reachable")
 	}
 	for _, row := range rows {
-		if slices.Contains(pass, row["name"].(string)) && row["status"] != "pass" {
+		if slices.Contains(pass, assertAs[string](t, row["name"])) && row["status"] != "pass" {
 			t.Errorf("doctor %v = %v (%v), want pass", row["name"], row["status"], row["detail"])
 		}
 	}
@@ -813,7 +813,7 @@ func TestSetupGatewayLogin(t *testing.T) {
 		"ai_gateway_api_key": mask(gw), "ai_gateway_api_key_source": "env", "ai_gateway_api_key_saved": false,
 		"env_overrides": []any{}, "config_path": d.path(), "action": "logged_in", "ok": true,
 	})
-	if n, _ := doc["models"].(float64); n < 1 {
+	if n := valueAs[float64](doc["models"]); n < 1 {
 		t.Errorf("models = %v, want at least one", doc["models"])
 	}
 	if c, ok := doc["credits_available"].(bool); !ok {
@@ -824,4 +824,24 @@ func TestSetupGatewayLogin(t *testing.T) {
 	expect(t, "whoami after ai-gateway login", d.whoami(t, env), map[string]any{
 		"ai_gateway_api_key": mask(gw), "ai_gateway_api_key_source": "env", "saved_ai_gateway_api_key": nil,
 	})
+}
+
+// assertAs returns v as a T and fails the test when it holds something else.
+func assertAs[T any](t *testing.T, v any) T {
+	t.Helper()
+	x, ok := v.(T)
+	if !ok {
+		t.Fatalf("got %T, want %T", v, x)
+	}
+	return x
+}
+
+// valueAs returns v as a T, or T's zero value when it holds something else
+// (a field missing from a decoded document).
+func valueAs[T any](v any) T {
+	if x, ok := v.(T); ok {
+		return x
+	}
+	var zero T
+	return zero
 }

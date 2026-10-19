@@ -24,12 +24,12 @@ func TestTranscribeDeletesUploadWhenJobCreateFails(t *testing.T) {
 		mu.Unlock()
 		switch {
 		case r.Method == http.MethodPut:
-			w.Write([]byte(`{"url":"http://` + r.Host + r.URL.Path + `?token=t"}`))
+			respond(t, w, `{"url":"http://`+r.Host+r.URL.Path+`?token=t"}`)
 		case r.Method == http.MethodDelete:
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/jobs"):
 			w.WriteHeader(http.StatusPaymentRequired)
-			w.Write([]byte(`{"detail":"insufficient balance"}`))
+			respond(t, w, `{"detail":"insufficient balance"}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -83,12 +83,10 @@ func TestTranscribeFailedJobIsTranscriptionFailed(t *testing.T) {
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/inference-endpoints/transcribe/jobs"):
 			w.WriteHeader(http.StatusCreated)
-			w.Write([]byte(`{"id":"` + id + `","status":"pending","events":[]}`))
+			respond(t, w, `{"id":"`+id+`","status":"pending","events":[]}`)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/jobs/"+id):
-			w.Write(
-				[]byte(
-					`{"id":"` + id + `","status":"failed","events":[{"action":"failed","time":"2026-10-03T00:00:00Z"}]}`,
-				),
+			respond(t, w,
+				`{"id":"`+id+`","status":"failed","events":[{"action":"failed","time":"2026-10-03T00:00:00Z"}]}`,
 			)
 		default:
 			w.WriteHeader(http.StatusNotFound)

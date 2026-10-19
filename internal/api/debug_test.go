@@ -30,7 +30,7 @@ func TestRedactText(t *testing.T) {
 func debugRun(t *testing.T, level DebugLevel) string {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(`{"secret_key":"s3cr3t"}`))
+		respond(t, w, `{"secret_key":"s3cr3t"}`)
 	}))
 	defer srv.Close()
 	var buf bytes.Buffer
@@ -90,8 +90,8 @@ func debugCapture(t *testing.T, level DebugLevel) *bytes.Buffer {
 // response; the names around them still do.
 func TestDebugBodiesRedactDefinitionSecrets(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		w.Write(body)
+		body := should(io.ReadAll(r.Body))(t)
+		respond(t, w, string(body))
 	}))
 	defer srv.Close()
 	buf := debugCapture(t, DebugBodies)
@@ -105,7 +105,9 @@ func TestDebugBodiesRedactDefinitionSecrets(t *testing.T) {
 		"logging":{"http":{"host":"logs.example.com","headers":[{"name":"Authorization","value":"Bearer sink-secret"}]}},
 		"registry_authentication":{"basic":{"username":"u","password":"reg-secret"}}},
 		"liveness_probe":{"http":{"path":"/","headers":[{"name":"X-Key","value":"probe-secret"}]}}}`
-	c.CreateGroupRaw(t.Context(), json.RawMessage(def))
+	if _, cerr := c.CreateGroupRaw(t.Context(), json.RawMessage(def)); cerr != nil {
+		t.Fatal(cerr)
+	}
 	out := buf.String()
 	for _, secret := range []string{"hf-secret", "sink-secret", "reg-secret", "probe-secret", "test-key"} {
 		if strings.Contains(out, secret) {
@@ -122,7 +124,7 @@ func TestDebugBodiesRedactDefinitionSecrets(t *testing.T) {
 // The gateway's bearer token is a header, and is redacted like the API key.
 func TestDebugBodiesRedactAuthorizationHeader(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(`{"object":"list","data":[]}`))
+		respond(t, w, `{"object":"list","data":[]}`)
 	}))
 	defer srv.Close()
 	buf := debugCapture(t, DebugBodies)
@@ -138,8 +140,8 @@ func TestDebugBodiesRedactAuthorizationHeader(t *testing.T) {
 // A file upload's body is never shown.
 func TestDebugBodiesHideUploads(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		io.Copy(io.Discard, r.Body)
-		w.Write([]byte(`{"url":"` + "http://" + r.Host + `/f.wav?token=t"}`))
+		should(io.Copy(io.Discard, r.Body))(t)
+		respond(t, w, `{"url":"`+"http://"+r.Host+`/f.wav?token=t"}`)
 	}))
 	defer srv.Close()
 	buf := debugCapture(t, DebugBodies)
@@ -179,17 +181,23 @@ func TestUserAgentOnEveryClient(t *testing.T) {
 	var got []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = append(got, r.Header.Get("User-Agent"))
-		io.Copy(io.Discard, r.Body)
-		w.Write([]byte(`{"url":"u","object":"list","data":[]}`))
+		should(io.Copy(io.Discard, r.Body))(t)
+		respond(t, w, `{"url":"u","object":"list","data":[]}`)
 	}))
 	defer srv.Close()
 	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	ctx := t.Context()
 	c := newTestClient(t, srv.URL)
-	c.GetWebhookSecret(ctx)
-	newTestGateway(t, srv.URL).ListModels(ctx)
-	c.UploadFile(ctx, "f", strings.NewReader("x"), "text/plain", false, 0)
-	Probe(ctx, srv.URL+"/probe")
+	if _, cerr := c.GetWebhookSecret(ctx); cerr != nil {
+		t.Fatal(cerr)
+	}
+	if _, cerr := newTestGateway(t, srv.URL).ListModels(ctx); cerr != nil {
+		t.Fatal(cerr)
+	}
+	if _, cerr := c.UploadFile(ctx, "f", strings.NewReader("x"), "text/plain", false, 0); cerr != nil {
+		t.Fatal(cerr)
+	}
+	must(Probe(ctx, srv.URL+"/probe"))(t)
 	if len(got) != 4 {
 		t.Fatalf("saw %d requests, want 4", len(got))
 	}

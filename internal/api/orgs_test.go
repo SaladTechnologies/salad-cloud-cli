@@ -31,12 +31,13 @@ func TestOrganizationsListingPages(t *testing.T) {
 		asked = append(asked, r.URL.RawQuery)
 		switch r.URL.Query().Get("page_token") {
 		case "":
-			fmt.Fprint(
+			respond(
+				t,
 				w,
 				`{"items":[{"organization_name":"a"},{"organization_name":"b"}],"total_count":3,"next_page_token":"t2"}`,
 			)
 		case "t2":
-			fmt.Fprint(w, `{"items":[{"organization_name":"c"}],"next_page_token":""}`)
+			respond(t, w, `{"items":[{"organization_name":"c"}],"next_page_token":""}`)
 		default:
 			w.WriteHeader(http.StatusBadRequest)
 		}
@@ -59,7 +60,7 @@ func TestOrganizationsListingStopsOnARepeatedToken(t *testing.T) {
 	calls := 0
 	c := orgsClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		calls++
-		fmt.Fprint(w, `{"items":[{"organization_name":"a"}],"next_page_token":"same"}`)
+		respond(t, w, `{"items":[{"organization_name":"a"}],"next_page_token":"same"}`)
 	})
 	if _, err := c.ListOrganizations(t.Context()); err != nil || calls != 2 {
 		t.Errorf("err %v after %d calls, want 2", err, calls)
@@ -94,7 +95,7 @@ func TestOrganizationListingByStatus(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := orgsClient(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tc.status)
-				fmt.Fprint(w, tc.body)
+				respond(t, w, tc.body)
 			})
 			list, err := c.OrganizationListing(t.Context())
 			if (list != nil) != tc.list {
@@ -113,7 +114,10 @@ func TestOrganizationListingByStatus(t *testing.T) {
 	}
 	t.Run("network", func(t *testing.T) {
 		t.Setenv("SALAD_CLI_API_BASE_URL", "http://127.0.0.1:1")
-		c, _ := New(config.Resolved{APIKey: "k"})
+		c, cerr := New(config.Resolved{APIKey: "k"})
+		if cerr != nil {
+			t.Fatal(cerr)
+		}
 		if list, err := c.OrganizationListing(
 			t.Context(),
 		); list != nil || err == nil ||

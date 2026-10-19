@@ -88,10 +88,10 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 		t.Errorf("whoami json: organization %v, organization_found %v", doc["organization"], doc["organization_found"])
 	}
 	d := session{args: []string{"doctor", "-o", "json"}, saved: saved, env: env}.run(t)
-	items, _ := d.document(t)["items"].([]any)
+	items := asType[[]any](d.document(t)["items"])
 	shown := false
 	for _, it := range items {
-		if row, _ := it.(map[string]any); row["name"] == "organization" {
+		if row := asType[map[string]any](it); row["name"] == "organization" {
 			shown = row["status"] == "fail" &&
 				row["detail"] == "(from SALAD_ORGANIZATION) looks like an API key, not an organization name"
 		}

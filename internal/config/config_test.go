@@ -171,16 +171,16 @@ func TestResolveProjectFallback(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
 
-	r, _ := Resolve("", "")
+	r := must(Resolve("", ""))(t)
 	if r.Project != "default" || r.ProjectSource != SourceDefault {
 		t.Errorf("no project anywhere: %q (%q), want default (default)", r.Project, r.ProjectSource)
 	}
 	t.Setenv("SALAD_PROJECT", "env-project")
-	r, _ = Resolve("", "")
+	r = must(Resolve("", ""))(t)
 	if r.Project != "env-project" || r.ProjectSource != "env" {
 		t.Errorf("env should beat the fallback: %q (%q)", r.Project, r.ProjectSource)
 	}
-	r, _ = Resolve("", "flag-project")
+	r = must(Resolve("", "flag-project"))(t)
 	if r.Project != "flag-project" || r.ProjectSource != "flag" {
 		t.Errorf("flag should beat everything: %q (%q)", r.Project, r.ProjectSource)
 	}
@@ -188,7 +188,7 @@ func TestResolveProjectFallback(t *testing.T) {
 	if err := Save(File{Project: "file-project"}); err != nil {
 		t.Fatal(err)
 	}
-	r, _ = Resolve("", "")
+	r = must(Resolve("", ""))(t)
 	if r.Project != "file-project" || r.ProjectSource != "config" {
 		t.Errorf("config should beat the fallback: %q (%q)", r.Project, r.ProjectSource)
 	}
@@ -214,7 +214,7 @@ func TestGatewayKey(t *testing.T) {
 		t.Errorf("from file: %q (%q)", r.GatewayAPIKey, r.GatewayAPIKeySource)
 	}
 	t.Setenv("SALAD_AI_GATEWAY_API_KEY", "env-gw")
-	r, _ = Resolve("", "")
+	r = must(Resolve("", ""))(t)
 	if r.GatewayAPIKey != "env-gw" || r.GatewayAPIKeySource != "env" {
 		t.Errorf("env should win: %q (%q)", r.GatewayAPIKey, r.GatewayAPIKeySource)
 	}
@@ -256,7 +256,7 @@ func TestSaveReplacesAtomically(t *testing.T) {
 	if got, err := Load(); err != nil || got != want {
 		t.Errorf("Load after Save = %+v, %v; want %+v", got, err, want)
 	}
-	data, _ := os.ReadFile(p)
+	data := must(os.ReadFile(p))(t)
 	if strings.Contains(string(data), "old") {
 		t.Errorf("the old content survived: %s", data)
 	}
@@ -265,7 +265,7 @@ func TestSaveReplacesAtomically(t *testing.T) {
 			t.Errorf("mode = %v, want 0600", info.Mode().Perm())
 		}
 	}
-	if left, _ := filepath.Glob(filepath.Join(dir, ".config-*.json")); len(left) != 0 {
+	if left := must(filepath.Glob(filepath.Join(dir, ".config-*.json")))(t); len(left) != 0 {
 		t.Errorf("temp files left behind: %v", left)
 	}
 }
@@ -312,7 +312,19 @@ func TestResolveSavedProjectBelongsToItsOrg(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("SALAD_ORGANIZATION", "org-b")
-	if r, _ := Resolve("", ""); r.Project != "prod" {
+	if r := must(Resolve("", ""))(t); r.Project != "prod" {
 		t.Errorf("project = %q, want prod when the file names no organization", r.Project)
+	}
+}
+
+// must returns v and fails the test when err is set, on the test goroutine:
+// must(os.ReadFile(p))(t).
+func must[T any](v T, err error) func(*testing.T) T {
+	return func(t *testing.T) T {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
 	}
 }

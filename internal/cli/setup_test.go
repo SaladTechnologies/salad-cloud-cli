@@ -244,7 +244,7 @@ func TestConfigReady(t *testing.T) {
 	if err := configReady("login"); err != nil {
 		t.Fatalf("no file yet: %v", err)
 	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+	if entries := must(os.ReadDir(dir))(t); len(entries) != 0 {
 		t.Errorf("the check left %d files behind", len(entries))
 	}
 	path := filepath.Join(dir, "config.json")
@@ -265,7 +265,7 @@ func TestConfigReady(t *testing.T) {
 			t.Errorf("corrupt, %s: %+v hint %q", tc.command, err, err.HintText())
 		}
 	}
-	if b, _ := os.ReadFile(path); string(b) != "{not json" {
+	if b := must(os.ReadFile(path))(t); string(b) != "{not json" {
 		t.Errorf("the corrupt file was changed: %q", b)
 	}
 
@@ -276,7 +276,9 @@ func TestConfigReady(t *testing.T) {
 	if err := os.Mkdir(ro, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(ro, 0o700) }) //nolint:gosec // a directory: TempDir cleanup needs its x bit back
+	t.Cleanup(
+		func() { reportErr(t, os.Chmod(ro, 0o700)) },
+	) //nolint:gosec // a directory: TempDir cleanup needs its x bit back
 	t.Setenv("SALAD_CLI_CONFIG_DIR", ro)
 	for _, tc := range []struct{ command, hint string }{
 		{"login", "set SALAD_CLI_CONFIG_DIR to a writable folder, or set SALAD_API_KEY, SALAD_ORGANIZATION and " +

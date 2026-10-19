@@ -56,6 +56,9 @@ type fakeAPI struct {
 	// the run and holds the request until the CLI gives up on it.
 	cancelOn string
 	cancel   func()
+	// t is the test of the session serving the fake, which its handlers
+	// report to.
+	t *testing.T
 
 	mu       sync.Mutex
 	requests []string // "METHOD path", in order
@@ -90,7 +93,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.cancel()
 		// Read the body first: until it has, the server cannot see the
 		// client hang up.
-		_, _ = io.Copy(io.Discard, r.Body)
+		should(io.Copy(io.Discard, r.Body))(f.t)
 		select {
 		case <-r.Context().Done():
 		case <-time.After(5 * time.Second):
@@ -129,7 +132,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				"organization_id": "o-" + name, "create_time": "2026-01-01T00:00:00Z",
 			})
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"items": items})
+		reportErr(f.t, json.NewEncoder(w).Encode(map[string]any{"items": items}))
 	case len(parts) >= 2 && parts[0] == "organizations":
 		projects, ok := f.orgs[parts[1]]
 		if !ok {
@@ -138,21 +141,21 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		switch {
 		case len(parts) == 3 && parts[2] == "quotas":
-			_, _ = w.Write([]byte(`{}`))
+			respond(f.t, w, `{}`)
 		case len(parts) == 3 && parts[2] == "gpu-classes":
-			_, _ = w.Write([]byte(`{"items":[]}`))
+			respond(f.t, w, `{"items":[]}`)
 		case len(parts) == 7 && parts[2] == "projects" && parts[4] == "containers" && parts[6] == "instances":
-			_, _ = w.Write(
-				[]byte(
-					`{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","state":"running","ssh_ip":"203.0.113.7","ssh_port":30123}]}`,
-				),
+			respond(
+				f.t,
+				w,
+				`{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","state":"running","ssh_ip":"203.0.113.7","ssh_port":30123}]}`,
 			)
 		case len(parts) == 5 && parts[2] == "projects" && parts[4] == "containers" && r.Method == http.MethodGet:
 			if !slices.Contains(projects, parts[3]) {
 				w.WriteHeader(http.StatusNotFound)
 				return
 			}
-			_, _ = w.Write([]byte(`{"items":[]}`))
+			respond(f.t, w, `{"items":[]}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -164,7 +167,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (f *fakeAPI) serveGateway(w http.ResponseWriter, r *http.Request, path string) {
 	switch path {
 	case "/models":
-		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"model-a","owned_by":"salad"}]}`))
+		respond(f.t, w, `{"object":"list","data":[{"id":"model-a","owned_by":"salad"}]}`)
 	case "/chat/completions":
 		code, ok := f.gatewayKeys[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
 		if !ok {
@@ -172,15 +175,17 @@ func (f *fakeAPI) serveGateway(w http.ResponseWriter, r *http.Request, path stri
 		}
 		switch code {
 		case http.StatusOK:
-			_, _ = w.Write(
-				[]byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"total_tokens":2}}`),
+			respond(
+				f.t,
+				w,
+				`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"total_tokens":2}}`,
 			)
 		case http.StatusPaymentRequired:
 			w.WriteHeader(code)
-			_, _ = w.Write([]byte(`{"error":{"code":"credits_exhausted","message":"out of credits"}}`))
+			respond(f.t, w, `{"error":{"code":"credits_exhausted","message":"out of credits"}}`)
 		case http.StatusForbidden:
 			w.WriteHeader(code)
-			_, _ = w.Write([]byte(`{"error":{"code":"no_access","message":"no access"}}`))
+			respond(f.t, w, `{"error":{"code":"no_access","message":"no access"}}`)
 		default:
 			w.WriteHeader(code)
 		}
@@ -224,10 +229,19 @@ func (c *fakeConsole) Device() io.Writer {
 func (c *fakeConsole) ReadHidden() (string, error) { return c.next(true) }
 func (c *fakeConsole) ReadLine() (string, error)   { return c.next(false) }
 
+// echo writes s to the device and the transcript, as Device does; a write to
+// a bytes.Buffer does not fail.
+func (c *fakeConsole) echo(s string) {
+	c.device.WriteString(s)
+	if c.transcript != nil {
+		c.transcript.WriteString(s)
+	}
+}
+
 // next gives the next answer and leaves the device as a terminal would: a
 // visible answer echoed, then the line ended.
 func (c *fakeConsole) next(hidden bool) (string, error) {
-	defer c.Device().Write([]byte{'\n'})
+	defer c.echo("\n")
 	if len(c.answers) == 0 {
 		return "", io.EOF
 	}
@@ -240,7 +254,7 @@ func (c *fakeConsole) next(hidden bool) (string, error) {
 		return "", io.EOF
 	}
 	if !hidden {
-		_, _ = c.Device().Write([]byte(a))
+		c.echo(a)
 	}
 	return a, nil
 }
@@ -302,6 +316,7 @@ func (s session) run(t *testing.T) outcome {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	api.cancel = cancel
+	api.t = t
 	srv := httptest.NewServer(api)
 	defer srv.Close()
 
@@ -348,7 +363,7 @@ func (s session) run(t *testing.T) outcome {
 			t.Fatal(err)
 		}
 	}
-	configPath, _ := config.Path()
+	configPath := must(config.Path())(t)
 	oldOS := goos
 	goos = s.os
 	if goos == "" {
@@ -359,7 +374,7 @@ func (s session) run(t *testing.T) outcome {
 	stdin := tempFile(t, dir, "stdin", s.stdin)
 	var hold *os.File // the open end of a never-closed stdin
 	if s.openStdin {
-		stdin.Close()
+		noErr(t, stdin.Close())
 		r, w, err := os.Pipe()
 		if err != nil {
 			t.Fatal(err)
@@ -395,19 +410,21 @@ func (s session) run(t *testing.T) outcome {
 		case code = <-done:
 		case <-time.After(stdinPatience):
 			hung = true
-			hold.Close() // let the stuck read end so the run can finish
+			noErr(t, hold.Close()) // let the stuck read end so the run can finish
 			code = <-done
 		}
-		hold.Close()
+		if !hung { // a hung run's hold is closed already
+			noErr(t, hold.Close())
+		}
 	} else {
 		code = <-done
 	}
 	os.Stdin, os.Stderr, errOut, output.Stdout, con, openPage, stderrTee = oldIn, oldErr, oldErrOut, oldOut, oldCon, oldOpen, oldTee
-	resetRun()
-	stdin.Close()
-	stderr.Close()
+	resetRun(t)
+	noErr(t, stdin.Close())
+	noErr(t, stderr.Close())
 
-	errBytes, _ := os.ReadFile(stderr.Name())
+	errBytes := must(os.ReadFile(stderr.Name()))(t)
 	after, err := config.Load()
 	if err != nil && s.rawConfig == "" {
 		t.Fatalf("the config file after the run: %v", err)
@@ -421,11 +438,12 @@ func (s session) run(t *testing.T) outcome {
 
 // resetRun puts back what a run leaves behind in the process: flags, the
 // output mode, the command line and the per-command notes.
-func resetRun() {
-	_ = output.SetMode("table")
+func resetRun(t *testing.T) {
+	t.Helper()
+	setOutputMode(t, "table")
 	rootCmd.SetArgs(nil)
 	commandLine = nil
-	resetFlags()
+	resetFlags(t)
 }
 
 // tempFile creates dir/name holding content, open for reading and writing.
@@ -491,4 +509,82 @@ func (o outcome) document(t *testing.T) map[string]any {
 		t.Fatalf("stdout is not one JSON document: %v\n%s", err, o.stdout)
 	}
 	return doc
+}
+
+// respond writes body as an httptest handler's response. The handler runs on
+// its own goroutine, so a failed write is reported, not fatal.
+func respond(t *testing.T, w io.Writer, body string) {
+	t.Helper()
+	if _, err := io.WriteString(w, body); err != nil {
+		t.Errorf("writing the response: %v", err)
+	}
+}
+
+// must returns v and fails the test when err is set, on the test goroutine:
+// must(os.ReadFile(p))(t).
+func must[T any](v T, err error) func(*testing.T) T {
+	return func(t *testing.T) T {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+}
+
+// should is must for code off the test goroutine (a handler, a cleanup): it
+// reports err and carries on.
+func should[T any](v T, err error) func(*testing.T) T {
+	return func(t *testing.T) T {
+		t.Helper()
+		if err != nil {
+			t.Error(err)
+		}
+		return v
+	}
+}
+
+// noErr fails the test when err is set.
+func noErr(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// reportErr reports err without stopping the test, for a handler or a cleanup.
+func reportErr(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+// assertAs returns v as a T and fails the test when it holds something else.
+func assertAs[T any](t *testing.T, v any) T {
+	t.Helper()
+	x, ok := v.(T)
+	if !ok {
+		t.Fatalf("got %T, want %T", v, x)
+	}
+	return x
+}
+
+// setOutputMode selects the output mode, reporting a mode SetMode rejects.
+func setOutputMode(t *testing.T, mode string) {
+	t.Helper()
+	if cerr := output.SetMode(mode); cerr != nil {
+		t.Error(cerr)
+	}
+}
+
+// findCommand returns the command at path, failing the test when the tree
+// has none.
+func findCommand(t *testing.T, path ...string) *cobra.Command {
+	t.Helper()
+	c, _, err := rootCmd.Find(path)
+	if err != nil {
+		t.Fatalf("%v: %v", path, err)
+	}
+	return c
 }

@@ -89,12 +89,18 @@ func TestAskTwiceIfZero(t *testing.T) {
 		calls++
 		return a, nil
 	}
-	got, _ := askTwiceIfZero(ask, allZeroGpu)
+	got, cerr := askTwiceIfZero(ask, allZeroGpu)
+	if cerr != nil {
+		t.Fatal(cerr)
+	}
 	if calls != 2 || ptr.Deref(got.AvailableGpuHigh) != 7 {
 		t.Errorf("calls = %d, high = %v; want a second ask that answers 7", calls, got.AvailableGpuHigh)
 	}
 	calls = 1 // start at the good answer
-	if _, _ = askTwiceIfZero(ask, allZeroGpu); calls != 2 {
+	if _, cerr = askTwiceIfZero(ask, allZeroGpu); cerr != nil {
+		t.Fatal(cerr)
+	}
+	if calls != 2 {
 		t.Errorf("a real answer was asked again (calls = %d)", calls)
 	}
 	if !allZeroGpu(&organizations.GpuAvailability{}) ||

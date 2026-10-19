@@ -12,7 +12,6 @@ import (
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
 // TestCpErrorDocument: cp in json and yaml mode leaves stderr to warnings,
@@ -40,7 +39,7 @@ func TestCpErrorDocument(t *testing.T) {
 				doc, err := o.errorDocument()
 				if err != nil || o.code != 1 || doc["kind"] != "child_exit" ||
 					!strings.HasSuffix(
-						doc["message"].(string),
+						assertAs[string](t, doc["message"]),
 						`exited with status 1; remote open("/etc/hostname"): Permission denied`,
 					) {
 					t.Errorf("%s %s: exit %d, document %v (%v)", src, mode, o.code, doc, err)
@@ -179,9 +178,9 @@ func TestHiddenKeyReadWithCI(t *testing.T) {
 // TestSSHQuietInMachineMode: in json and yaml mode OpenSSH's informational
 // lines (the first-connection host key line) are kept off stderr.
 func TestSSHQuietInMachineMode(t *testing.T) {
-	t.Cleanup(func() { _ = output.SetMode("table") })
+	t.Cleanup(func() { setOutputMode(t, "table") })
 	for _, mode := range []string{"table", "json", "yaml"} {
-		_ = output.SetMode(mode)
+		setOutputMode(t, mode)
 		got := slices.Contains(hostKeyOptions("8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37"), "LogLevel=ERROR")
 		if want := mode != "table"; got != want {
 			t.Errorf("%s mode: LogLevel=ERROR %t, want %t", mode, got, want)

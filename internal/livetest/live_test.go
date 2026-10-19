@@ -203,7 +203,9 @@ func sweep() {
 	for _, it := range listing.Items {
 		if strings.HasPrefix(it.Name, prefix) {
 			fmt.Printf("livetest sweep: deleting %s\n", it.Name)
-			_ = exec.Command(bin, "container-groups", "delete", it.Name).Run()
+			if runErr := exec.Command(bin, "container-groups", "delete", it.Name).Run(); runErr != nil {
+				fmt.Printf("livetest sweep: deleting %s failed: %v\n", it.Name, runErr)
+			}
 		}
 	}
 	// Queues after groups: a queue with a connected group may refuse deletion.
@@ -220,7 +222,9 @@ func sweep() {
 	for _, it := range queues.Items {
 		if strings.HasPrefix(it.Name, prefix) {
 			fmt.Printf("livetest sweep: deleting queue %s\n", it.Name)
-			_ = exec.Command(bin, "queues", "delete", it.Name).Run()
+			if runErr := exec.Command(bin, "queues", "delete", it.Name).Run(); runErr != nil {
+				fmt.Printf("livetest sweep: deleting queue %s failed: %v\n", it.Name, runErr)
+			}
 		}
 	}
 }
@@ -578,9 +582,9 @@ func TestGpuConfigCreatesStopped(t *testing.T) {
 		t.Fatalf("create with --gpu exit %d: %s", r.Code, r.Stderr)
 	}
 	doc := oneDoc(t, r)
-	container, _ := doc["container"].(map[string]any)
-	resources, _ := container["resources"].(map[string]any)
-	classes, _ := resources["gpu_classes"].([]any)
+	container := valueAs[map[string]any](doc["container"])
+	resources := valueAs[map[string]any](container["resources"])
+	classes := valueAs[[]any](resources["gpu_classes"])
 	if len(classes) != 1 {
 		t.Errorf("gpu_classes = %v, want exactly one resolved id", classes)
 	}
@@ -783,7 +787,7 @@ func TestRunningLifecycle(t *testing.T) {
 		t.Fatalf("create --wait exit %d: %s", r.Code, r.Stderr)
 	}
 	doc := oneDoc(t, r)
-	state, _ := doc["current_state"].(map[string]any)
+	state := valueAs[map[string]any](doc["current_state"])
 	if state["status"] != "running" {
 		t.Errorf("--wait -o json emitted status %v, want running (the settled document)", state["status"])
 	}
@@ -1076,8 +1080,8 @@ func TestTranscribe(t *testing.T) {
 	// (and the upload itself deleted) once the transcript is back.
 	js := run(t, "inference", "transcription-lite", audio, "-o", "json")
 	if js.Code == 0 {
-		in, _ := oneDoc(t, js)["input"].(map[string]any)
-		if u, _ := in["url"].(string); strings.Contains(u, "?") {
+		in := valueAs[map[string]any](oneDoc(t, js)["input"])
+		if u := valueAs[string](in["url"]); strings.Contains(u, "?") {
 			t.Errorf("input.url kept its signed query string: %s", u)
 		}
 	}
@@ -1113,8 +1117,8 @@ func TestTranscribeLanguageAndStream(t *testing.T) {
 		return nil
 	}
 	text := func(d map[string]any) string {
-		out, _ := d["output"].(map[string]any)
-		s, _ := out["text"].(string)
+		out := valueAs[map[string]any](d["output"])
+		s := valueAs[string](out["text"])
 		return strings.TrimSpace(s)
 	}
 
@@ -1122,7 +1126,7 @@ func TestTranscribeLanguageAndStream(t *testing.T) {
 	null := doc("--input-extra", `{"language_code": null}`)
 	forced := doc("--language-code", "en")
 
-	if in, _ := null["input"].(map[string]any); in == nil {
+	if in := valueAs[map[string]any](null["input"]); in == nil {
 		t.Errorf("null job has no input: %v", null)
 	} else if v, has := in["language_code"]; !has || v != nil {
 		t.Errorf("null was not preserved in the echoed input: %v", in)
@@ -1161,7 +1165,7 @@ func TestGateway(t *testing.T) {
 		t.Fatalf("gateway models list exit %d: %s", m.Code, m.Stderr)
 	}
 	doc := oneDoc(t, m)
-	data, _ := doc["items"].([]any)
+	data := valueAs[[]any](doc["items"])
 	if len(data) == 0 {
 		t.Fatalf("gateway models listed nothing: %s", m.Stdout)
 	}
@@ -1264,7 +1268,7 @@ func TestAvailability(t *testing.T) {
 		t.Fatalf("availability exit %d: %s", one.Code, one.Stderr)
 	}
 	doc := oneDoc(t, one)
-	items, _ := doc["items"].([]any)
+	items := valueAs[[]any](doc["items"])
 	if len(items) != 1 {
 		t.Errorf("availability one class = %s, want one item", one.Stdout)
 	}
@@ -1274,17 +1278,17 @@ func TestAvailability(t *testing.T) {
 		t.Fatalf("availability with two classes exit %d: %s", two.Code, two.Stderr)
 	}
 	d2 := oneDoc(t, two)
-	if items, _ := d2["items"].([]any); len(items) != 2 {
+	if items := valueAs[[]any](d2["items"]); len(items) != 2 {
 		t.Errorf("two classes = %d items, want 2", len(items))
 	}
-	if c, _ := d2["combined"].(map[string]any); c == nil || len(c["gpu_classes"].([]any)) != 2 {
+	if c := valueAs[map[string]any](d2["combined"]); c == nil || len(valueAs[[]any](c["gpu_classes"])) != 2 {
 		t.Errorf("combined = %v, want the combined query for both classes", d2["combined"])
 	}
 	cpu := run(t, "availability", "--cpu", "2", "--memory", "2048", "-o", "json")
 	if cpu.Code != 0 {
 		t.Fatalf("CPU availability exit %d: %s", cpu.Code, cpu.Stderr)
 	}
-	if items, _ := oneDoc(t, cpu)["items"].([]any); len(items) != 1 {
+	if items := valueAs[[]any](oneDoc(t, cpu)["items"]); len(items) != 1 {
 		t.Errorf("CPU-only availability = %s, want one item", cpu.Stdout)
 	}
 }
@@ -1324,7 +1328,7 @@ func TestQueues(t *testing.T) {
 	if job.Code != 0 {
 		t.Fatalf("queues jobs create exit %d: %s", job.Code, job.Stderr)
 	}
-	id, _ := oneDoc(t, job)["id"].(string)
+	id := valueAs[string](oneDoc(t, job)["id"])
 	if id == "" {
 		t.Fatalf("queue job has no id: %s", job.Stdout)
 	}
@@ -1371,7 +1375,7 @@ func TestQueues(t *testing.T) {
 	if cg.Code != 0 {
 		t.Fatalf("create --queue exit %d: %s", cg.Code, cg.Stderr)
 	}
-	conn, _ := oneDoc(t, cg)["queue_connection"].(map[string]any)
+	conn := valueAs[map[string]any](oneDoc(t, cg)["queue_connection"])
 	if conn["queue_name"] != q || conn["port"] != float64(8080) || conn["path"] != "/job" {
 		t.Errorf("queue_connection = %v", conn)
 	}
@@ -1394,7 +1398,7 @@ func TestWebhookSecretGet(t *testing.T) {
 	if r.Code != 0 {
 		t.Fatalf("webhook-secret get exit %d: %s", r.Code, r.Stderr)
 	}
-	if k, _ := oneDoc(t, r)["secret_key"].(string); len(k) < 44 {
+	if k := valueAs[string](oneDoc(t, r)["secret_key"]); len(k) < 44 {
 		t.Errorf("secret_key is %d characters, want at least 44", len(k))
 	}
 }

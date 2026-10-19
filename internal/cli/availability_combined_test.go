@@ -22,25 +22,23 @@ func stubAvailability(t *testing.T) *[]int {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/gpu-classes"):
-			w.Write(
-				[]byte(
-					`{"items":[{"id":"` + classA + `","name":"RTX A (12 ` +
-						`GB)"},{"id":"` + classB + `","name":"RTX B (24 GB)"}]}`,
-				),
+			respond(t, w,
+				`{"items":[{"id":"`+classA+`","name":"RTX A (12 `+
+					`GB)"},{"id":"`+classB+`","name":"RTX B (24 GB)"}]}`,
 			)
 		case strings.HasSuffix(r.URL.Path, "/sce-gpu-availability"):
 			var req struct {
 				GpuClasses []string `json:"gpu_classes"`
 			}
-			json.NewDecoder(r.Body).Decode(&req)
+			reportErr(t, json.NewDecoder(r.Body).Decode(&req))
 			classCounts = append(classCounts, len(req.GpuClasses))
 			if len(req.GpuClasses) > 1 {
-				w.Write([]byte(`{"available_gpu_high":3,"on_call_gpu":99}`))
+				respond(t, w, `{"available_gpu_high":3,"on_call_gpu":99}`)
 				return
 			}
-			w.Write([]byte(`{"available_gpu_high":5,"on_call_gpu":7}`))
+			respond(t, w, `{"available_gpu_high":5,"on_call_gpu":7}`)
 		case strings.HasSuffix(r.URL.Path, "/sce-cpu-availability"):
-			w.Write([]byte(`{"available_cpu_batch":4,"on_call_cpu":8}`))
+			respond(t, w, `{"available_cpu_batch":4,"on_call_cpu":8}`)
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -70,7 +68,7 @@ func TestAvailabilityCombinedIsThePlatformsAnswer(t *testing.T) {
 	if doc.Combined["on_call_gpu"] != float64(99) || doc.Combined["available_gpu_high"] != float64(3) {
 		t.Errorf("combined = %v, want the combined query's own numbers (99, 3), not a sum", doc.Combined)
 	}
-	if classes, _ := doc.Combined["gpu_classes"].([]any); len(classes) != 2 {
+	if classes := asType[[]any](doc.Combined["gpu_classes"]); len(classes) != 2 {
 		t.Errorf("combined gpu_classes = %v, want both classes", doc.Combined["gpu_classes"])
 	}
 	if got := *counts; len(got) != 3 || got[0] != 1 || got[1] != 1 || got[2] != 2 {
@@ -85,7 +83,7 @@ func TestAvailabilityOneClassHasNullCombined(t *testing.T) {
 		t.Fatal(err)
 	}
 	var doc map[string]json.RawMessage
-	json.Unmarshal([]byte(out), &doc)
+	noErr(t, json.Unmarshal([]byte(out), &doc))
 	if c, ok := doc["combined"]; !ok || string(c) != "null" {
 		t.Errorf("combined = %s (present %v), want null with one class:\n%s", c, ok, out)
 	}
@@ -111,7 +109,7 @@ func TestAvailabilityCPUHasNullCombined(t *testing.T) {
 		t.Fatal(err)
 	}
 	var doc map[string]json.RawMessage
-	json.Unmarshal([]byte(out), &doc)
+	noErr(t, json.Unmarshal([]byte(out), &doc))
 	if c, ok := doc["combined"]; !ok || string(c) != "null" {
 		t.Errorf("combined = %s (present %v), want null:\n%s", c, ok, out)
 	}
@@ -136,11 +134,11 @@ func TestAvailabilityOnCallColumn(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/gpu-classes"):
-			w.Write([]byte(`{"items":[{"id":"` + classA + `","name":"RTX A (12 GB)"}]}`))
+			respond(t, w, `{"items":[{"id":"`+classA+`","name":"RTX A (12 GB)"}]}`)
 		case strings.HasSuffix(r.URL.Path, "/sce-gpu-availability"):
-			w.Write([]byte(`{"available_gpu_high":5,"on_call_gpu":0}`))
+			respond(t, w, `{"available_gpu_high":5,"on_call_gpu":0}`)
 		case strings.HasSuffix(r.URL.Path, "/sce-cpu-availability"):
-			w.Write([]byte(`{"available_cpu_batch":4,"on_call_cpu":0}`))
+			respond(t, w, `{"available_cpu_batch":4,"on_call_cpu":0}`)
 		}
 	}))
 	t.Cleanup(srv.Close)

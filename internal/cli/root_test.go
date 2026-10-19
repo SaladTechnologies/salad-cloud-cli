@@ -20,7 +20,7 @@ func runExecute(t *testing.T, args ...string) (code int, stdout, stderr string) 
 	output.Stdout, errOut = &out, &errBuf
 	t.Cleanup(func() {
 		output.Stdout, errOut = oldOut, oldErr
-		resetRun()
+		resetRun(t)
 	})
 	commandLine = args
 	code = Execute()

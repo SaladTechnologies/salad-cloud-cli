@@ -22,10 +22,10 @@ func TestQueueJobCancelFinishedSaysWhy(t *testing.T) {
 		}
 		if r.Method == http.MethodDelete {
 			w.WriteHeader(http.StatusConflict)
-			_, _ = w.Write([]byte(`{"title":"Conflict","status":409}`))
+			respond(t, w, `{"title":"Conflict","status":409}`)
 			return
 		}
-		_, _ = w.Write([]byte(`{"id":"` + id + `","status":"succeeded","events":[]}`))
+		respond(t, w, `{"id":"`+id+`","status":"succeeded","events":[]}`)
 	}))
 	t.Cleanup(srv.Close)
 	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)

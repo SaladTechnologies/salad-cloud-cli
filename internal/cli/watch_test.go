@@ -57,7 +57,7 @@ func TestWatchLoopClearsATerminal(t *testing.T) {
 	var out bytes.Buffer
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_ = watchLoop(ctx, fakeWatchDeps(&out, true, nil), func(context.Context) *clierr.Error { return nil })
+	noErr(t, watchLoop(ctx, fakeWatchDeps(&out, true, nil), func(context.Context) *clierr.Error { return nil }))
 	if !strings.HasPrefix(out.String(), "\x1b[2J\x1b[H") {
 		t.Errorf("terminal render did not clear the screen: %q", out.String())
 	}

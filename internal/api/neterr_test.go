@@ -45,7 +45,7 @@ func tlsGetWithCert(t *testing.T, notBefore, notAfter time.Time) error {
 	if err != nil {
 		t.Fatal(err)
 	}
-	leaf, _ := x509.ParseCertificate(der)
+	leaf := must(x509.ParseCertificate(der))(t)
 	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	srv.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: key}}}
 	srv.Config.ErrorLog = log.New(io.Discard, "", 0)
@@ -61,8 +61,7 @@ func tlsGetWithCert(t *testing.T, notBefore, notAfter time.Time) error {
 	}
 	resp, err := client.Do(req)
 	if err == nil {
-		resp.Body.Close()
-		t.Fatal("expected a TLS verification error")
+		t.Fatalf("expected a TLS verification error (closing the body: %v)", resp.Body.Close())
 	}
 	return err
 }

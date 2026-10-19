@@ -199,7 +199,7 @@ func runRoot(t *testing.T, args ...string) (string, error) {
 	output.Stdout = &buf
 	t.Cleanup(func() {
 		output.Stdout = old
-		resetRun()
+		resetRun(t)
 	})
 	rootCmd.SetArgs(args)
 	err := rootCmd.Execute()
@@ -211,12 +211,13 @@ func runRoot(t *testing.T, args ...string) (string, error) {
 // would inherit them, and a repeatable flag would keep appending. It resets
 // flags that are not marked changed too: a value that fails to parse
 // (--timeout soon) is stored before the error, without marking the flag.
-func resetFlags() {
+func resetFlags(t *testing.T) {
+	t.Helper()
 	reset := func(f *pflag.Flag) {
 		if sv, ok := f.Value.(pflag.SliceValue); ok {
-			_ = sv.Replace(nil)
+			reportErr(t, sv.Replace(nil))
 		} else {
-			_ = f.Value.Set(f.DefValue)
+			reportErr(t, f.Value.Set(f.DefValue))
 		}
 		f.Changed = false
 	}
@@ -276,7 +277,7 @@ func TestSingletonsTakeGetNeverList(t *testing.T) {
 		if c, _, err := rootCmd.Find([]string{noun, "get"}); err != nil || c.Name() != "get" {
 			t.Errorf("%s get: not found", noun)
 		}
-		if c, _, _ := rootCmd.Find([]string{noun, "list"}); c != nil && c.Name() == "list" {
+		if c, _, err := rootCmd.Find([]string{noun, "list"}); err == nil && c != nil && c.Name() == "list" {
 			t.Errorf("%s list exists; a singleton never lists", noun)
 		}
 	}
@@ -314,7 +315,7 @@ func TestJobsCancelNotDelete(t *testing.T) {
 			c.Name() != "cancel" {
 			t.Errorf("%v cancel: not found", noun)
 		}
-		p, _, _ := rootCmd.Find(noun)
+		p := findCommand(t, noun...)
 		for _, sub := range p.Commands() {
 			if sub.Name() == "delete" || sub.HasAlias("delete") {
 				t.Errorf("%s still answers to delete", sub.CommandPath())
@@ -350,13 +351,13 @@ func TestLeafPositionalAncestorsAsFlags(t *testing.T) {
 		}
 	}
 	for _, path := range [][]string{{"logs"}, {"container-groups", "instances", "list"}, {"inference", "jobs", "list"}} {
-		c, _, _ := rootCmd.Find(path)
+		c := findCommand(t, path...)
 		if err := c.Args(c, []string{"extra"}); err == nil {
 			t.Errorf("%s accepts a positional; its scope is flags", c.CommandPath())
 		}
 	}
 	for _, path := range [][]string{{"container-groups", "ssh"}, {"container-groups", "sftp"}} {
-		c, _, _ := rootCmd.Find(path)
+		c := findCommand(t, path...)
 		if c.Flags().Lookup("instance") == nil {
 			t.Errorf("%s has no --instance", c.CommandPath())
 		}
@@ -426,7 +427,7 @@ func TestInferencePorcelainNamesAreEndpoints(t *testing.T) {
 		}
 	}
 	for _, name := range []string{"transcribe", "endpoints"} {
-		if c, _, _ := rootCmd.Find([]string{name}); c != nil && c != rootCmd {
+		if c, _, err := rootCmd.Find([]string{name}); err == nil && c != nil && c != rootCmd {
 			t.Errorf("top-level %q exists; inference owns it", name)
 		}
 	}

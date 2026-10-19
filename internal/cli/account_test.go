@@ -16,7 +16,7 @@ func stubAPI(t *testing.T, routes map[string]string) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for suffix, body := range routes {
 			if strings.HasSuffix(r.URL.Path, suffix) {
-				_, _ = w.Write([]byte(body))
+				respond(t, w, body)
 				return
 			}
 		}
@@ -138,14 +138,14 @@ func TestLogoutKeepsContext(t *testing.T) {
 		!strings.Contains(out, `"action": "logged_out",`) {
 		t.Errorf("logout -o json = %s", out)
 	}
-	f, _ := config.Load()
+	f := must(config.Load())(t)
 	if f.APIKey != "" || f.Organization != "my-org" || f.Project != "p" || f.GatewayAPIKey != "g" {
 		t.Errorf("after logout the config is %+v; only the API key goes", f)
 	}
 	if _, err := runRoot(t, "ai-gateway", "logout"); err != nil {
 		t.Fatalf("ai-gateway logout: %v", err)
 	}
-	if f, _ = config.Load(); f.GatewayAPIKey != "" || f.Organization != "my-org" {
+	if f = must(config.Load())(t); f.GatewayAPIKey != "" || f.Organization != "my-org" {
 		t.Errorf("after ai-gateway logout the config is %+v", f)
 	}
 }

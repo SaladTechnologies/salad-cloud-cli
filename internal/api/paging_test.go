@@ -19,19 +19,18 @@ func pagedServer(t *testing.T, total int, key string, requests *int32) *httptest
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(requests, 1)
-		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-		size, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+		page := should(strconv.Atoi(r.URL.Query().Get("page")))(t)
+		size := should(strconv.Atoi(r.URL.Query().Get("page_size")))(t)
 		var items []string
 		for i := (page - 1) * size; i < page*size && i < total; i++ {
 			items = append(items, fmt.Sprintf(`{%q:"item-%d"}`, key, i))
 		}
-		fmt.Fprintf(
-			w,
+		respond(t, w, fmt.Sprintf(
 			`{"items":[%s],"page":%d,"page_size":%d,"total_size":null}`,
 			strings.Join(items, ","),
 			page,
 			size,
-		)
+		))
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -77,21 +76,20 @@ func jobServer(t *testing.T, total int, byID bool, requests *int32) *httptest.Se
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(requests, 1)
-		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-		size, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+		page := should(strconv.Atoi(r.URL.Query().Get("page")))(t)
+		size := should(strconv.Atoi(r.URL.Query().Get("page_size")))(t)
 		var items []string
 		for k := (page - 1) * size; k < page*size && k < total; k++ {
 			i := order[k]
 			items = append(items, fmt.Sprintf(`{"id":%q,"create_time":%q,"input":{"n":%d}}`,
 				id(i), base.Add(time.Duration(i)*time.Second).Format(time.RFC3339Nano), i))
 		}
-		fmt.Fprintf(
-			w,
+		respond(t, w, fmt.Sprintf(
 			`{"items":[%s],"page":%d,"page_size":%d,"total_size":null}`,
 			strings.Join(items, ","),
 			page,
 			size,
-		)
+		))
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -130,7 +128,7 @@ func TestListInferenceJobsNewestFirst(t *testing.T) {
 		}
 		got := make([]int, len(jobs))
 		for i, j := range jobs {
-			got[i] = int(j.Input.(map[string]any)["n"].(float64))
+			got[i] = int(assertAs[float64](t, assertAs[map[string]any](t, j.Input)["n"]))
 		}
 		if fmt.Sprint(got) != fmt.Sprint(newestN(tc.total, tc.want)) || more != tc.more || int(n) > tc.maxRequests {
 			t.Errorf("%d jobs, limit %d: got %v (more %v) in %d requests, want the newest %d (more %v) in at most %d",
@@ -160,7 +158,7 @@ func TestListQueueJobsNewestFirst(t *testing.T) {
 		}
 		got := make([]int, len(jobs))
 		for i, j := range jobs {
-			got[i] = int(j.Input.(map[string]any)["n"].(float64))
+			got[i] = int(assertAs[float64](t, assertAs[map[string]any](t, j.Input)["n"]))
 		}
 		if fmt.Sprint(got) != fmt.Sprint(newestN(tc.total, tc.want)) || more != tc.more || int(n) != tc.requests {
 			t.Errorf("%d jobs, limit %d: got %v (more %v) in %d requests, want the newest %d (more %v) in %d",

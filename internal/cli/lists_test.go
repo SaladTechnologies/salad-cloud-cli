@@ -45,7 +45,7 @@ func TestAIGatewayModelsListNeedsNoKey(t *testing.T) {
 	var auth []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth = append(auth, r.Header.Get("Authorization"))
-		w.Write([]byte(`{"object":"list","data":[{"id":"m1","owned_by":"salad"}]}`))
+		respond(t, w, `{"object":"list","data":[{"id":"m1","owned_by":"salad"}]}`)
 	}))
 	defer srv.Close()
 	t.Setenv("SALAD_CLI_AI_GATEWAY_BASE_URL", srv.URL)
