@@ -93,17 +93,17 @@ func newTestRun(t *testing.T) *testRun {
 	return r
 }
 
-// clone is a run with r's environment, seams and output mode that the test
-// changes without changing r: a parallel subtest's own copy of its parent's
+// clone is a run with app's environment, seams and output mode that the test
+// changes without changing app: a parallel subtest's own copy of its parent's
 // setup.
-func (r *testRun) clone(t *testing.T) *testRun {
+func (app *testRun) clone(t *testing.T) *testRun {
 	t.Helper()
-	env := maps.Clone(r.env)
-	d := r.Deps
+	env := maps.Clone(app.env)
+	d := app.Deps
 	own := testDeps(env)
 	d.Env.Getenv, d.Environ = own.Env.Getenv, own.Environ
 	c := &testRun{App: newApp(d), env: env, root: nil}
-	if cerr := c.printer.SetMode(r.printer.Mode()); cerr != nil {
+	if cerr := c.printer.SetMode(app.printer.Mode()); cerr != nil {
 		t.Fatal(cerr)
 	}
 	c.root = New(c.App)
@@ -111,21 +111,21 @@ func (r *testRun) clone(t *testing.T) *testRun {
 }
 
 // setenv sets the variable k to v for the run's later reads.
-func (r *testRun) setenv(k, v string) { r.env[k] = v }
+func (app *testRun) setenv(k, v string) { app.env[k] = v }
 
 // fresh is a new App and tree on the run's deps as they are now: its
 // environment, seams and streams.
-func (r *testRun) fresh() (*App, *cobra.Command) {
-	a := newApp(r.Deps)
+func (app *testRun) fresh() (*App, *cobra.Command) {
+	a := newApp(app.Deps)
 	return a, New(a)
 }
 
 // runRoot runs one command line in-process on a fresh tree and returns its
 // stdout and the error Execute returned.
-func (r *testRun) runRoot(t *testing.T, args ...string) (string, error) {
+func (app *testRun) runRoot(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	var buf bytes.Buffer
-	a, root := r.fresh()
+	a, root := app.fresh()
 	a.printer = output.NewPrinter(&buf)
 	root.SetArgs(args)
 	err := root.ExecuteContext(t.Context())
@@ -134,9 +134,9 @@ func (r *testRun) runRoot(t *testing.T, args ...string) (string, error) {
 
 // findCommand returns the command at path, failing the test when the tree
 // has none.
-func (r *testRun) findCommand(t *testing.T, path ...string) *cobra.Command {
+func (app *testRun) findCommand(t *testing.T, path ...string) *cobra.Command {
 	t.Helper()
-	c, _, err := r.root.Find(path)
+	c, _, err := app.root.Find(path)
 	if err != nil {
 		t.Fatalf("%v: %v", path, err)
 	}
@@ -145,9 +145,9 @@ func (r *testRun) findCommand(t *testing.T, path ...string) *cobra.Command {
 
 // setOutputMode selects the run's output mode, reporting a mode SetMode
 // rejects.
-func (r *testRun) setOutputMode(t *testing.T, mode string) {
+func (app *testRun) setOutputMode(t *testing.T, mode string) {
 	t.Helper()
-	if cerr := r.printer.SetMode(mode); cerr != nil {
+	if cerr := app.printer.SetMode(mode); cerr != nil {
 		t.Error(cerr)
 	}
 }
