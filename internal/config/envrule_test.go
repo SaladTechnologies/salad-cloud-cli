@@ -36,13 +36,7 @@ func TestEnvironmentVariableRule(t *testing.T) {
 	root := filepath.Join("..", "..")
 	checked := 0
 	for _, path := range ruleFiles(t, root) {
-		name := filepath.Base(path)
-		ext := filepath.Ext(name)
-		if name != "justfile" && name != "Dockerfile" && ext != ".go" && ext != ".sh" && ext != ".ps1" &&
-			ext != ".yml" && ext != ".yaml" && ext != ".md" {
-			continue
-		}
-		if name == "envrule_test.go" { // names the old spellings on purpose
+		if !ruleCovers(filepath.Base(path)) {
 			continue
 		}
 		data, err := os.ReadFile(path)
@@ -61,30 +55,59 @@ func TestEnvironmentVariableRule(t *testing.T) {
 	}
 }
 
+// ruleCovers reports whether TestEnvironmentVariableRule reads a file, by its name: the justfile, the Dockerfile,
+// and Go, shell, PowerShell, YAML and Markdown files, except this one, which names the old spellings on purpose.
+func ruleCovers(name string) bool {
+	switch name {
+	case "envrule_test.go":
+		return false
+	case "justfile", "Dockerfile":
+		return true
+	}
+	switch filepath.Ext(name) {
+	case ".go", ".sh", ".ps1", ".yml", ".yaml", ".md":
+		return true
+	}
+	return false
+}
+
 // ruleFiles lists the files the rule covers: the tracked files when root is
 // a git checkout, so untracked local files are not held to it, else (a copy
 // without git, such as a source archive) every file outside hidden, build
 // and vendor directories.
 func ruleFiles(t *testing.T, root string) []string {
 	t.Helper()
-	if out, err := exec.CommandContext(t.Context(), "git", "-C", root, "ls-files").
-		Output(); err == nil &&
-		len(out) > 0 {
-		var files []string
-		for f := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
-			files = append(files, filepath.Join(root, filepath.FromSlash(f)))
-		}
+	if files, ok := trackedFiles(t, root); ok {
 		return files
 	}
+	return walkedFiles(t, root)
+}
+
+// trackedFiles lists the files git tracks under root; ok is false when root is not a git checkout (or git is
+// missing, or tracks nothing).
+func trackedFiles(t *testing.T, root string) ([]string, bool) {
+	t.Helper()
+	out, err := exec.CommandContext(t.Context(), "git", "-C", root, "ls-files").Output()
+	if err != nil || len(out) == 0 {
+		return nil, false
+	}
+	var files []string
+	for f := range strings.SplitSeq(strings.TrimSpace(string(out)), "\n") {
+		files = append(files, filepath.Join(root, filepath.FromSlash(f)))
+	}
+	return files, true
+}
+
+// walkedFiles lists every file under root outside the directories skippedRuleDir names.
+func walkedFiles(t *testing.T, root string) []string {
+	t.Helper()
 	var files []string
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		name := d.Name()
 		if d.IsDir() {
-			if path != root &&
-				(strings.HasPrefix(name, ".") && name != ".github" || name == "dist" || name == "vendor" || name == "completions") {
+			if path != root && skippedRuleDir(d.Name()) {
 				return filepath.SkipDir
 			}
 			return nil
@@ -96,6 +119,13 @@ func ruleFiles(t *testing.T, root string) []string {
 		t.Fatal(err)
 	}
 	return files
+}
+
+// skippedRuleDir reports whether walkedFiles skips a directory: hidden ones but .github, and dist, vendor and
+// completions.
+func skippedRuleDir(name string) bool {
+	return strings.HasPrefix(name, ".") && name != ".github" || name == "dist" || name == "vendor" ||
+		name == "completions"
 }
 
 // envCall matches a variable name read or set in Go code.

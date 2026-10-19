@@ -20,6 +20,19 @@ func testEnv(t *testing.T, vars map[string]string) Env {
 	return Env{Getenv: func(k string) string { return vars[k] }, GOOS: runtime.GOOS}
 }
 
+// testEnvSaved is testEnv with file saved as its config file, unless file is empty.
+func testEnvSaved(t *testing.T, vars map[string]string, file File) Env {
+	t.Helper()
+	env := testEnv(t, vars)
+	if file == (File{}) {
+		return env
+	}
+	if err := Save(env, file); err != nil {
+		t.Fatal(err)
+	}
+	return env
+}
+
 func TestPathHonorsConfigDirOverride(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
@@ -108,24 +121,17 @@ func TestResolvePrecedence(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			vars := map[string]string{}
-			env := testEnv(t, vars)
-			if tt.fileOrg != "" {
-				if err := Save(env, File{Organization: tt.fileOrg}); err != nil {
-					t.Fatal(err)
-				}
-			}
 			if tt.envOrg != "" {
 				vars["SALAD_ORGANIZATION"] = tt.envOrg
 			}
+			env := testEnvSaved(t, vars, File{Organization: tt.fileOrg})
 			r, err := Resolve(env, tt.flagOrg, "")
 			if err != nil {
 				t.Fatalf("Resolve(env) error: %v", err)
 			}
-			if r.Organization != tt.wantOrg {
-				t.Errorf("Organization = %q, want %q", r.Organization, tt.wantOrg)
-			}
-			if r.OrganizationSource != tt.wantOrgSrc {
-				t.Errorf("OrganizationSource = %q, want %q", r.OrganizationSource, tt.wantOrgSrc)
+			if r.Organization != tt.wantOrg || r.OrganizationSource != tt.wantOrgSrc {
+				t.Errorf("Organization = %q (%q), want %q (%q)",
+					r.Organization, r.OrganizationSource, tt.wantOrg, tt.wantOrgSrc)
 			}
 		})
 	}
@@ -181,33 +187,28 @@ func TestResolveMissingEverything(t *testing.T) {
 // any flag, env, or file value beats it, and the source names it.
 func TestResolveProjectFallback(t *testing.T) {
 	t.Parallel()
-	vars := map[string]string{}
-	env := testEnv(t, vars)
-
-	r := must(Resolve(env, "", ""))(t)
-	if r.Project != "default" || r.ProjectSource != SourceDefault {
-		t.Errorf("no project anywhere: %q (%q), want default (default)", r.Project, r.ProjectSource)
-	}
-	vars["SALAD_PROJECT"] = "env-project"
-	r = must(Resolve(env, "", ""))(t)
-	if r.Project != "env-project" || r.ProjectSource != "env" {
-		t.Errorf("env should beat the fallback: %q (%q)", r.Project, r.ProjectSource)
-	}
-	r = must(Resolve(env, "", "flag-project"))(t)
-	if r.Project != "flag-project" || r.ProjectSource != "flag" {
-		t.Errorf("flag should beat everything: %q (%q)", r.Project, r.ProjectSource)
-	}
-	vars["SALAD_PROJECT"] = ""
-	if err := Save(env, File{Project: "file-project"}); err != nil {
-		t.Fatal(err)
-	}
-	r = must(Resolve(env, "", ""))(t)
-	if r.Project != "file-project" || r.ProjectSource != "config" {
-		t.Errorf("config should beat the fallback: %q (%q)", r.Project, r.ProjectSource)
-	}
-	// The organization has no fallback.
-	if r.Organization != "" || r.OrganizationSource != "" {
-		t.Errorf("organization must not fall back: %q (%q)", r.Organization, r.OrganizationSource)
+	for _, tc := range []struct {
+		name                                 string
+		envProject, flagProject, fileProject string
+		want, wantSource                     string
+	}{
+		{"no project anywhere", "", "", "", "default", SourceDefault},
+		{"env beats the fallback", "env-project", "", "", "env-project", "env"},
+		{"flag beats everything", "env-project", "flag-project", "", "flag-project", "flag"},
+		{"config beats the fallback", "", "", "file-project", "file-project", "config"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			env := testEnvSaved(t, map[string]string{"SALAD_PROJECT": tc.envProject}, File{Project: tc.fileProject})
+			r := must(Resolve(env, "", tc.flagProject))(t)
+			if r.Project != tc.want || r.ProjectSource != tc.wantSource {
+				t.Errorf("project = %q (%q), want %q (%q)", r.Project, r.ProjectSource, tc.want, tc.wantSource)
+			}
+			// The organization has no fallback.
+			if r.Organization != "" || r.OrganizationSource != "" {
+				t.Errorf("organization must not fall back: %q (%q)", r.Organization, r.OrganizationSource)
+			}
+		})
 	}
 }
 
@@ -246,17 +247,7 @@ func TestSaveReplacesAtomically(t *testing.T) {
 	dir := t.TempDir()
 	env := testEnv(t, map[string]string{"SALAD_CLI_CONFIG_DIR": dir})
 	p := filepath.Join(dir, "config.json")
-	if err := os.WriteFile(
-		p,
-		[]byte(`{"api_key":"old-key","organization":"old-org","project":"a-much-longer-old-project-name"}`),
-		0o600,
-	); err != nil {
-		t.Fatal(err)
-	}
-	before, err := os.Stat(p)
-	if err != nil {
-		t.Fatal(err)
-	}
+	before := writeOldConfig(t, p)
 	want := File{Organization: "new-org"}
 	if err := Save(env, want); err != nil {
 		t.Fatal(err)
@@ -275,13 +266,33 @@ func TestSaveReplacesAtomically(t *testing.T) {
 	if strings.Contains(string(data), "old") {
 		t.Errorf("the old content survived: %s", data)
 	}
-	if runtime.GOOS != "windows" {
-		if info, err := os.Stat(p); err != nil || info.Mode().Perm() != 0o600 {
-			t.Errorf("mode = %v, want 0600", info.Mode().Perm())
-		}
-	}
+	checkMode0600(t, p)
 	if left := must(filepath.Glob(filepath.Join(dir, ".config-*.json")))(t); len(left) != 0 {
 		t.Errorf("temp files left behind: %v", left)
+	}
+}
+
+// writeOldConfig writes TestSaveReplacesAtomically's old config file at p and returns its file info.
+func writeOldConfig(t *testing.T, p string) os.FileInfo {
+	t.Helper()
+	if err := os.WriteFile(
+		p,
+		[]byte(`{"api_key":"old-key","organization":"old-org","project":"a-much-longer-old-project-name"}`),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	return must(os.Stat(p))(t)
+}
+
+// checkMode0600 checks that the file at p has mode 0600, on systems other than Windows, which has no such mode.
+func checkMode0600(t *testing.T, p string) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return
+	}
+	if info, err := os.Stat(p); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v, want 0600", info.Mode().Perm())
 	}
 }
 
