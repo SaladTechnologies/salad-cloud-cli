@@ -662,7 +662,7 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			// The one positional is <group>; the words after -- are the
 			// container command and are not counted.
-			if pos, _, _ := splitCommand(cmd, args); len(pos) != 1 {
+			if pos, _ := splitCommand(cmd, args); len(pos) != 1 {
 				return fmt.Errorf("%w 1 arg(s) before --, received %d", errAccepts, len(pos))
 			}
 			return nil
@@ -682,16 +682,16 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 // runGroupsUpdate is container-groups update's RunE: check the command line
 // pre-flight, load the patch file, lay the flags over it, and apply it.
 func (app *App) runGroupsUpdate(cmd *cobra.Command, opts *groupsUpdateOptions, args []string) error {
-	args, command, commandGiven := splitCommand(cmd, args)
-	if cerr := app.validateCommand(command, commandGiven); cerr != nil {
+	args, command := splitCommand(cmd, args)
+	if cerr := app.validateCommand(command); cerr != nil {
 		return cerr
 	}
-	warnCommand(app.errw(), cmd, command)
+	warnCommand(app.errw(), cmd, command.words)
 	wait, timeout, cerr := opts.settle.values()
 	if cerr != nil {
 		return cerr // pre-flight: a bad --timeout must not patch anything
 	}
-	flags, cerr := updateCheckFlags(cmd, opts, command)
+	flags, cerr := updateCheckFlags(cmd, opts, command.words)
 	if cerr != nil {
 		return cerr
 	}

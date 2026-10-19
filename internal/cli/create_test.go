@@ -199,7 +199,7 @@ func fileBase() containergroups.ContainerGroupCreationRequest {
 func TestBuildCreateRequestFlagsOnlyMinimal(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
-	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{
 		Name:  "web",
 		Image: "ghcr.io/me/app:latest",
 	})
@@ -227,7 +227,8 @@ func TestBuildCreateRequestDefaultsOnlyWhenUnset(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
 	// A fully-specified base with no flags must come through untouched.
-	req, cerr := app.buildCreateRequest(fileBase(), createFlags{HasBase: true})
+	base := fileBase()
+	req, cerr := app.buildCreateRequest(&base, &createFlags{HasBase: true})
 	if cerr != nil {
 		t.Fatalf("buildCreateRequest error: %v", cerr)
 	}
@@ -254,7 +255,8 @@ func TestBuildCreateRequestDefaultsOnlyWhenUnset(t *testing.T) {
 func TestBuildCreateRequestFileWithOverrides(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
-	req, cerr := app.buildCreateRequest(fileBase(), createFlags{
+	base := fileBase()
+	req, cerr := app.buildCreateRequest(&base, &createFlags{
 		HasBase:          true,
 		Name:             "renamed",
 		Image:            "ghcr.io/me/other:2",
@@ -330,7 +332,8 @@ func checkCreateTextHas(t *testing.T, text string, wants ...string) {
 func TestBuildCreateRequestEnvMerge(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
-	req, cerr := app.buildCreateRequest(fileBase(), createFlags{
+	base := fileBase()
+	req, cerr := app.buildCreateRequest(&base, &createFlags{
 		HasBase: true,
 		Env:     []string{"B=flag-b", "C=flag-c", "D=has=equals"},
 	})
@@ -399,7 +402,7 @@ func TestBuildCreateRequestPortAndAuth(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			req, cerr := newTestRun(t).buildCreateRequest(tt.base, tt.opts)
+			req, cerr := newTestRun(t).buildCreateRequest(&tt.base, &tt.opts)
 			if cerr != nil {
 				t.Fatalf("buildCreateRequest error: %v", cerr)
 			}
@@ -420,7 +423,7 @@ func TestBuildCreateRequestGpuFlag(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
 	uuid := "ed563892-aacd-40f5-80b7-90c9be6c759b"
-	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{
 		Image: "ghcr.io/me/app",
 		Gpus:  []string{uuid, "RTX 3060 (12 GB)"},
 		ResolveGpu: func(value string) (string, *clierr.Error) {
@@ -444,7 +447,7 @@ func TestBuildCreateRequestGpuResolverErrors(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
 	for _, value := range []string{"3060", "H100"} {
-		_, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+		_, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{
 			Image:      "ghcr.io/me/app",
 			Gpus:       []string{value},
 			ResolveGpu: testResolver(t),
@@ -461,7 +464,7 @@ func TestBuildCreateRequestGpuResolverErrors(t *testing.T) {
 func TestBuildCreateRequestNoAutostart(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
-	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{
 		Image:       "ghcr.io/me/app",
 		NoAutostart: true,
 	})
@@ -543,7 +546,7 @@ func TestBuildCreateRequestValidationFailures(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			app := parent.clone(t)
-			_, cerr := app.buildCreateRequest(tt.base, tt.opts)
+			_, cerr := app.buildCreateRequest(&tt.base, &tt.opts)
 			if cerr == nil {
 				t.Fatal("buildCreateRequest returned nil error")
 			}
@@ -561,7 +564,7 @@ func TestBuildCreateRequestPriorityNullable(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
 	// The priority flag must land as a non-null Nullable on the container.
-	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{
 		Image:    "x",
 		Priority: "high",
 	})
@@ -581,7 +584,9 @@ func TestIsUUID(t *testing.T) {
 	if !isUUID("f51baccc-dc95-40fb-a5d1-6d0ee0db31d2") {
 		t.Error("isUUID rejected a valid UUID")
 	}
-	for _, s := range []string{"RTX 3060", "f51baccc", "f51baccc-dc95-40fb-a5d1-6d0ee0db31d", "g51baccc-dc95-40fb-a5d1-6d0ee0db31d2"} {
+	for _, s := range []string{
+		"RTX 3060", "f51baccc", "f51baccc-dc95-40fb-a5d1-6d0ee0db31d", "g51baccc-dc95-40fb-a5d1-6d0ee0db31d2",
+	} {
 		if isUUID(s) {
 			t.Errorf("isUUID accepted %q", s)
 		}
@@ -594,7 +599,7 @@ func TestIsUUID(t *testing.T) {
 func TestBuildCreateRequestEnvLastFlagWins(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
-	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{
 		Image: "x",
 		Env:   []string{"A=1", "B=keep", "A=2"},
 	})
@@ -621,7 +626,7 @@ func TestBuildCreateRequestEnvLastFlagWins(t *testing.T) {
 func TestBuildCreateRequestReplicasZeroSurvivesDefaulting(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
-	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{
 		Image:       "x",
 		Replicas:    0,
 		ReplicasSet: true,
@@ -642,7 +647,7 @@ func TestBuildCreateRequestReplicasZeroSurvivesDefaulting(t *testing.T) {
 func TestBuildCreateRequestReplicasDefaultsWhenUnset(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
-	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{Image: "x"})
+	req, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{Image: "x"})
 	if cerr != nil {
 		t.Fatalf("buildCreateRequest error: %v", cerr)
 	}
@@ -671,7 +676,10 @@ func TestValidateWaitAutostart(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			cerr := validateWaitAutostart(tt.wait, tt.noAutostart)
+			cerr := validateWaitAutostart(&createOptions{
+				wait:  waitOptions{wait: tt.wait},
+				flags: createFlags{NoAutostart: tt.noAutostart},
+			})
 			if (cerr != nil) != tt.wantErr {
 				t.Fatalf("validateWaitAutostart(%v, %v) = %v, want an error: %v",
 					tt.wait, tt.noAutostart, cerr, tt.wantErr)
@@ -873,7 +881,7 @@ func TestBuildCreateRequestAutostartTrueBaseSurvives(t *testing.T) {
 	app := newTestRun(t)
 	base := fileBase()
 	base.AutostartPolicy = ptr.To(true) // file said autostart: true
-	req, cerr := app.buildCreateRequest(base, createFlags{
+	req, cerr := app.buildCreateRequest(&base, &createFlags{
 		HasBase:  true,
 		Gpus:     []string{"11111111-1111-1111-1111-111111111111"},
 		Priority: "high",

@@ -13,10 +13,13 @@ import (
 
 // probeSource is a stored group as the API returns it: empty lists come back
 // as [], including an HTTP probe's headers.
-const probeSource = `{"id":"g-1","name":"src","display_name":"src","organization_name":"my-org","project_name":"default",
-"container":{"image":"docker.io/library/busybox:1.36","command":[],"resources":{"cpu":1,"memory":1024,"gpu_classes":[]},"priority":"batch"},
+const probeSource = `{"id":"g-1","name":"src","display_name":"src",` +
+	`"organization_name":"my-org","project_name":"default",
+"container":{"image":"docker.io/library/busybox:1.36","command":[],` +
+	`"resources":{"cpu":1,"memory":1024,"gpu_classes":[]},"priority":"batch"},
 "country_codes":[],"replicas":1,"restart_policy":"always","autostart_policy":false,
-"readiness_probe":{"http":{"path":"/","port":8000,"scheme":"http","headers":[]},"initial_delay_seconds":0,"period_seconds":5,"timeout_seconds":2,"success_threshold":1,"failure_threshold":3},
+"readiness_probe":{"http":{"path":"/","port":8000,"scheme":"http","headers":[]},` +
+	`"initial_delay_seconds":0,"period_seconds":5,"timeout_seconds":2,"success_threshold":1,"failure_threshold":3},
 "current_state":{"status":"stopped"},"version":1}`
 
 // stubCreate serves create's calls and records the POST body.
@@ -68,7 +71,7 @@ func TestCreateSendsEmptyListsFromFile(t *testing.T) {
 	if err := os.WriteFile(file, []byte(def), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := app.runRoot(
+	_, err := app.runRoot(
 		t,
 		"container-groups",
 		"create",
@@ -80,10 +83,12 @@ func TestCreateSendsEmptyListsFromFile(t *testing.T) {
 		"--no-autostart",
 		"-o",
 		"json",
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if got, ok := postedPath(t, *posted, "readiness_probe.http.headers"); !ok || !jsonEqual(got, []any{}) {
+	emptyList := json.RawMessage(`[]`)
+	if got, ok := postedPath(t, *posted, "readiness_probe.http.headers"); !ok || !jsonEqual(got, emptyList) {
 		t.Errorf("readiness_probe.http.headers = %v (present %v), want []; body %s", got, ok, *posted)
 	}
 	// Nothing the file and flags did not set appears.
@@ -112,7 +117,7 @@ func TestCreateFromKeepsSourceEmptyLists(t *testing.T) {
 		t.Fatalf("create --from: %v", err)
 	}
 	for _, path := range []string{"readiness_probe.http.headers", "country_codes"} {
-		if got, ok := postedPath(t, *posted, path); !ok || !jsonEqual(got, []any{}) {
+		if got, ok := postedPath(t, *posted, path); !ok || !jsonEqual(got, json.RawMessage(`[]`)) {
 			t.Errorf("%s = %v (present %v), want []; body %s", path, got, ok, *posted)
 		}
 	}

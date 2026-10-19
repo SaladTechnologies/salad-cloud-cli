@@ -78,19 +78,19 @@ func isUUID(s string) bool { return uuidRe.MatchString(s) }
 // and ending with a letter or digit.
 var groupNameRe = regexp.MustCompile(`^[a-z][a-z0-9-]{0,61}[a-z0-9]$`)
 
-// validateGroupName pre-validates a group name client-side so a bad name
-// fails fast (exit 6, the API's own rule) before any request.
 // validateWaitAutostart rejects --wait together with --no-autostart: a group
 // created stopped never reaches "running", so the wait could only ever time
 // out. Pre-flight, before any file read or API call.
-func validateWaitAutostart(wait, noAutostart bool) *clierr.Error {
-	if wait && noAutostart {
+func validateWaitAutostart(o *createOptions) *clierr.Error {
+	if o.wait.wait && o.flags.NoAutostart {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage,
 			"--wait cannot be combined with --no-autostart (a group created stopped never becomes running)")
 	}
 	return nil
 }
 
+// validateGroupName pre-validates a group name client-side so a bad name
+// fails fast (exit 6, the API's own rule) before any request.
 func validateGroupName(name string) *clierr.Error { return validateResourceName("group", name) }
 
 // validateResourceName applies the API's resource name rule (shared by
@@ -100,7 +100,9 @@ func validateResourceName(noun, name string) *clierr.Error {
 	if !groupNameRe.MatchString(name) {
 		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
 			`invalid %s name "%s"`, noun, name).
-			WithHint("use 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending with a letter or digit")
+			WithHint(
+				"use 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending with a letter or digit", //nolint:lll // one literal, so validation_test.go reads the hint at its call site
+			)
 	}
 	return nil
 }
@@ -109,10 +111,10 @@ func validateResourceName(noun, name string) *clierr.Error {
 // (from -f or empty), then fills defaults into fields that are
 // still unset. It is pure: GPU name resolution goes through opts.ResolveGpu.
 func (app *App) buildCreateRequest(
-	base containergroups.ContainerGroupCreationRequest,
-	opts createFlags,
+	base *containergroups.ContainerGroupCreationRequest,
+	opts *createFlags,
 ) (containergroups.ContainerGroupCreationRequest, *clierr.Error) {
-	req := base
+	req := *base
 
 	if !opts.HasBase && opts.Image == "" {
 		return req, clierr.New(clierr.CodeUsage, clierr.KindUsage,
@@ -131,7 +133,7 @@ func (app *App) buildCreateRequest(
 		createApplyNetworkingFlags,
 	}
 	for _, step := range steps {
-		if cerr := step(&req, &opts); cerr != nil {
+		if cerr := step(&req, opts); cerr != nil {
 			return req, cerr
 		}
 	}
@@ -223,7 +225,7 @@ func createQueueFlagsGiven(opts *createFlags) (bool, *clierr.Error) {
 		return false, clierr.New(
 			clierr.CodeUsage,
 			clierr.KindUsage,
-			"--queue, --queue-port and --queue-path go together: the queue, and the port and path its jobs are delivered to",
+			"--queue, --queue-port and --queue-path go together: the queue, and the port and path its jobs are delivered to", //nolint:lll // one literal, so validation_test.go reads the message at its call site
 		)
 	}
 	return true, nil
@@ -416,6 +418,10 @@ func createApplyNetworkingFlags(
 	return nil
 }
 
+// createDefaultMemoryMB is the memory, in MB, a container gets when neither
+// the base nor --memory sets it; it is also --memory's default.
+const createDefaultMemoryMB = 1024
+
 // createFillDefaults fills only fields still unset after base + flags.
 // cpu/memory defaults apply only when a container exists at all (no
 // container means the request is invalid regardless — validateCreateRequest
@@ -427,7 +433,7 @@ func createFillDefaults(req *containergroups.ContainerGroupCreationRequest) {
 			r.Cpu = ptr.To(int64(1))
 		}
 		if r.Memory == nil {
-			r.Memory = ptr.To(int64(1024))
+			r.Memory = ptr.To(int64(createDefaultMemoryMB))
 		}
 	}
 	if req.Replicas == nil {
@@ -477,15 +483,19 @@ func resolveGpuClassName(value string, classes []organizationdata.GpuClass) (str
 	}
 }
 
+// gpuClassesNamedInHint is how many of the org's GPU classes the unknown GPU
+// class hint names at most.
+const gpuClassesNamedInHint = 5
+
 // unknownGpuClassError is resolveGpuClassName's error for a value no class
-// matches; its hint names up to five of the org's classes.
+// matches; its hint names up to gpuClassesNamedInHint of the org's classes.
 func unknownGpuClassError(value string, classes []organizationdata.GpuClass) *clierr.Error {
-	names := make([]string, 0, 5)
+	names := make([]string, 0, gpuClassesNamedInHint)
 	for i := range classes {
 		if n := strings.TrimSpace(ptr.Deref(classes[i].Name)); n != "" {
 			names = append(names, `"`+n+`"`)
 		}
-		if len(names) == 5 {
+		if len(names) == gpuClassesNamedInHint {
 			break
 		}
 	}
@@ -520,8 +530,9 @@ var msysDrivePath = regexp.MustCompile(`^[A-Za-z]:[/\\]`)
 func noteQueueWorker(w io.Writer, queue string) {
 	fprintf(
 		w,
-		"note: jobs from queue %s reach this group only if its image runs the job queue worker beside your HTTP server; "+
-			"without it the jobs stay pending and nothing reports why; to add the worker, see %s\n",
+		"note: jobs from queue %s reach this group only if its image runs the job queue worker "+
+			"beside your HTTP server; without it the jobs stay pending and nothing reports why; "+
+			"to add the worker, see %s\n",
 		queue,
 		queueWorkerDocs,
 	)
@@ -544,7 +555,7 @@ func addCreateOverrideFlags(cmd *cobra.Command, o *createFlags) {
 	f := cmd.Flags()
 	f.StringVar(&o.Image, "image", "", "container image (required unless -f or --from provides one)")
 	f.Int64Var(&o.CPU, "cpu", 1, "vCPU cores")
-	f.Int64Var(&o.Memory, "memory", 1024, "memory in MB")
+	f.Int64Var(&o.Memory, "memory", createDefaultMemoryMB, "memory in MB")
 	f.Int64Var(&o.Storage, "storage", 0, "storage in GB (default: server default)")
 	f.StringArrayVar(
 		&o.Countries,
@@ -587,10 +598,11 @@ func addCreateOverrideFlags(cmd *cobra.Command, o *createFlags) {
 	f.StringVar(&o.QueuePath, "queue-path", "", "HTTP path the queue's jobs are delivered to, for example /generate")
 }
 
-// collectCreateFlags is the bound override flags, with the ones given on the
-// command line marked set, for a group named name.
-func collectCreateFlags(cmd *cobra.Command, o createFlags, name string, hasBase bool) createFlags {
+// collectCreateFlags is a copy of the override flags bound to bound, with the
+// ones given on the command line marked set, for a group named name.
+func collectCreateFlags(cmd *cobra.Command, bound *createFlags, name string, hasBase bool) createFlags {
 	f := cmd.Flags()
+	o := *bound
 	o.Name = name
 	o.HasBase = hasBase
 	o.CPUSet = f.Changed("cpu")
@@ -604,37 +616,39 @@ func collectCreateFlags(cmd *cobra.Command, o createFlags, name string, hasBase 
 	return o
 }
 
-// runCreate is the tail of create: apply the
-// override flags to the base, pre-validate, create, and emit the group.
-// The API client is built lazily so pure usage errors (missing --image,
-// bad --env) surface before any auth/config requirement.
+// createBase is the request create starts from, before its flags apply:
+// empty, or loaded from -f and/or --from.
 //
-// baseRaw/unknowns are non-empty only on the --allow-unknown-fields path:
-// baseRaw is the user's document as written, unknowns the fields the typed
+// raw and unknowns are non-empty only on the --allow-unknown-fields path:
+// raw is the user's document as written, unknowns the fields the typed
 // struct cannot carry. Those fields are grafted back by deep-merging the
-// built request (flags + defaults, which always win) over baseRaw and
-// sending the merged document raw.
-func (app *App) runCreate(
-	cmd *cobra.Command,
-	o *createOptions,
-	base containergroups.ContainerGroupCreationRequest,
-	hasBase bool,
-	name string,
-	command []string,
-	baseRaw []byte,
-	unknowns []input.Unknown,
-) error {
+// built request (flags + defaults, which always win) over raw and sending
+// the merged document raw.
+type createBase struct {
+	req containergroups.ContainerGroupCreationRequest
+	// given is true when the base came from -f or --from; without one,
+	// --image is required.
+	given    bool
+	raw      []byte
+	unknowns []input.Unknown
+}
+
+// runCreate is the tail of create: apply the override flags to the base,
+// pre-validate, create, and emit the group. The API client is built lazily
+// so pure usage errors (missing --image, bad --env) surface before any
+// auth/config requirement.
+func (app *App) runCreate(cmd *cobra.Command, o *createOptions, base *createBase, name string, command []string) error {
 	getClient := app.createLazyClient(cmd)
-	opts := collectCreateFlags(cmd, o.flags, name, hasBase)
+	opts := collectCreateFlags(cmd, &o.flags, name, base.given)
 	opts.Command = command
 	opts.ResolveGpu = createLazyGpuResolver(cmd, getClient)
 
-	req, cerr := app.buildCreateRequest(base, opts)
+	req, cerr := app.buildCreateRequest(&base.req, &opts)
 	if cerr != nil {
 		return cerr
 	}
-	if cerr = validateCreateRequest(&req); cerr != nil {
-		return cerr
+	if verr := validateCreateRequest(&req); verr != nil {
+		return verr
 	}
 	c, cerr := getClient()
 	if cerr != nil {
@@ -643,7 +657,7 @@ func (app *App) runCreate(
 	if qerr := createCheckQueue(cmd, c, &req); qerr != nil {
 		return qerr
 	}
-	sent, cerr := app.createRequestBody(&req, baseRaw, unknowns)
+	sent, cerr := app.createRequestBody(&req, base.raw, base.unknowns)
 	if cerr != nil {
 		return cerr
 	}
@@ -814,8 +828,9 @@ your shell split them. The command replaces the image's ENTRYPOINT and CMD
 together, so it starts with the program: -- python app.py --port 8080, not
 -- --port 8080. Unlike cg ssh, there is no shell: for a script, give
 -- bash -c '<script>'. Put saladcloud's own flags (-o, --wait, ...) before --.`,
-		Example: `  # Flags only: the common case
-  saladcloud container-groups create my-app --image ghcr.io/me/app:latest --replicas 3 --port 8080 -e MODE=prod --gpu "RTX 3060 (12 GB)"
+		Example: "  # Flags only: the common case\n" +
+			"  saladcloud container-groups create my-app --image ghcr.io/me/app:latest --replicas 3 --port 8080 " +
+			`-e MODE=prod --gpu "RTX 3060 (12 GB)"
 
   # From a YAML/JSON definition file
   saladcloud container-groups create -f examples/hello-cpu.yaml
@@ -840,7 +855,7 @@ together, so it starts with the program: -- python app.py --port 8080, not
 		Args: func(cmd *cobra.Command, args []string) error {
 			// The one optional positional is <group>; the words after -- are
 			// the container command and are not counted.
-			if pos, _, _ := splitCommand(cmd, args); len(pos) > 1 {
+			if pos, _ := splitCommand(cmd, args); len(pos) > 1 {
 				return fmt.Errorf("%w at most 1 arg(s), received %d", errAccepts, len(pos))
 			}
 			return nil
@@ -863,51 +878,38 @@ together, so it starts with the program: -- python app.py --port 8080, not
 // flags pre-flight, before any file or API work, then load the base (--from,
 // -f, or none) and hand it to runCreate.
 func (app *App) runCreateCommand(cmd *cobra.Command, opts *createOptions, args []string) error {
-	noAutostart, file, allowUnknown, from := opts.flags.NoAutostart, opts.file, opts.allowUnknown, opts.from
-	args, command, commandGiven := splitCommand(cmd, args)
-	if cerr := app.validateCommand(command, commandGiven); cerr != nil {
+	args, command := splitCommand(cmd, args)
+	if cerr := app.validateCommand(command); cerr != nil {
 		return cerr
 	}
-	warnCommand(app.errw(), cmd, command)
+	warnCommand(app.errw(), cmd, command.words)
 	// Pre-flight flag validation, before any file or API work.
-	wait, _, cerr := opts.wait.values()
-	if cerr != nil {
+	if _, _, cerr := opts.wait.values(); cerr != nil {
 		return cerr
 	}
-	if cerr = validateWaitAutostart(wait, noAutostart); cerr != nil {
+	if cerr := validateWaitAutostart(opts); cerr != nil {
 		return cerr
 	}
 	name := ""
 	if len(args) == 1 {
 		name = args[0]
 	}
-	if from != "" {
-		var base containergroups.ContainerGroupCreationRequest
-		var baseRaw []byte
-		var unknowns []input.Unknown
-		base, baseRaw, unknowns, cerr = app.loadFromBase(
-			cmd,
-			from,
-			file,
-			allowUnknown,
-			name,
-			opts.flags.Image,
-			app.errw(),
-		)
+	var base createBase
+	switch {
+	case opts.from != "":
+		from, cerr := app.loadFromBase(cmd, opts, name, app.errw())
 		if cerr != nil {
 			return cerr
 		}
-		return app.runCreate(cmd, opts, base, true, name, command, baseRaw, unknowns)
+		base = from
+	case opts.file != "":
+		raw, unknowns, cerr := app.createLoadFile(opts, &base.req)
+		if cerr != nil {
+			return cerr
+		}
+		base.given, base.raw, base.unknowns = true, raw, unknowns
 	}
-	var base containergroups.ContainerGroupCreationRequest
-	if file == "" {
-		return app.runCreate(cmd, opts, base, false, name, command, nil, nil)
-	}
-	baseRaw, unknowns, cerr := app.createLoadFile(opts, &base)
-	if cerr != nil {
-		return cerr
-	}
-	return app.runCreate(cmd, opts, base, true, name, command, baseRaw, unknowns)
+	return app.runCreate(cmd, opts, &base, name, command.words)
 }
 
 // createLoadFile loads the -f definition into base. With

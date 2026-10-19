@@ -29,7 +29,7 @@ func TestValidateCommand(t *testing.T) {
 			"",
 		},
 		{"padded words pass (the node trims them)", []string{"bash", "-c", " echo hi\n"}, true, 0, ""},
-		{"nothing after --", []string{}, true, clierr.CodeUsage, "nothing after --"},
+		{"nothing after --", nil, true, clierr.CodeUsage, "nothing after --"},
 		{"an empty word", []string{"python", "app.py", "--name", ""}, true, clierr.CodeInvalidInput, "word 4 is empty"},
 		{"docker-style args", []string{"--port", "8080"}, true, clierr.CodeInvalidInput, "start it with a program"},
 		{"too many words", make101(), true, clierr.CodeInvalidInput, "the API allows at most 100"},
@@ -38,7 +38,7 @@ func TestValidateCommand(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			app := newTestRun(t)
-			cerr := app.validateCommand(tt.words, tt.given)
+			cerr := app.validateCommand(containerCommand{words: tt.words, given: tt.given})
 			if tt.wantCode == 0 {
 				if cerr != nil {
 					t.Fatalf("rejected: %v", cerr)
@@ -59,20 +59,18 @@ func TestValidateCommandGitBash(t *testing.T) {
 	app := newTestRun(t)
 	rewritten := []string{"C:/Program-Files/Git/usr/bin/bash", "-c", "x"}
 	app.setenv("MSYSTEM", "")
-	if cerr := app.validateCommand(rewritten, true); cerr != nil {
+	if cerr := app.validateCommand(containerCommand{words: rewritten, given: true}); cerr != nil {
 		t.Errorf("outside Git Bash: %v", cerr)
 	}
 	app.setenv("MSYSTEM", "MINGW64")
 	for _, words := range [][]string{rewritten, {"configure", "--prefix=C:/Program-Files/Git/usr"}} {
-		if cerr := app.validateCommand(
-			words,
-			true,
-		); cerr == nil || cerr.Code != clierr.CodeUsage ||
-			!strings.Contains(cerr.Message, "rewritten by Git Bash") {
+		cerr := app.validateCommand(containerCommand{words: words, given: true})
+		if cerr == nil || cerr.Code != clierr.CodeUsage || !strings.Contains(cerr.Message, "rewritten by Git Bash") {
 			t.Errorf("%q under Git Bash: %v", words, cerr)
 		}
 	}
-	if cerr := app.validateCommand([]string{"bash", "-c", "P=a:/opt; ls $P"}, true); cerr != nil {
+	script := containerCommand{words: []string{"bash", "-c", "P=a:/opt; ls $P"}, given: true}
+	if cerr := app.validateCommand(script); cerr != nil {
 		t.Errorf("a script word was checked: %v", cerr)
 	}
 }

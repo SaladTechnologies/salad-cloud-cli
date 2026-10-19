@@ -51,7 +51,11 @@ func TestCheckCopyTarget(t *testing.T) {
 		{false, "", false}, // another project: the source's name is free here
 		{false, "my-app", false},
 	} {
-		if cerr := checkCopyTarget(tc.same, tc.name, "my-app"); (cerr != nil) != tc.wantErr {
+		target := "staging"
+		if tc.same {
+			target = "default"
+		}
+		if cerr := checkCopyTarget("default", target, tc.name, "my-app"); (cerr != nil) != tc.wantErr {
 			t.Errorf("checkCopyTarget(%v, %q) = %v, wantErr %v", tc.same, tc.name, cerr, tc.wantErr)
 		}
 	}
@@ -72,7 +76,8 @@ func copySource(t *testing.T) string {
 
 func TestCopyDocument(t *testing.T) {
 	t.Parallel()
-	raw, err := copyDocument(grp(t, copySource(t)), "my-copy", false)
+	g := grp(t, copySource(t))
+	raw, err := copyDocument(g, copyDisplayName(g, "my-copy"))
 	if err != nil {
 		t.Fatalf("copyDocument: %v", err)
 	}
@@ -128,7 +133,11 @@ func TestCopyDocumentDisplayName(t *testing.T) {
 		{"", false, "My App"},       // same name in another project
 		{"my-app", false, "My App"},
 	} {
-		raw, err := copyDocument(g, tc.name, tc.displaySet)
+		displayName := ""
+		if !tc.displaySet {
+			displayName = copyDisplayName(g, tc.name)
+		}
+		raw, err := copyDocument(g, displayName)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -136,7 +145,7 @@ func TestCopyDocumentDisplayName(t *testing.T) {
 		noErr(t, json.Unmarshal(raw, &doc))
 		if doc["display_name"] != tc.want {
 			t.Errorf(
-				"copyDocument(%q, %v) display_name = %v, want %q",
+				"copy named %q (display name set: %v) display_name = %v, want %q",
 				tc.name,
 				tc.displaySet,
 				doc["display_name"],
@@ -149,7 +158,8 @@ func TestCopyDocumentDisplayName(t *testing.T) {
 func TestCopyDocumentBuildsARequest(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
-	raw, err := copyDocument(grp(t, copySource(t)), "my-copy", false)
+	g := grp(t, copySource(t))
+	raw, err := copyDocument(g, copyDisplayName(g, "my-copy"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +167,7 @@ func TestCopyDocumentBuildsARequest(t *testing.T) {
 	if err := json.Unmarshal(raw, &base); err != nil {
 		t.Fatalf("copy does not unmarshal into a creation request: %v", err)
 	}
-	req, cerr := app.buildCreateRequest(base, createFlags{Name: "my-copy", HasBase: true})
+	req, cerr := app.buildCreateRequest(&base, &createFlags{Name: "my-copy", HasBase: true})
 	if cerr != nil {
 		t.Fatalf("buildCreateRequest: %v", cerr)
 	}
