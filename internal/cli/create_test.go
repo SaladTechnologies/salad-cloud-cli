@@ -58,20 +58,13 @@ func TestValidateGroupName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			err := validateGroupName(tt.name)
-			if tt.valid {
-				if err != nil {
-					t.Fatalf("validateGroupName(%q) = %v, want nil", tt.name, err)
-				}
+			if !tt.valid {
+				// The message quotes the name.
+				checkCreateInvalidInput(t, err, tt.name)
 				return
 			}
-			if err == nil {
-				t.Fatalf("validateGroupName(%q) = nil, want a usage error", tt.name)
-			}
-			if err.Code != clierr.CodeInvalidInput || err.Kind != clierr.KindInvalidInput {
-				t.Errorf("error = (%d, %s), want (%d, invalid_input)", err.Code, err.Kind, clierr.CodeInvalidInput)
-			}
-			if !strings.Contains(err.Message, tt.name) {
-				t.Errorf("message %q does not quote the name %q", err.Message, tt.name)
+			if err != nil {
+				t.Fatalf("validateGroupName(%q) = %v, want nil", tt.name, err)
 			}
 		})
 	}
@@ -113,23 +106,15 @@ func TestResolveGpuClassName(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			id, cerr := resolveGpuClassName(tt.value, classes)
-			if tt.wantErr == "" {
-				if cerr != nil {
-					t.Fatalf("resolveGpuClassName(%q) error: %v", tt.value, cerr)
-				}
-				if id != tt.wantID {
-					t.Errorf("resolveGpuClassName(%q) = %q, want %q", tt.value, id, tt.wantID)
-				}
+			if tt.wantErr != "" {
+				checkCreateInvalidInput(t, cerr, tt.wantErr)
 				return
 			}
-			if cerr == nil {
-				t.Fatalf("resolveGpuClassName(%q) = %q, want error containing %q", tt.value, id, tt.wantErr)
+			if cerr != nil {
+				t.Fatalf("resolveGpuClassName(%q) error: %v", tt.value, cerr)
 			}
-			if cerr.Code != clierr.CodeInvalidInput {
-				t.Errorf("code = %d, want %d", cerr.Code, clierr.CodeInvalidInput)
-			}
-			if !strings.Contains(cerr.Message, tt.wantErr) {
-				t.Errorf("message %q does not contain %q", cerr.Message, tt.wantErr)
+			if id != tt.wantID {
+				t.Errorf("resolveGpuClassName(%q) = %q, want %q", tt.value, id, tt.wantID)
 			}
 		})
 	}
@@ -221,34 +206,18 @@ func TestBuildCreateRequestFlagsOnlyMinimal(t *testing.T) {
 	if cerr != nil {
 		t.Fatalf("buildCreateRequest error: %v", cerr)
 	}
-	if got := ptr.Deref(req.Name); got != "web" {
-		t.Errorf("name = %q, want web", got)
-	}
-	if got := ptr.Deref(req.Container.Image); got != "ghcr.io/me/app:latest" {
-		t.Errorf("image = %q", got)
-	}
-	// Defaults fill everything else.
-	if got := ptr.Deref(req.Container.Resources.Cpu); got != 1 {
-		t.Errorf("cpu = %d, want default 1", got)
-	}
-	if got := ptr.Deref(req.Container.Resources.Memory); got != 1024 {
-		t.Errorf("memory = %d, want default 1024", got)
-	}
-	if got := ptr.Deref(req.Replicas); got != 1 {
-		t.Errorf("replicas = %d, want default 1", got)
-	}
-	if req.RestartPolicy == nil || *req.RestartPolicy != shared.CONTAINER_RESTART_POLICY_ALWAYS {
-		t.Errorf("restart_policy = %v, want always", req.RestartPolicy)
-	}
-	if !ptr.Deref(req.AutostartPolicy) {
-		t.Error("autostart_policy = false, want default true")
-	}
-	if req.Container.Priority != nil {
-		t.Errorf("priority = %v, want unset (server default)", req.Container.Priority)
-	}
-	if req.Networking != nil {
-		t.Errorf("networking = %v, want unset", req.Networking)
-	}
+	checkCreateFields(t, []createFieldCheck{
+		{"name", ptr.Deref(req.Name), "web"},
+		{"image", ptr.Deref(req.Container.Image), "ghcr.io/me/app:latest"},
+		// Defaults fill everything else.
+		{"cpu (default)", ptr.Deref(req.Container.Resources.Cpu), int64(1)},
+		{"memory (default)", ptr.Deref(req.Container.Resources.Memory), int64(1024)},
+		{"replicas (default)", ptr.Deref(req.Replicas), int64(1)},
+		{"restart_policy (default)", ptr.Deref(req.RestartPolicy), shared.CONTAINER_RESTART_POLICY_ALWAYS},
+		{"autostart_policy (default)", ptr.Deref(req.AutostartPolicy), true},
+		{"priority set (server default when unset)", req.Container.Priority != nil, false},
+		{"networking set", req.Networking != nil, false},
+	})
 	if cerr := validateCreateRequest(&req); cerr != nil {
 		t.Errorf("validateCreateRequest rejected the built request: %v", cerr)
 	}
@@ -301,30 +270,60 @@ func TestBuildCreateRequestFileWithOverrides(t *testing.T) {
 	if cerr != nil {
 		t.Fatalf("buildCreateRequest error: %v", cerr)
 	}
-	if got := ptr.Deref(req.Name); got != "renamed" {
-		t.Errorf("name = %q, want renamed (positional overrides file)", got)
+	if req.Container.Priority == nil {
+		t.Fatal("priority is unset, want batch")
 	}
-	if got := ptr.Deref(req.DisplayName); got != "Renamed App" {
-		t.Errorf("display_name = %q", got)
+	checkCreateFields(t, []createFieldCheck{
+		{"name (positional overrides file)", ptr.Deref(req.Name), "renamed"},
+		{"display_name", ptr.Deref(req.DisplayName), "Renamed App"},
+		{"image (the flag value)", ptr.Deref(req.Container.Image), "ghcr.io/me/other:2"},
+		{"cpu (flag overrides file)", ptr.Deref(req.Container.Resources.Cpu), int64(8)},
+		{"memory (file value kept — flag not set)", ptr.Deref(req.Container.Resources.Memory), int64(2048)},
+		{"replicas", ptr.Deref(req.Replicas), int64(2)},
+		{"restart_policy", ptr.Deref(req.RestartPolicy), shared.CONTAINER_RESTART_POLICY_ON_FAILURE},
+		{"priority is null", req.Container.Priority.IsNull, false},
+		{"priority", req.Container.Priority.Value, shared.CONTAINER_GROUP_PRIORITY_BATCH},
+	})
+}
+
+// createFieldCheck is one field of a built request and the value a test
+// wants in it; got and want must be of the same comparable type.
+type createFieldCheck struct {
+	field     string
+	got, want any
+}
+
+// checkCreateFields reports every check whose field does not hold the value
+// it wants.
+func checkCreateFields(t *testing.T, checks []createFieldCheck) {
+	t.Helper()
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s = %v, want %v", c.field, c.got, c.want)
+		}
 	}
-	if got := ptr.Deref(req.Container.Image); got != "ghcr.io/me/other:2" {
-		t.Errorf("image = %q, want the flag value", got)
+}
+
+// checkCreateInvalidInput fails t unless cerr is an invalid-input error
+// whose message contains fragment.
+func checkCreateInvalidInput(t *testing.T, cerr *clierr.Error, fragment string) {
+	t.Helper()
+	if cerr == nil {
+		t.Fatalf("error = nil, want an invalid-input error containing %q", fragment)
 	}
-	if got := ptr.Deref(req.Container.Resources.Cpu); got != 8 {
-		t.Errorf("cpu = %d, want 8 (flag overrides file)", got)
+	if cerr.Code != clierr.CodeInvalidInput || cerr.Kind != clierr.KindInvalidInput {
+		t.Errorf("error = (%d, %s), want (%d, invalid_input)", cerr.Code, cerr.Kind, clierr.CodeInvalidInput)
 	}
-	if got := ptr.Deref(req.Container.Resources.Memory); got != 2048 {
-		t.Errorf("memory = %d, want 2048 (file value kept — flag not set)", got)
-	}
-	if got := ptr.Deref(req.Replicas); got != 2 {
-		t.Errorf("replicas = %d, want 2", got)
-	}
-	if *req.RestartPolicy != shared.CONTAINER_RESTART_POLICY_ON_FAILURE {
-		t.Errorf("restart_policy = %v, want on_failure", *req.RestartPolicy)
-	}
-	if req.Container.Priority == nil || req.Container.Priority.IsNull ||
-		req.Container.Priority.Value != shared.CONTAINER_GROUP_PRIORITY_BATCH {
-		t.Errorf("priority = %v, want batch", req.Container.Priority)
+	checkCreateTextHas(t, cerr.Message, fragment)
+}
+
+// checkCreateTextHas reports each of wants that text does not contain.
+func checkCreateTextHas(t *testing.T, text string, wants ...string) {
+	t.Helper()
+	for _, want := range wants {
+		if !strings.Contains(text, want) {
+			t.Errorf("message %q missing %q", text, want)
+		}
 	}
 }
 
@@ -357,58 +356,63 @@ func TestBuildCreateRequestEnvMerge(t *testing.T) {
 
 func TestBuildCreateRequestPortAndAuth(t *testing.T) {
 	t.Parallel()
-	app := newTestRun(t)
-	req, cerr := app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
-		Image:   "ghcr.io/me/app",
-		Port:    8080,
-		PortSet: true,
-	})
-	if cerr != nil {
-		t.Fatalf("buildCreateRequest error: %v", cerr)
+	// fileNetworking is a base that already has networking.
+	fileNetworking := func() containergroups.ContainerGroupCreationRequest {
+		base := fileBase()
+		proto := shared.CONTAINER_NETWORKING_PROTOCOL_HTTP
+		base.Networking = &containergroups.CreateContainerGroupNetworking{
+			Protocol: &proto, Port: ptr.To(int64(80)), Auth: ptr.To(true),
+		}
+		return base
 	}
-	n := req.Networking
-	if n == nil {
-		t.Fatal("networking is nil")
+	tests := []struct {
+		name     string
+		base     containergroups.ContainerGroupCreationRequest
+		opts     createFlags
+		wantPort int64
+		wantAuth bool
+	}{
+		{
+			// --port alone: http, auth on by default.
+			name:     "port",
+			opts:     createFlags{Image: "ghcr.io/me/app", Port: 8080, PortSet: true},
+			wantPort: 8080,
+			wantAuth: true,
+		},
+		{
+			// --no-auth with --port flips auth off.
+			name:     "port with no-auth",
+			opts:     createFlags{Image: "ghcr.io/me/app", Port: 8080, PortSet: true, NoAuth: true},
+			wantPort: 8080,
+			wantAuth: false,
+		},
+		{
+			// --no-auth against a file that already has networking is fine
+			// too, and keeps the file's port.
+			name:     "no-auth over file networking",
+			base:     fileNetworking(),
+			opts:     createFlags{HasBase: true, NoAuth: true},
+			wantPort: 80,
+			wantAuth: false,
+		},
 	}
-	if got := ptr.Deref(n.Port); got != 8080 {
-		t.Errorf("port = %d, want 8080", got)
-	}
-	if n.Protocol == nil || *n.Protocol != shared.CONTAINER_NETWORKING_PROTOCOL_HTTP {
-		t.Errorf("protocol = %v, want http", n.Protocol)
-	}
-	if !ptr.Deref(n.Auth) {
-		t.Error("auth = false, want default true")
-	}
-
-	// --no-auth with --port flips auth off.
-	req, cerr = app.buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
-		Image:   "ghcr.io/me/app",
-		Port:    8080,
-		PortSet: true,
-		NoAuth:  true,
-	})
-	if cerr != nil {
-		t.Fatalf("buildCreateRequest error: %v", cerr)
-	}
-	if ptr.Deref(req.Networking.Auth) {
-		t.Error("auth = true, want false with --no-auth")
-	}
-
-	// --no-auth against a file that already has networking is fine too.
-	base := fileBase()
-	proto := shared.CONTAINER_NETWORKING_PROTOCOL_HTTP
-	base.Networking = &containergroups.CreateContainerGroupNetworking{
-		Protocol: &proto, Port: ptr.To(int64(80)), Auth: ptr.To(true),
-	}
-	req, cerr = app.buildCreateRequest(base, createFlags{HasBase: true, NoAuth: true})
-	if cerr != nil {
-		t.Fatalf("buildCreateRequest error: %v", cerr)
-	}
-	if ptr.Deref(req.Networking.Auth) {
-		t.Error("auth = true, want false (--no-auth over file networking)")
-	}
-	if got := ptr.Deref(req.Networking.Port); got != 80 {
-		t.Errorf("port = %d, want 80 (file value kept)", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			req, cerr := newTestRun(t).buildCreateRequest(tt.base, tt.opts)
+			if cerr != nil {
+				t.Fatalf("buildCreateRequest error: %v", cerr)
+			}
+			n := req.Networking
+			if n == nil {
+				t.Fatal("networking is nil")
+			}
+			checkCreateFields(t, []createFieldCheck{
+				{"port", ptr.Deref(n.Port), tt.wantPort},
+				{"protocol", ptr.Deref(n.Protocol), shared.CONTAINER_NETWORKING_PROTOCOL_HTTP},
+				{"auth", ptr.Deref(n.Auth), tt.wantAuth},
+			})
+		})
 	}
 }
 
@@ -668,23 +672,17 @@ func TestValidateWaitAutostart(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			cerr := validateWaitAutostart(tt.wait, tt.noAutostart)
-			if !tt.wantErr {
-				if cerr != nil {
-					t.Fatalf("validateWaitAutostart(%v, %v) = %v, want nil", tt.wait, tt.noAutostart, cerr)
-				}
-				return
+			if (cerr != nil) != tt.wantErr {
+				t.Fatalf("validateWaitAutostart(%v, %v) = %v, want an error: %v",
+					tt.wait, tt.noAutostart, cerr, tt.wantErr)
 			}
 			if cerr == nil {
-				t.Fatalf("validateWaitAutostart(%v, %v) = nil, want an error", tt.wait, tt.noAutostart)
+				return
 			}
 			if cerr.Code != clierr.CodeUsage {
 				t.Errorf("code = %d, want %d (usage)", cerr.Code, clierr.CodeUsage)
 			}
-			for _, want := range []string{"--wait", "--no-autostart"} {
-				if !strings.Contains(cerr.Message, want) {
-					t.Errorf("message %q does not name %s", cerr.Message, want)
-				}
-			}
+			checkCreateTextHas(t, cerr.Message, "--wait", "--no-autostart")
 		})
 	}
 }
@@ -780,11 +778,7 @@ func TestRejectUnknownsOffersHatchOnlyForNovelFields(t *testing.T) {
 			if got := strings.Contains(errText(cerr), hatch); got != tt.wantHatch {
 				t.Errorf("hatch offered = %v, want %v (message: %s)", got, tt.wantHatch, errText(cerr))
 			}
-			for _, want := range tt.wantText {
-				if !strings.Contains(errText(cerr), want) {
-					t.Errorf("message %q missing %q", errText(cerr), want)
-				}
-			}
+			checkCreateTextHas(t, errText(cerr), tt.wantText...)
 			if cerr.Kind != clierr.KindUnknownField {
 				t.Errorf("kind = %q, want %q", cerr.Kind, clierr.KindUnknownField)
 			}

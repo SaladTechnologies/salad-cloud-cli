@@ -6,6 +6,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"regexp"
@@ -118,21 +119,51 @@ func (app *App) buildCreateRequest(
 			"missing required flag: --image <image> (or start from a base definition with -f <file>)")
 	}
 
-	container := func() *containergroups.ContainerConfiguration {
-		if req.Container == nil {
-			req.Container = &containergroups.ContainerConfiguration{}
-		}
-		return req.Container
+	// Flags override the base, docker-run style. The steps run in this
+	// order, so the same command line always fails the same check first.
+	steps := []func(*containergroups.ContainerGroupCreationRequest, *createFlags) *clierr.Error{
+		createApplyContainerFlags,
+		createApplyCountryFlags,
+		app.createApplyQueueFlags,
+		createApplySchedulingFlags,
+		createApplyEnvFlags,
+		createApplyGpuFlags,
+		createApplyNetworkingFlags,
 	}
-	resources := func() *containergroups.CreateContainerResourceRequirements {
-		c := container()
-		if c.Resources == nil {
-			c.Resources = &containergroups.CreateContainerResourceRequirements{}
+	for _, step := range steps {
+		if cerr := step(&req, &opts); cerr != nil {
+			return req, cerr
 		}
-		return c.Resources
 	}
 
-	// Flags override the base, docker-run style.
+	createFillDefaults(&req)
+	return req, nil
+}
+
+// createContainer is req's container configuration, created empty when the
+// base had none.
+func createContainer(req *containergroups.ContainerGroupCreationRequest) *containergroups.ContainerConfiguration {
+	if req.Container == nil {
+		req.Container = &containergroups.ContainerConfiguration{}
+	}
+	return req.Container
+}
+
+// createResources is req's container resource requirements, created empty
+// (with the container) when the base had none.
+func createResources(
+	req *containergroups.ContainerGroupCreationRequest,
+) *containergroups.CreateContainerResourceRequirements {
+	c := createContainer(req)
+	if c.Resources == nil {
+		c.Resources = &containergroups.CreateContainerResourceRequirements{}
+	}
+	return c.Resources
+}
+
+// createApplyContainerFlags applies the group's name and display name and
+// its container's image, command and resources (--cpu, --memory, --storage).
+func createApplyContainerFlags(req *containergroups.ContainerGroupCreationRequest, opts *createFlags) *clierr.Error {
 	if opts.Name != "" {
 		req.Name = ptr.To(opts.Name)
 	}
@@ -140,133 +171,216 @@ func (app *App) buildCreateRequest(
 		req.DisplayName = ptr.To(opts.DisplayName)
 	}
 	if opts.Image != "" {
-		container().Image = ptr.To(opts.Image)
+		createContainer(req).Image = ptr.To(opts.Image)
 	}
 	if opts.Command != nil {
-		container().Command = &util.Nullable[[]string]{Value: opts.Command}
+		createContainer(req).Command = &util.Nullable[[]string]{Value: opts.Command}
 	}
 	if opts.CPUSet {
-		resources().Cpu = ptr.To(opts.CPU)
+		createResources(req).Cpu = ptr.To(opts.CPU)
 	}
 	if opts.MemorySet {
-		resources().Memory = ptr.To(opts.Memory)
+		createResources(req).Memory = ptr.To(opts.Memory)
 	}
 	if opts.StorageSet {
 		if opts.Storage < 1 {
-			return req, clierr.New(
+			return clierr.New(
 				clierr.CodeInvalidInput,
 				clierr.KindInvalidInput,
 				"invalid --storage %d: must be at least 1 (GB)",
 				opts.Storage,
 			)
 		}
-		resources().StorageAmount = ptr.To(opts.Storage * bytesPerGB)
+		createResources(req).StorageAmount = ptr.To(opts.Storage * bytesPerGB)
 	}
-	if len(opts.Countries) > 0 {
-		codes, cerr := normalizeCountries(opts.Countries)
-		if cerr != nil {
-			return req, cerr
-		}
-		req.CountryCodes = make([]shared.CountryCode, len(codes))
-		for i, c := range codes {
-			req.CountryCodes[i] = shared.CountryCode(c)
-		}
+	return nil
+}
+
+// createApplyCountryFlags replaces the base's country codes with the
+// --country values, normalized, when any were given.
+func createApplyCountryFlags(req *containergroups.ContainerGroupCreationRequest, opts *createFlags) *clierr.Error {
+	if len(opts.Countries) == 0 {
+		return nil
 	}
-	if opts.Queue != "" || opts.QueuePortSet || opts.QueuePath != "" {
-		if opts.Queue == "" || !opts.QueuePortSet || opts.QueuePath == "" {
-			return req, clierr.New(
-				clierr.CodeUsage,
-				clierr.KindUsage,
-				"--queue, --queue-port and --queue-path go together: the queue, and the port and path its jobs are delivered to",
-			)
-		}
-		if opts.QueuePort < 1 || opts.QueuePort > 65535 {
-			return req, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-				"invalid --queue-port %d: must be between 1 and 65535", opts.QueuePort)
-		}
-		// The API takes any string as the path, so a rewritten one would be
-		// stored and every job posted to it.
-		if app.underGitBash() && msysDrivePath.MatchString(opts.QueuePath) {
-			return req, clierr.New(
-				clierr.CodeUsage,
-				clierr.KindUsage,
-				`--queue-path "%s" was rewritten by Git Bash, which turns a leading / into a Windows path`,
-				opts.QueuePath,
-			).
-				WithHint("run the command again with MSYS_NO_PATHCONV=1 in front of it, or from PowerShell or cmd")
-		}
-		req.QueueConnection = &shared.ContainerGroupQueueConnection{
-			QueueName: ptr.To(opts.Queue), Port: ptr.To(opts.QueuePort), Path: ptr.To(opts.QueuePath),
-		}
+	codes, cerr := normalizeCountries(opts.Countries)
+	if cerr != nil {
+		return cerr
 	}
+	req.CountryCodes = make([]shared.CountryCode, len(codes))
+	for i, c := range codes {
+		req.CountryCodes[i] = shared.CountryCode(c)
+	}
+	return nil
+}
+
+// createQueueFlagsGiven reports whether --queue, --queue-port and
+// --queue-path were given; giving some of them but not all is a usage error.
+func createQueueFlagsGiven(opts *createFlags) (bool, *clierr.Error) {
+	if opts.Queue == "" && !opts.QueuePortSet && opts.QueuePath == "" {
+		return false, nil
+	}
+	if opts.Queue == "" || !opts.QueuePortSet || opts.QueuePath == "" {
+		return false, clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			"--queue, --queue-port and --queue-path go together: the queue, and the port and path its jobs are delivered to",
+		)
+	}
+	return true, nil
+}
+
+// createApplyQueueFlags connects the group to the --queue job queue, at
+// --queue-port and --queue-path, when the three were given.
+func (app *App) createApplyQueueFlags(
+	req *containergroups.ContainerGroupCreationRequest,
+	opts *createFlags,
+) *clierr.Error {
+	given, cerr := createQueueFlagsGiven(opts)
+	if cerr != nil || !given {
+		return cerr
+	}
+	if opts.QueuePort < 1 || opts.QueuePort > 65535 {
+		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+			"invalid --queue-port %d: must be between 1 and 65535", opts.QueuePort)
+	}
+	// The API takes any string as the path, so a rewritten one would be
+	// stored and every job posted to it.
+	if app.underGitBash() && msysDrivePath.MatchString(opts.QueuePath) {
+		return clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			`--queue-path "%s" was rewritten by Git Bash, which turns a leading / into a Windows path`,
+			opts.QueuePath,
+		).
+			WithHint("run the command again with MSYS_NO_PATHCONV=1 in front of it, or from PowerShell or cmd")
+	}
+	req.QueueConnection = &shared.ContainerGroupQueueConnection{
+		QueueName: ptr.To(opts.Queue), Port: ptr.To(opts.QueuePort), Path: ptr.To(opts.QueuePath),
+	}
+	return nil
+}
+
+// createApplySchedulingFlags applies --replicas, --priority,
+// --restart-policy and --no-autostart.
+func createApplySchedulingFlags(req *containergroups.ContainerGroupCreationRequest, opts *createFlags) *clierr.Error {
 	if opts.ReplicasSet {
 		req.Replicas = ptr.To(opts.Replicas)
 	}
-
 	if opts.Priority != "" {
-		switch p := shared.ContainerGroupPriority(opts.Priority); p {
-		case shared.CONTAINER_GROUP_PRIORITY_HIGH, shared.CONTAINER_GROUP_PRIORITY_MEDIUM,
-			shared.CONTAINER_GROUP_PRIORITY_LOW, shared.CONTAINER_GROUP_PRIORITY_BATCH:
-			container().Priority = &util.Nullable[shared.ContainerGroupPriority]{Value: p}
-		default:
-			return req, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-				`invalid --priority "%s"`, opts.Priority).WithHint("use high, medium, low or batch")
+		p, cerr := createParsePriority(opts.Priority)
+		if cerr != nil {
+			return cerr
 		}
+		createContainer(req).Priority = &util.Nullable[shared.ContainerGroupPriority]{Value: p}
 	}
-
 	if opts.RestartPolicySet {
-		switch rp := shared.ContainerRestartPolicy(opts.RestartPolicy); rp {
-		case shared.CONTAINER_RESTART_POLICY_ALWAYS, shared.CONTAINER_RESTART_POLICY_ON_FAILURE,
-			shared.CONTAINER_RESTART_POLICY_NEVER:
-			req.RestartPolicy = &rp
-		default:
-			return req, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-				`invalid --restart-policy "%s"`, opts.RestartPolicy).WithHint("use always, on_failure or never")
+		rp, cerr := createParseRestartPolicy(opts.RestartPolicy)
+		if cerr != nil {
+			return cerr
 		}
+		req.RestartPolicy = &rp
 	}
-
 	if opts.NoAutostart {
 		req.AutostartPolicy = ptr.To(false)
 	}
+	return nil
+}
 
-	if len(opts.Env) > 0 {
-		c := container()
-		if c.EnvironmentVariables == nil {
-			c.EnvironmentVariables = make(map[string]*string, len(opts.Env))
-		}
-		for _, kv := range opts.Env {
-			k, v, ok := strings.Cut(kv, "=")
-			if !ok || k == "" {
-				return req, clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --env "%s"`, kv).
-					WithHint("write it as KEY=VALUE")
-			}
-			c.EnvironmentVariables[k] = ptr.To(v) // flag wins over the base, per key
-		}
+// createParsePriority is the --priority value as the API's priority enum.
+func createParsePriority(value string) (shared.ContainerGroupPriority, *clierr.Error) {
+	switch p := shared.ContainerGroupPriority(value); p {
+	case shared.CONTAINER_GROUP_PRIORITY_HIGH, shared.CONTAINER_GROUP_PRIORITY_MEDIUM,
+		shared.CONTAINER_GROUP_PRIORITY_LOW, shared.CONTAINER_GROUP_PRIORITY_BATCH:
+		return p, nil
+	default:
+		return "", clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+			`invalid --priority "%s"`, value).WithHint("use high, medium, low or batch")
 	}
+}
 
-	if len(opts.Gpus) > 0 {
-		ids := make([]string, 0, len(opts.Gpus))
-		for _, g := range opts.Gpus {
-			if isUUID(g) {
-				ids = append(ids, g)
-				continue
-			}
-			if opts.ResolveGpu == nil {
-				return req, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-					`--gpu "%s" is not a GPU class UUID, and name resolution is unavailable`, g)
-			}
-			id, cerr := opts.ResolveGpu(g)
-			if cerr != nil {
-				return req, cerr
-			}
-			ids = append(ids, id)
-		}
-		resources().GpuClasses = ids
+// createParseRestartPolicy is the --restart-policy value as the API's
+// restart policy enum.
+func createParseRestartPolicy(value string) (shared.ContainerRestartPolicy, *clierr.Error) {
+	switch rp := shared.ContainerRestartPolicy(value); rp {
+	case shared.CONTAINER_RESTART_POLICY_ALWAYS, shared.CONTAINER_RESTART_POLICY_ON_FAILURE,
+		shared.CONTAINER_RESTART_POLICY_NEVER:
+		return rp, nil
+	default:
+		return "", clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+			`invalid --restart-policy "%s"`, value).WithHint("use always, on_failure or never")
 	}
+}
 
+// createApplyEnvFlags sets each -e KEY=VALUE on the container.
+func createApplyEnvFlags(req *containergroups.ContainerGroupCreationRequest, opts *createFlags) *clierr.Error {
+	if len(opts.Env) == 0 {
+		return nil
+	}
+	c := createContainer(req)
+	if c.EnvironmentVariables == nil {
+		c.EnvironmentVariables = make(map[string]*string, len(opts.Env))
+	}
+	for _, kv := range opts.Env {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok || k == "" {
+			return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --env "%s"`, kv).
+				WithHint("write it as KEY=VALUE")
+		}
+		c.EnvironmentVariables[k] = ptr.To(v) // flag wins over the base, per key
+	}
+	return nil
+}
+
+// createApplyGpuFlags replaces the container's GPU classes with the --gpu
+// values, resolved to class UUIDs, when any were given.
+func createApplyGpuFlags(req *containergroups.ContainerGroupCreationRequest, opts *createFlags) *clierr.Error {
+	if len(opts.Gpus) == 0 {
+		return nil
+	}
+	ids, cerr := resolveGpuFlagValues(opts.Gpus, opts.ResolveGpu)
+	if cerr != nil {
+		return cerr
+	}
+	createResources(req).GpuClasses = ids
+	return nil
+}
+
+// resolveGpuFlagValues is the --gpu values (create's and update's) as GPU
+// class UUIDs: a UUID is kept as given, and any other value goes through
+// resolve, which is nil when name resolution is unavailable.
+func resolveGpuFlagValues(
+	gpus []string,
+	resolve func(value string) (string, *clierr.Error),
+) ([]string, *clierr.Error) {
+	ids := make([]string, 0, len(gpus))
+	for _, g := range gpus {
+		if isUUID(g) {
+			ids = append(ids, g)
+			continue
+		}
+		if resolve == nil {
+			return nil, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+				`--gpu "%s" is not a GPU class UUID, and name resolution is unavailable`, g)
+		}
+		id, cerr := resolve(g)
+		if cerr != nil {
+			return nil, cerr
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// createApplyNetworkingFlags exposes --port over the container gateway
+// (http with auth on, unless the base already says otherwise) and applies
+// --no-auth.
+func createApplyNetworkingFlags(
+	req *containergroups.ContainerGroupCreationRequest,
+	opts *createFlags,
+) *clierr.Error {
 	if opts.PortSet {
 		if opts.Port < 1 || opts.Port > 65535 {
-			return req, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
 				"invalid --port %d: must be between 1 and 65535", opts.Port)
 		}
 		if req.Networking == nil {
@@ -284,17 +398,21 @@ func (app *App) buildCreateRequest(
 	}
 	if opts.NoAuth {
 		if req.Networking == nil {
-			return req, clierr.New(clierr.CodeUsage, clierr.KindUsage,
+			return clierr.New(clierr.CodeUsage, clierr.KindUsage,
 				"--no-auth requires --port (or a base definition with networking)")
 		}
 		req.Networking.Auth = ptr.To(false)
 	}
+	return nil
+}
 
-	// Defaults fill only fields still unset after base + flags. cpu/memory
-	// defaults apply only when a container exists at all (no container means
-	// the request is invalid regardless — validateCreateRequest reports it).
+// createFillDefaults fills only fields still unset after base + flags.
+// cpu/memory defaults apply only when a container exists at all (no
+// container means the request is invalid regardless — validateCreateRequest
+// reports it).
+func createFillDefaults(req *containergroups.ContainerGroupCreationRequest) {
 	if req.Container != nil {
-		r := resources()
+		r := createResources(req)
 		if r.Cpu == nil {
 			r.Cpu = ptr.To(int64(1))
 		}
@@ -313,8 +431,6 @@ func (app *App) buildCreateRequest(
 		req.AutostartPolicy = ptr.To(true)
 	}
 	// Priority is deliberately NOT defaulted: omitted means the server picks.
-
-	return req, nil
 }
 
 // resolveGpuClassName resolves a GPU class name (a --gpu value, or the class
@@ -327,8 +443,7 @@ func (app *App) buildCreateRequest(
 // (16 GB)"), which must not break an exact match.
 func resolveGpuClassName(value string, classes []organizationdata.GpuClass) (string, *clierr.Error) {
 	lower := strings.ToLower(strings.TrimSpace(value))
-	type match struct{ name, id string }
-	var subs []match
+	var subNames, subIDs []string // the substring matches
 	for i := range classes {
 		name := strings.TrimSpace(ptr.Deref(classes[i].Name))
 		id := ptr.Deref(classes[i].Id)
@@ -339,37 +454,49 @@ func resolveGpuClassName(value string, classes []organizationdata.GpuClass) (str
 			return id, nil
 		}
 		if strings.Contains(strings.ToLower(name), lower) {
-			subs = append(subs, match{name, id})
+			subNames, subIDs = append(subNames, name), append(subIDs, id)
 		}
 	}
-	switch len(subs) {
+	switch len(subIDs) {
 	case 1:
-		return subs[0].id, nil
+		return subIDs[0], nil
 	case 0:
-		names := make([]string, 0, 5)
-		for i := range classes {
-			if n := strings.TrimSpace(ptr.Deref(classes[i].Name)); n != "" {
-				names = append(names, `"`+n+`"`)
-			}
-			if len(names) == 5 {
-				break
-			}
-		}
-		hint := "to list them, run saladcloud gpus list"
-		if len(names) > 0 {
-			hint += "; valid names include " + strings.Join(names, ", ")
-		}
-		return "", clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-			`unknown GPU class "%s"`, value).WithHint("%s", hint)
+		return "", unknownGpuClassError(value, classes)
 	default:
-		names := make([]string, len(subs))
-		for i, m := range subs {
-			names[i] = `"` + m.name + `"`
-		}
-		return "", clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-			`ambiguous GPU class "%s": matches %s`, value, strings.Join(names, ", ")).
-			WithHint("name one of them, or to list them, run saladcloud gpus list")
+		return "", ambiguousGpuClassError(value, subNames)
 	}
+}
+
+// unknownGpuClassError is resolveGpuClassName's error for a value no class
+// matches; its hint names up to five of the org's classes.
+func unknownGpuClassError(value string, classes []organizationdata.GpuClass) *clierr.Error {
+	names := make([]string, 0, 5)
+	for i := range classes {
+		if n := strings.TrimSpace(ptr.Deref(classes[i].Name)); n != "" {
+			names = append(names, `"`+n+`"`)
+		}
+		if len(names) == 5 {
+			break
+		}
+	}
+	hint := "to list them, run saladcloud gpus list"
+	if len(names) > 0 {
+		hint += "; valid names include " + strings.Join(names, ", ")
+	}
+	return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+		`unknown GPU class "%s"`, value).WithHint("%s", hint)
+}
+
+// ambiguousGpuClassError is resolveGpuClassName's error for a value that
+// several class names contain; it lists them.
+func ambiguousGpuClassError(value string, matches []string) *clierr.Error {
+	names := make([]string, len(matches))
+	for i, m := range matches {
+		names[i] = `"` + m + `"`
+	}
+	return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+		`ambiguous GPU class "%s": matches %s`, value, strings.Join(names, ", ")).
+		WithHint("name one of them, or to list them, run saladcloud gpus list")
 }
 
 // msysDrivePath matches what Git Bash (MSYS) makes of a flag value such as
@@ -487,8 +614,53 @@ func (app *App) runCreate(
 	baseRaw []byte,
 	unknowns []input.Unknown,
 ) error {
+	getClient := app.createLazyClient(cmd)
+	opts := collectCreateFlags(cmd, o.flags, name, hasBase)
+	opts.Command = command
+	opts.ResolveGpu = createLazyGpuResolver(cmd, getClient)
+
+	req, cerr := app.buildCreateRequest(base, opts)
+	if cerr != nil {
+		return cerr
+	}
+	if cerr = validateCreateRequest(&req); cerr != nil {
+		return cerr
+	}
+	c, cerr := getClient()
+	if cerr != nil {
+		return cerr
+	}
+	if cerr = createCheckQueue(cmd, c, &req); cerr != nil {
+		return cerr
+	}
+	sent, cerr := app.createRequestBody(&req, baseRaw, unknowns)
+	if cerr != nil {
+		return cerr
+	}
+	group, cerr := c.CreateGroupRaw(cmd.Context(), sent)
+	if cerr != nil {
+		return cerr
+	}
+	if q := req.QueueConnection; q != nil {
+		noteQueueWorker(app.errw(), ptr.Deref(q.QueueName))
+	}
+	// Same "did it actually happen?" check the update path runs: the API
+	// accepts some fields and silently drops them (container.image_caching),
+	// returning 201 either way.
+	warnUnappliedCreateFields(app.errw(), findUnappliedCreateFields(sent, group))
+	group, err := app.createAwaitRunning(cmd, o, c, group, &req)
+	if err != nil {
+		return err
+	}
+	return wrapErr(app.printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
+}
+
+// createLazyClient returns create's API client getter: the client is built
+// on first use, so pure usage errors surface before any auth or config
+// requirement, and then reused.
+func (app *App) createLazyClient(cmd *cobra.Command) func() (*api.Client, *clierr.Error) {
 	var client *api.Client
-	getClient := func() (*api.Client, *clierr.Error) {
+	return func() (*api.Client, *clierr.Error) {
 		if client != nil {
 			return client, nil
 		}
@@ -499,11 +671,17 @@ func (app *App) runCreate(
 		client = c
 		return client, nil
 	}
+}
 
-	opts := collectCreateFlags(cmd, o.flags, name, hasBase)
-	opts.Command = command
-	var classes []organizationdata.GpuClass // fetched once, on first non-UUID --gpu
-	opts.ResolveGpu = func(value string) (string, *clierr.Error) {
+// createLazyGpuResolver resolves --gpu names against the organization's GPU
+// classes, fetched once, on the first non-UUID --gpu, through the client
+// getClient builds then.
+func createLazyGpuResolver(
+	cmd *cobra.Command,
+	getClient func() (*api.Client, *clierr.Error),
+) func(value string) (string, *clierr.Error) {
+	var classes []organizationdata.GpuClass
+	return func(value string) (string, *clierr.Error) {
 		if classes == nil {
 			c, err := getClient()
 			if err != nil {
@@ -517,74 +695,76 @@ func (app *App) runCreate(
 		}
 		return resolveGpuClassName(value, classes)
 	}
+}
 
-	req, cerr := app.buildCreateRequest(base, opts)
-	if cerr != nil {
-		return cerr
+// createCheckQueue checks that the queue req connects to exists in the
+// target project: the API would accept the connection and the group would
+// never receive a job.
+func createCheckQueue(
+	cmd *cobra.Command,
+	c *api.Client,
+	req *containergroups.ContainerGroupCreationRequest,
+) *clierr.Error {
+	q := req.QueueConnection
+	if q == nil || q.QueueName == nil {
+		return nil
 	}
-	if cerr = validateCreateRequest(&req); cerr != nil {
-		return cerr
+	if _, qerr := c.GetQueue(cmd.Context(), *q.QueueName); qerr != nil {
+		return queueNotFound(qerr, *q.QueueName, c)
 	}
-	c, cerr := getClient()
-	if cerr != nil {
-		return cerr
-	}
-	// The queue must exist in the target project: the API would accept the
-	// connection and the group would never receive a job.
-	if q := req.QueueConnection; q != nil && q.QueueName != nil {
-		if _, qerr := c.GetQueue(cmd.Context(), *q.QueueName); qerr != nil {
-			return queueNotFound(qerr, *q.QueueName, c)
-		}
-	}
-	// sent is the effective request document — flags merged over the file —
-	// which is what the created group gets compared against below. Using the
-	// file alone would report every flag override as a dropped write. It is
-	// encoded with MarshalRequest, not json.Marshal: the SDK's omitempty
-	// would drop an empty list the file or the --from source set, and the API
-	// rejects an HTTP probe without its (possibly empty) headers list.
-	sent, err := output.MarshalRequest(req)
+	return nil
+}
+
+// createRequestBody is the document create sends: the effective request —
+// flags merged over the file — which is what the created group gets compared
+// against afterward. Using the file alone would report every flag override
+// as a dropped write. It is encoded with MarshalRequest, not [json.Marshal]:
+// the SDK's omitempty would drop an empty list the file or the --from source
+// set, and the API rejects an HTTP probe without its (possibly empty)
+// headers list. With --allow-unknown-fields it warns about the unknowns and
+// deep-merges the request over baseRaw, so they are sent as written.
+func (app *App) createRequestBody(
+	req *containergroups.ContainerGroupCreationRequest,
+	baseRaw []byte,
+	unknowns []input.Unknown,
+) (json.RawMessage, *clierr.Error) {
+	sent, err := output.MarshalRequest(*req)
 	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot marshal request: %v", err)
+		return nil, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot marshal request: %v", err)
 	}
-	if len(unknowns) > 0 {
-		warnUnknowns(app.errw(), unknowns, true)
-		if sent, cerr = input.MergeJSON(baseRaw, sent); cerr != nil {
-			return cerr
-		}
+	if len(unknowns) == 0 {
+		return sent, nil
 	}
-	group, cerr := c.CreateGroupRaw(cmd.Context(), sent)
-	if cerr != nil {
-		return cerr
-	}
-	if q := req.QueueConnection; q != nil {
-		noteQueueWorker(app.errw(), ptr.Deref(q.QueueName))
-	}
-	// Same "did it actually happen?" check the update path runs: the API
-	// accepts some fields and silently drops them (container.image_caching),
-	// returning 201 either way.
-	warnUnappliedCreateFields(app.errw(), findUnappliedCreateFields(sent, group))
-	// --wait (validated pre-flight in RunE): block until the new group runs,
-	// and only then emit — the document must describe the settled state, and
-	// stdout must stay empty if the wait fails (timeout, interrupt). Without
-	// --wait the create response is emitted immediately, as before.
+	warnUnknowns(app.errw(), unknowns, true)
+	return input.MergeJSON(baseRaw, sent)
+}
+
+// createAwaitRunning is create's --wait (validated pre-flight in RunE): it
+// blocks until the new group runs and returns the settled document, so the
+// caller emits only then — the document must describe the settled state, and
+// stdout must stay empty if the wait fails (timeout, interrupt). Without
+// --wait it returns group, the create response, unchanged.
+func (app *App) createAwaitRunning(
+	cmd *cobra.Command,
+	o *createOptions,
+	c *api.Client,
+	group *shared.ContainerGroup,
+	req *containergroups.ContainerGroupCreationRequest,
+) (*shared.ContainerGroup, error) {
 	wait, timeout, cerr := o.wait.values()
 	if cerr != nil {
-		return cerr
+		return nil, cerr
 	}
-	if wait {
-		name = ptr.Deref(group.Name)
-		if name == "" {
-			name = ptr.Deref(req.Name) // defensive: the response should echo it
-		}
-		// fromActive: the create response is pending with autostart on, so a
-		// stopped group from here on was never started, not merely slow.
-		final, err := app.runStatusWait(cmd, c, name, "running", true, timeout)
-		if err != nil {
-			return err
-		}
-		group = final
+	if !wait {
+		return group, nil
 	}
-	return wrapErr(app.printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
+	name := ptr.Deref(group.Name)
+	if name == "" {
+		name = ptr.Deref(req.Name) // defensive: the response should echo it
+	}
+	// fromActive: the create response is pending with autostart on, so a
+	// stopped group from here on was never started, not merely slow.
+	return app.runStatusWait(cmd, c, name, "running", true, timeout)
 }
 
 // addCreateCommands adds create.go's commands to the tree.
@@ -656,65 +836,7 @@ together, so it starts with the program: -- python app.py --port 8080, not
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			noAutostart, file, allowUnknown, from := opts.flags.NoAutostart, opts.file, opts.allowUnknown, opts.from
-			args, command, commandGiven := splitCommand(cmd, args)
-			if cerr := app.validateCommand(command, commandGiven); cerr != nil {
-				return cerr
-			}
-			warnCommand(app.errw(), cmd, command)
-			// Pre-flight flag validation, before any file or API work.
-			wait, _, cerr := opts.wait.values()
-			if cerr != nil {
-				return cerr
-			}
-			if cerr = validateWaitAutostart(wait, noAutostart); cerr != nil {
-				return cerr
-			}
-			var base containergroups.ContainerGroupCreationRequest
-			var baseRaw []byte
-			var unknowns []input.Unknown
-			hasBase := false
-			name := ""
-			if len(args) == 1 {
-				name = args[0]
-			}
-			if from != "" {
-				base, baseRaw, unknowns, cerr = app.loadFromBase(
-					cmd,
-					from,
-					file,
-					allowUnknown,
-					name,
-					opts.flags.Image,
-					app.errw(),
-				)
-				if cerr != nil {
-					return cerr
-				}
-				return app.runCreate(cmd, &opts, base, true, name, command, baseRaw, unknowns)
-			}
-			if file != "" {
-				if allowUnknown {
-					raw, u, err := input.LoadLenient(file, app.Stdin, &base)
-					if err != nil {
-						return err
-					}
-					baseRaw, unknowns = raw, u
-				} else {
-					// Strict: load leniently, then reject with per-field
-					// advice (create-only / response-only fields get a
-					// real explanation instead of the escape-hatch hint).
-					_, u, err := input.LoadLenient(file, app.Stdin, &base)
-					if err != nil {
-						return err
-					}
-					if cerr := app.rejectUnknowns(u); cerr != nil {
-						return cerr
-					}
-				}
-				hasBase = true
-			}
-			return app.runCreate(cmd, &opts, base, hasBase, name, command, baseRaw, unknowns)
+			return app.runCreateCommand(cmd, &opts, args)
 		},
 	}
 	createCmd.Flags().
@@ -725,4 +847,75 @@ together, so it starts with the program: -- python app.py --port 8080, not
 	addAllowUnknownFlag(createCmd, &opts.allowUnknown)
 	addWaitFlags(createCmd, "the group is running", &opts.wait)
 	cg.AddCommand(createCmd)
+}
+
+// runCreateCommand is create's RunE: check the container command and the
+// flags pre-flight, before any file or API work, then load the base (--from,
+// -f, or none) and hand it to runCreate.
+func (app *App) runCreateCommand(cmd *cobra.Command, opts *createOptions, args []string) error {
+	noAutostart, file, allowUnknown, from := opts.flags.NoAutostart, opts.file, opts.allowUnknown, opts.from
+	args, command, commandGiven := splitCommand(cmd, args)
+	if cerr := app.validateCommand(command, commandGiven); cerr != nil {
+		return cerr
+	}
+	warnCommand(app.errw(), cmd, command)
+	// Pre-flight flag validation, before any file or API work.
+	wait, _, cerr := opts.wait.values()
+	if cerr != nil {
+		return cerr
+	}
+	if cerr = validateWaitAutostart(wait, noAutostart); cerr != nil {
+		return cerr
+	}
+	name := ""
+	if len(args) == 1 {
+		name = args[0]
+	}
+	if from != "" {
+		var base containergroups.ContainerGroupCreationRequest
+		var baseRaw []byte
+		var unknowns []input.Unknown
+		base, baseRaw, unknowns, cerr = app.loadFromBase(
+			cmd,
+			from,
+			file,
+			allowUnknown,
+			name,
+			opts.flags.Image,
+			app.errw(),
+		)
+		if cerr != nil {
+			return cerr
+		}
+		return app.runCreate(cmd, opts, base, true, name, command, baseRaw, unknowns)
+	}
+	var base containergroups.ContainerGroupCreationRequest
+	if file == "" {
+		return app.runCreate(cmd, opts, base, false, name, command, nil, nil)
+	}
+	baseRaw, unknowns, cerr := app.createLoadFile(opts, &base)
+	if cerr != nil {
+		return cerr
+	}
+	return app.runCreate(cmd, opts, base, true, name, command, baseRaw, unknowns)
+}
+
+// createLoadFile loads the -f definition into base. With
+// --allow-unknown-fields it returns the document as written and the fields
+// base cannot carry; without, an unknown field is an error.
+func (app *App) createLoadFile(
+	opts *createOptions,
+	base *containergroups.ContainerGroupCreationRequest,
+) ([]byte, []input.Unknown, *clierr.Error) {
+	raw, u, cerr := input.LoadLenient(opts.file, app.Stdin, base)
+	if cerr != nil {
+		return nil, nil, cerr
+	}
+	if opts.allowUnknown {
+		return raw, u, nil
+	}
+	// Strict: load leniently, then reject with per-field advice (create-only /
+	// response-only fields get a real explanation instead of the escape-hatch
+	// hint).
+	return nil, nil, app.rejectUnknowns(u)
 }
