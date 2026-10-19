@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -63,82 +64,130 @@ func parseUseTarget(arg string) (org, project string, err *clierr.Error) {
 	return org, project, nil
 }
 
+// useRun is one run of use: the key it checks with, the config file before it, and what its errors need to know.
+type useRun struct {
+	key       string
+	keyFrom   string
+	saved     config.File
+	defaulted bool // no project was named, so use tries "default"
+	app       *App // the run
+}
+
 func (app *App) runUse(cmd *cobra.Command, args []string) error {
 	org, project, perr := parseUseTarget(args[0])
 	if perr != nil {
 		return perr
 	}
+	if cerr := app.checkUseNames(org, project); cerr != nil {
+		return cerr
+	}
+	u, cerr := app.newUseRun()
+	if cerr != nil {
+		return cerr
+	}
+	cerr = u.checkOrganization(cmd.Context(), org)
+	if cerr != nil {
+		return cerr
+	}
+	u.defaulted = project == ""
+	if u.defaulted {
+		project = config.DefaultProject
+	}
+	project, cerr = u.checkProject(cmd.Context(), org, project)
+	if cerr != nil {
+		return cerr
+	}
+	return u.save(org, project)
+}
+
+// checkUseNames checks the organization and project use's argument names (the project only when there is one).
+func (app *App) checkUseNames(org, project string) *clierr.Error {
 	if cerr := app.checkName("organization", org, ""); cerr != nil {
 		return cerr
 	}
 	if project != "" {
-		if cerr := app.checkName("project", project, ""); cerr != nil {
-			return cerr
-		}
+		return app.checkName("project", project, "")
 	}
+	return nil
+}
+
+// newUseRun starts a run of use: the config file read, and the API key commands use now, which use checks with.
+func (app *App) newUseRun() (*useRun, *clierr.Error) {
 	if cerr := app.configReady("use"); cerr != nil {
-		return cerr
+		return nil, cerr
 	}
 	res, err := config.Resolve(app.Env, "", "")
 	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file: %v", err)
+		return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file: %v", err)
 	}
 	saved := app.savedConfig() // configReady has read it
 	if res.APIKey == "" {
-		return clierr.New(clierr.CodeAuth, clierr.KindAuth, "no API key set").
+		return nil, clierr.New(clierr.CodeAuth, clierr.KindAuth, "no API key set").
 			WithHint("run saladcloud login in a terminal, or set SALAD_API_KEY")
 	}
 	keyFrom := originOf(res.APIKeySource, "", envAPIKey)
 	key, ok := normalizeKey(res.APIKey)
 	if !ok {
-		return malformedKey(labelAPIKey, key, keyFrom)
+		return nil, malformedKey(labelAPIKey, key, keyFrom)
 	}
-	u := &useRun{key: key, keyFrom: keyFrom, saved: saved}
+	return &useRun{key: key, keyFrom: keyFrom, saved: saved, defaulted: false, app: app}, nil
+}
 
-	client, cerr := api.New(
-		config.Resolved{
-			APIKey:              key,
-			Organization:        org,
-			APIKeySource:        "",
-			OrganizationSource:  "",
-			Project:             "",
-			ProjectSource:       "",
-			GatewayAPIKey:       "",
-			GatewayAPIKeySource: "",
-			SkippedProject:      "",
-			SkippedProjectOrg:   "",
-		},
-		app.apiOptions(),
-	)
+// checkOrganization is the organization check: nil when org is found, else the error, which lists the key's
+// organizations at a terminal.
+func (u *useRun) checkOrganization(ctx context.Context, org string) *clierr.Error {
+	client, cerr := u.client(org, "")
 	if cerr != nil {
 		return cerr
 	}
-	if cerr = client.CheckOrg(cmd.Context()); cerr != nil {
-		if cerr.Code != clierr.CodeNotFound {
-			return u.failed(cerr)
-		}
-		e := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `organization "%s" not found`, org).WithStatus(404)
-		names := []string(nil)
-		if app.atTerminal() {
-			if list, lerr := client.OrganizationListing(cmd.Context()); lerr == nil && list != nil {
-				names = list.OrgNames()
-			} else if lerr != nil && lerr.IsCancel() {
-				return u.canceled()
-			}
-		}
-		if h := app.orgsClause(names); h != "" {
-			e = e.WithHint("%s", h)
-		}
-		return e
+	cerr = client.CheckOrg(ctx)
+	switch {
+	case cerr == nil:
+		return nil
+	case cerr.Code != clierr.CodeNotFound:
+		return u.failed(cerr)
 	}
+	e := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `organization "%s" not found`, org).WithStatus(404)
+	names := []string(nil)
+	if u.app.atTerminal() {
+		if list, lerr := client.OrganizationListing(ctx); lerr == nil && list != nil {
+			names = list.OrgNames()
+		} else if lerr != nil && lerr.IsCancel() {
+			return u.canceled()
+		}
+	}
+	if h := u.app.orgsClause(names); h != "" {
+		e = e.WithHint("%s", h)
+	}
+	return e
+}
 
-	defaulted := project == ""
-	if defaulted {
-		project = config.DefaultProject
+// checkProject is the project check in org: the project when it is found; "" when the defaulted "default" is not,
+// which use says and saves the organization alone.
+func (u *useRun) checkProject(ctx context.Context, org, project string) (string, *clierr.Error) {
+	pc, cerr := u.client(org, project)
+	if cerr != nil {
+		return "", cerr
 	}
-	pc, cerr := api.New(
+	cerr = pc.CheckProject(ctx)
+	switch {
+	case cerr == nil:
+		return project, nil
+	case cerr.Code != clierr.CodeNotFound:
+		return "", u.failed(cerr)
+	case !u.defaulted:
+		return "", clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `project "%s" not found in %s`, project, org).
+			WithStatus(404).WithHint("create one at %s", projectCreateURL(org))
+	}
+	u.app.say(`Project "default" not found in %s. Create one later if needed.`, org)
+	return "", nil
+}
+
+// client is an API client for use's checks: the key in use, with org and project.
+func (u *useRun) client(org, project string) (*api.Client, *clierr.Error) {
+	return api.New(
 		config.Resolved{
-			APIKey:              key,
+			APIKey:              u.key,
 			Organization:        org,
 			Project:             project,
 			APIKeySource:        "",
@@ -149,32 +198,18 @@ func (app *App) runUse(cmd *cobra.Command, args []string) error {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
-		app.apiOptions(),
+		u.app.apiOptions(),
 	)
-	if cerr != nil {
-		return cerr
-	}
-	if cerr := pc.CheckProject(cmd.Context()); cerr != nil {
-		switch {
-		case cerr.Code != clierr.CodeNotFound:
-			return u.failed(cerr)
-		case !defaulted:
-			return clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `project "%s" not found in %s`, project, org).
-				WithStatus(404).WithHint("create one at %s", projectCreateURL(org))
-		}
-		app.say(`Project "default" not found in %s. Create one later if needed.`, org)
-		project = ""
-	}
+}
 
-	f := saved
+// save writes the organization and project, then prints the result, the hint for a defaulted project, and the
+// variables that will be used instead.
+func (u *useRun) save(org, project string) error {
+	app := u.app
+	f := u.saved
 	f.Organization, f.Project = org, project
-	path, err := config.Path(app.Env)
-	if err == nil {
-		err = config.Save(app.Env, f)
-	}
-	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
-			WithHint("%s", unwritableHint("use"))
+	if _, cerr := app.saveContextConfig(f, "use"); cerr != nil {
+		return cerr
 	}
 	ovs := app.overridesOf(f, envOrganization, envProject)
 	result := useResult{
@@ -193,18 +228,11 @@ func (app *App) runUse(cmd *cobra.Command, args []string) error {
 	}); err != nil {
 		return wrapErr(err)
 	}
-	if defaulted && project != "" {
+	if u.defaulted && project != "" {
 		app.hintLine(`no project named, so "default" is used; for another, run saladcloud use %s/<project>`, org)
 	}
 	app.warnOverrides(app.errw(), afterSave, ovs)
 	return nil
-}
-
-// useRun is what use's errors need to know.
-type useRun struct {
-	key     string
-	keyFrom string
-	saved   config.File
 }
 
 func (*useRun) canceled() *clierr.Error {

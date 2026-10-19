@@ -933,7 +933,7 @@ func (l *login) save(org, project string) error {
 		f.APIKey = l.key
 	}
 	f.Organization, f.Project = org, project
-	path, cerr := app.writeLoginConfig(f)
+	path, cerr := app.saveContextConfig(f, "login")
 	if cerr != nil {
 		return cerr
 	}
@@ -981,15 +981,16 @@ func (l *login) save(org, project string) error {
 	return nil
 }
 
-// writeLoginConfig writes login's config file and returns its path, or the error that says it could not.
-func (app *App) writeLoginConfig(f config.File) (string, *clierr.Error) {
+// saveContextConfig writes the config file for login or use (command) and returns its path, or the error that says
+// it could not.
+func (app *App) saveContextConfig(f config.File, command string) (string, *clierr.Error) {
 	path, err := config.Path(app.Env)
 	if err == nil {
 		err = config.Save(app.Env, f)
 	}
 	if err != nil {
 		return path, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
-			WithHint("%s", unwritableHint("login"))
+			WithHint("%s", unwritableHint(command))
 	}
 	return path, nil
 }

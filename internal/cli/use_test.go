@@ -1,6 +1,10 @@
 package cli
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
+)
 
 func TestParseUseTarget(t *testing.T) {
 	t.Parallel()
@@ -23,20 +27,16 @@ func TestParseUseTarget(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			org, project, err := parseUseTarget(tt.arg)
-			if tt.wantErr {
-				if err == nil {
-					t.Fatalf("parseUseTarget(%q) = (%q, %q, nil), want usage error", tt.arg, org, project)
-				}
-				if err.Code != 2 {
-					t.Errorf("error code = %d, want 2 (usage)", err.Code)
-				}
-				return
-			}
+			code, wantCode := 0, 0 // an error is a usage error (2), and returns no names
 			if err != nil {
-				t.Fatalf("parseUseTarget(%q) error: %v", tt.arg, err)
+				code = err.Code
 			}
-			if org != tt.org || project != tt.project {
-				t.Errorf("parseUseTarget(%q) = (%q, %q), want (%q, %q)", tt.arg, org, project, tt.org, tt.project)
+			if tt.wantErr {
+				wantCode = clierr.CodeUsage
+			}
+			if code != wantCode || org != tt.org || project != tt.project {
+				t.Errorf("parseUseTarget(%q) = (%q, %q, exit %d), want (%q, %q, exit %d)",
+					tt.arg, org, project, code, tt.org, tt.project, wantCode)
 			}
 		})
 	}
