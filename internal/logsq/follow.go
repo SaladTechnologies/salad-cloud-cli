@@ -89,102 +89,143 @@ func (f *Follower) Run(
 	pageSize int,
 	emit func(Entry) error,
 ) *clierr.Error {
-	poll := f.Poll
-	if poll == 0 {
-		poll = DefaultPoll
-	}
-	if poll < MinPoll {
-		poll = MinPoll
-	}
-	maxBackoff := f.MaxBackoff
-	if maxBackoff <= 0 {
-		maxBackoff = DefaultMaxBackoff
-	}
-	lookback := f.Lookback
-	if lookback <= 0 {
-		lookback = DefaultLookback
-	}
-	clock := f.Clock
-	if clock == nil {
-		clock = RealClock{}
-	}
-
+	cfg := f.settings()
 	f.seen = make(map[string]time.Time)
+	st := &followState{seen: f.seen, maxSeen: time.Time{}, hasSeen: false}
 	sinceU := since.UTC()
-	var maxSeen time.Time
-	hasSeen := false
-
-	// record remembers an emitted entry. fallback stands in for an
-	// unparseable emission time (the window's end: retained a full horizon,
-	// but never allowed to drag maxSeen forward).
-	record := func(e Entry, fallback time.Time) {
-		key := DedupKey(e)
-		t, err := time.Parse(time.RFC3339Nano, e.Time)
-		if err != nil {
-			f.seen[key] = fallback
-			return
-		}
-		t = t.UTC()
-		f.seen[key] = t
-		if !hasSeen || t.After(maxSeen) {
-			maxSeen, hasSeen = t, true
-		}
-	}
 
 	// Backlog: everything already in [since, now+lookahead).
-	backlogEnd := clock.Now().UTC().Add(followLookahead)
-	if werr := FetchWindow(ctx, fetch, query, sinceU, backlogEnd, pageSize, func(e Entry) error {
-		record(e, backlogEnd)
-		return emit(e)
-	}, f.Warn); werr != nil {
+	backlogEnd := cfg.clock.Now().UTC().Add(followLookahead)
+	werr := FetchWindow(ctx, fetch, query, sinceU, backlogEnd, pageSize, st.emitAll(emit, backlogEnd), f.Warn)
+	if werr != nil {
 		if ctx.Err() != nil {
 			return nil //nolint:nilerr // canceled: --follow ends with exit 0
 		}
 		return werr
 	}
 
-	effective := poll
+	effective := cfg.poll
 	for {
-		if err := clock.Sleep(ctx, effective); err != nil {
+		if err := cfg.clock.Sleep(ctx, effective); err != nil {
 			return nil //nolint:nilerr // canceled: --follow ends with exit 0
 		}
-		windowStart := sinceU
-		if hasSeen {
-			if ws := maxSeen.Add(-lookback); ws.After(sinceU) {
-				windowStart = ws
-			}
-		}
-		windowEnd := clock.Now().UTC().Add(followLookahead)
-		werr := FetchWindow(ctx, fetch, query, windowStart, windowEnd, pageSize, func(e Entry) error {
-			if _, dup := f.seen[DedupKey(e)]; dup {
-				return nil // already emitted in an earlier scan
-			}
-			record(e, windowEnd)
-			return emit(e)
-		}, f.Warn)
+		windowStart := st.windowStart(sinceU, cfg.lookback)
+		windowEnd := cfg.clock.Now().UTC().Add(followLookahead)
+		werr = FetchWindow(ctx, fetch, query, windowStart, windowEnd, pageSize, st.emitUnseen(emit, windowEnd), f.Warn)
 		if werr != nil {
 			if ctx.Err() != nil {
 				return nil //nolint:nilerr // canceled: --follow ends with exit 0
 			}
-			if werr.Code == clierr.CodeRateLimited {
-				effective *= 2
-				if effective > maxBackoff {
-					effective = maxBackoff
-				}
-				warn(f.Warn, fmt.Sprintf("warning: rate limited by the API; slowing polling to %s", effective))
-				continue
+			if werr.Code != clierr.CodeRateLimited {
+				return werr
 			}
-			return werr
+			effective = cfg.backoff(effective)
+			warn(f.Warn, fmt.Sprintf("warning: rate limited by the API; slowing polling to %s", effective))
+			continue
 		}
-		effective = poll // restore the configured interval after a success
+		effective = cfg.poll // restore the configured interval after a success
 		// Prune seen keys that have fallen behind the lookback horizon:
 		// future windows start no earlier than this one did, so anything
 		// older than windowStart (minus a grace tick) can never reappear.
-		cutoff := windowStart.Add(-seenPruneGrace)
-		for k, t := range f.seen {
-			if t.Before(cutoff) {
-				delete(f.seen, k)
-			}
+		st.prune(windowStart.Add(-seenPruneGrace))
+	}
+}
+
+// followSettings are a Follower's tuning with the defaults and the poll floor applied.
+type followSettings struct {
+	poll, maxBackoff, lookback time.Duration
+	clock                      Clock
+}
+
+// settings resolves f's tuning: a zero Poll is DefaultPoll and any poll is floored at MinPoll, a MaxBackoff or
+// Lookback of zero or less is its default, and a nil Clock is RealClock.
+func (f *Follower) settings() followSettings {
+	s := followSettings{poll: f.Poll, maxBackoff: f.MaxBackoff, lookback: f.Lookback, clock: f.Clock}
+	if s.poll == 0 {
+		s.poll = DefaultPoll
+	}
+	s.poll = max(s.poll, MinPoll)
+	if s.maxBackoff <= 0 {
+		s.maxBackoff = DefaultMaxBackoff
+	}
+	if s.lookback <= 0 {
+		s.lookback = DefaultLookback
+	}
+	if s.clock == nil {
+		s.clock = RealClock{}
+	}
+	return s
+}
+
+// backoff is the poll interval after a rate-limited poll that waited d: double d, capped at maxBackoff.
+func (s followSettings) backoff(d time.Duration) time.Duration {
+	d *= 2
+	if d > s.maxBackoff {
+		d = s.maxBackoff
+	}
+	return d
+}
+
+// followState is one Run's dedup state: the emitted entries inside the lookback horizon (the Follower's seen map)
+// and the newest parsed emission time among them.
+type followState struct {
+	seen    map[string]time.Time
+	maxSeen time.Time
+	hasSeen bool
+}
+
+// record remembers an emitted entry. fallback stands in for an unparseable emission time (the window's end:
+// retained a full horizon, but never allowed to drag maxSeen forward).
+func (s *followState) record(e *Entry, fallback time.Time) {
+	key := DedupKey(*e)
+	t, err := time.Parse(time.RFC3339Nano, e.Time)
+	if err != nil {
+		s.seen[key] = fallback
+		return
+	}
+	t = t.UTC()
+	s.seen[key] = t
+	if !s.hasSeen || t.After(s.maxSeen) {
+		s.maxSeen, s.hasSeen = t, true
+	}
+}
+
+// emitAll is the backlog's emit: it records and emits every entry of a window ending at end.
+func (s *followState) emitAll(emit func(Entry) error, end time.Time) func(Entry) error {
+	return func(e Entry) error {
+		s.record(&e, end)
+		return emit(e)
+	}
+}
+
+// emitUnseen is a poll's emit: it records and emits the entries of a window ending at end that no earlier scan
+// emitted.
+func (s *followState) emitUnseen(emit func(Entry) error, end time.Time) func(Entry) error {
+	return func(e Entry) error {
+		if _, dup := s.seen[DedupKey(e)]; dup {
+			return nil // already emitted in an earlier scan
+		}
+		s.record(&e, end)
+		return emit(e)
+	}
+}
+
+// windowStart is where the next poll's window starts: lookback behind the newest emission time seen, but never
+// before since.
+func (s *followState) windowStart(since time.Time, lookback time.Duration) time.Time {
+	if s.hasSeen {
+		if ws := s.maxSeen.Add(-lookback); ws.After(since) {
+			return ws
+		}
+	}
+	return since
+}
+
+// prune forgets the seen entries emitted before cutoff.
+func (s *followState) prune(cutoff time.Time) {
+	for k, t := range s.seen {
+		if t.Before(cutoff) {
+			delete(s.seen, k)
 		}
 	}
 }

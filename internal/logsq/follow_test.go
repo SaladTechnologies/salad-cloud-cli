@@ -293,3 +293,55 @@ func TestFollowNonRateLimitErrorExits(t *testing.T) {
 		t.Fatalf("Run error = %v, want the fetch error", err)
 	}
 }
+
+// TestFollowerSettings: unset tuning takes the defaults, a poll below MinPoll is floored, and a nil Clock is the
+// real one.
+func TestFollowerSettings(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name                       string
+		f                          *Follower
+		poll, maxBackoff, lookback time.Duration
+	}{
+		{"zero", &Follower{}, DefaultPoll, DefaultMaxBackoff, DefaultLookback},
+		{"poll below the floor", &Follower{Poll: time.Second}, MinPoll, DefaultMaxBackoff, DefaultLookback},
+		{
+			"negative backoff and lookback",
+			&Follower{Poll: 3 * time.Second, MaxBackoff: -time.Second, Lookback: -time.Second},
+			3 * time.Second, DefaultMaxBackoff, DefaultLookback,
+		},
+		{
+			"all set",
+			&Follower{Poll: 10 * time.Second, MaxBackoff: 20 * time.Second, Lookback: time.Minute},
+			10 * time.Second, 20 * time.Second, time.Minute,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s := tc.f.settings()
+			if s.poll != tc.poll || s.maxBackoff != tc.maxBackoff || s.lookback != tc.lookback {
+				t.Errorf("settings = poll %s, max backoff %s, lookback %s; want %s, %s, %s",
+					s.poll, s.maxBackoff, s.lookback, tc.poll, tc.maxBackoff, tc.lookback)
+			}
+			if _, ok := s.clock.(RealClock); !ok {
+				t.Errorf("clock = %T, want RealClock", s.clock)
+			}
+		})
+	}
+}
+
+// TestFollowBackoffDoublesToTheCap: each rate-limited poll doubles the interval until it reaches MaxBackoff.
+func TestFollowBackoffDoublesToTheCap(t *testing.T) {
+	t.Parallel()
+	s := followSettings{maxBackoff: 25 * time.Second}
+	for _, tc := range []struct{ d, want time.Duration }{
+		{5 * time.Second, 10 * time.Second},
+		{10 * time.Second, 20 * time.Second},
+		{20 * time.Second, 25 * time.Second},
+		{25 * time.Second, 25 * time.Second},
+	} {
+		if got := s.backoff(tc.d); got != tc.want {
+			t.Errorf("backoff(%s) = %s, want %s", tc.d, got, tc.want)
+		}
+	}
+}
