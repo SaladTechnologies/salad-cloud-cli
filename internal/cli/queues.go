@@ -450,6 +450,7 @@ every job, up to 10,000.`,
 	app.addQueueFlag(getCmd)
 	jobsCmd.AddCommand(getCmd)
 
+	var jobWait waitOptions
 	createCmd := &cobra.Command{
 		Use:   "create --queue <queue> (-f <file> | --input '<json>') [--webhook <url>]",
 		Short: "Submit a job to a queue (--wait blocks until it finishes)",
@@ -475,14 +476,14 @@ canceled exits 1 with the job's status and last event. --timeout (default
   # Full prototype from a file, with a webhook
   saladcloud queues jobs create --queue my-queue -f job.yaml --webhook https://example.com/hook`,
 		Args: cobra.NoArgs,
-		RunE: app.runQueueJobCreate,
+		RunE: func(cmd *cobra.Command, args []string) error { return app.runQueueJobCreate(cmd, args, jobWait) },
 	}
 	app.addQueueFlag(createCmd)
 	createCmd.Flags().
 		StringP("file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
 	createCmd.Flags().String("input", "", "the job input as inline JSON (wrapped into the prototype)")
 	createCmd.Flags().String("webhook", "", "URL notified when the job finishes (overrides the file's webhook)")
-	addJobWaitFlags(createCmd)
+	addJobWaitFlags(createCmd, &jobWait)
 	jobsCmd.AddCommand(createCmd)
 
 	cancelCmd := &cobra.Command{
@@ -533,7 +534,7 @@ func queueGroupsCell(groups []shared.ContainerGroup) string {
 	return strconv.Itoa(len(groups))
 }
 
-func (app *App) runQueueJobCreate(cmd *cobra.Command, _ []string) error {
+func (app *App) runQueueJobCreate(cmd *cobra.Command, _ []string, jobWait waitOptions) error {
 	fr := readFlags(cmd.Flags())
 	queue, cerr := queueFlag(cmd)
 	if cerr != nil {
@@ -552,7 +553,7 @@ func (app *App) runQueueJobCreate(cmd *cobra.Command, _ []string) error {
 			"exactly one of -f <file> or --input '<json>' is required",
 		)
 	}
-	wait, timeout, cerr := waitFlagValues(cmd)
+	wait, timeout, cerr := jobWait.values()
 	if cerr != nil {
 		return cerr
 	}

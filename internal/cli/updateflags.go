@@ -36,45 +36,47 @@ func (f updateFlags) any() bool {
 		f.Command != nil
 }
 
-func addUpdateFlags(cmd *cobra.Command) {
+// addUpdateFlags binds the update flags to u.
+func addUpdateFlags(cmd *cobra.Command, u *updateFlags) {
 	f := cmd.Flags()
-	f.String("image", "", "container image")
-	f.Int64("cpu", 0, "vCPU cores")
-	f.Int64("memory", 0, "memory in MB")
-	f.Int64("storage", 0, "storage in GB")
-	f.StringArray("country", nil, "country code the group may run in, repeatable; replaces the group's countries")
-	f.StringArray("gpu", nil, "GPU class UUID or name, repeatable; replaces the group's GPU classes")
-	f.Int64("replicas", 0, "container instance count (0-500); puts scheduled scaling on hold, like scale")
-	f.StringArrayP(
+	f.StringVar(&u.Image, "image", "", "container image")
+	f.Int64Var(&u.CPU, "cpu", 0, "vCPU cores")
+	f.Int64Var(&u.Memory, "memory", 0, "memory in MB")
+	f.Int64Var(&u.Storage, "storage", 0, "storage in GB")
+	f.StringArrayVar(
+		&u.Countries,
+		"country",
+		nil,
+		"country code the group may run in, repeatable; replaces the group's countries",
+	)
+	f.StringArrayVar(&u.Gpus, "gpu", nil, "GPU class UUID or name, repeatable; replaces the group's GPU classes")
+	f.Int64Var(
+		&u.Replicas,
+		"replicas",
+		0,
+		"container instance count (0-500); puts scheduled scaling on hold, like scale",
+	)
+	f.StringArrayVarP(
+		&u.Env,
 		"env",
 		"e",
 		nil,
 		"environment variable KEY=VALUE, repeatable; merged into the group's current variables",
 	)
-	f.String("priority", "", "scheduling priority: high|medium|low|batch (ignored on CPU-only groups)")
-	f.Int64("port", 0, "container gateway port")
-	f.String("display-name", "", "human-readable display name")
+	f.StringVar(&u.Priority, "priority", "", "scheduling priority: high|medium|low|batch (ignored on CPU-only groups)")
+	f.Int64Var(&u.Port, "port", 0, "container gateway port")
+	f.StringVar(&u.DisplayName, "display-name", "", "human-readable display name")
 }
 
-func collectUpdateFlags(cmd *cobra.Command) (updateFlags, *clierr.Error) {
-	f := readFlags(cmd.Flags())
-	var u updateFlags
-	u.Image = f.String("image")
-	u.CPU = f.Int64("cpu")
-	u.Memory = f.Int64("memory")
-	u.Gpus = f.StringArray("gpu")
-	u.Storage = f.Int64("storage")
+// collectUpdateFlags is u, the bound update flags, with the ones given on the
+// command line marked set.
+func collectUpdateFlags(cmd *cobra.Command, u updateFlags) updateFlags {
+	f := cmd.Flags()
 	u.StorageSet = f.Changed("storage")
-	u.Countries = f.StringArray("country")
-	u.Replicas = f.Int64("replicas")
-	u.Env = f.StringArray("env")
-	u.Priority = f.String("priority")
-	u.Port = f.Int64("port")
-	u.DisplayName = f.String("display-name")
 	u.ImageSet, u.CPUSet, u.MemorySet = f.Changed("image"), f.Changed("cpu"), f.Changed("memory")
 	u.ReplicasSet, u.PrioritySet = f.Changed("replicas"), f.Changed("priority")
 	u.PortSet, u.DisplayNameSet = f.Changed("port"), f.Changed("display-name")
-	return u, f.Err()
+	return u
 }
 
 // validateUpdateFlags checks the flag values before any file or API work,

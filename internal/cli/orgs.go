@@ -26,6 +26,7 @@ func (app *App) addOrgsCommands(root *cobra.Command) {
 		Long:    "The organizations the API key's account is a member of.\n\n" + orgsLong,
 	}
 
+	var listWatch watchOptions
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List your organizations",
@@ -36,7 +37,7 @@ func (app *App) addOrgsCommands(root *cobra.Command) {
 			if cerr != nil {
 				return cerr
 			}
-			return app.runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
+			return app.runMaybeWatch(cmd, listWatch, func(ctx context.Context) *clierr.Error {
 				orgs, cerr := client.ListOrganizations(ctx)
 				if cerr == nil {
 					cerr = unreadableListing(orgs)
@@ -63,7 +64,7 @@ func (app *App) addOrgsCommands(root *cobra.Command) {
 			})
 		},
 	}
-	app.addWatchFlags(listCmd)
+	app.addWatchFlags(listCmd, &listWatch)
 	orgsCmd.AddCommand(listCmd)
 
 	orgsCmd.AddCommand(&cobra.Command{

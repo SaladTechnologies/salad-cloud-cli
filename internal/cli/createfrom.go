@@ -166,7 +166,13 @@ func noteRegistryCredentials(w io.Writer, fileRaw json.RawMessage, image string)
 // loadFromBase builds create's base request for --from: the source group,
 // copied, with the -f document (if any) deep-merged over it. baseRaw and
 // unknowns are set only on the --allow-unknown-fields path, as for -f alone.
-func (app *App) loadFromBase(cmd *cobra.Command, ref, file string, allowUnknown bool, name string, notes io.Writer) (
+func (app *App) loadFromBase(
+	cmd *cobra.Command,
+	ref, file string,
+	allowUnknown bool,
+	name, imageFlag string,
+	notes io.Writer,
+) (
 	base containergroups.ContainerGroupCreationRequest, baseRaw []byte, unknowns []input.Unknown, cerr *clierr.Error,
 ) {
 	project, group, cerr := parseFromRef(ref)
@@ -235,11 +241,7 @@ func (app *App) loadFromBase(cmd *cobra.Command, ref, file string, allowUnknown 
 		image = ptr.Deref(base.Container.Image)
 	}
 	if cmd.Flags().Changed("image") {
-		fr := readFlags(cmd.Flags())
-		image = fr.String("image")
-		if cerr = fr.Err(); cerr != nil {
-			return base, nil, nil, cerr
-		}
+		image = imageFlag
 	}
 	noteRegistryCredentials(notes, fileRaw, image)
 	if allowUnknown && len(unknowns) > 0 {

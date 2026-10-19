@@ -232,6 +232,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
     saladcloud container-groups instances restart 8a2f13ba -c my-app`,
 	}
 
+	var listWatch watchOptions
 	instancesListCmd := &cobra.Command{
 		Use:   "list -c <group>",
 		Short: "List the instances of a container group",
@@ -245,7 +246,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 			if cerr != nil {
 				return cerr
 			}
-			return app.runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
+			return app.runMaybeWatch(cmd, listWatch, func(ctx context.Context) *clierr.Error {
 				instances, cerr := client.ListInstances(ctx, group)
 				if cerr != nil {
 					return cerr
@@ -289,7 +290,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 		},
 	}
 	app.addGroupFlag(instancesListCmd)
-	app.addWatchFlags(instancesListCmd)
+	app.addWatchFlags(instancesListCmd, &listWatch)
 	instancesCmd.AddCommand(instancesListCmd)
 
 	getCmd := &cobra.Command{

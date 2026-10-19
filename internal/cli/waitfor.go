@@ -46,9 +46,22 @@ const goalSettle = "settle"
 // the flag help's phrasing of what is waited for ("the group is running").
 // They are per-command flags (not persistent): only create/start/stop/update
 // wait.
-func addWaitFlags(cmd *cobra.Command, goal string) {
-	cmd.Flags().Bool("wait", false, fmt.Sprintf("block until %s (exit 1 on timeout)", goal))
-	cmd.Flags().Duration("timeout", waitDefaultTimeout, "give up on --wait after this long")
+func addWaitFlags(cmd *cobra.Command, goal string, o *waitOptions) {
+	cmd.Flags().BoolVar(&o.wait, "wait", false, fmt.Sprintf("block until %s (exit 1 on timeout)", goal))
+	cmd.Flags().DurationVar(&o.timeout, "timeout", waitDefaultTimeout, "give up on --wait after this long")
+}
+
+// waitOptions are a command's --wait and --timeout (addWaitFlags, addJobWaitFlags).
+type waitOptions struct {
+	wait    bool
+	timeout time.Duration
+}
+
+// settleOptions are a settle-by-default verb's --no-wait and --timeout
+// (addSettleFlags).
+type settleOptions struct {
+	noWait  bool
+	timeout time.Duration
 }
 
 // addSettleFlags registers --no-wait and --timeout on a write verb that
@@ -59,22 +72,17 @@ func addWaitFlags(cmd *cobra.Command, goal string) {
 // image change does, an env change does not). Making the caller opt in
 // made the warning's presence depend on the patch's contents, which is the
 // failure that quietly teaches people to ignore it. See Settled decisions in AGENTS.md.
-func addSettleFlags(cmd *cobra.Command) {
-	cmd.Flags().Bool("no-wait", false, "return once the API accepts the patch: no settle wait, no verification")
+func addSettleFlags(cmd *cobra.Command, o *settleOptions) {
 	cmd.Flags().
-		Duration("timeout", settleDefaultTimeout, "give up verifying the change after this long (exit 1; the patch was already accepted)")
+		BoolVar(&o.noWait, "no-wait", false, "return once the API accepts the patch: no settle wait, no verification")
+	cmd.Flags().
+		DurationVar(&o.timeout, "timeout", settleDefaultTimeout, "give up verifying the change after this long (exit 1; the patch was already accepted)")
 }
 
-// settleFlagValues reads --no-wait/--timeout for a settle-by-default verb.
-// wait is true unless --no-wait was given. Call it pre-flight, like
-// waitFlagValues.
-func settleFlagValues(cmd *cobra.Command) (bool, time.Duration, *clierr.Error) {
-	fr := readFlags(cmd.Flags())
-	noWait := fr.Bool("no-wait")
-	timeout := fr.Duration("timeout")
-	if cerr := fr.Err(); cerr != nil {
-		return false, 0, cerr
-	}
+// values checks --no-wait/--timeout for a settle-by-default verb. wait is
+// true unless --no-wait was given. Call it pre-flight, like waitOptions'.
+func (o settleOptions) values() (bool, time.Duration, *clierr.Error) {
+	noWait, timeout := o.noWait, o.timeout
 	if !noWait && timeout <= 0 {
 		return false, 0, clierr.New(
 			clierr.CodeUsage,
@@ -86,15 +94,10 @@ func settleFlagValues(cmd *cobra.Command) (bool, time.Duration, *clierr.Error) {
 	return !noWait, timeout, nil
 }
 
-// waitFlagValues reads and validates --wait/--timeout. Call it pre-flight —
-// before any file or API work — so a bad --timeout is a pure usage error.
-func waitFlagValues(cmd *cobra.Command) (bool, time.Duration, *clierr.Error) {
-	fr := readFlags(cmd.Flags())
-	wait := fr.Bool("wait")
-	timeout := fr.Duration("timeout")
-	if cerr := fr.Err(); cerr != nil {
-		return false, 0, cerr
-	}
+// values validates --wait/--timeout. Call it pre-flight — before any file or
+// API work — so a bad --timeout is a pure usage error.
+func (o waitOptions) values() (bool, time.Duration, *clierr.Error) {
+	wait, timeout := o.wait, o.timeout
 	if wait && timeout <= 0 {
 		return false, 0, clierr.New(
 			clierr.CodeUsage,

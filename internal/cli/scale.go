@@ -66,6 +66,11 @@ func replicas(n int64) string {
 
 // addScaleCommands adds scale.go's commands to the tree.
 func (app *App) addScaleCommands(cg *cobra.Command) {
+	var scaleOpts struct {
+		replicas     int64
+		keepSchedule bool
+		settle       settleOptions
+	}
 	scaleCmd := &cobra.Command{
 		Use:   "scale <group> --replicas <n>",
 		Short: "Set the replica count of a container group (waits for the change to settle; --no-wait returns at once)",
@@ -79,22 +84,15 @@ write (the API does not honor the flag in the same patch as replicas), for
 "new setpoint, keep the program".`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fr := readFlags(cmd.Flags())
-			keep := fr.Bool("keep-schedule")
-			if cerr := fr.Err(); cerr != nil {
-				return cerr
-			}
-			wait, timeout, cerr := settleFlagValues(cmd)
+			keep := scaleOpts.keepSchedule
+			wait, timeout, cerr := scaleOpts.settle.values()
 			if cerr != nil {
 				return cerr
 			}
 			if !cmd.Flags().Changed("replicas") {
 				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing required flag: --replicas <n>")
 			}
-			n, err := cmd.Flags().GetInt64("replicas")
-			if err != nil {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
-			}
+			n := scaleOpts.replicas
 			if cerr = validateScaleReplicas(n); cerr != nil {
 				return cerr
 			}
@@ -139,9 +137,9 @@ write (the API does not honor the flag in the same patch as replicas), for
 			}))
 		},
 	}
-	scaleCmd.Flags().Int64("replicas", 0, "desired replica count (0-500)")
+	scaleCmd.Flags().Int64Var(&scaleOpts.replicas, "replicas", 0, "desired replica count (0-500)")
 	scaleCmd.Flags().
-		Bool("keep-schedule", false, "re-enable scheduled scaling after the write (setting replicas puts it on hold)")
-	addSettleFlags(scaleCmd)
+		BoolVar(&scaleOpts.keepSchedule, "keep-schedule", false, "re-enable scheduled scaling after the write (setting replicas puts it on hold)")
+	addSettleFlags(scaleCmd, &scaleOpts.settle)
 	cg.AddCommand(scaleCmd)
 }

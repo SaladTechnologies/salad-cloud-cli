@@ -393,67 +393,78 @@ func noteQueueWorker(w io.Writer, queue string) {
 // queueWorkerDocs is the platform's page on building the worker into an image.
 const queueWorkerDocs = "https://docs.salad.com/container-engine/how-to-guides/job-processing/queue-worker"
 
-// addCreateOverrideFlags registers the flags shared by create and
-// (everything that overrides the base request).
-func addCreateOverrideFlags(cmd *cobra.Command) {
-	f := cmd.Flags()
-	f.String("image", "", "container image (required unless -f or --from provides one)")
-	f.Int64("cpu", 1, "vCPU cores")
-	f.Int64("memory", 1024, "memory in MB")
-	f.Int64("storage", 0, "storage in GB (default: server default)")
-	f.StringArray("country", nil, "country code the group may run in, repeatable (for example us; default: any)")
-	f.StringArray("gpu", nil, "GPU class UUID or name, repeatable (names resolved via the org's GPU class list)")
-	f.Int64("replicas", 1, "container instance count")
-	f.StringArrayP("env", "e", nil, "environment variable KEY=VALUE, repeatable (overrides the base per key)")
-	f.Int64("port", 0, "expose this container port over the container gateway (http, auth on)")
-	f.Bool("no-auth", false, "disable auth on the container gateway (requires --port or networking in the base)")
-	f.String("priority", "", "scheduling priority: high|medium|low|batch (default: server default)")
-	f.String("restart-policy", "always", "restart policy: always|on_failure|never")
-	f.Bool("no-autostart", false, "create the group stopped instead of starting it")
-	f.String("display-name", "", "human-readable display name")
-	f.String("queue", "", "connect the group to this job queue in the project (with --queue-port and --queue-path)")
-	f.Int64("queue-port", 0, "container port the queue's jobs are delivered to")
-	f.String("queue-path", "", "HTTP path the queue's jobs are delivered to, for example /generate")
+// createOptions are create's flags.
+type createOptions struct {
+	file         string
+	from         string
+	allowUnknown bool
+	flags        createFlags
+	wait         waitOptions
 }
 
-// collectCreateFlags reads the shared override flags into a createFlags.
-func collectCreateFlags(cmd *cobra.Command, name string, hasBase bool) (createFlags, *clierr.Error) {
-	f := readFlags(cmd.Flags())
-	str := func(n string) string { return f.String(n) }
-	i64 := func(n string) int64 { return f.Int64(n) }
-	b := func(n string) bool { return f.Bool(n) }
-	arr := func(n string) []string { return f.StringArray(n) }
-	opts := createFlags{
-		Name:             name,
-		DisplayName:      str("display-name"),
-		Image:            str("image"),
-		CPU:              i64("cpu"),
-		CPUSet:           f.Changed("cpu"),
-		Memory:           i64("memory"),
-		MemorySet:        f.Changed("memory"),
-		Storage:          i64("storage"),
-		StorageSet:       f.Changed("storage"),
-		Countries:        arr("country"),
-		Queue:            str("queue"),
-		QueuePort:        i64("queue-port"),
-		QueuePortSet:     f.Changed("queue-port"),
-		QueuePath:        str("queue-path"),
-		Replicas:         i64("replicas"),
-		ReplicasSet:      f.Changed("replicas"),
-		Gpus:             arr("gpu"),
-		Env:              arr("env"),
-		Port:             i64("port"),
-		PortSet:          f.Changed("port"),
-		NoAuth:           b("no-auth"),
-		Priority:         str("priority"),
-		RestartPolicy:    str("restart-policy"),
-		RestartPolicySet: f.Changed("restart-policy"),
-		NoAutostart:      b("no-autostart"),
-		HasBase:          hasBase,
-		Command:          nil,
-		ResolveGpu:       nil,
-	}
-	return opts, f.Err()
+// addCreateOverrideFlags binds the flags that override the base request to o.
+func addCreateOverrideFlags(cmd *cobra.Command, o *createFlags) {
+	f := cmd.Flags()
+	f.StringVar(&o.Image, "image", "", "container image (required unless -f or --from provides one)")
+	f.Int64Var(&o.CPU, "cpu", 1, "vCPU cores")
+	f.Int64Var(&o.Memory, "memory", 1024, "memory in MB")
+	f.Int64Var(&o.Storage, "storage", 0, "storage in GB (default: server default)")
+	f.StringArrayVar(
+		&o.Countries,
+		"country",
+		nil,
+		"country code the group may run in, repeatable (for example us; default: any)",
+	)
+	f.StringArrayVar(
+		&o.Gpus,
+		"gpu",
+		nil,
+		"GPU class UUID or name, repeatable (names resolved via the org's GPU class list)",
+	)
+	f.Int64Var(&o.Replicas, "replicas", 1, "container instance count")
+	f.StringArrayVarP(
+		&o.Env,
+		"env",
+		"e",
+		nil,
+		"environment variable KEY=VALUE, repeatable (overrides the base per key)",
+	)
+	f.Int64Var(&o.Port, "port", 0, "expose this container port over the container gateway (http, auth on)")
+	f.BoolVar(
+		&o.NoAuth,
+		"no-auth",
+		false,
+		"disable auth on the container gateway (requires --port or networking in the base)",
+	)
+	f.StringVar(&o.Priority, "priority", "", "scheduling priority: high|medium|low|batch (default: server default)")
+	f.StringVar(&o.RestartPolicy, "restart-policy", "always", "restart policy: always|on_failure|never")
+	f.BoolVar(&o.NoAutostart, "no-autostart", false, "create the group stopped instead of starting it")
+	f.StringVar(&o.DisplayName, "display-name", "", "human-readable display name")
+	f.StringVar(
+		&o.Queue,
+		"queue",
+		"",
+		"connect the group to this job queue in the project (with --queue-port and --queue-path)",
+	)
+	f.Int64Var(&o.QueuePort, "queue-port", 0, "container port the queue's jobs are delivered to")
+	f.StringVar(&o.QueuePath, "queue-path", "", "HTTP path the queue's jobs are delivered to, for example /generate")
+}
+
+// collectCreateFlags is the bound override flags, with the ones given on the
+// command line marked set, for a group named name.
+func collectCreateFlags(cmd *cobra.Command, o createFlags, name string, hasBase bool) createFlags {
+	f := cmd.Flags()
+	o.Name = name
+	o.HasBase = hasBase
+	o.CPUSet = f.Changed("cpu")
+	o.MemorySet = f.Changed("memory")
+	o.StorageSet = f.Changed("storage")
+	o.QueuePortSet = f.Changed("queue-port")
+	o.ReplicasSet = f.Changed("replicas")
+	o.PortSet = f.Changed("port")
+	o.RestartPolicySet = f.Changed("restart-policy")
+	o.Command, o.ResolveGpu = nil, nil
+	return o
 }
 
 // runCreate is the tail of create: apply the
@@ -468,6 +479,7 @@ func collectCreateFlags(cmd *cobra.Command, name string, hasBase bool) (createFl
 // sending the merged document raw.
 func (app *App) runCreate(
 	cmd *cobra.Command,
+	o *createOptions,
 	base containergroups.ContainerGroupCreationRequest,
 	hasBase bool,
 	name string,
@@ -488,10 +500,7 @@ func (app *App) runCreate(
 		return client, nil
 	}
 
-	opts, cerr := collectCreateFlags(cmd, name, hasBase)
-	if cerr != nil {
-		return cerr
-	}
+	opts := collectCreateFlags(cmd, o.flags, name, hasBase)
 	opts.Command = command
 	var classes []organizationdata.GpuClass // fetched once, on first non-UUID --gpu
 	opts.ResolveGpu = func(value string) (string, *clierr.Error) {
@@ -558,7 +567,7 @@ func (app *App) runCreate(
 	// and only then emit — the document must describe the settled state, and
 	// stdout must stay empty if the wait fails (timeout, interrupt). Without
 	// --wait the create response is emitted immediately, as before.
-	wait, timeout, cerr := waitFlagValues(cmd)
+	wait, timeout, cerr := o.wait.values()
 	if cerr != nil {
 		return cerr
 	}
@@ -580,6 +589,7 @@ func (app *App) runCreate(
 
 // addCreateCommands adds create.go's commands to the tree.
 func (app *App) addCreateCommands(cg *cobra.Command) {
+	var opts createOptions
 	createCmd := &cobra.Command{
 		Use:   "create [<group>] [-- <command>...]",
 		Short: "Create a container group from flags, a definition file, or an existing group",
@@ -646,21 +656,14 @@ together, so it starts with the program: -- python app.py --port 8080, not
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fr := readFlags(cmd.Flags())
-			noAutostart := fr.Bool("no-autostart")
-			file := fr.String("file")
-			allowUnknown := fr.Bool("allow-unknown-fields")
-			from := fr.String("from")
-			if cerr := fr.Err(); cerr != nil {
-				return cerr
-			}
+			noAutostart, file, allowUnknown, from := opts.flags.NoAutostart, opts.file, opts.allowUnknown, opts.from
 			args, command, commandGiven := splitCommand(cmd, args)
 			if cerr := app.validateCommand(command, commandGiven); cerr != nil {
 				return cerr
 			}
 			warnCommand(app.errw(), cmd, command)
 			// Pre-flight flag validation, before any file or API work.
-			wait, _, cerr := waitFlagValues(cmd)
+			wait, _, cerr := opts.wait.values()
 			if cerr != nil {
 				return cerr
 			}
@@ -676,11 +679,19 @@ together, so it starts with the program: -- python app.py --port 8080, not
 				name = args[0]
 			}
 			if from != "" {
-				base, baseRaw, unknowns, cerr = app.loadFromBase(cmd, from, file, allowUnknown, name, app.errw())
+				base, baseRaw, unknowns, cerr = app.loadFromBase(
+					cmd,
+					from,
+					file,
+					allowUnknown,
+					name,
+					opts.flags.Image,
+					app.errw(),
+				)
 				if cerr != nil {
 					return cerr
 				}
-				return app.runCreate(cmd, base, true, name, command, baseRaw, unknowns)
+				return app.runCreate(cmd, &opts, base, true, name, command, baseRaw, unknowns)
 			}
 			if file != "" {
 				if allowUnknown {
@@ -703,13 +714,15 @@ together, so it starts with the program: -- python app.py --port 8080, not
 				}
 				hasBase = true
 			}
-			return app.runCreate(cmd, base, hasBase, name, command, baseRaw, unknowns)
+			return app.runCreate(cmd, &opts, base, hasBase, name, command, baseRaw, unknowns)
 		},
 	}
-	createCmd.Flags().StringP("file", "f", "", "container group definition file (.json/.yaml; \"-\" reads stdin)")
-	createCmd.Flags().String("from", "", "copy an existing group in this organization: <group> or <project>/<group>")
-	addCreateOverrideFlags(createCmd)
-	addAllowUnknownFlag(createCmd)
-	addWaitFlags(createCmd, "the group is running")
+	createCmd.Flags().
+		StringVarP(&opts.file, "file", "f", "", "container group definition file (.json/.yaml; \"-\" reads stdin)")
+	createCmd.Flags().
+		StringVar(&opts.from, "from", "", "copy an existing group in this organization: <group> or <project>/<group>")
+	addCreateOverrideFlags(createCmd, &opts.flags)
+	addAllowUnknownFlag(createCmd, &opts.allowUnknown)
+	addWaitFlags(createCmd, "the group is running", &opts.wait)
 	cg.AddCommand(createCmd)
 }

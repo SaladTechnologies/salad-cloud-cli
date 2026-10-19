@@ -201,9 +201,10 @@ func (app *App) groupAction(name, pastTense string, call func() *clierr.Error) e
 func (app *App) startStopRunE(
 	pastTense, target string,
 	verb func(*api.Client, context.Context, string) *clierr.Error,
+	waitOpts *waitOptions,
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
-		wait, timeout, cerr := waitFlagValues(cmd)
+		wait, timeout, cerr := waitOpts.values()
 		if cerr != nil {
 			return cerr // pre-flight: a bad --timeout must not run the verb
 		}
@@ -239,6 +240,11 @@ var validGroupStatuses = map[string]bool{
 
 // addGroupsCommands adds groups.go's commands to the tree.
 func (app *App) addGroupsCommands(cg *cobra.Command) {
+	var listOpts struct {
+		status   string
+		projects []string
+		watch    watchOptions
+	}
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List container groups (current project, or --projects for several)",
@@ -250,12 +256,7 @@ flag for each: --projects a --projects b) and adds a PROJECT column. Name
 the projects you want listed.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fr := readFlags(cmd.Flags())
-			statusFilter := fr.String("status")
-			projects := fr.StringArray("projects")
-			if cerr := fr.Err(); cerr != nil {
-				return cerr
-			}
+			statusFilter, projects := listOpts.status, listOpts.projects
 			if statusFilter != "" && !validGroupStatuses[statusFilter] {
 				return clierr.New(
 					clierr.CodeUsage,
@@ -269,7 +270,7 @@ the projects you want listed.`,
 				return cerr
 			}
 			multi := len(projects) > 0
-			return app.runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
+			return app.runMaybeWatch(cmd, listOpts.watch, func(ctx context.Context) *clierr.Error {
 				var items []shared.ContainerGroup
 				if multi {
 					for _, proj := range projects {
@@ -353,12 +354,17 @@ the projects you want listed.`,
 			})
 		},
 	}
-	listCmd.Flags().String("status", "", "filter by status: pending|running|stopped|succeeded|failed|deploying")
 	listCmd.Flags().
-		StringArray("projects", nil, "list this project instead of the current one, repeatable (--projects a --projects b); adds a PROJECT column")
-	app.addWatchFlags(listCmd)
+		StringVar(&listOpts.status, "status", "", "filter by status: pending|running|stopped|succeeded|failed|deploying")
+	listCmd.Flags().
+		StringArrayVar(&listOpts.projects, "projects", nil, "list this project instead of the current one, repeatable (--projects a --projects b); adds a PROJECT column")
+	app.addWatchFlags(listCmd, &listOpts.watch)
 	cg.AddCommand(listCmd)
 
+	var getOpts struct {
+		writable bool
+		watch    watchOptions
+	}
 	getCmd := &cobra.Command{
 		Use:   "get <group>",
 		Short: "Show one container group (--writable emits a patch document for update -f)",
@@ -382,12 +388,7 @@ document unless you mean to change it. The CLI prints a note when the
 group has scheduled scaling enabled.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fr := readFlags(cmd.Flags())
-			writable := fr.Bool("writable")
-			watch := fr.Bool("watch")
-			if cerr := fr.Err(); cerr != nil {
-				return cerr
-			}
+			writable, watch := getOpts.writable, getOpts.watch.watch
 			if watch && writable {
 				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--writable and --watch cannot be combined")
 			}
@@ -430,7 +431,7 @@ group has scheduled scaling enabled.`,
 				_, err = fmt.Fprintln(app.printer.Out(), string(output.ASCII(data)))
 				return wrapErr(err)
 			}
-			return app.runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
+			return app.runMaybeWatch(cmd, getOpts.watch, func(ctx context.Context) *clierr.Error {
 				group, cerr := client.GetGroup(ctx, args[0])
 				if cerr != nil {
 					return groupNotFound(cerr, args[0], client.Org(), client.Project())
@@ -443,10 +444,16 @@ group has scheduled scaling enabled.`,
 		},
 	}
 	getCmd.Flags().
-		Bool("writable", false, "emit a JSON patch document for update -f (response-only and create-only fields removed)")
-	app.addWatchFlags(getCmd)
+		BoolVar(&getOpts.writable, "writable", false, "emit a JSON patch document for update -f (response-only and create-only fields removed)")
+	app.addWatchFlags(getCmd, &getOpts.watch)
 	cg.AddCommand(getCmd)
 
+	var updateOpts struct {
+		file         string
+		allowUnknown bool
+		flags        updateFlags
+		settle       settleOptions
+	}
 	updateCmd := &cobra.Command{
 		Use:   "update <group> [-f <file>] [flags] [-- <command>...]",
 		Short: "Update a container group from flags and/or a JSON or YAML patch file (waits for the change to settle)",
@@ -489,25 +496,17 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fr := readFlags(cmd.Flags())
-			file := fr.String("file")
-			allowUnknown := fr.Bool("allow-unknown-fields")
-			if cerr := fr.Err(); cerr != nil {
-				return cerr
-			}
+			file, allowUnknown := updateOpts.file, updateOpts.allowUnknown
 			args, command, commandGiven := splitCommand(cmd, args)
 			if cerr := app.validateCommand(command, commandGiven); cerr != nil {
 				return cerr
 			}
 			warnCommand(app.errw(), cmd, command)
-			wait, timeout, cerr := settleFlagValues(cmd)
+			wait, timeout, cerr := updateOpts.settle.values()
 			if cerr != nil {
 				return cerr // pre-flight: a bad --timeout must not patch anything
 			}
-			flags, cerr := collectUpdateFlags(cmd)
-			if cerr != nil {
-				return cerr
-			}
+			flags := collectUpdateFlags(cmd, updateOpts.flags)
 			flags.Command = command
 			if cerr = validateUpdateFlags(flags); cerr != nil {
 				return cerr
@@ -577,28 +576,31 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 			return wrapErr(app.printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
 		},
 	}
-	updateCmd.Flags().StringP("file", "f", "", "container group patch file (.json/.yaml; \"-\" reads stdin)")
-	addUpdateFlags(updateCmd)
-	addAllowUnknownFlag(updateCmd)
-	addSettleFlags(updateCmd)
+	updateCmd.Flags().
+		StringVarP(&updateOpts.file, "file", "f", "", "container group patch file (.json/.yaml; \"-\" reads stdin)")
+	addUpdateFlags(updateCmd, &updateOpts.flags)
+	addAllowUnknownFlag(updateCmd, &updateOpts.allowUnknown)
+	addSettleFlags(updateCmd, &updateOpts.settle)
 	cg.AddCommand(updateCmd)
 
+	var startWait waitOptions
 	startCmd := &cobra.Command{
 		Use:   "start <group>",
 		Short: "Start a container group (--wait blocks until it is running)",
 		Args:  cobra.ExactArgs(1),
-		RunE:  app.startStopRunE("started", "running", (*api.Client).StartGroup),
+		RunE:  app.startStopRunE("started", "running", (*api.Client).StartGroup, &startWait),
 	}
-	addWaitFlags(startCmd, "the group is running")
+	addWaitFlags(startCmd, "the group is running", &startWait)
 	cg.AddCommand(startCmd)
 
+	var stopWait waitOptions
 	stopCmd := &cobra.Command{
 		Use:   "stop <group>",
 		Short: "Stop a container group (--wait blocks until it is stopped)",
 		Args:  cobra.ExactArgs(1),
-		RunE:  app.startStopRunE("stopped", "stopped", (*api.Client).StopGroup),
+		RunE:  app.startStopRunE("stopped", "stopped", (*api.Client).StopGroup, &stopWait),
 	}
-	addWaitFlags(stopCmd, "the group is stopped")
+	addWaitFlags(stopCmd, "the group is stopped", &stopWait)
 	cg.AddCommand(stopCmd)
 
 	cg.AddCommand(&cobra.Command{

@@ -431,11 +431,12 @@ func TestSettleTimeoutSaysPatchAccepted(t *testing.T) {
 // window, and a non-positive timeout is a usage error only when waiting.
 func TestSettleFlags(t *testing.T) {
 	cmd := &cobra.Command{Use: "x"}
-	addSettleFlags(cmd)
+	var o settleOptions
+	addSettleFlags(cmd, &o)
 	if cmd.Flags().Lookup("wait") != nil {
 		t.Error("a settle verb must not carry --wait: waiting is the default")
 	}
-	wait, timeout, cerr := settleFlagValues(cmd)
+	wait, timeout, cerr := o.values()
 	if cerr != nil || !wait || timeout != settleDefaultTimeout {
 		t.Errorf(
 			"defaults = wait %v timeout %s err %v, want wait true, %s, nil",
@@ -448,13 +449,13 @@ func TestSettleFlags(t *testing.T) {
 	if err := cmd.Flags().Set("timeout", "0"); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, cerr = settleFlagValues(cmd); cerr == nil || cerr.Code != clierr.CodeUsage {
+	if _, _, cerr = o.values(); cerr == nil || cerr.Code != clierr.CodeUsage {
 		t.Errorf("zero timeout while waiting = %v, want a usage error", cerr)
 	}
 	if err := cmd.Flags().Set("no-wait", "true"); err != nil {
 		t.Fatal(err)
 	}
-	wait, _, cerr = settleFlagValues(cmd)
+	wait, _, cerr = o.values()
 	if cerr != nil || wait {
 		t.Errorf("--no-wait = wait %v err %v, want false, nil (timeout is irrelevant without a wait)", wait, cerr)
 	}

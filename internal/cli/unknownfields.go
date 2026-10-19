@@ -35,8 +35,8 @@ import (
 )
 
 // addAllowUnknownFlag registers --allow-unknown-fields on a -f command.
-func addAllowUnknownFlag(cmd *cobra.Command) {
-	cmd.Flags().Bool("allow-unknown-fields", false,
+func addAllowUnknownFlag(cmd *cobra.Command, allow *bool) {
+	cmd.Flags().BoolVar(allow, "allow-unknown-fields", false,
 		"send -f fields this CLI's API model doesn't recognize instead of rejecting them (forward-compat escape hatch; each is warned on stderr)")
 }
 

@@ -137,12 +137,12 @@ func writeJobBody(row func(k, v string), input, out any, events int, lastEvent s
 // jobWaitDefaultTimeout is `inference jobs create --wait`'s default --timeout.
 const jobWaitDefaultTimeout = 10 * time.Minute
 
-// addJobWaitFlags registers --wait/--timeout on jobs create. The values are
-// read via the shared waitFlagValues (waitfor.go).
-func addJobWaitFlags(cmd *cobra.Command) {
+// addJobWaitFlags binds --wait/--timeout on jobs create to o (the shared
+// waitOptions, waitfor.go).
+func addJobWaitFlags(cmd *cobra.Command, o *waitOptions) {
 	cmd.Flags().
-		Bool("wait", false, "block until the job reaches a terminal status (succeeded exits 0; failed/canceled exit 1)")
-	cmd.Flags().Duration("timeout", jobWaitDefaultTimeout, "give up on --wait after this long")
+		BoolVar(&o.wait, "wait", false, "block until the job reaches a terminal status (succeeded exits 0; failed/canceled exit 1)")
+	cmd.Flags().DurationVar(&o.timeout, "timeout", jobWaitDefaultTimeout, "give up on --wait after this long")
 }
 
 // jobWaitDeps are waitForJobTerminal's dependencies, injectable for tests.
@@ -521,6 +521,7 @@ older jobs were left out.`,
 	app.addEndpointFlag(jobsGetCmd)
 	jobsCmd.AddCommand(jobsGetCmd)
 
+	var jobWait waitOptions
 	jobsCreateCmd := &cobra.Command{
 		Use:   "create --endpoint <endpoint> (-f <file> | --input '<json>')",
 		Short: "Queue a job on an inference endpoint (--wait blocks until it finishes)",
@@ -559,7 +560,7 @@ canceled exits 1 with the job's status and last event. --timeout (default
 				return clierr.New(clierr.CodeUsage, clierr.KindUsage,
 					"exactly one of -f <file> or --input '<json>' is required")
 			}
-			wait, timeout, cerr := waitFlagValues(cmd)
+			wait, timeout, cerr := jobWait.values()
 			if cerr != nil {
 				return cerr
 			}
@@ -606,7 +607,7 @@ canceled exits 1 with the job's status and last event. --timeout (default
 	jobsCreateCmd.Flags().
 		StringP("file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
 	jobsCreateCmd.Flags().String("input", "", "the job input object as inline JSON (wrapped into the prototype)")
-	addJobWaitFlags(jobsCreateCmd)
+	addJobWaitFlags(jobsCreateCmd, &jobWait)
 	jobsCmd.AddCommand(jobsCreateCmd)
 
 	jobsCancelCmd := &cobra.Command{
