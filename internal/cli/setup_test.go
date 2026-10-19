@@ -360,8 +360,8 @@ func TestBrowserOffer(t *testing.T) {
 		{"darwin", []string{"SSH_TTY", "/dev/ttys001"}, false},
 		{"windows", []string{"SSH_CONNECTION", "x"}, false},
 	} {
-		old := goos
-		goos = tc.os
+		old := procEnv.GOOS
+		procEnv.GOOS = tc.os
 		for _, v := range []string{"DISPLAY", "WAYLAND_DISPLAY", "SSH_CONNECTION", "SSH_TTY"} {
 			t.Setenv(v, "")
 		}
@@ -375,15 +375,15 @@ func TestBrowserOffer(t *testing.T) {
 		if got := keyPrompt(); browserVisible() != tc.ok || got != want {
 			t.Errorf("%s %v: visible %t, prompt %q", tc.os, tc.env, browserVisible(), got)
 		}
-		goos = old
+		procEnv.GOOS = old
 	}
 }
 
 func TestOpener(t *testing.T) {
 	const url = "https://portal.salad.com/api-key"
 	t.Setenv("WSL_DISTRO_NAME", "")
-	old := goos
-	t.Cleanup(func() { goos = old })
+	old := procEnv.GOOS
+	t.Cleanup(func() { procEnv.GOOS = old })
 	for _, tc := range []struct {
 		os, wsl, want string
 	}{
@@ -392,7 +392,7 @@ func TestOpener(t *testing.T) {
 		{"linux", "", "xdg-open " + url},
 		{"linux", "Ubuntu", "cmd.exe /c start  " + url},
 	} {
-		goos = tc.os
+		procEnv.GOOS = tc.os
 		t.Setenv("WSL_DISTRO_NAME", tc.wsl)
 		name, args := opener(url)
 		if got := name + " " + strings.Join(args, " "); got != tc.want {

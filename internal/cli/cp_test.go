@@ -94,7 +94,7 @@ func TestParseRemoteSpecGitBashRewrite(t *testing.T) {
 // The test binary stands in for sftp when SALAD_CLI_TEST_FAKE_SFTP is set: it
 // prints sftp's batch echo on stdout and exits, before the test flags parse.
 func init() {
-	switch os.Getenv("SALAD_CLI_TEST_FAKE_SFTP") {
+	switch procEnv.Getenv("SALAD_CLI_TEST_FAKE_SFTP") {
 	case "":
 	case "fail":
 		fmt.Println(`sftp> get "/etc/hostname" "./h"`)

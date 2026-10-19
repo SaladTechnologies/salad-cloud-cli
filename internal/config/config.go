@@ -23,17 +23,17 @@ type File struct {
 }
 
 // Path returns the config file location:
-// [filepath.Join]([os.UserConfigDir](), "saladcloud", "config.json").
+// [filepath.Join]([ConfigDir](env), "saladcloud", "config.json").
 //
 // If the SALAD_CLI_CONFIG_DIR environment variable is set, that directory is
-// used instead of [os.UserConfigDir]()/saladcloud. This exists primarily so
+// used instead of [ConfigDir](env)/saladcloud. This exists primarily so
 // tests (and sandboxed environments) can redirect config I/O without
 // touching the real user config.
-func Path() (string, error) {
-	if dir := os.Getenv("SALAD_CLI_CONFIG_DIR"); dir != "" {
+func Path(env Env) (string, error) {
+	if dir := env.Getenv("SALAD_CLI_CONFIG_DIR"); dir != "" {
 		return filepath.Join(dir, "config.json"), nil
 	}
-	base, err := os.UserConfigDir()
+	base, err := ConfigDir(env)
 	if err != nil {
 		return "", fmt.Errorf("finding the user config folder: %w", err)
 	}
@@ -76,9 +76,9 @@ func Reason(err error) string {
 // Load reads the config file. A missing file is not an error: it returns a
 // zero File and nil error. An unreadable or corrupt file returns a
 // *ReadError.
-func Load() (File, error) {
+func Load(env Env) (File, error) {
 	var f File
-	p, err := Path()
+	p, err := Path(env)
 	if err != nil {
 		return f, err
 	}
@@ -104,8 +104,8 @@ var ErrNotFolder = errors.New("is not a folder")
 // file, when it exists, opens for writing, and its folder (or the nearest
 // folder above it that exists, which Save would create it in) takes a new
 // file. Nothing it writes stays.
-func Writable() error {
-	p, err := Path()
+func Writable(env Env) error {
+	p, err := Path(env)
 	if err != nil {
 		return err
 	}
@@ -147,8 +147,8 @@ func Writable() error {
 
 // Save writes the config file, creating its directory (0700) if needed.
 // The file itself is written with permission 0600.
-func Save(f File) error {
-	p, err := Path()
+func Save(env Env, f File) error {
+	p, err := Path(env)
 	if err != nil {
 		return err
 	}
@@ -218,22 +218,22 @@ const SourceDefault = "default"
 // stderr, and a fallback that does not exist is reported as no valid
 // project set. Commands decide what they require. The only error case is a
 // present but unreadable/corrupt config file.
-func Resolve(orgFlag, projectFlag string) (Resolved, error) {
-	f, err := Load()
+func Resolve(env Env, orgFlag, projectFlag string) (Resolved, error) {
+	f, err := Load(env)
 	if err != nil {
 		return Resolved{}, err
 	}
-	return ResolveFrom(f, orgFlag, projectFlag), nil
+	return ResolveFrom(env, f, orgFlag, projectFlag), nil
 }
 
 // ResolveFrom is Resolve with the config file already read (or, when it
 // cannot be read, an empty one: flags and the environment still resolve).
-func ResolveFrom(f File, orgFlag, projectFlag string) Resolved {
+func ResolveFrom(env Env, f File, orgFlag, projectFlag string) Resolved {
 	pick := func(flagVal, envName, fileVal string) (string, string) {
 		if flagVal != "" {
 			return flagVal, "flag"
 		}
-		if v := os.Getenv(envName); v != "" {
+		if v := env.Getenv(envName); v != "" {
 			return v, "env"
 		}
 		if fileVal != "" {
@@ -251,7 +251,7 @@ func ResolveFrom(f File, orgFlag, projectFlag string) Resolved {
 		flagVal, envVal, fileVal := strings.TrimSpace(
 			flagVal,
 		), strings.TrimSpace(
-			os.Getenv(envName),
+			env.Getenv(envName),
 		), strings.TrimSpace(
 			fileVal,
 		)

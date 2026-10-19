@@ -41,11 +41,11 @@ func complete(f completer) func(*cobra.Command, []string, string) ([]string, cob
 		if fr.Err() != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		res, err := config.Resolve(org, project)
+		res, err := config.Resolve(procEnv, org, project)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		client, cerr := api.New(res)
+		client, cerr := api.New(res, procEnv.Getenv)
 		if cerr != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}

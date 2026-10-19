@@ -275,7 +275,7 @@ the projects you want listed.`,
 					for _, proj := range projects {
 						r := res
 						r.Project, r.ProjectSource = proj, "flag"
-						pc, cerr := api.New(r)
+						pc, cerr := api.New(r, procEnv.Getenv)
 						if cerr != nil {
 							return cerr
 						}

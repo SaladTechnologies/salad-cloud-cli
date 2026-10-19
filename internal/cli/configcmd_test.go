@@ -80,7 +80,10 @@ func TestConfigListResultStableJSONShape(t *testing.T) {
 // in their entries, the API key masked.
 func TestConfigListEmitsItems(t *testing.T) {
 	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	if err := config.Save(config.File{APIKey: "salad_cloud_user_1234567890", Organization: "my-org"}); err != nil {
+	if err := config.Save(
+		procEnv,
+		config.File{APIKey: "salad_cloud_user_1234567890", Organization: "my-org"},
+	); err != nil {
 		t.Fatal(err)
 	}
 	out, err := runRoot(t, "config", "list", "-o", "json")

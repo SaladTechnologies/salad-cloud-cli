@@ -22,24 +22,24 @@ func clearEnv(t *testing.T) {
 func TestPathHonorsConfigDirOverride(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SALAD_CLI_CONFIG_DIR", dir)
-	p, err := Path()
+	p, err := Path(ProcessEnv())
 	if err != nil {
-		t.Fatalf("Path() error: %v", err)
+		t.Fatalf("Path(ProcessEnv()) error: %v", err)
 	}
 	want := filepath.Join(dir, "config.json")
 	if p != want {
-		t.Errorf("Path() = %q, want %q", p, want)
+		t.Errorf("Path(ProcessEnv()) = %q, want %q", p, want)
 	}
 }
 
 func TestLoadMissingFile(t *testing.T) {
 	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	f, err := Load()
+	f, err := Load(ProcessEnv())
 	if err != nil {
-		t.Fatalf("Load() on missing file: %v", err)
+		t.Fatalf("Load(ProcessEnv()) on missing file: %v", err)
 	}
 	if f != (File{}) {
-		t.Errorf("Load() = %+v, want zero File", f)
+		t.Errorf("Load(ProcessEnv()) = %+v, want zero File", f)
 	}
 }
 
@@ -49,9 +49,9 @@ func TestLoadCorruptFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Load()
+	_, err := Load(ProcessEnv())
 	if err == nil {
-		t.Fatal("Load() on corrupt file: want error, got nil")
+		t.Fatal("Load(ProcessEnv()) on corrupt file: want error, got nil")
 	}
 	// The message names the file and the reason; each command adds the fix
 	// (every command loads the config, so a corrupt file blocks even
@@ -66,12 +66,12 @@ func TestLoadCorruptFile(t *testing.T) {
 func TestSaveThenLoadRoundTrip(t *testing.T) {
 	t.Setenv("SALAD_CLI_CONFIG_DIR", filepath.Join(t.TempDir(), "nested"))
 	want := File{APIKey: "salad_cloud_key", Organization: "my-org", Project: "my-project"}
-	if err := Save(want); err != nil {
-		t.Fatalf("Save() error: %v", err)
+	if err := Save(ProcessEnv(), want); err != nil {
+		t.Fatalf("Save(ProcessEnv(), ) error: %v", err)
 	}
-	got, err := Load()
+	got, err := Load(ProcessEnv())
 	if err != nil {
-		t.Fatalf("Load() error: %v", err)
+		t.Fatalf("Load(ProcessEnv()) error: %v", err)
 	}
 	if got != want {
 		t.Errorf("round trip = %+v, want %+v", got, want)
@@ -103,16 +103,16 @@ func TestResolvePrecedence(t *testing.T) {
 			clearEnv(t)
 			t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
 			if tt.fileOrg != "" {
-				if err := Save(File{Organization: tt.fileOrg}); err != nil {
+				if err := Save(ProcessEnv(), File{Organization: tt.fileOrg}); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if tt.envOrg != "" {
 				t.Setenv("SALAD_ORGANIZATION", tt.envOrg)
 			}
-			r, err := Resolve(tt.flagOrg, "")
+			r, err := Resolve(ProcessEnv(), tt.flagOrg, "")
 			if err != nil {
-				t.Fatalf("Resolve() error: %v", err)
+				t.Fatalf("Resolve(ProcessEnv(), ) error: %v", err)
 			}
 			if r.Organization != tt.wantOrg {
 				t.Errorf("Organization = %q, want %q", r.Organization, tt.wantOrg)
@@ -127,15 +127,18 @@ func TestResolvePrecedence(t *testing.T) {
 func TestResolveAllFields(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	if err := Save(File{APIKey: "file-key", Organization: "file-org", Project: "file-project"}); err != nil {
+	if err := Save(
+		ProcessEnv(),
+		File{APIKey: "file-key", Organization: "file-org", Project: "file-project"},
+	); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("SALAD_API_KEY", "env-key")
 	t.Setenv("SALAD_PROJECT", "env-project")
 
-	r, err := Resolve("flag-org", "")
+	r, err := Resolve(ProcessEnv(), "flag-org", "")
 	if err != nil {
-		t.Fatalf("Resolve() error: %v", err)
+		t.Fatalf("Resolve(ProcessEnv(), ) error: %v", err)
 	}
 	// API key has no flag: env beats config.
 	if r.APIKey != "env-key" || r.APIKeySource != "env" {
@@ -153,15 +156,15 @@ func TestResolveMissingEverything(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
 
-	r, err := Resolve("", "")
+	r, err := Resolve(ProcessEnv(), "", "")
 	if err != nil {
-		t.Fatalf("Resolve() error: %v", err)
+		t.Fatalf("Resolve(ProcessEnv(), ) error: %v", err)
 	}
 	// Everything empty — except the project, which falls back to "default"
 	// and says so in its source.
 	want := Resolved{Project: DefaultProject, ProjectSource: SourceDefault}
 	if r != want {
-		t.Errorf("Resolve() = %+v, want %+v", r, want)
+		t.Errorf("Resolve(ProcessEnv(), ) = %+v, want %+v", r, want)
 	}
 }
 
@@ -171,24 +174,24 @@ func TestResolveProjectFallback(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
 
-	r := must(Resolve("", ""))(t)
+	r := must(Resolve(ProcessEnv(), "", ""))(t)
 	if r.Project != "default" || r.ProjectSource != SourceDefault {
 		t.Errorf("no project anywhere: %q (%q), want default (default)", r.Project, r.ProjectSource)
 	}
 	t.Setenv("SALAD_PROJECT", "env-project")
-	r = must(Resolve("", ""))(t)
+	r = must(Resolve(ProcessEnv(), "", ""))(t)
 	if r.Project != "env-project" || r.ProjectSource != "env" {
 		t.Errorf("env should beat the fallback: %q (%q)", r.Project, r.ProjectSource)
 	}
-	r = must(Resolve("", "flag-project"))(t)
+	r = must(Resolve(ProcessEnv(), "", "flag-project"))(t)
 	if r.Project != "flag-project" || r.ProjectSource != "flag" {
 		t.Errorf("flag should beat everything: %q (%q)", r.Project, r.ProjectSource)
 	}
 	t.Setenv("SALAD_PROJECT", "")
-	if err := Save(File{Project: "file-project"}); err != nil {
+	if err := Save(ProcessEnv(), File{Project: "file-project"}); err != nil {
 		t.Fatal(err)
 	}
-	r = must(Resolve("", ""))(t)
+	r = must(Resolve(ProcessEnv(), "", ""))(t)
 	if r.Project != "file-project" || r.ProjectSource != "config" {
 		t.Errorf("config should beat the fallback: %q (%q)", r.Project, r.ProjectSource)
 	}
@@ -203,10 +206,10 @@ func TestResolveProjectFallback(t *testing.T) {
 func TestGatewayKey(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	if err := Save(File{GatewayAPIKey: "file-gw"}); err != nil {
+	if err := Save(ProcessEnv(), File{GatewayAPIKey: "file-gw"}); err != nil {
 		t.Fatal(err)
 	}
-	r, err := Resolve("", "")
+	r, err := Resolve(ProcessEnv(), "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +217,7 @@ func TestGatewayKey(t *testing.T) {
 		t.Errorf("from file: %q (%q)", r.GatewayAPIKey, r.GatewayAPIKeySource)
 	}
 	t.Setenv("SALAD_AI_GATEWAY_API_KEY", "env-gw")
-	r = must(Resolve("", ""))(t)
+	r = must(Resolve(ProcessEnv(), "", ""))(t)
 	if r.GatewayAPIKey != "env-gw" || r.GatewayAPIKeySource != "env" {
 		t.Errorf("env should win: %q (%q)", r.GatewayAPIKey, r.GatewayAPIKeySource)
 	}
@@ -243,7 +246,7 @@ func TestSaveReplacesAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := File{Organization: "new-org"}
-	if err := Save(want); err != nil {
+	if err := Save(ProcessEnv(), want); err != nil {
 		t.Fatal(err)
 	}
 	// A rename puts a new file in place; an in-place write keeps the old
@@ -253,7 +256,7 @@ func TestSaveReplacesAtomically(t *testing.T) {
 	if after, err := os.Stat(p); runtime.GOOS != "windows" && (err != nil || os.SameFile(before, after)) {
 		t.Error("Save rewrote the file in place (same file before and after); want a temp file renamed over it")
 	}
-	if got, err := Load(); err != nil || got != want {
+	if got, err := Load(ProcessEnv()); err != nil || got != want {
 		t.Errorf("Load after Save = %+v, %v; want %+v", got, err, want)
 	}
 	data := must(os.ReadFile(p))(t)
@@ -277,7 +280,7 @@ func TestSaveReplacesAtomically(t *testing.T) {
 func TestResolveSavedProjectBelongsToItsOrg(t *testing.T) {
 	clearEnv(t)
 	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	if err := Save(File{Organization: "org-a", Project: "prod"}); err != nil {
+	if err := Save(ProcessEnv(), File{Organization: "org-a", Project: "prod"}); err != nil {
 		t.Fatal(err)
 	}
 	cases := []struct {
@@ -293,7 +296,7 @@ func TestResolveSavedProjectBelongsToItsOrg(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("SALAD_ORGANIZATION", tc.orgEnv)
-			r, err := Resolve(tc.orgFlag, tc.projectFlag)
+			r, err := Resolve(ProcessEnv(), tc.orgFlag, tc.projectFlag)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -308,11 +311,11 @@ func TestResolveSavedProjectBelongsToItsOrg(t *testing.T) {
 	}
 
 	// A saved project with no saved organization still applies.
-	if err := Save(File{Project: "prod"}); err != nil {
+	if err := Save(ProcessEnv(), File{Project: "prod"}); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("SALAD_ORGANIZATION", "org-b")
-	if r := must(Resolve("", ""))(t); r.Project != "prod" {
+	if r := must(Resolve(ProcessEnv(), "", ""))(t); r.Project != "prod" {
 		t.Errorf("project = %q, want prod when the file names no organization", r.Project)
 	}
 }

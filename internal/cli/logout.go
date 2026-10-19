@@ -33,7 +33,7 @@ SALAD_API_KEY is set, commands still use it, and logout says so.`,
 }
 
 func runLogout(_ *cobra.Command, _ []string) error {
-	path, err := config.Path()
+	path, err := config.Path(procEnv)
 	if err != nil {
 		return clierr.New(
 			clierr.CodeGeneric,
@@ -42,7 +42,7 @@ func runLogout(_ *cobra.Command, _ []string) error {
 			config.Reason(err),
 		)
 	}
-	f, err := config.Load()
+	f, err := config.Load(procEnv)
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it, then run saladcloud logout again")
@@ -53,7 +53,7 @@ func runLogout(_ *cobra.Command, _ []string) error {
 	orgShown, projectShown := shownName(f.Organization), shownName(f.Project)
 	if old != "" {
 		f.APIKey = ""
-		if err := config.Save(f); err != nil {
+		if err := config.Save(procEnv, f); err != nil {
 			return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
 				WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud logout again")
 		}

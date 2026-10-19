@@ -84,7 +84,7 @@ func runAgentInit(cmd *cobra.Command, _ []string) error {
 		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, `--dir "%s" is not a directory`, dir)
 	}
 
-	target := agentdoc.PickFile(dir, file, os.Getenv)
+	target := agentdoc.PickFile(dir, file, procEnv.Getenv)
 
 	existing, err := os.ReadFile(target.Path)
 	created := false

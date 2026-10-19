@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -96,7 +97,7 @@ func TestDebugBodiesRedactDefinitionSecrets(t *testing.T) {
 	defer srv.Close()
 	buf := debugCapture(t, DebugBodies)
 	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
-	c, cerr := New(config.Resolved{APIKey: "test-key", Organization: "o", Project: "p"})
+	c, cerr := New(config.Resolved{APIKey: "test-key", Organization: "o", Project: "p"}, os.Getenv)
 	if cerr != nil {
 		t.Fatal(cerr)
 	}

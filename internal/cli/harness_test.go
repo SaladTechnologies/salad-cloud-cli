@@ -351,7 +351,7 @@ func (s session) run(t *testing.T) outcome {
 		t.Setenv(k, v)
 	}
 	if s.saved != nil {
-		if err := config.Save(*s.saved); err != nil {
+		if err := config.Save(procEnv, *s.saved); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -363,13 +363,13 @@ func (s session) run(t *testing.T) outcome {
 			t.Fatal(err)
 		}
 	}
-	configPath := must(config.Path())(t)
-	oldOS := goos
-	goos = s.os
-	if goos == "" {
-		goos = "windows"
+	configPath := must(config.Path(procEnv))(t)
+	oldOS := procEnv.GOOS
+	procEnv.GOOS = s.os
+	if procEnv.GOOS == "" {
+		procEnv.GOOS = "windows"
 	}
-	defer func() { goos = oldOS }()
+	defer func() { procEnv.GOOS = oldOS }()
 
 	stdin := tempFile(t, dir, "stdin", s.stdin)
 	var hold *os.File // the open end of a never-closed stdin
@@ -425,7 +425,7 @@ func (s session) run(t *testing.T) outcome {
 	noErr(t, stderr.Close())
 
 	errBytes := must(os.ReadFile(stderr.Name()))(t)
-	after, err := config.Load()
+	after, err := config.Load(procEnv)
 	if err != nil && s.rawConfig == "" {
 		t.Fatalf("the config file after the run: %v", err)
 	}

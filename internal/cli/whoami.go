@@ -71,7 +71,7 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 	if cerr := fr.Err(); cerr != nil {
 		return cerr
 	}
-	path, err := config.Path()
+	path, err := config.Path(procEnv)
 	if err != nil {
 		return clierr.New(
 			clierr.CodeGeneric,
@@ -80,7 +80,7 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 			config.Reason(err),
 		)
 	}
-	res, err := config.Resolve(orgFlag, projectFlag)
+	res, err := config.Resolve(procEnv, orgFlag, projectFlag)
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it")
@@ -115,6 +115,7 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 					SkippedProject:      "",
 					SkippedProjectOrg:   "",
 				},
+				procEnv.Getenv,
 			)
 			if cerr != nil {
 				return cerr

@@ -57,7 +57,7 @@ type gatewayTestResult struct {
 // newGateway resolves configuration and builds the gateway client. Its
 // errors from the gateway go through gatewayFailed.
 func newGateway() (*api.Gateway, *gatewayKey, *clierr.Error) {
-	res, err := config.Resolve("", "")
+	res, err := config.Resolve(procEnv, "", "")
 	if err != nil {
 		path := configPath()
 		return nil, nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
@@ -72,7 +72,7 @@ func newGateway() (*api.Gateway, *gatewayKey, *clierr.Error) {
 		res.GatewayAPIKey = key
 	}
 	saved := savedConfig()
-	g, cerr := api.NewGateway(res)
+	g, cerr := api.NewGateway(res, procEnv.Getenv)
 	return g, &gatewayKey{res.GatewayAPIKey, from, saved.GatewayAPIKey}, cerr
 }
 
@@ -176,7 +176,7 @@ every key, so no AI Gateway key is needed; with one set, it is sent.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			g, _, cerr := newGateway()
 			if cerr != nil && cerr.Code == clierr.CodeAuth {
-				g, cerr = api.NewPublicGateway(), nil
+				g, cerr = api.NewPublicGateway(procEnv.Getenv), nil
 			}
 			if cerr != nil {
 				return cerr

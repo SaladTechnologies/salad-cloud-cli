@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 func newTestClient(t *testing.T, baseURL string) *Client {
 	t.Helper()
 	t.Setenv("SALAD_CLI_API_BASE_URL", baseURL)
-	c, cerr := New(config.Resolved{APIKey: "test-key", Organization: "test org"})
+	c, cerr := New(config.Resolved{APIKey: "test-key", Organization: "test org"}, os.Getenv)
 	if cerr != nil {
 		t.Fatalf("New: %v", cerr)
 	}

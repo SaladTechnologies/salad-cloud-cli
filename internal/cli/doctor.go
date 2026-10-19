@@ -181,9 +181,9 @@ func row(name, status, detail, hint string) checkResult {
 // configRow checks the config file; the run's settings resolve from it, or
 // from flags and the environment alone when it cannot be read.
 func (d *doctorRun) configRow() checkResult {
-	path, err := config.Path()
+	path, err := config.Path(procEnv)
 	if err != nil {
-		d.res = config.ResolveFrom(
+		d.res = config.ResolveFrom(procEnv,
 			config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
 			d.orgFlag,
 			d.projectFlag,
@@ -191,9 +191,9 @@ func (d *doctorRun) configRow() checkResult {
 		return row("config", checkFail, "no config location: "+config.Reason(err),
 			"set SALAD_CLI_CONFIG_DIR, or use SALAD_API_KEY, SALAD_ORGANIZATION and SALAD_PROJECT")
 	}
-	f, err := config.Load()
+	f, err := config.Load(procEnv)
 	if err != nil {
-		d.res = config.ResolveFrom(
+		d.res = config.ResolveFrom(procEnv,
 			config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
 			d.orgFlag,
 			d.projectFlag,
@@ -206,8 +206,8 @@ func (d *doctorRun) configRow() checkResult {
 		)
 	}
 	d.saved = f
-	d.res = config.ResolveFrom(f, d.orgFlag, d.projectFlag)
-	if err := config.Writable(); err != nil {
+	d.res = config.ResolveFrom(procEnv, f, d.orgFlag, d.projectFlag)
+	if err := config.Writable(procEnv); err != nil {
 		return row(
 			"config",
 			checkWarn,
@@ -223,7 +223,7 @@ func (d *doctorRun) configRow() checkResult {
 
 // reachableRow checks the API answers at all (any HTTP status will do).
 func (d *doctorRun) reachableRow() checkResult {
-	base, shown, override := productionAPI, apiHost, os.Getenv("SALAD_CLI_API_BASE_URL")
+	base, shown, override := productionAPI, apiHost, procEnv.Getenv("SALAD_CLI_API_BASE_URL")
 	if override != "" {
 		base, shown = override, override
 	}
@@ -314,6 +314,7 @@ func (d *doctorRun) apiKeyRow() checkResult {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
+		procEnv.Getenv,
 	)
 	if cerr != nil {
 		return row(name, checkFail, cerr.Message, "")
@@ -380,6 +381,7 @@ func (d *doctorRun) checkOrg() *clierr.Error {
 				SkippedProject:      "",
 				SkippedProjectOrg:   "",
 			},
+			procEnv.Getenv,
 		)
 		if cerr == nil {
 			cerr = client.CheckOrg(d.ctx)
@@ -473,6 +475,7 @@ func (d *doctorRun) projectRow() checkResult {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
+		procEnv.Getenv,
 	)
 	if cerr == nil {
 		cerr = client.CheckProject(d.ctx)
@@ -543,7 +546,7 @@ func (d *doctorRun) gatewayRow() checkResult {
 
 func (*doctorRun) sshRow() checkResult {
 	const name = "local-ssh-key-present"
-	home, err := os.UserHomeDir()
+	home, err := config.HomeDir(procEnv)
 	if err != nil {
 		return row(name, checkWarn, "cannot find the home folder: "+config.Reason(err), "")
 	}

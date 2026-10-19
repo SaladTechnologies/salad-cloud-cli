@@ -10,7 +10,6 @@ package cli
 import (
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
 
@@ -68,7 +67,7 @@ func overridesOf(f config.File, vars ...string) []override {
 		if !hasString(vars, s.env) {
 			continue
 		}
-		if v := os.Getenv(s.env); v != "" && s.used(v) != s.used(s.saved(f)) {
+		if v := procEnv.Getenv(s.env); v != "" && s.used(v) != s.used(s.saved(f)) {
 			out = append(out, override{s, v, s.saved(f)})
 		}
 	}
@@ -84,7 +83,7 @@ func stillSupplied(vars ...string) []override {
 		if !hasString(vars, s.env) {
 			continue
 		}
-		if v := os.Getenv(s.env); v != "" {
+		if v := procEnv.Getenv(s.env); v != "" {
 			out = append(out, override{setting: s, value: v, saved: ""})
 		}
 	}
@@ -189,7 +188,7 @@ func removalSteps(ovs []override) string {
 		it, comes = "them", "they come"
 	}
 	var b strings.Builder
-	if goos == "windows" {
+	if procEnv.GOOS == "windows" {
 		envs := make([]string, len(names))
 		sets := make([]string, len(names))
 		for i, n := range names {

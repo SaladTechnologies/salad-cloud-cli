@@ -7,7 +7,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -62,10 +61,10 @@ func askUntil(prompt string, hidden bool, check func(answer string) (bool, strin
 // Linux only with a display. The key prompts offer a page only then, and only
 // at a terminal.
 func browserVisible() bool {
-	if os.Getenv("SSH_CONNECTION") != "" || os.Getenv("SSH_TTY") != "" {
+	if procEnv.Getenv("SSH_CONNECTION") != "" || procEnv.Getenv("SSH_TTY") != "" {
 		return false
 	}
-	if goos == "linux" && os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+	if procEnv.GOOS == "linux" && procEnv.Getenv("DISPLAY") == "" && procEnv.Getenv("WAYLAND_DISPLAY") == "" {
 		return false
 	}
 	return true
@@ -95,11 +94,11 @@ func openOffered(url string) {
 // opener there often has no browser to start and still reports success.
 func opener(url string) (name string, args []string) {
 	switch {
-	case goos == "windows":
+	case procEnv.GOOS == "windows":
 		return "rundll32", []string{"url.dll,FileProtocolHandler", url}
-	case goos == "darwin":
+	case procEnv.GOOS == "darwin":
 		return "open", []string{url}
-	case os.Getenv("WSL_DISTRO_NAME") != "":
+	case procEnv.Getenv("WSL_DISTRO_NAME") != "":
 		return "cmd.exe", []string{"/c", "start", "", url}
 	}
 	return "xdg-open", []string{url}

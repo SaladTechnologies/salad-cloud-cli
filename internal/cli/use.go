@@ -78,7 +78,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 	if cerr := configReady("use"); cerr != nil {
 		return cerr
 	}
-	res, err := config.Resolve("", "")
+	res, err := config.Resolve(procEnv, "", "")
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file: %v", err)
 	}
@@ -107,6 +107,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
+		procEnv.Getenv,
 	)
 	if cerr != nil {
 		return cerr
@@ -147,6 +148,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
+		procEnv.Getenv,
 	)
 	if cerr != nil {
 		return cerr
@@ -165,9 +167,9 @@ func runUse(cmd *cobra.Command, args []string) error {
 
 	f := saved
 	f.Organization, f.Project = org, project
-	path, err := config.Path()
+	path, err := config.Path(procEnv)
 	if err == nil {
-		err = config.Save(f)
+		err = config.Save(procEnv, f)
 	}
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).

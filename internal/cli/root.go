@@ -228,6 +228,9 @@ func noteTreeErr(err error) {
 	}
 }
 
+// procEnv is the environment the run reads, the process's for now.
+var procEnv = config.ProcessEnv()
+
 // printer is the run's render path: stdout and the --output mode.
 var printer = output.NewPrinter(os.Stdout)
 
@@ -381,7 +384,7 @@ func NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error)
 	if cerr := fr.Err(); cerr != nil {
 		return nil, config.Resolved{}, cerr
 	}
-	res, err := config.Resolve(orgFlag, projectFlag)
+	res, err := config.Resolve(procEnv, orgFlag, projectFlag)
 	if err != nil {
 		path := configPath()
 		return nil, config.Resolved{}, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
@@ -416,7 +419,7 @@ func NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error)
 		res.APIKey = key
 	}
 	assumedWarned.Store(false)
-	client, cerr := api.New(res)
+	client, cerr := api.New(res, procEnv.Getenv)
 	if cerr != nil {
 		return nil, res, cerr
 	}
@@ -484,6 +487,7 @@ func organizationGone(ctx context.Context, res config.Resolved) *clierr.Error {
 				SkippedProject:      "",
 				SkippedProjectOrg:   "",
 			},
+			procEnv.Getenv,
 		); cerr == nil {
 			if list, lerr := c.OrganizationListing(ctx); lerr == nil && list != nil {
 				names = list.OrgNames()

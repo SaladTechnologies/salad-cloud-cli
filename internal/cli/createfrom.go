@@ -208,7 +208,7 @@ func loadFromBase(cmd *cobra.Command, ref, file string, allowUnknown bool, name 
 	if explicitProject {
 		r.ProjectSource = "flag"
 	}
-	src, cerr := api.New(r)
+	src, cerr := api.New(r, procEnv.Getenv)
 	if cerr != nil {
 		return base, nil, nil, cerr
 	}

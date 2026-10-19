@@ -35,7 +35,7 @@ type console interface {
 // single-choice pick, no browser offer, no organization names in hints, no
 // removal steps under a variable warning.
 func atTerminal() bool {
-	if os.Getenv("SALAD_CLI_NO_PROMPT") != "" || inCI() {
+	if procEnv.Getenv("SALAD_CLI_NO_PROMPT") != "" || inCI() {
 		return false
 	}
 	return con.Terminal()
@@ -44,7 +44,7 @@ func atTerminal() bool {
 // inCI reports whether CI is set to anything but empty, false or 0, as
 // GitHub Actions, GitLab and most CI systems set it.
 func inCI() bool {
-	v := os.Getenv("CI")
+	v := procEnv.Getenv("CI")
 	return v != "" && v != "0" && !strings.EqualFold(v, "false")
 }
 
@@ -57,10 +57,6 @@ var con console = &stdConsole{device: nil, keys: nil, in: nil}
 
 // openPage opens a URL in the user's browser. Tests replace it.
 var openPage = openBrowser
-
-// goos is the operating system the CLI runs on. Tests set it to check what
-// another one is told.
-var goos = runtime.GOOS
 
 // stdConsole is the process's own terminal: answers come from stdin, prompts
 // go to the terminal device, so they reach the person even when stdout and

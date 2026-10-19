@@ -353,7 +353,7 @@ func TestHostKeyOptionsQuoteASpacedPath(t *testing.T) {
 // TestHelperExit255 is not a test: runChild runs the test binary with it to
 // get a child that exits 255.
 func TestHelperExit255(t *testing.T) {
-	if os.Getenv("SALAD_CLI_TEST_HELPER_EXIT") == "" {
+	if procEnv.Getenv("SALAD_CLI_TEST_HELPER_EXIT") == "" {
 		t.Skip("a helper for TestRunChildHints")
 	}
 	os.Exit(255) //nolint:revive // deep-exit: the test binary run as a child that exits 255
@@ -368,9 +368,9 @@ func TestRunChildHints(t *testing.T) {
 	if cerr == nil || cerr.Code != 255 || cerr.Kind != clierr.KindChildExit || cerr.HintText() != sessionFailedHint {
 		t.Errorf("exit 255: %+v hint %q", cerr, cerr.HintText())
 	}
-	old := goos
-	t.Cleanup(func() { goos = old })
-	goos = "darwin"
+	old := procEnv.GOOS
+	t.Cleanup(func() { procEnv.GOOS = old })
+	procEnv.GOOS = "darwin"
 	cerr = runChild("saladcloud-test-no-such-ssh", nil)
 	if cerr == nil || cerr.Message != "saladcloud-test-no-such-ssh not found" ||
 		cerr.HintText() != "macOS includes it at /usr/bin/saladcloud-test-no-such-ssh; check that /usr/bin is on "+

@@ -2,7 +2,6 @@ package cli
 
 import (
 	"io"
-	"os"
 	"regexp"
 	"strings"
 
@@ -20,7 +19,7 @@ const maxCommandWords = 100
 // rewritten into a Windows path before the CLI sees it, so the rewrite checks
 // (cp, --queue-path, command words) run only there and cannot misfire on
 // Linux, macOS, PowerShell or cmd.
-func underGitBash() bool { return os.Getenv("MSYSTEM") != "" }
+func underGitBash() bool { return procEnv.Getenv("MSYSTEM") != "" }
 
 // msysCommandWord matches a command word Git Bash rewrote before the CLI saw
 // it: a leading /path, or one after "=" (--prefix=/usr), becomes a Windows

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -16,7 +17,7 @@ func orgsClient(t *testing.T, h http.HandlerFunc) *Client {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
-	c, err := New(config.Resolved{APIKey: "k"})
+	c, err := New(config.Resolved{APIKey: "k"}, os.Getenv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +115,7 @@ func TestOrganizationListingByStatus(t *testing.T) {
 	}
 	t.Run("network", func(t *testing.T) {
 		t.Setenv("SALAD_CLI_API_BASE_URL", "http://127.0.0.1:1")
-		c, cerr := New(config.Resolved{APIKey: "k"})
+		c, cerr := New(config.Resolved{APIKey: "k"}, os.Getenv)
 		if cerr != nil {
 			t.Fatal(cerr)
 		}

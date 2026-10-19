@@ -50,7 +50,7 @@ func resolveIdentity(flag string) string {
 	if flag != "" {
 		return flag
 	}
-	home, err := os.UserHomeDir()
+	home, err := config.HomeDir(procEnv)
 	if err != nil {
 		return ""
 	}
@@ -171,7 +171,7 @@ func runSSHKeySetup(cmd *cobra.Command, _ []string) error {
 	if cerr := fr.Err(); cerr != nil {
 		return cerr
 	}
-	home, err := os.UserHomeDir()
+	home, err := config.HomeDir(procEnv)
 	if err != nil {
 		return clierr.New(
 			clierr.CodeGeneric,
@@ -300,7 +300,7 @@ func (sshKeySetup) show(path string, generated bool, passphrase *bool) error {
 }
 
 func runSSHKeyGet(_ *cobra.Command, _ []string) error {
-	home, err := os.UserHomeDir()
+	home, err := config.HomeDir(procEnv)
 	if err != nil {
 		return clierr.New(
 			clierr.CodeGeneric,

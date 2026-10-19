@@ -184,8 +184,8 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 		if cerr := l.askForKey(true); cerr != nil {
 			return cerr
 		}
-	case os.Getenv(envAPIKey) != "":
-		l.key, l.keyFrom = os.Getenv(envAPIKey), envAPIKey
+	case procEnv.Getenv(envAPIKey) != "":
+		l.key, l.keyFrom = procEnv.Getenv(envAPIKey), envAPIKey
 	case l.saved.APIKey != "":
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "no API key provided, and a key is already saved").
 			WithHint("to switch organization or project, run saladcloud use <org>/<project>")
@@ -229,7 +229,7 @@ func namedValue(flag, flagName, env string) (value, from string) {
 	if flag = strings.TrimSpace(flag); flag != "" {
 		return flag, flagName
 	}
-	if v := strings.TrimSpace(os.Getenv(env)); v != "" {
+	if v := strings.TrimSpace(procEnv.Getenv(env)); v != "" {
 		return v, env
 	}
 	return "", ""
@@ -297,10 +297,10 @@ func rejected(cerr *clierr.Error) bool {
 func (l *login) askForKey(first bool) *clierr.Error {
 	if first {
 		ovs := stillSupplied(envAPIKey)
-		if v := os.Getenv(envOrganization); v != "" && l.orgFrom == "--org" && l.orgName != v {
+		if v := procEnv.Getenv(envOrganization); v != "" && l.orgFrom == "--org" && l.orgName != v {
 			ovs = append(ovs, stillSupplied(envOrganization)...)
 		}
-		if v := os.Getenv(envProject); v != "" && l.projectFrom == "--project" && l.projectName != v {
+		if v := procEnv.Getenv(envProject); v != "" && l.projectFrom == "--project" && l.projectName != v {
 			ovs = append(ovs, stillSupplied(envProject)...)
 		}
 		if line := beforePrompt("login", ovs); line != "" {
@@ -408,6 +408,7 @@ func listOrganizations(ctx context.Context, key string) ([]api.Organization, *cl
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
+		procEnv.Getenv,
 	)
 	if cerr != nil {
 		return nil, cerr
@@ -448,6 +449,7 @@ func (l *login) checkOrganization(org string) (bool, *clierr.Error) {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
+		procEnv.Getenv,
 	)
 	if cerr != nil {
 		return false, cerr
@@ -683,6 +685,7 @@ func (l *login) checkProject(org, project string) (bool, *clierr.Error) {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
+		procEnv.Getenv,
 	)
 	if cerr != nil {
 		return false, cerr
@@ -806,9 +809,9 @@ func (l *login) save(org, project string) error {
 		f.APIKey = l.key
 	}
 	f.Organization, f.Project = org, project
-	path, err := config.Path()
+	path, err := config.Path(procEnv)
 	if err == nil {
-		err = config.Save(f)
+		err = config.Save(procEnv, f)
 	}
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
@@ -820,7 +823,7 @@ func (l *login) save(org, project string) error {
 	}
 	ovs := overridesOf(f, vars...)
 	source := "config"
-	if os.Getenv(envAPIKey) != "" {
+	if procEnv.Getenv(envAPIKey) != "" {
 		source = "env"
 	}
 	savedKey := f.APIKey // what commands use where SALAD_API_KEY is not set

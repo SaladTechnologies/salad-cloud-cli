@@ -11,7 +11,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -32,8 +31,8 @@ const storageTimeout = 10 * time.Minute
 var storageHTTPClient = &http.Client{Timeout: storageTimeout, Transport: debugTransport{http.DefaultTransport}}
 
 // storageBaseURL resolves the S4 base URL, honoring the test override.
-func storageBaseURL() string {
-	if override := os.Getenv("SALAD_CLI_STORAGE_BASE_URL"); override != "" {
+func storageBaseURL(getenv func(string) string) string {
+	if override := getenv("SALAD_CLI_STORAGE_BASE_URL"); override != "" {
 		return override
 	}
 	return DefaultStorageBaseURL
@@ -111,7 +110,7 @@ func (c *Client) storageFileURL(remoteName string) string {
 	for i, s := range segs {
 		segs[i] = seg(s)
 	}
-	return storageBaseURL() + fmt.Sprintf("/organizations/%s/files/%s", seg(c.org), strings.Join(segs, "/"))
+	return c.storageBaseURL + fmt.Sprintf("/organizations/%s/files/%s", seg(c.org), strings.Join(segs, "/"))
 }
 
 // DeleteFile removes one file from the organization's S4 storage.

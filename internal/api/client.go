@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -36,10 +35,11 @@ const DefaultBaseURL = "https://api.salad.com/api/public"
 
 // Client is the CLI's API client: resolved credentials and context.
 type Client struct {
-	org     string
-	project string
-	apiKey  string
-	baseURL string
+	org            string
+	project        string
+	apiKey         string
+	baseURL        string
+	storageBaseURL string // S4's base URL, SALAD_CLI_STORAGE_BASE_URL or the default
 
 	// projectAssumed: the project is the "default" fallback, not set by a
 	// flag, the environment, or the config file.
@@ -67,13 +67,13 @@ type Client struct {
 // commands don't need them; use RequireOrg/RequireProject in those that do.
 // The base URL can be overridden via the SALAD_CLI_API_BASE_URL environment
 // variable (for testing).
-func New(res config.Resolved) (*Client, *clierr.Error) {
+func New(res config.Resolved, getenv func(string) string) (*Client, *clierr.Error) {
 	if res.APIKey == "" {
 		return nil, clierr.New(clierr.CodeAuth, clierr.KindAuth, "no API key set").
 			WithHint("run saladcloud login in a terminal, or set SALAD_API_KEY")
 	}
 	baseURL := DefaultBaseURL
-	if override := os.Getenv("SALAD_CLI_API_BASE_URL"); override != "" {
+	if override := getenv("SALAD_CLI_API_BASE_URL"); override != "" {
 		baseURL = override
 	}
 	return &Client{
@@ -81,6 +81,7 @@ func New(res config.Resolved) (*Client, *clierr.Error) {
 		project:          res.Project,
 		apiKey:           res.APIKey,
 		baseURL:          baseURL,
+		storageBaseURL:   storageBaseURL(getenv),
 		projectAssumed:   res.ProjectSource == config.SourceDefault && res.Project == config.DefaultProject,
 		OnAssumedProject: nil,
 		assumedNoted:     sync.Once{},

@@ -161,7 +161,7 @@ func sshTargetOf(inst *containergroups.ContainerGroupInstance, group string) (ss
 // never touches the user's ~/.ssh/known_hosts. "" when the config directory
 // cannot be determined; ssh then uses its default. Tests replace it.
 var knownHostsPath = func() string {
-	p, err := config.Path()
+	p, err := config.Path(procEnv)
 	if err != nil {
 		return ""
 	}

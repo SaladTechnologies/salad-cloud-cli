@@ -66,7 +66,7 @@ func hintLine(format string, args ...any) { say("hint: "+format, args...) }
 // checked it can be read (configReady) or reported that it cannot; a file
 // that cannot be read reads as empty, as it does to Load's caller anyway.
 func savedConfig() config.File {
-	f, err := config.Load()
+	f, err := config.Load(procEnv)
 	if err != nil {
 		return config.File{}
 	}
@@ -76,7 +76,7 @@ func savedConfig() config.File {
 // configPath is the config file's location for a message, or "" when the
 // location itself is unknown (no user config directory).
 func configPath() string {
-	p, err := config.Path()
+	p, err := config.Path(procEnv)
 	if err != nil {
 		return ""
 	}
@@ -175,7 +175,7 @@ func looksLikeKey(v string) bool {
 		return false
 	}
 	saved := savedConfig()
-	for _, k := range []string{os.Getenv(envAPIKey), os.Getenv(envGatewayKey), saved.APIKey, saved.GatewayAPIKey} {
+	for _, k := range []string{procEnv.Getenv(envAPIKey), procEnv.Getenv(envGatewayKey), saved.APIKey, saved.GatewayAPIKey} {
 		if key, _ := normalizeKey(k); key != "" && key == v {
 			return true
 		}
@@ -349,16 +349,16 @@ func hintClauses(clauses ...string) string {
 // and never overwrites a corrupt file. command is the one the hint says to
 // run again: "login", "ai-gateway login" or "use".
 func configReady(command string) *clierr.Error {
-	path, err := config.Path()
+	path, err := config.Path(procEnv)
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err)).
 			WithHint("%s", unwritableHint(command))
 	}
-	if _, err := config.Load(); err != nil {
+	if _, err := config.Load(procEnv); err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it, then run saladcloud %s again", command)
 	}
-	if err := config.Writable(); err != nil {
+	if err := config.Writable(procEnv); err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
 			WithHint("%s", unwritableHint(command))
 	}
@@ -389,7 +389,7 @@ func unwritableHint(command string) string {
 // sshMissingHint says how to get an OpenSSH client tool (ssh, ssh-keygen)
 // on this OS.
 func sshMissingHint(tool string) string {
-	switch goos {
+	switch procEnv.GOOS {
 	case "windows":
 		return "add the OpenSSH Client optional feature in Windows Settings, then open a new terminal"
 	case "darwin":

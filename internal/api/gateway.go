@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"slices"
 	"strings"
 
@@ -43,22 +42,24 @@ type Gateway struct {
 // NewGateway builds a Gateway from resolved configuration. It needs the
 // gateway key (not the SaladCloud API key). SALAD_CLI_AI_GATEWAY_BASE_URL overrides
 // the base URL (for tests).
-func NewGateway(res config.Resolved) (*Gateway, *clierr.Error) {
+func NewGateway(res config.Resolved, getenv func(string) string) (*Gateway, *clierr.Error) {
 	if res.GatewayAPIKey == "" {
 		return nil, clierr.New(clierr.CodeAuth, clierr.KindAuth, "no AI Gateway key set").
 			WithHint("run saladcloud ai-gateway login in a terminal, or set SALAD_AI_GATEWAY_API_KEY")
 	}
-	return &Gateway{key: res.GatewayAPIKey, baseURL: gatewayBaseURL()}, nil
+	return &Gateway{key: res.GatewayAPIKey, baseURL: gatewayBaseURL(getenv)}, nil
 }
 
 // NewPublicGateway builds a Gateway with no key, for the one public route:
 // the model list answers anyone the same.
-func NewPublicGateway() *Gateway { return &Gateway{baseURL: gatewayBaseURL(), key: ""} }
+func NewPublicGateway(getenv func(string) string) *Gateway {
+	return &Gateway{baseURL: gatewayBaseURL(getenv), key: ""}
+}
 
 // gatewayBaseURL is the gateway base URL in effect: the default, or
 // SALAD_CLI_AI_GATEWAY_BASE_URL (for tests).
-func gatewayBaseURL() string {
-	if override := os.Getenv("SALAD_CLI_AI_GATEWAY_BASE_URL"); override != "" {
+func gatewayBaseURL(getenv func(string) string) string {
+	if override := getenv("SALAD_CLI_AI_GATEWAY_BASE_URL"); override != "" {
 		return strings.TrimRight(override, "/")
 	}
 	return DefaultGatewayURL

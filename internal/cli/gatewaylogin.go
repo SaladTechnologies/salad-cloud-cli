@@ -138,8 +138,8 @@ func runGatewayLogin(cmd *cobra.Command, _ []string) error {
 			return cerr
 		}
 		return g.save()
-	case os.Getenv(envGatewayKey) != "":
-		g.key, g.keyFrom = os.Getenv(envGatewayKey), envGatewayKey
+	case procEnv.Getenv(envGatewayKey) != "":
+		g.key, g.keyFrom = procEnv.Getenv(envGatewayKey), envGatewayKey
 	default:
 		return clierr.New(clierr.CodeAuth, clierr.KindAuth, "no AI Gateway key provided").
 			WithHint("run saladcloud ai-gateway login in a terminal, or set SALAD_AI_GATEWAY_API_KEY")
@@ -215,6 +215,7 @@ func (g *gatewayLogin) check() *clierr.Error {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
+		procEnv.Getenv,
 	)
 	if cerr != nil {
 		return cerr
@@ -297,7 +298,7 @@ func (g *gatewayLogin) askForKey() *clierr.Error {
 // result is the JSON document for this run.
 func (g *gatewayLogin) result(saved bool, path string, ovs []override) gatewayLoginResult {
 	source := "config"
-	if os.Getenv(envGatewayKey) != "" {
+	if procEnv.Getenv(envGatewayKey) != "" {
 		source = "env"
 	}
 	return gatewayLoginResult{
@@ -327,9 +328,9 @@ func (*gatewayLogin) warnNoCredits() {
 func (g *gatewayLogin) save() error {
 	f := g.saved
 	f.GatewayAPIKey = g.key
-	path, err := config.Path()
+	path, err := config.Path(procEnv)
 	if err == nil {
-		err = config.Save(f)
+		err = config.Save(procEnv, f)
 	}
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
@@ -394,7 +395,7 @@ type gatewayLogoutResult struct {
 }
 
 func runGatewayLogout(_ *cobra.Command, _ []string) error {
-	path, err := config.Path()
+	path, err := config.Path(procEnv)
 	if err != nil {
 		return clierr.New(
 			clierr.CodeGeneric,
@@ -403,7 +404,7 @@ func runGatewayLogout(_ *cobra.Command, _ []string) error {
 			config.Reason(err),
 		)
 	}
-	f, err := config.Load()
+	f, err := config.Load(procEnv)
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it, then run saladcloud ai-gateway logout again")
@@ -411,7 +412,7 @@ func runGatewayLogout(_ *cobra.Command, _ []string) error {
 	old := f.GatewayAPIKey
 	if old != "" {
 		f.GatewayAPIKey = ""
-		if err := config.Save(f); err != nil {
+		if err := config.Save(procEnv, f); err != nil {
 			return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
 				WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud ai-gateway logout again")
 		}

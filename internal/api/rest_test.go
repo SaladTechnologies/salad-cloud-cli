@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ func newRestTestClient(t *testing.T, baseURL string) *Client {
 		APIKey:       "test-key",
 		Organization: "my-org",
 		Project:      "default",
-	})
+	}, os.Getenv)
 	if cerr != nil {
 		t.Fatalf("New: %v", cerr)
 	}

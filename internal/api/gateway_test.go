@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -15,7 +16,7 @@ import (
 func newTestGateway(t *testing.T, url string) *Gateway {
 	t.Helper()
 	t.Setenv("SALAD_CLI_AI_GATEWAY_BASE_URL", url)
-	g, cerr := NewGateway(config.Resolved{GatewayAPIKey: "gw-key"})
+	g, cerr := NewGateway(config.Resolved{GatewayAPIKey: "gw-key"}, os.Getenv)
 	if cerr != nil {
 		t.Fatalf("NewGateway: %v", cerr)
 	}
@@ -23,7 +24,7 @@ func newTestGateway(t *testing.T, url string) *Gateway {
 }
 
 func TestNewGatewayNeedsItsOwnKey(t *testing.T) {
-	_, cerr := NewGateway(config.Resolved{APIKey: "salad-api-key"})
+	_, cerr := NewGateway(config.Resolved{APIKey: "salad-api-key"}, os.Getenv)
 	if cerr == nil || cerr.Code != clierr.CodeAuth {
 		t.Fatalf("NewGateway without a gateway key = %v, want an auth error", cerr)
 	}

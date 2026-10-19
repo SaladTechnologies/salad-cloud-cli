@@ -85,12 +85,12 @@ var configKeyEnv = map[string]string{
 // loadConfigFor reads the config file for a config command, with the fix
 // when it cannot be read.
 func loadConfigFor(command string) (config.File, string, *clierr.Error) {
-	path, err := config.Path()
+	path, err := config.Path(procEnv)
 	if err != nil {
 		return config.File{}, "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err)).
 			WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder")
 	}
-	f, err := config.Load()
+	f, err := config.Load(procEnv)
 	if err != nil {
 		return config.File{}, path, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it, then run saladcloud %s again", command)
@@ -100,7 +100,7 @@ func loadConfigFor(command string) (config.File, string, *clierr.Error) {
 
 // saveConfigFor writes the config file for a config command.
 func saveConfigFor(command, path string, f config.File) *clierr.Error {
-	if err := config.Save(f); err != nil {
+	if err := config.Save(procEnv, f); err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
 			WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud %s again", command)
 	}
@@ -345,7 +345,7 @@ Keys: ` + configKeys + `.`,
 		Short: "Print the config file path",
 		Args:  cobra.NoArgs,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			path, err := config.Path()
+			path, err := config.Path(procEnv)
 			if err != nil {
 				return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err)).
 					WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder")
