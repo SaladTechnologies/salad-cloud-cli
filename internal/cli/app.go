@@ -62,6 +62,7 @@ type App struct {
 	Deps
 
 	printer       *output.Printer
+	flags         runFlags
 	debugLevel    api.DebugLevel
 	assumedWarned atomic.Bool
 	// treeErrs are the errors from building the command tree. Marking a flag
@@ -69,6 +70,20 @@ type App struct {
 	// command does not define or completion given twice: a bug, which Run
 	// reports before it runs anything.
 	treeErrs []error
+}
+
+// runFlags are the flags a run reads whichever command defines them: the
+// root's, and the ancestor flags (-c, --queue, --endpoint) the commands
+// under a resource each define. Every definition of a name binds the same
+// field, so the value is the one given on the command that runs: a
+// shadowed --org or --project (rejectShadowed refuses one that is set) and
+// logs' and availability's own --project included.
+type runFlags struct {
+	output, debug string
+	org, project  string
+	version       bool
+	group, queue  string
+	endpoint      string
 }
 
 // newApp is a run with dependencies d.

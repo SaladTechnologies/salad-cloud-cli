@@ -137,6 +137,13 @@ func writeJobBody(row func(k, v string), input, out any, events int, lastEvent s
 // jobWaitDefaultTimeout is `inference jobs create --wait`'s default --timeout.
 const jobWaitDefaultTimeout = 10 * time.Minute
 
+// jobCreateOptions are the flags of jobs create (inference and queues;
+// only queues has --webhook).
+type jobCreateOptions struct {
+	file, input, webhook string
+	wait                 waitOptions
+}
+
 // addJobWaitFlags binds --wait/--timeout on jobs create to o (the shared
 // waitOptions, waitfor.go).
 func addJobWaitFlags(cmd *cobra.Command, o *waitOptions) {
@@ -344,16 +351,10 @@ func endpointInputFields(schema *string) []string {
 
 // addEndpointFlag registers the required --endpoint flag on a jobs verb.
 func (app *App) addEndpointFlag(cmd *cobra.Command) {
-	cmd.Flags().String("endpoint", "", "the inference endpoint (required; saladcloud inference list shows them)")
+	cmd.Flags().
+		StringVar(&app.flags.endpoint, "endpoint", "", "the inference endpoint (required; saladcloud inference list shows them)")
 	app.noteTreeErr(cmd.MarkFlagRequired("endpoint"))
 	annotate(cmd, annotationFlagForArg, "endpoint")
-}
-
-// endpointFlag reads --endpoint.
-func endpointFlag(cmd *cobra.Command) (string, *clierr.Error) {
-	fr := readFlags(cmd.Flags())
-	e := fr.String("endpoint")
-	return e, fr.Err()
 }
 
 // addInferenceCommands adds inference.go's commands to the tree.
@@ -435,6 +436,7 @@ argument and the endpoint is --endpoint:
     saladcloud inference jobs get <id> --endpoint transcribe`,
 	}
 
+	var listLimit int
 	jobsListCmd := &cobra.Command{
 		Use:   "list --endpoint <endpoint>",
 		Short: "List the organization's jobs on an endpoint, newest first",
@@ -443,15 +445,7 @@ the newest N (default 100; 0 for all, up to 10,000); a stderr note says when
 older jobs were left out.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fr := readFlags(cmd.Flags())
-			endpoint, cerr := endpointFlag(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			limit := fr.Int("limit")
-			if cerr = fr.Err(); cerr != nil {
-				return cerr
-			}
+			endpoint, limit := app.flags.endpoint, listLimit
 			if limit < 0 {
 				return clierr.New(
 					clierr.CodeUsage,
@@ -492,7 +486,7 @@ older jobs were left out.`,
 	}
 	app.addEndpointFlag(jobsListCmd)
 	jobsListCmd.Flags().
-		Int("limit", 100, fmt.Sprintf("how many of the newest jobs to list (0 = all, up to %d)", api.InferenceJobsCap))
+		IntVar(&listLimit, "limit", 100, fmt.Sprintf("how many of the newest jobs to list (0 = all, up to %d)", api.InferenceJobsCap))
 	jobsCmd.AddCommand(jobsListCmd)
 
 	jobsGetCmd := &cobra.Command{
@@ -500,11 +494,8 @@ older jobs were left out.`,
 		Short: "Show one job (input/output truncated; -o json for the full document)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			endpoint, cerr := endpointFlag(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			if cerr = requireJobUUID(args[0], "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
+			endpoint := app.flags.endpoint
+			if cerr := requireJobUUID(args[0], "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
 				return cerr
 			}
 			client, _, cerr := app.NewClient(cmd)
@@ -521,7 +512,7 @@ older jobs were left out.`,
 	app.addEndpointFlag(jobsGetCmd)
 	jobsCmd.AddCommand(jobsGetCmd)
 
-	var jobWait waitOptions
+	var jobCreate jobCreateOptions
 	jobsCreateCmd := &cobra.Command{
 		Use:   "create --endpoint <endpoint> (-f <file> | --input '<json>')",
 		Short: "Queue a job on an inference endpoint (--wait blocks until it finishes)",
@@ -545,22 +536,14 @@ canceled exits 1 with the job's status and last event. --timeout (default
   saladcloud inference jobs create --endpoint transcribe -f job.yaml`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fr := readFlags(cmd.Flags())
-			endpoint, cerr := endpointFlag(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			file := fr.String("file")
-			inputJSON := fr.String("input")
-			if cerr = fr.Err(); cerr != nil {
-				return cerr
-			}
+			endpoint := app.flags.endpoint
+			file, inputJSON := jobCreate.file, jobCreate.input
 			// Pre-flight validation, before any file or API work.
 			if (file == "") == (inputJSON == "") {
 				return clierr.New(clierr.CodeUsage, clierr.KindUsage,
 					"exactly one of -f <file> or --input '<json>' is required")
 			}
-			wait, timeout, cerr := jobWait.values()
+			wait, timeout, cerr := jobCreate.wait.values()
 			if cerr != nil {
 				return cerr
 			}
@@ -605,9 +588,10 @@ canceled exits 1 with the job's status and last event. --timeout (default
 	}
 	app.addEndpointFlag(jobsCreateCmd)
 	jobsCreateCmd.Flags().
-		StringP("file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
-	jobsCreateCmd.Flags().String("input", "", "the job input object as inline JSON (wrapped into the prototype)")
-	addJobWaitFlags(jobsCreateCmd, &jobWait)
+		StringVarP(&jobCreate.file, "file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
+	jobsCreateCmd.Flags().
+		StringVar(&jobCreate.input, "input", "", "the job input object as inline JSON (wrapped into the prototype)")
+	addJobWaitFlags(jobsCreateCmd, &jobCreate.wait)
 	jobsCmd.AddCommand(jobsCreateCmd)
 
 	jobsCancelCmd := &cobra.Command{
@@ -618,11 +602,8 @@ answers with no body; to see the job's status afterwards, run
 saladcloud inference jobs get <id> --endpoint <endpoint>.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			endpoint, cerr := endpointFlag(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			if cerr = requireJobUUID(args[0], "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
+			endpoint := app.flags.endpoint
+			if cerr := requireJobUUID(args[0], "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
 				return cerr
 			}
 			client, _, cerr := app.NewClient(cmd)

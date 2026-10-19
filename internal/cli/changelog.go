@@ -23,6 +23,7 @@ type changelogResult struct {
 
 // addChangelogCommands adds changelog.go's commands to the tree.
 func (app *App) addChangelogCommands(root *cobra.Command) {
+	var since string
 	cmd := &cobra.Command{
 		Use:   "changelog",
 		Short: "Print the CLI changelog, optionally only what is newer than a date or version",
@@ -40,11 +41,6 @@ In JSON mode the result is {"version","since","items":[{"version",
 never null.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fr := readFlags(cmd.Flags())
-			since := fr.String("since")
-			if cerr := fr.Err(); cerr != nil {
-				return cerr
-			}
 			all := changelog.Parse(saladcloudcli.Changelog)
 			releases, err := changelog.Since(all, since)
 			if err != nil {
@@ -69,6 +65,6 @@ never null.`,
 			}))
 		},
 	}
-	cmd.Flags().String("since", "", "only releases newer than this date (YYYY-MM-DD) or version (X.Y.Z)")
+	cmd.Flags().StringVar(&since, "since", "", "only releases newer than this date (YYYY-MM-DD) or version (X.Y.Z)")
 	root.AddCommand(cmd)
 }

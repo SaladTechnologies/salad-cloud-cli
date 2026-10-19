@@ -66,12 +66,7 @@ it is null whenever that list is unavailable.`,
 }
 
 func (app *App) runWhoami(cmd *cobra.Command, _ []string) error {
-	fr := readFlags(cmd.Flags())
-	orgFlag := fr.String("org")
-	projectFlag := fr.String("project")
-	if cerr := fr.Err(); cerr != nil {
-		return cerr
-	}
+	orgFlag, projectFlag := app.flags.org, app.flags.project
 	path, err := config.Path(app.Env)
 	if err != nil {
 		return clierr.New(

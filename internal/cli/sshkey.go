@@ -165,12 +165,7 @@ type sshKeySetup struct {
 	app     *App   // the run
 }
 
-func (app *App) runSSHKeySetup(cmd *cobra.Command, _ []string) error {
-	fr := readFlags(cmd.Flags())
-	generate := fr.Bool("generate")
-	if cerr := fr.Err(); cerr != nil {
-		return cerr
-	}
+func (app *App) runSSHKeySetup(cmd *cobra.Command, _ []string, generate bool) error {
 	home, err := config.HomeDir(app.Env)
 	if err != nil {
 		return clierr.New(
@@ -342,6 +337,7 @@ the portal at ` + sshKeysPage + `; registering a key replaces any other.
 The API does not show the registered key, so the CLI cannot check it.`,
 	}
 
+	var generate bool
 	setupCmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Find or generate a local SSH key, and show where to register it",
@@ -363,10 +359,10 @@ behave as if there is no terminal.`,
   # Scripts and CI: generate without asking when there is none
   saladcloud ssh-key setup --generate`,
 		Args: cobra.NoArgs,
-		RunE: app.runSSHKeySetup,
+		RunE: func(cmd *cobra.Command, args []string) error { return app.runSSHKeySetup(cmd, args, generate) },
 	}
 	setupCmd.Flags().
-		Bool("generate", false, "generate ~/.ssh/saladcloud_ed25519 without asking when no usable key is found")
+		BoolVar(&generate, "generate", false, "generate ~/.ssh/saladcloud_ed25519 without asking when no usable key is found")
 	sshKeyCmd.AddCommand(setupCmd)
 
 	sshKeyCmd.AddCommand(&cobra.Command{

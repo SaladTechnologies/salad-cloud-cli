@@ -171,16 +171,9 @@ func (app *App) instanceAction(group, id, pastTense string, call func() *clierr.
 // command whose subject lives inside a container group: the leaf is the
 // positional, its ancestor a named flag.
 func (app *App) addGroupFlag(cmd *cobra.Command) {
-	cmd.Flags().StringP("container-group", "c", "", "the container group (required)")
+	cmd.Flags().StringVarP(&app.flags.group, "container-group", "c", "", "the container group (required)")
 	app.noteTreeErr(cmd.MarkFlagRequired("container-group"))
 	annotate(cmd, annotationFlagForArg, "container-group")
-}
-
-// groupFlag reads -c/--container-group.
-func groupFlag(cmd *cobra.Command) (string, *clierr.Error) {
-	fr := readFlags(cmd.Flags())
-	g := fr.String("container-group")
-	return g, fr.Err()
 }
 
 // maxDeletionCost is the API's upper bound on an instance's deletion_cost.
@@ -197,10 +190,7 @@ func (app *App) instanceVerb(
 		Short: short,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			group, cerr := groupFlag(cmd)
-			if cerr != nil {
-				return cerr
-			}
+			group := app.flags.group
 			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
@@ -238,10 +228,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 		Short: "List the instances of a container group",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			group, cerr := groupFlag(cmd)
-			if cerr != nil {
-				return cerr
-			}
+			group := app.flags.group
 			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
@@ -298,10 +285,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 		Short: "Show one container group instance (the ID may be a unique prefix)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			group, cerr := groupFlag(cmd)
-			if cerr != nil {
-				return cerr
-			}
+			group := app.flags.group
 			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
@@ -320,6 +304,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 	app.addGroupFlag(getCmd)
 	instancesCmd.AddCommand(getCmd)
 
+	var deletionCost int64
 	updateCmd := &cobra.Command{
 		Use:   "update <id> -c <group> --deletion-cost <n>",
 		Short: "Set an instance's deletion cost (the ID may be a unique prefix)",
@@ -330,19 +315,12 @@ so raising it protects an instance doing long work. 0-100000.`,
   saladcloud container-groups instances update 8a2f13ba -c my-app --deletion-cost 1000`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fr := readFlags(cmd.Flags())
-			cost := fr.Int64("deletion-cost")
-			if cerr := fr.Err(); cerr != nil {
-				return cerr
-			}
+			cost := deletionCost
 			if cost < 0 || cost > maxDeletionCost {
 				return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
 					"invalid --deletion-cost %d: must be between 0 and %d", cost, maxDeletionCost)
 			}
-			group, cerr := groupFlag(cmd)
-			if cerr != nil {
-				return cerr
-			}
+			group := app.flags.group
 			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
@@ -366,7 +344,7 @@ so raising it protects an instance doing long work. 0-100000.`,
 	}
 	app.addGroupFlag(updateCmd)
 	updateCmd.Flags().
-		Int64("deletion-cost", 0, "deletion cost, 0-100000 (required); lower is removed first on scale-down")
+		Int64Var(&deletionCost, "deletion-cost", 0, "deletion cost, 0-100000 (required); lower is removed first on scale-down")
 	app.noteTreeErr(updateCmd.MarkFlagRequired("deletion-cost"))
 	instancesCmd.AddCommand(updateCmd)
 

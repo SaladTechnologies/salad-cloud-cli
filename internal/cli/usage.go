@@ -39,7 +39,7 @@ func annotate(c *cobra.Command, key, value string) {
 // addHiddenGroupFlag gives c the hidden -c that only ever produces the
 // corrected command: the group is c's argument (or part of cp's path).
 func (app *App) addHiddenGroupFlag(c *cobra.Command) {
-	c.Flags().StringP("container-group", "c", "", "")
+	c.Flags().StringVarP(&app.flags.group, "container-group", "c", "", "")
 	app.noteTreeErr(c.Flags().MarkHidden("container-group"))
 	annotate(c, annotationGroupIsArg, "true")
 }
@@ -47,14 +47,14 @@ func (app *App) addHiddenGroupFlag(c *cobra.Command) {
 // wrapArgs puts the usage rules in front of every leaf's own Args check:
 // the hidden -c first, then the positional count, then the required flags
 // (before cobra's own check, so its phrasing never shows). Idempotent.
-func wrapArgs(root *cobra.Command) {
+func (app *App) wrapArgs(root *cobra.Command) {
 	walkCommands(root, func(c *cobra.Command) {
 		if c == root || c.HasSubCommands() || c.Args == nil || c.Annotations[annotationArgsWrapped] != "" {
 			return
 		}
 		orig := c.Args
 		c.Args = func(cmd *cobra.Command, args []string) error {
-			if cerr := groupGivenAsFlag(cmd, args); cerr != nil {
+			if cerr := app.groupGivenAsFlag(cmd, args); cerr != nil {
 				return cerr
 			}
 			if err := orig(cmd, args); err != nil {
@@ -326,15 +326,11 @@ func flagNoun(flag string) string {
 // groupGivenAsFlag answers the hidden -c on a command whose group is its
 // argument: ssh, sftp and container-groups logs take the group as the
 // argument and the instance as --instance; cp names both in its path.
-func groupGivenAsFlag(cmd *cobra.Command, args []string) *clierr.Error {
-	fr := readFlags(cmd.Flags())
+func (app *App) groupGivenAsFlag(cmd *cobra.Command, args []string) *clierr.Error {
 	if cmd.Annotations[annotationGroupIsArg] == "" || !cmd.Flags().Changed("container-group") {
 		return nil
 	}
-	group := fr.String("container-group")
-	if cerr := fr.Err(); cerr != nil {
-		return cerr
-	}
+	group := app.flags.group
 	if cmd.Name() == "cp" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "cp takes the group in its remote path, not as -c").
 			WithHint("run %s", strings.Join(strings.Fields(cmd.CommandPath()), " ")+" "+shellWord(group)+"[/<instance>]:<path> <local-path>")

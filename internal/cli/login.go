@@ -33,6 +33,7 @@ const (
 
 // addLoginCommands adds login.go's commands to the tree.
 func (app *App) addLoginCommands(root *cobra.Command) {
+	var keyFlag string
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Save your API key, organization and project",
@@ -65,10 +66,10 @@ SALAD_API_KEY, SALAD_ORGANIZATION and SALAD_PROJECT instead.`,
   # Scripted, PowerShell
   $env:KEY | saladcloud login --api-key - --org my-org`,
 		Args: cobra.NoArgs,
-		RunE: app.runLogin,
+		RunE: func(cmd *cobra.Command, args []string) error { return app.runLogin(cmd, args, keyFlag) },
 	}
 	cmd.Flags().
-		String("api-key", "", "the API key; - reads it from the first line of stdin (a key typed here is exposed on the command line)")
+		StringVar(&keyFlag, "api-key", "", "the API key; - reads it from the first line of stdin (a key typed here is exposed on the command line)")
 	root.AddCommand(cmd)
 }
 
@@ -120,19 +121,13 @@ type login struct {
 // unavailable listing let it through: login asks for the key again.
 var errKeyRejected = clierr.New(clierr.CodeAuth, clierr.KindAuth, "the API key was rejected")
 
-func (app *App) runLogin(cmd *cobra.Command, _ []string) error {
-	fr := readFlags(cmd.Flags())
-	keyFlag := fr.String("api-key")
-	orgFlag := fr.String("org")
-	projectFlag := fr.String("project")
-	for _, f := range []string{"api-key", "org", "project"} {
-		if v := fr.String(f); cmd.Flags().Changed(f) && v == "" {
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s is empty", "--"+f).
+func (app *App) runLogin(cmd *cobra.Command, _ []string, keyFlag string) error {
+	orgFlag, projectFlag := app.flags.org, app.flags.project
+	for _, f := range []struct{ name, value string }{{"api-key", keyFlag}, {"org", orgFlag}, {"project", projectFlag}} {
+		if cmd.Flags().Changed(f.name) && f.value == "" {
+			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s is empty", "--"+f.name).
 				WithHint("check that the variable you passed is set")
 		}
-	}
-	if cerr := fr.Err(); cerr != nil {
-		return cerr
 	}
 	if org, project, ok := strings.Cut(orgFlag, "/"); ok {
 		if org == "" {

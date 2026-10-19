@@ -6,20 +6,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 )
 
-// parsedTranscribeCmd returns a porcelain command for endpoint with args
-// parsed into its flags.
-func parsedTranscribeCmd(t *testing.T, endpoint string, fields []inputField, args ...string) *cobra.Command {
+// parsedTranscribeCmd parses args into a porcelain command for endpoint and
+// returns the input fields they set.
+func parsedTranscribeCmd(t *testing.T, endpoint string, fields []inputField, args ...string) fieldValues {
 	t.Helper()
-	cmd := app.newTranscribeCmd(endpoint, fields, "")
+	cmd, o := app.transcribeCmd(endpoint, fields, "")
 	if err := cmd.ParseFlags(args); err != nil {
 		t.Fatalf("parse %v: %v", args, err)
 	}
-	return cmd
+	return o.given(cmd)
 }
 
 // A flag that is not set is not sent: the input carries url plus what the
@@ -76,8 +74,8 @@ func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cmd := parsedTranscribeCmd(t, "transcribe", transcribeFields, tt.args...)
-			got, cerr := buildTranscribeInput("u", transcribeFields, readFlags(cmd.Flags()), tt.extra)
+			set := parsedTranscribeCmd(t, "transcribe", transcribeFields, tt.args...)
+			got, cerr := buildTranscribeInput("u", transcribeFields, set, tt.extra)
 			if cerr != nil {
 				t.Fatalf("buildTranscribeInput: %v", cerr)
 			}
@@ -89,9 +87,9 @@ func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
 }
 
 func TestBuildTranscribeInputRejectsBadExtra(t *testing.T) {
-	cmd := parsedTranscribeCmd(t, "transcribe", transcribeFields)
+	set := parsedTranscribeCmd(t, "transcribe", transcribeFields)
 	for _, extra := range []string{"{not json", `"a string"`, "[1,2]"} {
-		_, cerr := buildTranscribeInput("u", transcribeFields, readFlags(cmd.Flags()), extra)
+		_, cerr := buildTranscribeInput("u", transcribeFields, set, extra)
 		if cerr == nil {
 			t.Fatalf("buildTranscribeInput(extra=%q) = nil error, want invalid_input", extra)
 		}

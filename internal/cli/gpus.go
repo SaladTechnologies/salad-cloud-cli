@@ -26,6 +26,7 @@ replica right now is what saladcloud availability --gpu <class> answers,
 which costs a platform query and so is never run implicitly.`,
 	}
 
+	var allPrices bool
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List GPU classes with their prices per priority tier",
@@ -40,9 +41,9 @@ column for.`,
   # Every price entry per class, as JSON
   saladcloud gpus list --all-prices -o json`,
 		Args: cobra.NoArgs,
-		RunE: app.runGpusList,
+		RunE: func(cmd *cobra.Command, args []string) error { return app.runGpusList(cmd, args, allPrices) },
 	}
-	listCmd.Flags().Bool("all-prices", false, "add a column listing every price entry verbatim")
+	listCmd.Flags().BoolVar(&allPrices, "all-prices", false, "add a column listing every price entry verbatim")
 	gpusCmd.AddCommand(listCmd)
 
 	gpusCmd.AddCommand(&cobra.Command{
@@ -76,12 +77,7 @@ func (app *App) sortedGpuClasses(cmd *cobra.Command) ([]organizationdata.GpuClas
 	return classes, nil
 }
 
-func (app *App) runGpusList(cmd *cobra.Command, _ []string) error {
-	fr := readFlags(cmd.Flags())
-	allPrices := fr.Bool("all-prices")
-	if cerr := fr.Err(); cerr != nil {
-		return cerr
-	}
+func (app *App) runGpusList(cmd *cobra.Command, _ []string, allPrices bool) error {
 	classes, cerr := app.sortedGpuClasses(cmd)
 	if cerr != nil {
 		return cerr

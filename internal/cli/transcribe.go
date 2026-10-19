@@ -226,6 +226,37 @@ var transcriptionLiteFields = []inputField{
 	{"translate", fieldString, "translate the transcription to English"},
 }
 
+// fieldValues are the input fields whose flags were given, by field name:
+// a *bool, *string, *int64 or *[]string bound to the flag.
+type fieldValues map[string]any
+
+// transcribeOptions are a transcription command's flags: one per input
+// field, bound by field name, and the command's own.
+type transcribeOptions struct {
+	fields     map[string]any // field name to the value its flag binds
+	inputExtra string
+	noWait     bool
+	keepUpload bool
+	timeout    time.Duration
+}
+
+// given is the fields whose flags cmd's command line set.
+func (o *transcribeOptions) given(cmd *cobra.Command) fieldValues {
+	set := fieldValues{}
+	for name, v := range o.fields {
+		if cmd.Flags().Changed(strings.ReplaceAll(name, "_", "-")) {
+			set[name] = v
+		}
+	}
+	return set
+}
+
+// givenTrue reports whether the bool field name was given as true.
+func givenTrue(set fieldValues, name string) bool {
+	v, ok := set[name].(*bool)
+	return ok && *v
+}
+
 // buildTranscribeInput builds the job input: url plus every field flag the
 // user set (Changed, not the zero value), so the endpoint's own defaults
 // govern everything else and the request is the one 'inference jobs create
@@ -234,31 +265,21 @@ var transcriptionLiteFields = []inputField{
 func buildTranscribeInput(
 	url string,
 	fields []inputField,
-	flags *flagReader,
+	set fieldValues,
 	inputExtra string,
 ) (map[string]any, *clierr.Error) {
 	in := map[string]any{"url": url}
 	for _, f := range fields {
-		if !flags.Changed(f.flag()) {
-			continue
+		switch v := set[f.name].(type) {
+		case *bool:
+			in[f.name] = *v
+		case *string:
+			in[f.name] = *v
+		case *int64:
+			in[f.name] = *v
+		case *[]string:
+			in[f.name] = strings.Join(*v, ",")
 		}
-		switch f.kind {
-		case fieldBool:
-			v := flags.Bool(f.flag())
-			in[f.name] = v
-		case fieldString:
-			v := flags.String(f.flag())
-			in[f.name] = v
-		case fieldInt:
-			v := flags.Int64(f.flag())
-			in[f.name] = v
-		case fieldList:
-			v := flags.StringArray(f.flag())
-			in[f.name] = strings.Join(v, ",")
-		}
-	}
-	if cerr := flags.Err(); cerr != nil {
-		return nil, cerr
 	}
 	if inputExtra != "" {
 		var extra map[string]any
@@ -335,6 +356,13 @@ func listFieldsHelp(fields []inputField) string {
 // endpoint: the same implementation, with that endpoint's input fields as
 // flags, so a flag the endpoint does not take is rejected by cobra itself.
 func (app *App) newTranscribeCmd(endpoint string, fields []inputField, short string) *cobra.Command {
+	cmd, _ := app.transcribeCmd(endpoint, fields, short)
+	return cmd
+}
+
+// transcribeCmd is newTranscribeCmd with the options its flags bind.
+func (app *App) transcribeCmd(endpoint string, fields []inputField, short string) (*cobra.Command, *transcribeOptions) {
+	o := &transcribeOptions{fields: map[string]any{}}
 	cmd := &cobra.Command{
 		Use:   endpoint + " <file-or-url>",
 		Short: short,
@@ -375,61 +403,69 @@ endpoint's price row, run saladcloud inference get ` + endpoint + `.`,
   saladcloud inference jobs get <job-id> --endpoint ` + endpoint,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return app.runTranscribe(cmd, args[0], endpoint, fields)
+			return app.runTranscribe(cmd, o, args[0], endpoint, fields)
 		},
 	}
 	f := cmd.Flags()
 	for _, fd := range fields {
 		switch fd.kind {
 		case fieldBool:
-			f.Bool(fd.flag(), false, fd.help)
+			v := new(bool)
+			f.BoolVar(v, fd.flag(), false, fd.help)
+			o.fields[fd.name] = v
 		case fieldString:
-			f.String(fd.flag(), "", fd.help)
+			v := new(string)
+			f.StringVar(v, fd.flag(), "", fd.help)
+			o.fields[fd.name] = v
 		case fieldInt:
-			f.Int64(fd.flag(), 0, fd.help)
+			v := new(int64)
+			f.Int64Var(v, fd.flag(), 0, fd.help)
+			o.fields[fd.name] = v
 		case fieldList:
-			f.StringArray(fd.flag(), nil, fd.help)
+			v := new([]string)
+			f.StringArrayVar(v, fd.flag(), nil, fd.help)
+			o.fields[fd.name] = v
 		}
 	}
-	f.String("input-extra", "", "extra input fields as a JSON object, merged over the built input (extra wins)")
-	f.Bool("no-wait", false, "queue the job and exit instead of waiting for the transcript")
-	f.Bool(
+	f.StringVar(
+		&o.inputExtra,
+		"input-extra",
+		"",
+		"extra input fields as a JSON object, merged over the built input (extra wins)",
+	)
+	f.BoolVar(&o.noWait, "no-wait", false, "queue the job and exit instead of waiting for the transcript")
+	f.BoolVar(
+		&o.keepUpload,
 		"keep-upload",
 		false,
 		"keep a local file's S4 upload after the transcript is back (and show its signed URL in -o json)",
 	)
-	f.Duration("timeout", transcribeWaitTimeout, "give up waiting after this long (the job keeps running server-side)")
-	return cmd
+	f.DurationVar(
+		&o.timeout,
+		"timeout",
+		transcribeWaitTimeout,
+		"give up waiting after this long (the job keeps running server-side)",
+	)
+	return cmd, o
 }
 
-func (app *App) runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputField) error {
-	flags := readFlags(cmd.Flags())
-	inputExtra := flags.String("input-extra")
-	noWait := flags.Bool("no-wait")
-	keepUpload := flags.Bool("keep-upload")
-	timeout := flags.Duration("timeout")
-	srt := flags.Changed("srt")
-	if srt {
-		srt = flags.Bool("srt")
-	}
-	asFile := flags.Changed("return-as-file")
-	if asFile {
-		asFile = flags.Bool("return-as-file")
-	}
-	if cerr := flags.Err(); cerr != nil {
-		return cerr
-	}
+func (app *App) runTranscribe(
+	cmd *cobra.Command,
+	o *transcribeOptions,
+	source, endpoint string,
+	fields []inputField,
+) error {
+	inputExtra, noWait, keepUpload, timeout := o.inputExtra, o.noWait, o.keepUpload, o.timeout
+	set := o.given(cmd)
+	srt := givenTrue(set, "srt")
+	asFile := givenTrue(set, "return_as_file")
 
 	// Pre-flight validation, before any upload or API work.
 	if timeout <= 0 {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--timeout must be greater than zero (got %s)", timeout)
 	}
-	if flags.Lookup("summarize") != nil {
-		n := flags.Int64("summarize")
-		if cerr := flags.Err(); cerr != nil {
-			return cerr
-		}
-		if n < 0 {
+	if p, ok := o.fields["summarize"].(*int64); ok {
+		if n := *p; n < 0 {
 			return clierr.New(
 				clierr.CodeInvalidInput,
 				clierr.KindInvalidInput,
@@ -440,7 +476,7 @@ func (app *App) runTranscribe(cmd *cobra.Command, source, endpoint string, field
 	}
 	// Validate the input (and --input-extra's JSON) now, so a bad value
 	// fails before any upload.
-	if _, cerr := buildTranscribeInput(source, fields, flags, inputExtra); cerr != nil {
+	if _, cerr := buildTranscribeInput(source, fields, set, inputExtra); cerr != nil {
 		return cerr
 	}
 	isURL := isHTTPURL(source)
@@ -493,7 +529,7 @@ func (app *App) runTranscribe(cmd *cobra.Command, source, endpoint string, field
 		}
 	}
 
-	in, cerr := buildTranscribeInput(url, fields, flags, inputExtra)
+	in, cerr := buildTranscribeInput(url, fields, set, inputExtra)
 	if cerr != nil {
 		return cerr // unreachable (validated pre-flight), kept for safety
 	}

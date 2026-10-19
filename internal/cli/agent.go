@@ -33,6 +33,7 @@ func (app *App) addAgentCommands(root *cobra.Command) {
 this CLI. They never call the SaladCloud API and need no credentials.`,
 	}
 
+	var o agentInitOptions
 	initCmd := &cobra.Command{
 		Use:   "init",
 		Short: "Write the SaladCloud block into the project's AGENTS.md or CLAUDE.md",
@@ -55,24 +56,24 @@ The block carries only stable facts about the CLI and the platform. Detailed
 guidance lives in the SaladCloud skills, which the block tells the agent to
 install (npx skills add https://docs.salad.com).`,
 		Args: cobra.NoArgs,
-		RunE: app.runAgentInit,
+		RunE: func(cmd *cobra.Command, args []string) error { return app.runAgentInit(cmd, args, o) },
 	}
-	initCmd.Flags().String("file", "", "file to write (default: AGENTS.md, or CLAUDE.md under Claude Code)")
-	initCmd.Flags().String("dir", ".", "project directory")
-	initCmd.Flags().Bool("print", false, "print the block to stdout instead of writing a file")
+	initCmd.Flags().StringVar(&o.file, "file", "", "file to write (default: AGENTS.md, or CLAUDE.md under Claude Code)")
+	initCmd.Flags().StringVar(&o.dir, "dir", ".", "project directory")
+	initCmd.Flags().BoolVar(&o.print, "print", false, "print the block to stdout instead of writing a file")
 
 	agentCmd.AddCommand(initCmd)
 	root.AddCommand(agentCmd)
 }
 
-func (app *App) runAgentInit(cmd *cobra.Command, _ []string) error {
-	fr := readFlags(cmd.Flags())
-	file := fr.String("file")
-	dir := fr.String("dir")
-	printOnly := fr.Bool("print")
-	if cerr := fr.Err(); cerr != nil {
-		return cerr
-	}
+// agentInitOptions are agent init's flags.
+type agentInitOptions struct {
+	file, dir string
+	print     bool
+}
+
+func (app *App) runAgentInit(cmd *cobra.Command, _ []string, o agentInitOptions) error {
+	file, dir, printOnly := o.file, o.dir, o.print
 
 	if printOnly {
 		res := agentInitResult{Action: "printed", OK: true, Reason: "--print", Version: version.Version, File: nil}

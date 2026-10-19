@@ -58,18 +58,10 @@ stderr as a single-line JSON document: {"error": {...}}, in yaml mode too.
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			fr := readFlags(cmd.Flags())
-			m, err := cmd.Flags().GetString("output")
-			if err != nil {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
-			}
-			if cerr := app.printer.SetMode(m); cerr != nil {
+			if cerr := app.printer.SetMode(app.flags.output); cerr != nil {
 				return cerr
 			}
-			d := fr.String("debug")
-			if cerr := fr.Err(); cerr != nil {
-				return cerr
-			}
+			d := app.flags.debug
 			switch d {
 			case "":
 				app.debugLevel = api.DebugOff
@@ -84,14 +76,14 @@ stderr as a single-line JSON document: {"error": {...}}, in yaml mode too.
 			return rejectShadowed(cmd)
 		},
 	}
-	root.PersistentFlags().StringP("output", "o", "table", "output format: table|json|yaml")
+	root.PersistentFlags().StringVarP(&app.flags.output, "output", "o", "table", "output format: table|json|yaml")
 	root.PersistentFlags().
-		String("org", "", "organization name as in the portal URL, not the display name (overrides SALAD_ORGANIZATION and the config file)")
+		StringVar(&app.flags.org, "org", "", "organization name as in the portal URL, not the display name (overrides SALAD_ORGANIZATION and the config file)")
 	root.PersistentFlags().
-		String("debug", "", "print each API request (method, URL, status, duration) on stderr; --debug=body adds headers and bodies, credentials redacted")
+		StringVar(&app.flags.debug, "debug", "", "print each API request (method, URL, status, duration) on stderr; --debug=body adds headers and bodies, credentials redacted")
 	root.PersistentFlags().Lookup("debug").NoOptDefVal = "requests"
 	root.PersistentFlags().
-		String("project", "", "project name as in the portal URL, not the display name (overrides SALAD_PROJECT and the config file; with none set, \"default\" is used with a warning)")
+		StringVar(&app.flags.project, "project", "", "project name as in the portal URL, not the display name (overrides SALAD_PROJECT and the config file; with none set, \"default\" is used with a warning)")
 	root.SetFlagErrorFunc(flagError)
 	// cobra's multi-line "Did you mean this?" block; withSuggestions gives
 	// the one-line form instead.
@@ -129,10 +121,18 @@ func (app *App) contextFree(c *cobra.Command) { app.shadow(c, "org", "project") 
 func (app *App) shadow(c *cobra.Command, names ...string) {
 	for _, n := range names {
 		if c.PersistentFlags().Lookup(n) == nil {
-			c.PersistentFlags().String(n, "", "")
+			c.PersistentFlags().StringVar(app.contextFlag(n), n, "", "")
 			app.noteTreeErr(c.PersistentFlags().MarkHidden(n))
 		}
 	}
+}
+
+// contextFlag is the field --org or --project binds to.
+func (app *App) contextFlag(name string) *string {
+	if name == "org" {
+		return &app.flags.org
+	}
+	return &app.flags.project
 }
 
 // rejectShadowed is the unknown-flag error for a global flag cmd shadows
@@ -266,7 +266,7 @@ func (app *App) prepareTree(root *cobra.Command) {
 		}
 	}
 	requireVerbs(root)
-	wrapArgs(root)
+	app.wrapArgs(root)
 }
 
 // contextFreeCommands are the top-level commands that read neither the
@@ -367,13 +367,7 @@ func wrapErr(err error) error {
 // reads the --org/--project flags, resolves configuration, and constructs
 // the client (which requires an API key but not org/project).
 func (app *App) NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error) {
-	fr := readFlags(cmd.Flags())
-	orgFlag := fr.String("org")
-	projectFlag := fr.String("project")
-	if cerr := fr.Err(); cerr != nil {
-		return nil, config.Resolved{}, cerr
-	}
-	res, err := config.Resolve(app.Env, orgFlag, projectFlag)
+	res, err := config.Resolve(app.Env, app.flags.org, app.flags.project)
 	if err != nil {
 		path := app.configPath()
 		return nil, config.Resolved{}, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).

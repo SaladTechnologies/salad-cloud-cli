@@ -84,12 +84,7 @@ type doctorRun struct {
 }
 
 func (app *App) runDoctor(cmd *cobra.Command, _ []string) error {
-	fr := readFlags(cmd.Flags())
-	orgFlag := fr.String("org")
-	projectFlag := fr.String("project")
-	if cerr := fr.Err(); cerr != nil {
-		return cerr
-	}
+	orgFlag, projectFlag := app.flags.org, app.flags.project
 	d := &doctorRun{
 		ctx:         cmd.Context(),
 		orgFlag:     orgFlag,

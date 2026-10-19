@@ -29,14 +29,9 @@ func (app *App) addVersionCommands(root *cobra.Command) {
 	// saladcloud --version is the version command, so -o json returns the
 	// same document. The root runs only for --version or with no command at
 	// all, which prints the help as before.
-	root.Flags().Bool("version", false, "print the version (same as saladcloud version)")
+	root.Flags().BoolVar(&app.flags.version, "version", false, "print the version (same as saladcloud version)")
 	root.RunE = func(cmd *cobra.Command, args []string) error {
-		fr := readFlags(cmd.Flags())
-		v := fr.Bool("version")
-		if cerr := fr.Err(); cerr != nil {
-			return cerr
-		}
-		if v {
+		if app.flags.version {
 			return app.runVersion(cmd, args)
 		}
 		return cmd.Help()

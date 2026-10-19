@@ -135,35 +135,31 @@ func writeQueueJobDetail(w *output.Writer, j *queues.QueueJob) {
 
 // addQueueFlag registers the required --queue flag on a queue jobs verb.
 func (app *App) addQueueFlag(cmd *cobra.Command) {
-	cmd.Flags().String("queue", "", "the queue (required; saladcloud queues list shows them)")
+	cmd.Flags().StringVar(&app.flags.queue, "queue", "", "the queue (required; saladcloud queues list shows them)")
 	app.noteTreeErr(cmd.MarkFlagRequired("queue"))
 	annotate(cmd, annotationFlagForArg, "queue")
 }
 
-// queueFlag reads --queue.
-func queueFlag(cmd *cobra.Command) (string, *clierr.Error) {
-	fr := readFlags(cmd.Flags())
-	q := fr.String("queue")
-	return q, fr.Err()
+// queueFieldOptions are --display-name and --description.
+type queueFieldOptions struct {
+	displayName, description string
 }
 
-// queueFields reads --display-name and --description into the values to
-// send; set reports whether either was passed.
-func queueFields(fr *flagReader) (displayName, description *string, set bool) {
-	if fr.Changed("display-name") {
-		v := fr.String("display-name")
-		displayName = &v
+// queueFields is --display-name and --description as the values to send,
+// each nil when not passed; set reports whether either was.
+func queueFields(cmd *cobra.Command, o queueFieldOptions) (displayName, description *string, set bool) {
+	if cmd.Flags().Changed("display-name") {
+		displayName = &o.displayName
 	}
-	if fr.Changed("description") {
-		v := fr.String("description")
-		description = &v
+	if cmd.Flags().Changed("description") {
+		description = &o.description
 	}
 	return displayName, description, displayName != nil || description != nil
 }
 
-func addQueueFieldFlags(cmd *cobra.Command) {
-	cmd.Flags().String("display-name", "", "human-readable display name")
-	cmd.Flags().String("description", "", "notes about the queue (up to 500 characters)")
+func addQueueFieldFlags(cmd *cobra.Command, o *queueFieldOptions) {
+	cmd.Flags().StringVar(&o.displayName, "display-name", "", "human-readable display name")
+	cmd.Flags().StringVar(&o.description, "description", "", "notes about the queue (up to 500 characters)")
 }
 
 // addQueuesCommands adds queues.go's commands to the tree.
@@ -184,6 +180,7 @@ Jobs are submitted with queues jobs create --queue <name>. A job's output
 is whatever your container returns.`,
 	}
 
+	var createFields queueFieldOptions
 	createCmd := &cobra.Command{
 		Use:   "create <name> [--display-name <n>] [--description <d>]",
 		Short: "Create a job queue in the current project",
@@ -192,11 +189,7 @@ is whatever your container returns.`,
 			if cerr := validateResourceName("queue", args[0]); cerr != nil {
 				return cerr
 			}
-			fr := readFlags(cmd.Flags())
-			displayName, description, _ := queueFields(fr)
-			if cerr := fr.Err(); cerr != nil {
-				return cerr
-			}
+			displayName, description, _ := queueFields(cmd, createFields)
 			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
@@ -210,7 +203,7 @@ is whatever your container returns.`,
 			return wrapErr(app.printer.Emit(q, func(w *output.Writer) { writeQueueDetail(w, q) }))
 		},
 	}
-	addQueueFieldFlags(createCmd)
+	addQueueFieldFlags(createCmd, &createFields)
 	queuesCmd.AddCommand(createCmd)
 
 	queuesCmd.AddCommand(&cobra.Command{
@@ -272,16 +265,13 @@ is whatever your container returns.`,
 		},
 	})
 
+	var updateFields queueFieldOptions
 	updateCmd := &cobra.Command{
 		Use:   "update <name> [--display-name <n>] [--description <d>]",
 		Short: "Change a job queue's display name or description",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fr := readFlags(cmd.Flags())
-			displayName, description, set := queueFields(fr)
-			if cerr := fr.Err(); cerr != nil {
-				return cerr
-			}
+			displayName, description, set := queueFields(cmd, updateFields)
 			if !set {
 				return clierr.New(
 					clierr.CodeUsage,
@@ -307,7 +297,7 @@ is whatever your container returns.`,
 			return wrapErr(app.printer.Emit(q, func(w *output.Writer) { writeQueueDetail(w, q) }))
 		},
 	}
-	addQueueFieldFlags(updateCmd)
+	addQueueFieldFlags(updateCmd, &updateFields)
 	queuesCmd.AddCommand(updateCmd)
 
 	queuesCmd.AddCommand(&cobra.Command{
@@ -347,6 +337,7 @@ and the queue is --queue:
     saladcloud queues jobs get <id> --queue my-queue`,
 	}
 
+	var listLimit int
 	listCmd := &cobra.Command{
 		Use:   "list --queue <queue>",
 		Short: "List the jobs in a queue, newest first",
@@ -359,15 +350,7 @@ larger) and says so on stderr when the queue may hold more; --limit 0 reads
 every job, up to 10,000.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fr := readFlags(cmd.Flags())
-			queue, cerr := queueFlag(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			limit := fr.Int("limit")
-			if cerr = fr.Err(); cerr != nil {
-				return cerr
-			}
+			queue, limit := app.flags.queue, listLimit
 			if limit < 0 {
 				return clierr.New(
 					clierr.CodeUsage,
@@ -421,7 +404,7 @@ every job, up to 10,000.`,
 	}
 	app.addQueueFlag(listCmd)
 	listCmd.Flags().
-		Int("limit", 100, fmt.Sprintf("how many of the newest jobs to list; a limit reads at most %d jobs (or the limit), 0 reads all, up to %d", api.QueueJobsBudget, api.QueueJobsCap))
+		IntVar(&listLimit, "limit", 100, fmt.Sprintf("how many of the newest jobs to list; a limit reads at most %d jobs (or the limit), 0 reads all, up to %d", api.QueueJobsBudget, api.QueueJobsCap))
 	jobsCmd.AddCommand(listCmd)
 
 	getCmd := &cobra.Command{
@@ -429,11 +412,8 @@ every job, up to 10,000.`,
 		Short: "Show one queue job (input/output truncated; -o json for the full document)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			queue, cerr := queueFlag(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			if cerr = requireJobUUID(args[0], "saladcloud queues jobs list --queue "+queue); cerr != nil {
+			queue := app.flags.queue
+			if cerr := requireJobUUID(args[0], "saladcloud queues jobs list --queue "+queue); cerr != nil {
 				return cerr
 			}
 			client, _, cerr := app.NewClient(cmd)
@@ -450,7 +430,7 @@ every job, up to 10,000.`,
 	app.addQueueFlag(getCmd)
 	jobsCmd.AddCommand(getCmd)
 
-	var jobWait waitOptions
+	var jobCreate jobCreateOptions
 	createCmd := &cobra.Command{
 		Use:   "create --queue <queue> (-f <file> | --input '<json>') [--webhook <url>]",
 		Short: "Submit a job to a queue (--wait blocks until it finishes)",
@@ -476,14 +456,16 @@ canceled exits 1 with the job's status and last event. --timeout (default
   # Full prototype from a file, with a webhook
   saladcloud queues jobs create --queue my-queue -f job.yaml --webhook https://example.com/hook`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error { return app.runQueueJobCreate(cmd, args, jobWait) },
+		RunE: func(cmd *cobra.Command, args []string) error { return app.runQueueJobCreate(cmd, args, jobCreate) },
 	}
 	app.addQueueFlag(createCmd)
 	createCmd.Flags().
-		StringP("file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
-	createCmd.Flags().String("input", "", "the job input as inline JSON (wrapped into the prototype)")
-	createCmd.Flags().String("webhook", "", "URL notified when the job finishes (overrides the file's webhook)")
-	addJobWaitFlags(createCmd, &jobWait)
+		StringVarP(&jobCreate.file, "file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
+	createCmd.Flags().
+		StringVar(&jobCreate.input, "input", "", "the job input as inline JSON (wrapped into the prototype)")
+	createCmd.Flags().
+		StringVar(&jobCreate.webhook, "webhook", "", "URL notified when the job finishes (overrides the file's webhook)")
+	addJobWaitFlags(createCmd, &jobCreate.wait)
 	jobsCmd.AddCommand(createCmd)
 
 	cancelCmd := &cobra.Command{
@@ -495,11 +477,8 @@ it to the end, so a handler with side effects should be idempotent. A job
 that has finished cannot be canceled (exit 1).`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			queue, cerr := queueFlag(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			if cerr = requireJobUUID(args[0], "saladcloud queues jobs list --queue "+queue); cerr != nil {
+			queue := app.flags.queue
+			if cerr := requireJobUUID(args[0], "saladcloud queues jobs list --queue "+queue); cerr != nil {
 				return cerr
 			}
 			client, _, cerr := app.NewClient(cmd)
@@ -534,18 +513,9 @@ func queueGroupsCell(groups []shared.ContainerGroup) string {
 	return strconv.Itoa(len(groups))
 }
 
-func (app *App) runQueueJobCreate(cmd *cobra.Command, _ []string, jobWait waitOptions) error {
-	fr := readFlags(cmd.Flags())
-	queue, cerr := queueFlag(cmd)
-	if cerr != nil {
-		return cerr
-	}
-	file := fr.String("file")
-	inputJSON := fr.String("input")
-	wh := fr.String("webhook")
-	if cerr = fr.Err(); cerr != nil {
-		return cerr
-	}
+func (app *App) runQueueJobCreate(cmd *cobra.Command, _ []string, o jobCreateOptions) error {
+	queue := app.flags.queue
+	file, inputJSON, wh := o.file, o.input, o.webhook
 	if (file == "") == (inputJSON == "") {
 		return clierr.New(
 			clierr.CodeUsage,
@@ -553,7 +523,7 @@ func (app *App) runQueueJobCreate(cmd *cobra.Command, _ []string, jobWait waitOp
 			"exactly one of -f <file> or --input '<json>' is required",
 		)
 	}
-	wait, timeout, cerr := jobWait.values()
+	wait, timeout, cerr := o.wait.values()
 	if cerr != nil {
 		return cerr
 	}

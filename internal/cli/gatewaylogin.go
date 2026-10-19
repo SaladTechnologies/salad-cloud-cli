@@ -23,6 +23,7 @@ const (
 )
 
 func (app *App) gatewayLoginCmd() *cobra.Command {
+	var keyFlag string
 	cmd := &cobra.Command{
 		Use:   "login",
 		Short: "Save an AI Gateway key",
@@ -52,10 +53,10 @@ behave as if there is no terminal.`,
   # Scripted, PowerShell
   $env:GATEWAY_KEY | saladcloud ai-gateway login --api-key -`,
 		Args: cobra.NoArgs,
-		RunE: app.runGatewayLogin,
+		RunE: func(cmd *cobra.Command, args []string) error { return app.runGatewayLogin(cmd, args, keyFlag) },
 	}
 	cmd.Flags().
-		String("api-key", "", "the AI Gateway key; - reads it from the first line of stdin (a key typed here is exposed on the command line)")
+		StringVar(&keyFlag, "api-key", "", "the AI Gateway key; - reads it from the first line of stdin (a key typed here is exposed on the command line)")
 	return cmd
 }
 
@@ -86,12 +87,7 @@ type gatewayLogin struct {
 	app      *App // the run
 }
 
-func (app *App) runGatewayLogin(cmd *cobra.Command, _ []string) error {
-	fr := readFlags(cmd.Flags())
-	keyFlag := fr.String("api-key")
-	if cerr := fr.Err(); cerr != nil {
-		return cerr
-	}
+func (app *App) runGatewayLogin(cmd *cobra.Command, _ []string, keyFlag string) error {
 	if cmd.Flags().Changed("api-key") && keyFlag == "" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s is empty", "--api-key").
 			WithHint("check that the variable you passed is set")

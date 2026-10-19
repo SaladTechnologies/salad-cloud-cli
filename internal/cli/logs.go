@@ -17,7 +17,7 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
-func (app *App) newLogsCmd() *cobra.Command {
+func (app *App) newLogsCmd(o *logsOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logs [-c <group>] [--project <p>] [--instance <id>]",
 		Short: "Query or follow logs for the organization, a project, or a container group",
@@ -72,14 +72,14 @@ full API entry (both timestamps, resource labels, span/trace IDs).`,
   # One group's system events only (resource.type "container" is the app's own output)
   saladcloud logs -c my-cg --since 1h --query 'resource.type != "container"'`,
 		Args: cobra.NoArgs,
-		RunE: app.runLogs,
+		RunE: func(cmd *cobra.Command, args []string) error { return app.runLogs(cmd, args, o) },
 	}
 }
 
 // containerGroupLogsCmd is 'saladcloud container-groups logs <group>': the
 // query with the group as its subject, found from 'container-groups --help'.
 // Both logs commands share addLogsFlags.
-func (app *App) newContainerGroupLogsCmd() *cobra.Command {
+func (app *App) newContainerGroupLogsCmd(o *logsOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logs <group> [--instance <id>]",
 		Short: "Query or follow one container group's logs",
@@ -99,65 +99,68 @@ project-wide forms and how --since, --until and --follow behave.`,
   # Follow one instance's logs as NDJSON
   saladcloud container-groups logs my-cg --instance 8a2f13ba --follow -o json`,
 		Args: cobra.ExactArgs(1),
-		RunE: app.runLogs,
+		RunE: func(cmd *cobra.Command, args []string) error { return app.runLogs(cmd, args, o) },
 	}
 }
 
-// addLogsFlags registers the logs flags on c; both logs commands use it.
-func addLogsFlags(c *cobra.Command) {
-	c.Flags().String("since", "15m", "start of the time range: duration (15m, 2h, 3d), RFC3339 timestamp, or date")
-	c.Flags().String("until", "", "end of the time range (same forms as --since; default now; conflicts with --follow)")
+// logsOptions are the flags both logs commands share.
+type logsOptions struct {
+	since, until, instance  string
+	severity, filter, query string
+	follow                  bool
+	pollInterval, lookback  time.Duration
+	pageSize                int
+}
+
+// addLogsFlags binds the logs flags on c to o; both logs commands use it.
+func addLogsFlags(c *cobra.Command, o *logsOptions) {
 	c.Flags().
-		String("instance", "", "only logs from this instance (full ID; a unique prefix also works when a container group is given)")
-	c.Flags().String("severity", "", "minimum severity: "+strings.Join(logsq.Severities, "|"))
-	c.Flags().String("filter", "", "only logs containing this substring (text or JSON)")
-	c.Flags().String("query", "", "raw log query-language expression, ANDed onto the generated query")
-	c.Flags().BoolP("follow", "f", false, "stream new log entries until interrupted")
-	c.Flags().Duration("poll-interval", logsq.DefaultPoll, "how often to poll for new entries with --follow (min 2s)")
+		StringVar(&o.since, "since", "15m", "start of the time range: duration (15m, 2h, 3d), RFC3339 timestamp, or date")
 	c.Flags().
-		Duration("lookback", logsq.DefaultLookback, "with --follow, how far behind the newest seen log time each poll re-scans for late-arriving entries")
-	c.Flags().Int("page-size", 100, "entries per API request (1-100)")
+		StringVar(&o.until, "until", "", "end of the time range (same forms as --since; default now; conflicts with --follow)")
+	c.Flags().
+		StringVar(&o.instance, "instance", "", "only logs from this instance (full ID; a unique prefix also works when a container group is given)")
+	c.Flags().StringVar(&o.severity, "severity", "", "minimum severity: "+strings.Join(logsq.Severities, "|"))
+	c.Flags().StringVar(&o.filter, "filter", "", "only logs containing this substring (text or JSON)")
+	c.Flags().StringVar(&o.query, "query", "", "raw log query-language expression, ANDed onto the generated query")
+	c.Flags().BoolVarP(&o.follow, "follow", "f", false, "stream new log entries until interrupted")
+	c.Flags().
+		DurationVar(&o.pollInterval, "poll-interval", logsq.DefaultPoll, "how often to poll for new entries with --follow (min 2s)")
+	c.Flags().
+		DurationVar(&o.lookback, "lookback", logsq.DefaultLookback, "with --follow, how far behind the newest seen log time each poll re-scans for late-arriving entries")
+	c.Flags().IntVar(&o.pageSize, "page-size", 100, "entries per API request (1-100)")
 }
 
 // addLogsCommands adds logs.go's commands to the tree.
 func (app *App) addLogsCommands(root, cg *cobra.Command) {
-	logsCmd := app.newLogsCmd()
-	containerGroupLogsCmd := app.newContainerGroupLogsCmd()
-	addLogsFlags(logsCmd)
-	logsCmd.Flags().StringP("container-group", "c", "", "only this container group's logs (in the current project)")
+	var logsOpts, groupLogsOpts logsOptions
+	logsCmd := app.newLogsCmd(&logsOpts)
+	containerGroupLogsCmd := app.newContainerGroupLogsCmd(&groupLogsOpts)
+	addLogsFlags(logsCmd, &logsOpts)
 	logsCmd.Flags().
-		String("project", "", "only this project's logs; unlike other commands, the saved project and SALAD_PROJECT do not narrow logs")
+		StringVarP(&app.flags.group, "container-group", "c", "", "only this container group's logs (in the current project)")
+	logsCmd.Flags().
+		StringVar(&app.flags.project, "project", "", "only this project's logs; unlike other commands, the saved project and SALAD_PROJECT do not narrow logs")
 	annotate(logsCmd, annotationFlagForArg, "container-group")
-	addLogsFlags(containerGroupLogsCmd)
+	addLogsFlags(containerGroupLogsCmd, &groupLogsOpts)
 	app.addHiddenGroupFlag(containerGroupLogsCmd)
 	annotate(containerGroupLogsCmd, annotationFlagForArg, "instance")
 	root.AddCommand(logsCmd)
 	cg.AddCommand(containerGroupLogsCmd)
 }
 
-func (app *App) runLogs(cmd *cobra.Command, args []string) error {
-	fr := readFlags(cmd.Flags())
+func (app *App) runLogs(cmd *cobra.Command, args []string, o *logsOptions) error {
 	// The group is the subject of 'container-groups logs <group>' and a
 	// filter (-c) on the top-level query.
 	group := ""
 	if len(args) == 1 {
 		group = args[0]
 	} else if cmd.Annotations[annotationGroupIsArg] == "" { // logs -c; container-groups logs only hides its -c
-		group = fr.String("container-group")
+		group = app.flags.group
 	}
-	sinceStr := fr.String("since")
-	untilStr := fr.String("until")
-	instance := fr.String("instance")
-	severity := fr.String("severity")
-	filter := fr.String("filter")
-	rawQuery := fr.String("query")
-	follow := fr.Bool("follow")
-	pollInterval := fr.Duration("poll-interval")
-	lookback := fr.Duration("lookback")
-	pageSize := fr.Int("page-size")
-	if cerr := fr.Err(); cerr != nil {
-		return cerr
-	}
+	sinceStr, untilStr, instance := o.since, o.until, o.instance
+	severity, filter, rawQuery := o.severity, o.filter, o.query
+	follow, pollInterval, lookback, pageSize := o.follow, o.pollInterval, o.lookback, o.pageSize
 
 	// Pre-flight validation: everything below must fail with a usage error
 	// before any configuration or client work, so bad input exits 2 even

@@ -230,6 +230,7 @@ func countCell(v *int64) string {
 
 // addAvailabilityCommands adds availabilitycmd.go's commands to the tree.
 func (app *App) addAvailabilityCommands(root *cobra.Command) {
+	var af availabilityFlags
 	cmd := &cobra.Command{
 		Use:   "availability [--gpu <class>]... [--cpu <n>] [--memory <mb>] [--storage <gb>] [--country <cc>]...",
 		Short: "Ask how many nodes could take one replica with these requirements right now",
@@ -277,32 +278,27 @@ class can be all zeros while others answer).`,
   # CPU-only nodes
   saladcloud availability --cpu 4 --memory 8192`,
 		Args: cobra.NoArgs,
-		RunE: app.runAvailability,
+		RunE: func(cmd *cobra.Command, args []string) error { return app.runAvailability(cmd, args, af) },
 	}
 	f := cmd.Flags()
-	f.StringArray("gpu", nil, "GPU class UUID or name, repeatable (one query per class, plus one for all of them)")
-	f.Int64("cpu", 0, "vCPU cores per replica")
-	f.Int64("memory", 0, "memory per replica in MB")
-	f.Int64("storage", 0, "storage per replica in GB")
-	f.StringArray("country", nil, "country code the replica may run in, repeatable (for example us)")
-	f.String("from", "", "take the requirements of an existing group: <group> or <project>/<group>")
+	f.StringArrayVar(
+		&af.Gpus,
+		"gpu",
+		nil,
+		"GPU class UUID or name, repeatable (one query per class, plus one for all of them)",
+	)
+	f.Int64Var(&af.CPU, "cpu", 0, "vCPU cores per replica")
+	f.Int64Var(&af.Memory, "memory", 0, "memory per replica in MB")
+	f.Int64Var(&af.Storage, "storage", 0, "storage per replica in GB")
+	f.StringArrayVar(&af.Countries, "country", nil, "country code the replica may run in, repeatable (for example us)")
+	f.StringVar(&af.From, "from", "", "take the requirements of an existing group: <group> or <project>/<group>")
 	cmd.Flags().
-		String("project", "", "the project --from <group> looks in (overrides SALAD_PROJECT and the config file; --from <project>/<group> also names it)")
+		StringVar(&app.flags.project, "project", "", "the project --from <group> looks in (overrides SALAD_PROJECT and the config file; --from <project>/<group> also names it)")
 	root.AddCommand(cmd)
 }
 
-func (app *App) runAvailability(cmd *cobra.Command, _ []string) error {
-	fl := readFlags(cmd.Flags())
-	var af availabilityFlags
-	af.Gpus = fl.StringArray("gpu")
-	af.CPU = fl.Int64("cpu")
-	af.Memory = fl.Int64("memory")
-	af.Storage = fl.Int64("storage")
-	af.Countries = fl.StringArray("country")
-	af.From = fl.String("from")
-	if cerr := fl.Err(); cerr != nil {
-		return cerr
-	}
+func (app *App) runAvailability(cmd *cobra.Command, _ []string, af availabilityFlags) error {
+	fl := cmd.Flags()
 	af.CPUSet, af.MemorySet, af.StorageOK = fl.Changed("cpu"), fl.Changed("memory"), fl.Changed("storage")
 	if cerr := validateAvailabilityFlags(af); cerr != nil {
 		return cerr
