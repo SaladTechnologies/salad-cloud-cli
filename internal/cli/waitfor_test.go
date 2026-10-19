@@ -70,14 +70,19 @@ func (h *waitHarness) deps() waitDeps {
 
 // runWait drives waitForGroupStatus against a scripted harness, waiting for
 // "running" the way start --wait does (no prior sighting of the group).
-func runWait(t *testing.T, steps []waitStep, allowedSleeps int, timeout time.Duration) (*clierr.Error, *waitHarness) {
+func (app *testRun) runWait(
+	t *testing.T,
+	steps []waitStep,
+	allowedSleeps int,
+	timeout time.Duration,
+) (*clierr.Error, *waitHarness) {
 	t.Helper()
-	return runWaitFrom(t, steps, false, allowedSleeps, timeout)
+	return app.runWaitFrom(t, steps, false, allowedSleeps, timeout)
 }
 
 // runWaitFrom is runWait with fromActive set by the caller (true is
 // create --wait: the create response was already pending).
-func runWaitFrom(
+func (app *testRun) runWaitFrom(
 	t *testing.T,
 	steps []waitStep,
 	fromActive bool,
@@ -100,7 +105,8 @@ func runWaitFrom(
 }
 
 func TestWaitSuccessAfterPolls(t *testing.T) {
-	cerr, h := runWait(t, []waitStep{
+	app := newTestRun(t)
+	cerr, h := app.runWait(t, []waitStep{
 		statusStep(shared.CONTAINER_GROUP_STATUS_PENDING),
 		statusStep(shared.CONTAINER_GROUP_STATUS_DEPLOYING),
 		statusStep(shared.CONTAINER_GROUP_STATUS_RUNNING),
@@ -122,9 +128,10 @@ func TestWaitSuccessAfterPolls(t *testing.T) {
 }
 
 func TestWaitTimeoutNamesLastStatus(t *testing.T) {
+	app := newTestRun(t)
 	// timeout 7s, poll 5s: polls at 0s and 5s pass the deadline check, the
 	// poll at 10s trips it.
-	cerr, _ := runWait(t, []waitStep{
+	cerr, _ := app.runWait(t, []waitStep{
 		statusStep(shared.CONTAINER_GROUP_STATUS_PENDING),
 		statusStep(shared.CONTAINER_GROUP_STATUS_DEPLOYING),
 		statusStep(shared.CONTAINER_GROUP_STATUS_DEPLOYING),
@@ -146,7 +153,8 @@ func TestWaitTimeoutNamesLastStatus(t *testing.T) {
 }
 
 func TestWaitTransientErrorToleratedThenSuccess(t *testing.T) {
-	cerr, h := runWait(t, []waitStep{
+	app := newTestRun(t)
+	cerr, h := app.runWait(t, []waitStep{
 		{err: clierr.New(clierr.CodeNetwork, clierr.KindNetwork, "connection reset")},
 		{err: clierr.New(clierr.CodeRateLimited, clierr.KindRateLimited, "429")},
 		statusStep(shared.CONTAINER_GROUP_STATUS_RUNNING),
@@ -163,8 +171,9 @@ func TestWaitTransientErrorToleratedThenSuccess(t *testing.T) {
 }
 
 func TestWaitNotFoundAborts(t *testing.T) {
+	app := newTestRun(t)
 	nf := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `container group "demo" not found`)
-	cerr, h := runWait(t, []waitStep{{err: nf}}, 10, time.Hour)
+	cerr, h := app.runWait(t, []waitStep{{err: nf}}, 10, time.Hour)
 	if cerr != nf {
 		t.Fatalf("waitForGroupStatus returned %v, want the 404 error itself", cerr)
 	}
@@ -174,16 +183,18 @@ func TestWaitNotFoundAborts(t *testing.T) {
 }
 
 func TestWaitAuthAborts(t *testing.T) {
+	app := newTestRun(t)
 	auth := clierr.New(clierr.CodeAuth, clierr.KindAuth, "key revoked")
-	cerr, _ := runWait(t, []waitStep{{err: auth}}, 10, time.Hour)
+	cerr, _ := app.runWait(t, []waitStep{{err: auth}}, 10, time.Hour)
 	if cerr != auth {
 		t.Fatalf("waitForGroupStatus returned %v, want the auth error itself", cerr)
 	}
 }
 
 func TestWaitCancelReturnsInterrupted(t *testing.T) {
+	app := newTestRun(t)
 	// allowedSleeps 1: the second sleep cancels, as Ctrl-C would.
-	cerr, h := runWait(t, []waitStep{
+	cerr, h := app.runWait(t, []waitStep{
 		statusStep(shared.CONTAINER_GROUP_STATUS_PENDING),
 		statusStep(shared.CONTAINER_GROUP_STATUS_PENDING),
 	}, 1, time.Hour)
@@ -202,6 +213,7 @@ func TestWaitCancelReturnsInterrupted(t *testing.T) {
 }
 
 func TestWaitProgressDedupsUnchangedLines(t *testing.T) {
+	app := newTestRun(t)
 	counts := &shared.ContainerGroupInstanceStatusCount{
 		AllocatingCount: ptr.To(int64(2)),
 		CreatingCount:   ptr.To(int64(1)),
@@ -213,7 +225,7 @@ func TestWaitProgressDedupsUnchangedLines(t *testing.T) {
 		Name:         ptr.To("demo"),
 		CurrentState: &shared.ContainerGroupState{Status: &pending, InstanceStatusCounts: counts},
 	}}
-	cerr, h := runWait(t, []waitStep{
+	cerr, h := app.runWait(t, []waitStep{
 		withCounts, // progress line 1
 		withCounts, // unchanged: no line
 		withCounts, // unchanged: no line
@@ -240,6 +252,7 @@ func TestWaitProgressDedupsUnchangedLines(t *testing.T) {
 }
 
 func TestWaitProgressRepeatsEveryMinute(t *testing.T) {
+	app := newTestRun(t)
 	// Poll every 5s: 25 unchanged pending polls span 0s-120s, so the line
 	// prints at 0s, 60s and 120s; the running poll at 125s ends the wait.
 	steps := make([]waitStep, 0, 26)
@@ -247,7 +260,7 @@ func TestWaitProgressRepeatsEveryMinute(t *testing.T) {
 		steps = append(steps, statusStep(shared.CONTAINER_GROUP_STATUS_PENDING))
 	}
 	steps = append(steps, statusStep(shared.CONTAINER_GROUP_STATUS_RUNNING))
-	cerr, h := runWait(t, steps, 100, time.Hour)
+	cerr, h := app.runWait(t, steps, 100, time.Hour)
 	if cerr != nil {
 		t.Fatalf("waitForGroupStatus returned %v, want nil", cerr)
 	}
@@ -319,6 +332,7 @@ func TestHasReadinessProbe(t *testing.T) {
 }
 
 func TestWaitJSONModePrintsNoProgress(t *testing.T) {
+	app := newTestRun(t)
 	if err := app.printer.SetMode("json"); err != nil {
 		t.Fatal(err)
 	}
@@ -327,7 +341,7 @@ func TestWaitJSONModePrintsNoProgress(t *testing.T) {
 			t.Fatal(err)
 		}
 	}()
-	cerr, h := runWait(t, []waitStep{
+	cerr, h := app.runWait(t, []waitStep{
 		statusStep(shared.CONTAINER_GROUP_STATUS_PENDING),
 		statusStep(shared.CONTAINER_GROUP_STATUS_RUNNING),
 	}, 10, time.Hour)
@@ -342,6 +356,7 @@ func TestWaitJSONModePrintsNoProgress(t *testing.T) {
 // TestWaitForGroupSettlePredicate drives the generic waitForGroup with
 // update --wait's goal: pending_change false.
 func TestWaitForGroupSettlePredicate(t *testing.T) {
+	app := newTestRun(t)
 	running := shared.CONTAINER_GROUP_STATUS_RUNNING
 	step := func(pending bool) waitStep {
 		return waitStep{group: &shared.ContainerGroup{
@@ -391,6 +406,7 @@ func TestInstanceCountSummaryEmpty(t *testing.T) {
 // write itself already succeeded, and the message must say so — a script
 // that reads it as a failed write retries a patch that landed.
 func TestSettleTimeoutSaysPatchAccepted(t *testing.T) {
+	app := newTestRun(t)
 	running := shared.CONTAINER_GROUP_STATUS_RUNNING
 	pending := waitStep{group: &shared.ContainerGroup{
 		Name:          ptr.To("demo"),
@@ -465,7 +481,8 @@ func TestSettleFlags(t *testing.T) {
 // from pending straight to stopped and never start. create --wait must fail
 // on that poll, not after the whole --timeout.
 func TestWaitCreateStoppedFailsFast(t *testing.T) {
-	cerr, h := runWaitFrom(t, []waitStep{
+	app := newTestRun(t)
+	cerr, h := app.runWaitFrom(t, []waitStep{
 		statusStep(shared.CONTAINER_GROUP_STATUS_STOPPED),
 	}, true, 10, time.Hour)
 	if cerr == nil {
@@ -488,7 +505,8 @@ func TestWaitCreateStoppedFailsFast(t *testing.T) {
 // can still read stopped because the API has not acted yet. That must not
 // abort the wait.
 func TestWaitStartToleratesInitialStopped(t *testing.T) {
-	cerr, h := runWait(t, []waitStep{
+	app := newTestRun(t)
+	cerr, h := app.runWait(t, []waitStep{
 		statusStep(shared.CONTAINER_GROUP_STATUS_STOPPED),
 		statusStep(shared.CONTAINER_GROUP_STATUS_STOPPED),
 		statusStep(shared.CONTAINER_GROUP_STATUS_PENDING),
@@ -506,6 +524,7 @@ func TestWaitStartToleratesInitialStopped(t *testing.T) {
 // TestWaitAbortsOnTerminalAfterActive: once the group has been seen active,
 // stopped, failed and succeeded each end a wait for running at once.
 func TestWaitAbortsOnTerminalAfterActive(t *testing.T) {
+	app := newTestRun(t)
 	for _, tc := range []struct {
 		terminal shared.ContainerGroupStatus
 		kind     clierr.Kind
@@ -515,7 +534,7 @@ func TestWaitAbortsOnTerminalAfterActive(t *testing.T) {
 		{shared.CONTAINER_GROUP_STATUS_SUCCEEDED, "group_succeeded"},
 	} {
 		t.Run(string(tc.terminal), func(t *testing.T) {
-			cerr, h := runWait(t, []waitStep{
+			cerr, h := app.runWait(t, []waitStep{
 				statusStep(shared.CONTAINER_GROUP_STATUS_STOPPED), // start not yet acted on
 				statusStep(shared.CONTAINER_GROUP_STATUS_DEPLOYING),
 				statusStep(tc.terminal),

@@ -413,18 +413,20 @@ func TestCredentialsNeverPrinted(t *testing.T) {
 // TestNoHelpAsksForAKey: no --help text and not the agent block asks for a
 // key's value (the word "paste").
 func TestNoHelpAsksForAKey(t *testing.T) {
+	app := newTestRun(t)
 	if strings.Contains(strings.ToLower(agentdoc.Body()), "paste") {
 		t.Error("the agent block mentions paste")
 	}
 	var all []*cobra.Command
-	walkTree(rootCmd, func(c *cobra.Command) { all = append(all, c) })
+	walkTree(app.root, func(c *cobra.Command) { all = append(all, c) })
 	for _, c := range all {
 		path := c.CommandPath()
 		t.Run(path, func(t *testing.T) {
 			var out bytes.Buffer
-			rootCmd.SetOut(&out)
-			defer rootCmd.SetOut(nil)
-			if _, err := runRoot(t, append(strings.Fields(path)[1:], "--help")...); err != nil {
+			_, root := app.fresh()
+			root.SetOut(&out)
+			root.SetArgs(append(strings.Fields(path)[1:], "--help"))
+			if err := root.ExecuteContext(t.Context()); err != nil {
 				t.Fatalf("--help: %v", err)
 			}
 			if out.Len() == 0 {

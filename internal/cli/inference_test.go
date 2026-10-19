@@ -49,13 +49,14 @@ func scriptedJobWaitDeps(
 }
 
 func TestWaitForJobTerminalSucceeded(t *testing.T) {
+	app := newTestRun(t)
 	var progress bytes.Buffer
 	d := scriptedJobWaitDeps([]inferenceendpoints.Status{
 		inferenceendpoints.STATUS_PENDING,
 		inferenceendpoints.STATUS_RUNNING,
 		inferenceendpoints.STATUS_SUCCEEDED,
 	}, &progress)
-	job, cerr := waitForJobTerminal(t.Context(), app, d, "job-1", time.Minute, time.Second)
+	job, cerr := waitForJobTerminal(t.Context(), app.App, d, "job-1", time.Minute, time.Second)
 	if cerr != nil {
 		t.Fatalf("waitForJobTerminal: %v", cerr)
 	}
@@ -76,12 +77,13 @@ func TestWaitForJobTerminalSucceeded(t *testing.T) {
 }
 
 func TestWaitForJobTerminalFailed(t *testing.T) {
+	app := newTestRun(t)
 	var progress bytes.Buffer
 	d := scriptedJobWaitDeps([]inferenceendpoints.Status{
 		inferenceendpoints.STATUS_PENDING,
 		inferenceendpoints.STATUS_FAILED,
 	}, &progress)
-	job, cerr := waitForJobTerminal(t.Context(), app, d, "job-1", time.Minute, time.Second)
+	job, cerr := waitForJobTerminal(t.Context(), app.App, d, "job-1", time.Minute, time.Second)
 	if cerr == nil {
 		t.Fatal("waitForJobTerminal = nil error, want a failure naming the status")
 	}
@@ -97,11 +99,12 @@ func TestWaitForJobTerminalFailed(t *testing.T) {
 }
 
 func TestWaitForJobTerminalTimeout(t *testing.T) {
+	app := newTestRun(t)
 	var progress bytes.Buffer
 	d := scriptedJobWaitDeps([]inferenceendpoints.Status{
 		inferenceendpoints.STATUS_RUNNING,
 	}, &progress)
-	_, cerr := waitForJobTerminal(t.Context(), app, d, "job-1", 10*time.Second, 5*time.Second)
+	_, cerr := waitForJobTerminal(t.Context(), app.App, d, "job-1", 10*time.Second, 5*time.Second)
 	if cerr == nil {
 		t.Fatal("waitForJobTerminal = nil error, want wait_timeout")
 	}
@@ -116,6 +119,7 @@ func TestWaitForJobTerminalTimeout(t *testing.T) {
 // TestWaitForJobTransientErrorsKeepPolling: network/5xx errors must warn and
 // continue; the wait still succeeds once the job does.
 func TestWaitForJobTransientErrorsKeepPolling(t *testing.T) {
+	app := newTestRun(t)
 	var progress bytes.Buffer
 	clock := time.Date(2026, time.September, 2, 0, 0, 0, 0, time.UTC)
 	calls := 0
@@ -136,7 +140,7 @@ func TestWaitForJobTransientErrorsKeepPolling(t *testing.T) {
 		progress: &progress,
 		label:    "waiting",
 	}
-	job, cerr := waitForJobTerminal(t.Context(), app, d, "job-1", time.Minute, time.Second)
+	job, cerr := waitForJobTerminal(t.Context(), app.App, d, "job-1", time.Minute, time.Second)
 	if cerr != nil {
 		t.Fatalf("waitForJobTerminal: %v", cerr)
 	}
@@ -151,6 +155,7 @@ func TestWaitForJobTransientErrorsKeepPolling(t *testing.T) {
 // TestWaitForJobFatalErrorAborts: a 404 must abort immediately — waiting
 // longer cannot fix it.
 func TestWaitForJobFatalErrorAborts(t *testing.T) {
+	app := newTestRun(t)
 	d := jobWaitDeps[inferenceendpoints.InferenceEndpointJob]{
 		view: inferenceJobView,
 		get: func(_ context.Context) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
@@ -160,7 +165,7 @@ func TestWaitForJobFatalErrorAborts(t *testing.T) {
 		sleep: func(_ context.Context, _ time.Duration) error { return nil },
 		label: "waiting",
 	}
-	_, cerr := waitForJobTerminal(t.Context(), app, d, "job-1", time.Minute, time.Second)
+	_, cerr := waitForJobTerminal(t.Context(), app.App, d, "job-1", time.Minute, time.Second)
 	if cerr == nil || cerr.Code != clierr.CodeNotFound {
 		t.Fatalf("error = %v, want the not_found error passed through", cerr)
 	}
@@ -185,6 +190,7 @@ func TestCompactJSON(t *testing.T) {
 // mode (the caller asked for more than one listing returns), below it in
 // table mode when --limit kept the newest.
 func TestJobsLimitNote(t *testing.T) {
+	app := newTestRun(t)
 	for _, tc := range []struct {
 		mode         string
 		shown, limit int
@@ -218,7 +224,7 @@ func TestJobsLimitNote(t *testing.T) {
 			)
 		}
 	}
-	setOutputMode(t, "table")
+	app.setOutputMode(t, "table")
 }
 
 // TestJobTablesShareTheirWording: both job tables word the events row the

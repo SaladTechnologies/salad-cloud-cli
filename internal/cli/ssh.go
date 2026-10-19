@@ -314,6 +314,7 @@ func lastLine(s string) string {
 
 func (app *App) runChildWith(stdout, stderr io.Writer, name string, args []string) *clierr.Error {
 	child := exec.Command(name, args...)
+	child.Env = app.Environ()
 	child.Stdin = app.Stdin
 	child.Stdout = stdout
 	child.Stderr = stderr

@@ -40,6 +40,7 @@ func TestStrOrNil(t *testing.T) {
 // other, {"items": [...]} with the path beside it; every config key has an
 // entry, and an unset value is null, never a missing entry.
 func TestConfigListResultStableJSONShape(t *testing.T) {
+	app := newTestRun(t)
 	data, err := json.Marshal(app.configListOf(config.File{}, "/tmp/config.json"))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -79,14 +80,15 @@ func TestConfigListResultStableJSONShape(t *testing.T) {
 // TestConfigListEmitsItems runs the command: values set in the file appear
 // in their entries, the API key masked.
 func TestConfigListEmitsItems(t *testing.T) {
-	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
+	app := newTestRun(t)
+	app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
 	if err := config.Save(
 		app.Env,
 		config.File{APIKey: "salad_cloud_user_1234567890", Organization: "my-org"},
 	); err != nil {
 		t.Fatal(err)
 	}
-	out, err := runRoot(t, "config", "list", "-o", "json")
+	out, err := app.runRoot(t, "config", "list", "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}

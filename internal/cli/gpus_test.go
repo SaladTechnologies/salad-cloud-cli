@@ -16,10 +16,11 @@ import (
 // TestGpusGetNamesTheClass: 'gpus get' takes the class as its argument, so
 // a name that resolves to several names the class, not --gpu.
 func TestGpusGetNamesTheClass(t *testing.T) {
-	stubAPI(t, map[string]string{"/gpu-classes": `{"items":[` +
+	app := newTestRun(t)
+	app.stubAPI(t, map[string]string{"/gpu-classes": `{"items":[` +
 		`{"id":"11111111-1111-4111-8111-111111111111","name":"RTX 3060 (12 GB)"},` +
 		`{"id":"22222222-2222-4222-8222-222222222222","name":"RTX 3060 Ti (8 GB)"}]}`})
-	_, err := runRoot(t, "gpus", "get", "3060")
+	_, err := app.runRoot(t, "gpus", "get", "3060")
 	var cerr *clierr.Error
 	ok := errors.As(err, &cerr)
 	if !ok || cerr.Code != clierr.CodeInvalidInput ||

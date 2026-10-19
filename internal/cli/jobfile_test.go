@@ -16,6 +16,7 @@ import (
 // fails on its first field (`unknown field "prompt"`), so the error also
 // says what a job file looks like, without changing its exit code or kind.
 func TestLoadJobFileShapeHint(t *testing.T) {
+	app := newTestRun(t)
 	dir := t.TempDir()
 	write := func(name, body string) string {
 		p := filepath.Join(dir, name)

@@ -11,6 +11,7 @@ import (
 // TestValidateCommand: the words after -- reach the node unchanged, where
 // the first runs as the program in place of the image's ENTRYPOINT and CMD.
 func TestValidateCommand(t *testing.T) {
+	app := newTestRun(t)
 	tests := []struct {
 		name     string
 		words    []string
@@ -52,12 +53,13 @@ func TestValidateCommand(t *testing.T) {
 // TestValidateCommandGitBash: rewritten words are caught only under Git Bash,
 // and never inside a script word, whose text is literal.
 func TestValidateCommandGitBash(t *testing.T) {
+	app := newTestRun(t)
 	rewritten := []string{"C:/Program-Files/Git/usr/bin/bash", "-c", "x"}
-	t.Setenv("MSYSTEM", "")
+	app.setenv("MSYSTEM", "")
 	if cerr := app.validateCommand(rewritten, true); cerr != nil {
 		t.Errorf("outside Git Bash: %v", cerr)
 	}
-	t.Setenv("MSYSTEM", "MINGW64")
+	app.setenv("MSYSTEM", "MINGW64")
 	for _, words := range [][]string{rewritten, {"configure", "--prefix=C:/Program-Files/Git/usr"}} {
 		if cerr := app.validateCommand(
 			words,
@@ -75,7 +77,8 @@ func TestValidateCommandGitBash(t *testing.T) {
 // TestWarnCommand: a spaced first word and saladcloud's own flags after --
 // draw a warning; ordinary commands do not.
 func TestWarnCommand(t *testing.T) {
-	create, _, err := rootCmd.Find([]string{"container-groups", "create"})
+	app := newTestRun(t)
+	create, _, err := app.root.Find([]string{"container-groups", "create"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,9 +115,10 @@ func make101() []string {
 // TestCreateSendsCommand: the words after -- become container.command,
 // exactly as given, and a positional after them is not taken for the name.
 func TestCreateSendsCommand(t *testing.T) {
-	posted := stubCreate(t)
+	app := newTestRun(t)
+	posted := app.stubCreate(t)
 	script := `echo "hi there"; sleep 5`
-	_, err := runRoot(t, "container-groups", "create", "new", "--image", "busybox:1.36", "--no-autostart",
+	_, err := app.runRoot(t, "container-groups", "create", "new", "--image", "busybox:1.36", "--no-autostart",
 		"-o", "json", "--", "sh", "-c", script)
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -130,14 +134,14 @@ func TestCreateSendsCommand(t *testing.T) {
 
 // TestCreateCommandArgs: one positional before --, any number after.
 func TestCreateCommandArgs(t *testing.T) {
-	_, err := runRoot(t, "container-groups", "create", "a", "b", "--image", "x", "--", "sleep", "1")
+	app := newTestRun(t)
+	_, err := app.runRoot(t, "container-groups", "create", "a", "b", "--image", "x", "--", "sleep", "1")
 	var cerr *clierr.Error
 	ok := errors.As(err, &cerr)
 	if !ok || cerr.Code != clierr.CodeUsage || !strings.Contains(cerr.Message, `unexpected argument "b"`) {
 		t.Errorf("two positionals: %v", err)
 	}
-	resetFlags(t)
-	_, err = runRoot(t, "container-groups", "update", "a", "--")
+	_, err = app.runRoot(t, "container-groups", "update", "a", "--")
 	if !errors.As(err, &cerr) || !strings.Contains(cerr.Message, "nothing after --") {
 		t.Errorf("update with nothing after --: %v", err)
 	}

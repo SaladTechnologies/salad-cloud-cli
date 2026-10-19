@@ -9,32 +9,18 @@ import (
 // runComplete runs cobra's hidden __complete command, as the shell scripts
 // do, and returns its stdout and stderr: cobra's writer and the process's
 // own stderr, where the CLI's notes and warnings go.
-func runComplete(t *testing.T, args ...string) (stdout, stderr string) {
+func (app *testRun) runComplete(t *testing.T, args ...string) (stdout, stderr string) {
 	t.Helper()
-	var out, errBuf bytes.Buffer
-	rootCmd.SetOut(&out)
-	rootCmd.SetErr(&errBuf)
-	t.Cleanup(func() {
-		rootCmd.SetOut(nil)
-		rootCmd.SetErr(nil)
-		// cobra adds __complete to the tree for the run that calls it and
-		// leaves it there; a real process exits after one run.
-		if c, _, err := rootCmd.Find([]string{"__complete"}); err == nil && c != rootCmd {
-			rootCmd.RemoveCommand(c)
-		}
-		resetRun(t)
-	})
-	var cliErr bytes.Buffer
-	oldStderr := app.Stderr
-	app.Stderr = &cliErr
-	rootCmd.SetArgs(append([]string{"__complete"}, args...))
-	execErr := rootCmd.Execute()
-	app.Stderr = oldStderr
-	written := cliErr.String()
-	if execErr != nil {
-		t.Fatalf("__complete %v: %v", args, execErr)
+	var out, errBuf, cliErr bytes.Buffer
+	a, root := app.fresh()
+	a.Stderr = &cliErr
+	root.SetOut(&out)
+	root.SetErr(&errBuf)
+	root.SetArgs(append([]string{"__complete"}, args...))
+	if err := root.ExecuteContext(t.Context()); err != nil {
+		t.Fatalf("__complete %v: %v", args, err)
 	}
-	return out.String(), errBuf.String() + written
+	return out.String(), errBuf.String() + cliErr.String()
 }
 
 // cliStderr drops cobra's own "Completion ended with directive" line, which
@@ -50,10 +36,11 @@ func cliStderr(stderr string) string {
 }
 
 func TestCompleteInstanceIDsSilently(t *testing.T) {
-	stubAPI(t, map[string]string{
+	app := newTestRun(t)
+	app.stubAPI(t, map[string]string{
 		"/containers/my-app/instances": `{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37"},{"id":"1111aaaa-01c2-4a29-9c4d-52c7e5a44e37"}]}`,
 	})
-	out, stderr := runComplete(t, "container-groups", "instances", "get", "-c", "my-app", "")
+	out, stderr := app.runComplete(t, "container-groups", "instances", "get", "-c", "my-app", "")
 	if !strings.Contains(out, "8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37") || !strings.Contains(out, "1111aaaa") {
 		t.Errorf("candidates = %q, want both instance ids", out)
 	}
@@ -64,9 +51,10 @@ func TestCompleteInstanceIDsSilently(t *testing.T) {
 
 // With no API key, completion offers nothing and still says nothing.
 func TestCompleteWithoutKeyIsEmptyAndSilent(t *testing.T) {
-	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	t.Setenv("SALAD_API_KEY", "")
-	out, stderr := runComplete(t, "container-groups", "get", "")
+	app := newTestRun(t)
+	app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
+	app.setenv("SALAD_API_KEY", "")
+	out, stderr := app.runComplete(t, "container-groups", "get", "")
 	if lines := strings.Split(strings.TrimSpace(out), "\n"); len(lines) != 1 || !strings.HasPrefix(lines[0], ":") {
 		t.Errorf("candidates = %q, want none (only the directive line)", out)
 	}
@@ -76,13 +64,14 @@ func TestCompleteWithoutKeyIsEmptyAndSilent(t *testing.T) {
 }
 
 func TestCompleteEnumFlags(t *testing.T) {
-	out, _ := runComplete(t, "container-groups", "create", "x", "--priority", "")
+	app := newTestRun(t)
+	out, _ := app.runComplete(t, "container-groups", "create", "x", "--priority", "")
 	for _, want := range []string{"high", "medium", "low", "batch"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--priority candidates = %q, want %s", out, want)
 		}
 	}
-	out, _ = runComplete(t, "gpus", "list", "-o", "y")
+	out, _ = app.runComplete(t, "gpus", "list", "-o", "y")
 	if !strings.Contains(out, "yaml") || strings.Contains(out, "json") {
 		t.Errorf("-o y candidates = %q, want yaml only", out)
 	}
@@ -91,9 +80,10 @@ func TestCompleteEnumFlags(t *testing.T) {
 // The project fallback and other notes stay off stderr during completion,
 // where the shell would print them under the prompt.
 func TestCompleteWithProjectFallbackIsSilent(t *testing.T) {
-	stubAPI(t, map[string]string{"/containers": `{"items":[{"name":"my-app"}]}`})
-	t.Setenv("SALAD_PROJECT", "")
-	out, stderr := runComplete(t, "container-groups", "get", "")
+	app := newTestRun(t)
+	app.stubAPI(t, map[string]string{"/containers": `{"items":[{"name":"my-app"}]}`})
+	app.setenv("SALAD_PROJECT", "")
+	out, stderr := app.runComplete(t, "container-groups", "get", "")
 	if !strings.Contains(out, "my-app") {
 		t.Errorf("candidates = %q, want my-app", out)
 	}

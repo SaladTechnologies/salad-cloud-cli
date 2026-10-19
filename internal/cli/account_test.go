@@ -11,7 +11,7 @@ import (
 )
 
 // stubAPI serves canned responses by path suffix and points the CLI at it.
-func stubAPI(t *testing.T, routes map[string]string) {
+func (app *testRun) stubAPI(t *testing.T, routes map[string]string) {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		for suffix, body := range routes {
@@ -23,20 +23,21 @@ func stubAPI(t *testing.T, routes map[string]string) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
-	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	t.Setenv("SALAD_API_KEY", "salad_cloud_user_test0000")
-	t.Setenv("SALAD_ORGANIZATION", "my-org")
-	t.Setenv("SALAD_PROJECT", "default")
+	app.setenv("SALAD_CLI_API_BASE_URL", srv.URL)
+	app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
+	app.setenv("SALAD_API_KEY", "salad_cloud_user_test0000")
+	app.setenv("SALAD_ORGANIZATION", "my-org")
+	app.setenv("SALAD_PROJECT", "default")
 }
 
 const orgsBody = `{"items":[{"organization_name":"my-org","display_name":"My ` +
 	`Org","organization_id":"o-1","create_time":"2026-01-01T00:00:00Z"}]}`
 
 func TestOrgsListAndGet(t *testing.T) {
-	stubAPI(t, map[string]string{"/v1/organizations": orgsBody})
+	app := newTestRun(t)
+	app.stubAPI(t, map[string]string{"/v1/organizations": orgsBody})
 
-	out, err := runRoot(t, "orgs", "list", "-o", "json")
+	out, err := app.runRoot(t, "orgs", "list", "-o", "json")
 	if err != nil {
 		t.Fatalf("orgs list: %v", err)
 	}
@@ -49,7 +50,7 @@ func TestOrgsListAndGet(t *testing.T) {
 	if _, present := list.Items[0]["update_time"]; !present {
 		t.Errorf("update_time missing; every key is present: %v", list.Items[0])
 	}
-	out, err = runRoot(
+	out, err = app.runRoot(
 		t,
 		"orgs",
 		"list",
@@ -60,23 +61,24 @@ func TestOrgsListAndGet(t *testing.T) {
 		!strings.Contains(out, "My Org") {
 		t.Errorf("orgs list table = %q (%v)", out, err)
 	}
-	if out, err = runRoot(t, "orgs", "get", "my-org", "-o", "table"); err != nil || !strings.Contains(out, "o-1") {
+	if out, err = app.runRoot(t, "orgs", "get", "my-org", "-o", "table"); err != nil || !strings.Contains(out, "o-1") {
 		t.Errorf("orgs get table = %q (%v)", out, err)
 	}
-	if _, err = runRoot(t, "orgs", "get", "other-org"); err == nil || !strings.Contains(err.Error(), "not found") {
+	if _, err = app.runRoot(t, "orgs", "get", "other-org"); err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("orgs get of an unlisted org = %v, want not found", err)
 	}
 }
 
 func TestQuotasGet(t *testing.T) {
-	stubAPI(
+	app := newTestRun(t)
+	app.stubAPI(
 		t,
 		map[string]string{
 			"/quotas": `{"container_groups_quotas":{"container_replicas_quota":10,"container_replicas_used":3}}`,
 		},
 	)
 
-	out, err := runRoot(t, "quotas", "get", "-o", "json")
+	out, err := app.runRoot(t, "quotas", "get", "-o", "json")
 	if err != nil {
 		t.Fatalf("quotas get: %v", err)
 	}
@@ -91,7 +93,7 @@ func TestQuotasGet(t *testing.T) {
 	if _, present := q["max_container_group_restarts_per_minute"]; !present {
 		t.Errorf("an absent quota renders null, not missing: %v", q)
 	}
-	out, err = runRoot(
+	out, err = app.runRoot(
 		t,
 		"quotas",
 		"get",
@@ -107,8 +109,9 @@ func TestQuotasGet(t *testing.T) {
 // A 200 whose rows have no organization_name means the endpoint changed
 // shape: whoami reports the listing as unavailable, not as zero orgs.
 func TestWhoamiNamelessOrgRowsAreUnknown(t *testing.T) {
-	stubAPI(t, map[string]string{"/v1/organizations": `{"items":[{"id":"x"}]}`, "/quotas": `{}`})
-	out, err := runRoot(t, "whoami", "-o", "json", "--org", "", "--project", "")
+	app := newTestRun(t)
+	app.stubAPI(t, map[string]string{"/v1/organizations": `{"items":[{"id":"x"}]}`, "/quotas": `{}`})
+	out, err := app.runRoot(t, "whoami", "-o", "json", "--org", "", "--project", "")
 	if err != nil {
 		t.Fatalf("whoami: %v", err)
 	}
@@ -123,14 +126,15 @@ func TestWhoamiNamelessOrgRowsAreUnknown(t *testing.T) {
 
 // logout removes the key and leaves the organization and project.
 func TestLogoutKeepsContext(t *testing.T) {
-	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	t.Setenv("SALAD_API_KEY", "")
+	app := newTestRun(t)
+	app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
+	app.setenv("SALAD_API_KEY", "")
 	if err := config.Save(app.Env,
 		config.File{APIKey: "k", Organization: "my-org", Project: "p", GatewayAPIKey: "g"},
 	); err != nil {
 		t.Fatal(err)
 	}
-	out, err := runRoot(t, "logout", "-o", "json")
+	out, err := app.runRoot(t, "logout", "-o", "json")
 	if err != nil {
 		t.Fatalf("logout: %v", err)
 	}
@@ -142,7 +146,7 @@ func TestLogoutKeepsContext(t *testing.T) {
 	if f.APIKey != "" || f.Organization != "my-org" || f.Project != "p" || f.GatewayAPIKey != "g" {
 		t.Errorf("after logout the config is %+v; only the API key goes", f)
 	}
-	if _, err := runRoot(t, "ai-gateway", "logout"); err != nil {
+	if _, err := app.runRoot(t, "ai-gateway", "logout"); err != nil {
 		t.Fatalf("ai-gateway logout: %v", err)
 	}
 	if f = must(config.Load(app.Env))(t); f.GatewayAPIKey != "" || f.Organization != "my-org" {

@@ -16,7 +16,7 @@ const (
 // stubAvailability answers the GPU class list and the availability queries:
 // a one-class query gets on_call_gpu 7, a query for several gets 99, so the
 // combined row can only be the platform's own answer, never a sum (14).
-func stubAvailability(t *testing.T) *[]int {
+func (app *testRun) stubAvailability(t *testing.T) *[]int {
 	t.Helper()
 	var classCounts []int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -44,14 +44,15 @@ func stubAvailability(t *testing.T) *[]int {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	stubAPI(t, nil)
-	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
+	app.stubAPI(t, nil)
+	app.setenv("SALAD_CLI_API_BASE_URL", srv.URL)
 	return &classCounts
 }
 
 func TestAvailabilityCombinedIsThePlatformsAnswer(t *testing.T) {
-	counts := stubAvailability(t)
-	out, err := runRoot(t, "availability", "--gpu", classA, "--gpu", classB, "-o", "json")
+	app := newTestRun(t)
+	counts := app.stubAvailability(t)
+	out, err := app.runRoot(t, "availability", "--gpu", classA, "--gpu", classB, "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,8 +78,9 @@ func TestAvailabilityCombinedIsThePlatformsAnswer(t *testing.T) {
 }
 
 func TestAvailabilityOneClassHasNullCombined(t *testing.T) {
-	stubAvailability(t)
-	out, err := runRoot(t, "availability", "--gpu", classA, "-o", "json")
+	app := newTestRun(t)
+	app.stubAvailability(t)
+	out, err := app.runRoot(t, "availability", "--gpu", classA, "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,8 +92,9 @@ func TestAvailabilityOneClassHasNullCombined(t *testing.T) {
 }
 
 func TestAvailabilityCombinedTableRow(t *testing.T) {
-	stubAvailability(t)
-	out, err := runRoot(t, "availability", "--gpu", classA, "--gpu", classB)
+	app := newTestRun(t)
+	app.stubAvailability(t)
+	out, err := app.runRoot(t, "availability", "--gpu", classA, "--gpu", classB)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,8 +106,9 @@ func TestAvailabilityCombinedTableRow(t *testing.T) {
 // A CPU-only answer carries combined too, always null, so .combined exists
 // in every availability document.
 func TestAvailabilityCPUHasNullCombined(t *testing.T) {
-	stubAvailability(t)
-	out, err := runRoot(t, "availability", "--cpu", "2", "-o", "json")
+	app := newTestRun(t)
+	app.stubAvailability(t)
+	out, err := app.runRoot(t, "availability", "--cpu", "2", "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,8 +122,9 @@ func TestAvailabilityCPUHasNullCombined(t *testing.T) {
 // TestAvailabilityOnCallColumn: the table shows ON-CALL only when a row
 // reports an on-call count other than 0; the JSON keeps the field.
 func TestAvailabilityOnCallColumn(t *testing.T) {
-	stubAvailability(t) // on-call counts 7 and 99
-	if out, err := runRoot(
+	app := newTestRun(t)
+	app.stubAvailability(t) // on-call counts 7 and 99
+	if out, err := app.runRoot(
 		t,
 		"availability",
 		"--gpu",
@@ -142,14 +147,14 @@ func TestAvailabilityOnCallColumn(t *testing.T) {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
+	app.setenv("SALAD_CLI_API_BASE_URL", srv.URL)
 	for _, args := range [][]string{{"availability", "--gpu", classA}, {"availability", "--cpu", "2"}} {
-		out, err := runRoot(t, append(args, "-o", "table")...)
+		out, err := app.runRoot(t, append(args, "-o", "table")...)
 		if err != nil || strings.Contains(out, "ON-CALL") || !strings.Contains(out, "BATCH") {
 			t.Errorf("%v with on-call 0: err %v, table:\n%s", args, err, out)
 		}
 	}
-	out, err := runRoot(t, "availability", "--gpu", classA, "-o", "json")
+	out, err := app.runRoot(t, "availability", "--gpu", classA, "-o", "json")
 	if err != nil || !strings.Contains(out, `"on_call_gpu": 0`) {
 		t.Errorf("json drops on_call_gpu: err %v\n%s", err, out)
 	}

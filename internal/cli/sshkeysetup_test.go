@@ -7,35 +7,29 @@ import (
 	"testing"
 )
 
-// stubKeygen makes app.GenerateKey write a key pair instead of running
+// stubKeygen makes GenerateKey write a key pair instead of running
 // ssh-keygen, and ssh-keygen present or not.
-func stubKeygen(t *testing.T, installed bool) {
-	t.Helper()
-	oldGen, oldLook := app.GenerateKey, app.LookPath
-	app.GenerateKey = func(keyPath string) error {
+func stubKeygen(d *Deps, installed bool) {
+	d.GenerateKey = func(keyPath string) error {
 		if err := os.WriteFile(keyPath, []byte("private"), 0o600); err != nil {
 			return err
 		}
 		return os.WriteFile(keyPath+".pub", []byte("ssh-ed25519 AAAAgenerated saladcloud-cli\n"), 0o600)
 	}
-	app.LookPath = func(name string) (string, error) {
+	d.LookPath = func(name string) (string, error) {
 		if installed {
 			return "/usr/bin/" + name, nil
 		}
 		return "", errors.New("not found")
 	}
-	t.Cleanup(func() { app.GenerateKey, app.LookPath = oldGen, oldLook })
 }
 
-func stubPassphrase(t *testing.T, has bool) {
-	t.Helper()
-	old := app.HasPassphrase
-	app.HasPassphrase = func(string) (bool, bool) { return has, true }
-	t.Cleanup(func() { app.HasPassphrase = old })
+// stubPassphrase makes every key passphrase-protected or not.
+func stubPassphrase(d *Deps, has bool) {
+	d.HasPassphrase = func(string) (bool, bool) { return has, true }
 }
 
 func TestSSHKeySetupBranches(t *testing.T) {
-	stubKeygen(t, true)
 	own := filepath.Join("<home>", ".ssh", "saladcloud_ed25519")
 	found := filepath.Join("<home>", ".ssh", "id_ed25519")
 	setup := []string{"ssh-key", "setup"}
@@ -57,8 +51,7 @@ func TestSSHKeySetupBranches(t *testing.T) {
 		"ok":             true,
 	}
 	t.Run("no passphrase", func(t *testing.T) {
-		stubPassphrase(t, false)
-		runBranches(t, []branchCase{
+		runBranches(t, withDeps(func(d *Deps) { stubKeygen(d, true); stubPassphrase(d, false) }, []branchCase{
 			{
 				id:     "no key, Enter",
 				s:      session{args: setup, tty: []string{""}},
@@ -138,15 +131,14 @@ func TestSSHKeySetupBranches(t *testing.T) {
 				stderr: "saladcloud: error: cannot generate a key: " +
 					"" + own + " already exists\nhint: register " + own + ".pub, or remove it to generate a new one\n",
 			},
-		})
+		}))
 	})
 	t.Run("a passphrase", func(t *testing.T) {
-		stubPassphrase(t, true)
 		warn := "warning: " + found + " has a passphrase, which cp and one-shot ssh commands cannot ask for\nhint: " +
 			"to use it with those, run ssh-add " + found + " first\n"
 		offer := "Generate a key without a passphrase at " + own + "? The CLI will use it instead, and registering " +
 			"it replaces your account's current key. [y/N]: "
-		runBranches(t, []branchCase{
+		runBranches(t, withDeps(func(d *Deps) { stubKeygen(d, true); stubPassphrase(d, true) }, []branchCase{
 			{
 				id:     "Enter keeps the found key",
 				s:      session{args: setup, sshKey: true, tty: []string{""}},
@@ -181,18 +173,16 @@ func TestSSHKeySetupBranches(t *testing.T) {
 				stderr: "warning: " + own + " has a passphrase, which cp and one-shot ssh commands cannot ask " +
 					"for\nhint: to use it with those, run ssh-add " + own + " first\n" + connect,
 			},
-		})
+		}))
 	})
 	t.Run("ssh-keygen missing", func(t *testing.T) {
-		stubKeygen(t, false)
-		stubPassphrase(t, false)
 		for _, tc := range []struct{ os, hint string }{
 			{"windows", "add the OpenSSH Client optional feature in Windows Settings, then open a new terminal"},
 			{"darwin", "macOS includes it at /usr/bin/ssh-keygen; check that /usr/bin is on your PATH"},
 			{"linux", "install your distribution's OpenSSH client (openssh-client on Debian and Ubuntu, " +
 				"openssh-clients on Fedora)"},
 		} {
-			runBranches(t, []branchCase{
+			runBranches(t, withDeps(func(d *Deps) { stubKeygen(d, false); stubPassphrase(d, false) }, []branchCase{
 				{
 					id:     tc.os,
 					s:      session{args: []string{"ssh-key", "setup", "--generate"}, os: tc.os},
@@ -200,7 +190,7 @@ func TestSSHKeySetupBranches(t *testing.T) {
 					kind:   "api_error",
 					stderr: "saladcloud: error: ssh-keygen not found\nhint: " + tc.hint + "\n",
 				},
-			})
+			}))
 		}
 	})
 }

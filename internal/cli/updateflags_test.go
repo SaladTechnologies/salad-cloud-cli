@@ -143,7 +143,8 @@ func TestValidateUpdateFlags(t *testing.T) {
 // TestUpdateWithNothingToDoIsUsage: no -f and no flag is a usage error,
 // before any client or API work.
 func TestUpdateWithNothingToDoIsUsage(t *testing.T) {
-	_, err := runRoot(t, "container-groups", "update", "my-app")
+	app := newTestRun(t)
+	_, err := app.runRoot(t, "container-groups", "update", "my-app")
 	var cerr *clierr.Error
 	ok := errors.As(err, &cerr)
 	if !ok || cerr.Code != clierr.CodeUsage {

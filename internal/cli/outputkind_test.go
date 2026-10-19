@@ -93,6 +93,7 @@ var outputKinds = map[string]outputKind{
 }
 
 func TestEveryLeafDeclaresItsOutputKind(t *testing.T) {
+	app := newTestRun(t)
 	seen := make(map[string]bool)
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {
@@ -108,7 +109,7 @@ func TestEveryLeafDeclaresItsOutputKind(t *testing.T) {
 			walk(s)
 		}
 	}
-	walk(rootCmd)
+	walk(app.root)
 
 	var stale []string
 	for path := range outputKinds {

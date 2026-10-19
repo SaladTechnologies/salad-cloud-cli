@@ -20,7 +20,7 @@ const probeSource = `{"id":"g-1","name":"src","display_name":"src","organization
 "current_state":{"status":"stopped"},"version":1}`
 
 // stubCreate serves create's calls and records the POST body.
-func stubCreate(t *testing.T) *[]byte {
+func (app *testRun) stubCreate(t *testing.T) *[]byte {
 	t.Helper()
 	var posted []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -38,11 +38,11 @@ func stubCreate(t *testing.T) *[]byte {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
-	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	t.Setenv("SALAD_API_KEY", "salad_cloud_user_test0000")
-	t.Setenv("SALAD_ORGANIZATION", "my-org")
-	t.Setenv("SALAD_PROJECT", "default")
+	app.setenv("SALAD_CLI_API_BASE_URL", srv.URL)
+	app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
+	app.setenv("SALAD_API_KEY", "salad_cloud_user_test0000")
+	app.setenv("SALAD_ORGANIZATION", "my-org")
+	app.setenv("SALAD_PROJECT", "default")
 	return &posted
 }
 
@@ -58,7 +58,8 @@ func postedPath(t *testing.T, body []byte, path string) (any, bool) {
 // An empty list in a definition file reaches the API: the SDK's omitempty
 // used to drop it, and the API rejects an HTTP probe without its headers.
 func TestCreateSendsEmptyListsFromFile(t *testing.T) {
-	posted := stubCreate(t)
+	app := newTestRun(t)
+	posted := app.stubCreate(t)
 	file := filepath.Join(t.TempDir(), "g.yaml")
 	def := "readiness_probe:\n  http: {path: /, port: 8000, scheme: http, headers: []}\n" +
 		"  initial_delay_seconds: 0\n  period_seconds: 5\n  timeout_seconds: 2\n  success_threshold: 1\n  " +
@@ -66,7 +67,7 @@ func TestCreateSendsEmptyListsFromFile(t *testing.T) {
 	if err := os.WriteFile(file, []byte(def), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runRoot(
+	if _, err := app.runRoot(
 		t,
 		"container-groups",
 		"create",
@@ -92,8 +93,9 @@ func TestCreateSendsEmptyListsFromFile(t *testing.T) {
 
 // --from sends back the empty lists the API returned for the source.
 func TestCreateFromKeepsSourceEmptyLists(t *testing.T) {
-	posted := stubCreate(t)
-	_, err := runRoot(
+	app := newTestRun(t)
+	posted := app.stubCreate(t)
+	_, err := app.runRoot(
 		t,
 		"container-groups",
 		"create",
@@ -117,10 +119,11 @@ func TestCreateFromKeepsSourceEmptyLists(t *testing.T) {
 // A create that connects a queue says on stderr that the image must run the
 // worker, since nothing reports a missing one; one without a queue does not.
 func TestCreateQueueNotesTheWorker(t *testing.T) {
-	stubCreate(t)
+	app := newTestRun(t)
+	app.stubCreate(t)
 	var err error
-	errOut := captureStderr(t, func() {
-		_, err = runRoot(t, "container-groups", "create", "new", "--image", "busybox:1.36", "--no-autostart",
+	errOut := app.captureStderr(t, func() {
+		_, err = app.runRoot(t, "container-groups", "create", "new", "--image", "busybox:1.36", "--no-autostart",
 			"--queue", "jobs", "--queue-port", "8000", "--queue-path", "/", "-o", "json")
 	})
 	if err != nil {
@@ -131,10 +134,9 @@ func TestCreateQueueNotesTheWorker(t *testing.T) {
 		t.Errorf("stderr = %q, want the worker note", errOut)
 	}
 
-	resetFlags(t) // the first run's --queue would otherwise carry over
-	stubCreate(t)
-	errOut = captureStderr(t, func() {
-		_, err = runRoot(
+	app.stubCreate(t)
+	errOut = app.captureStderr(t, func() {
+		_, err = app.runRoot(
 			t,
 			"container-groups",
 			"create",

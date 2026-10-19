@@ -96,6 +96,7 @@ func TestDescribeNotFound(t *testing.T) {
 // missing one the same way, cp and ssh included (they list the group's
 // instances first, and used to print the API's bare "Not Found").
 func TestGroupNotFoundEverywhere(t *testing.T) {
+	app := newTestRun(t)
 	want := `container group "nosuch" not found in my-org/default`
 	for _, args := range [][]string{
 		{"cg", "get", "nosuch"},
@@ -105,8 +106,8 @@ func TestGroupNotFoundEverywhere(t *testing.T) {
 		{"cg", "logs", "nosuch", "--instance", "8a2f"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			stubAPI(t, map[string]string{quotasRoute: `{}`}) // the organization exists
-			_, err := runRoot(t, args...)
+			app.stubAPI(t, map[string]string{quotasRoute: `{}`}) // the organization exists
+			_, err := app.runRoot(t, args...)
 			var cerr *clierr.Error
 			ok := errors.As(err, &cerr)
 			if !ok || cerr.Code != clierr.CodeNotFound || cerr.Message != want ||

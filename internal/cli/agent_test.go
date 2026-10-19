@@ -15,9 +15,9 @@ import (
 
 // runAgentInitCmd executes `saladcloud agent init <args>` through the real
 // command tree with stdout captured.
-func runAgentInitCmd(t *testing.T, args ...string) (stdout string, err error) {
+func (app *testRun) runAgentInitCmd(t *testing.T, args ...string) (stdout string, err error) {
 	t.Helper()
-	return runRoot(t, append([]string{"agent", "init"}, args...)...)
+	return app.runRoot(t, append([]string{"agent", "init"}, args...)...)
 }
 
 func TestAgentInitResultStableJSONShape(t *testing.T) {
@@ -43,11 +43,12 @@ func TestAgentInitResultStableJSONShape(t *testing.T) {
 }
 
 func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
-	t.Setenv(agentdoc.EnvClaudeCode, "")
+	app := newTestRun(t)
+	app.setenv(agentdoc.EnvClaudeCode, "")
 	dir := t.TempDir()
 
 	// 1. Fresh directory: creates AGENTS.md.
-	out, err := runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
+	out, err := app.runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
 	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
@@ -68,7 +69,7 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 	}
 
 	// 2. Same again: unchanged, file byte-identical, exit 0.
-	out, err = runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
+	out, err = app.runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}
@@ -91,7 +92,7 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(dir, agentdoc.FileAgents), []byte(stale), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	out, err = runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
+	out, err = app.runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
 	if err != nil {
 		t.Fatalf("third run: %v", err)
 	}
@@ -117,9 +118,10 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 }
 
 func TestAgentInitClaudeCodeTargetsCLAUDEmd(t *testing.T) {
-	t.Setenv(agentdoc.EnvClaudeCode, "1")
+	app := newTestRun(t)
+	app.setenv(agentdoc.EnvClaudeCode, "1")
 	dir := t.TempDir()
-	out, err := runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
+	out, err := app.runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,9 +141,10 @@ func TestAgentInitClaudeCodeTargetsCLAUDEmd(t *testing.T) {
 }
 
 func TestAgentInitPrintWritesNothing(t *testing.T) {
-	t.Setenv(agentdoc.EnvClaudeCode, "")
+	app := newTestRun(t)
+	app.setenv(agentdoc.EnvClaudeCode, "")
 	dir := t.TempDir()
-	out, err := runAgentInitCmd(t, "--dir", dir, "--print", "--file=", "-o", "table")
+	out, err := app.runAgentInitCmd(t, "--dir", dir, "--print", "--file=", "-o", "table")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +156,7 @@ func TestAgentInitPrintWritesNothing(t *testing.T) {
 		t.Errorf("--print wrote files: %v", entries)
 	}
 
-	out, err = runAgentInitCmd(t, "--dir", dir, "--print", "--file=", "-o", "json")
+	out, err = app.runAgentInitCmd(t, "--dir", dir, "--print", "--file=", "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,14 +170,15 @@ func TestAgentInitPrintWritesNothing(t *testing.T) {
 }
 
 func TestAgentInitMalformedIsInvalidInput(t *testing.T) {
-	t.Setenv(agentdoc.EnvClaudeCode, "")
+	app := newTestRun(t)
+	app.setenv(agentdoc.EnvClaudeCode, "")
 	dir := t.TempDir()
 	broken := "# Repo\n<!-- SALADCLOUD START (saladcloud agent init 1.0.0) -->\nno end marker\n"
 	p := filepath.Join(dir, agentdoc.FileAgents)
 	if err := os.WriteFile(p, []byte(broken), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
+	_, err := app.runAgentInitCmd(t, "--dir", dir, "--print=false", "--file=", "-o", "json")
 	var ce *clierr.Error
 	if err == nil || !asClierr(err, &ce) || ce.Code != clierr.CodeInvalidInput || ce.Kind != clierr.KindInvalidInput {
 		t.Fatalf("err = %v, want invalid_input exit 6", err)
@@ -186,9 +190,10 @@ func TestAgentInitMalformedIsInvalidInput(t *testing.T) {
 }
 
 func TestAgentInitFileOverrideCreatesParentDir(t *testing.T) {
-	t.Setenv(agentdoc.EnvClaudeCode, "")
+	app := newTestRun(t)
+	app.setenv(agentdoc.EnvClaudeCode, "")
 	dir := t.TempDir()
-	out, err := runAgentInitCmd(t, "--dir", dir, "--print=false", "--file", "docs/AGENTS.md", "-o", "json")
+	out, err := app.runAgentInitCmd(t, "--dir", dir, "--print=false", "--file", "docs/AGENTS.md", "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +210,8 @@ func TestAgentInitFileOverrideCreatesParentDir(t *testing.T) {
 }
 
 func TestAgentInitBadDir(t *testing.T) {
-	_, err := runAgentInitCmd(
+	app := newTestRun(t)
+	_, err := app.runAgentInitCmd(
 		t,
 		"--dir",
 		filepath.Join(t.TempDir(), "missing"),

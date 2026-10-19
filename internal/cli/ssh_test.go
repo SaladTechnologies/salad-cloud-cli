@@ -169,6 +169,7 @@ func TestRemoteCommand(t *testing.T) {
 }
 
 func TestBuildSSHArgsInteractive(t *testing.T) {
+	app := newTestRun(t)
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
 	got := app.buildSSHArgs(target, "root", "", nil)
 	want := []string{
@@ -188,6 +189,7 @@ func TestBuildSSHArgsInteractive(t *testing.T) {
 }
 
 func TestBuildSSHArgsCommandWithIdentityAndUser(t *testing.T) {
+	app := newTestRun(t)
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
 	got := app.buildSSHArgs(target, "worker", "/home/me/.ssh/key", []string{"nvidia-smi", "-L"})
 	want := []string{
@@ -205,6 +207,7 @@ func TestBuildSSHArgsCommandWithIdentityAndUser(t *testing.T) {
 }
 
 func TestBuildSSHArgsCommandIsSingleArg(t *testing.T) {
+	app := newTestRun(t)
 	// The whole remote command must be ONE argv element (the relay execs
 	// raw argv without a shell — fact verified live).
 	target := sshTarget{IP: "203.0.113.7", Port: 22}
@@ -216,6 +219,7 @@ func TestBuildSSHArgsCommandIsSingleArg(t *testing.T) {
 }
 
 func TestRenderSSHConfig(t *testing.T) {
+	app := newTestRun(t)
 	instances := []containergroups.ContainerGroupInstance{
 		testInstance("8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37", "running", "203.0.113.7", 30123),
 		testInstance("bbbb2222", "downloading", "", 0), // not running: excluded
@@ -286,6 +290,7 @@ func TestChildExitCode(t *testing.T) {
 }
 
 func TestRenderSSHConfigEmpty(t *testing.T) {
+	app := newTestRun(t)
 	_, n := app.renderSSHConfig("my-app", nil, "root")
 	if n != 0 {
 		t.Errorf("blocks = %d, want 0", n)
@@ -320,6 +325,7 @@ func TestSessionFailedHintNamesTheKeyLocation(t *testing.T) {
 // TestRenderSSHConfigIdentity: with an identity, every Host block carries
 // IdentityFile so plain ssh and VS Code use the CLI's dedicated key too.
 func TestRenderSSHConfigIdentity(t *testing.T) {
+	app := newTestRun(t)
 	instances := []containergroups.ContainerGroupInstance{
 		testInstance("8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37", "running", "203.0.113.7", 30123),
 	}
@@ -336,6 +342,7 @@ func TestRenderSSHConfigIdentity(t *testing.T) {
 // ssh reads UserKnownHostsFile as a whitespace-separated list of files, so
 // a path with a space (a Windows profile such as "Jane Doe") is quoted.
 func TestHostKeyOptionsQuoteASpacedPath(t *testing.T) {
+	app := newTestRun(t)
 	old := app.KnownHostsPath
 	app.KnownHostsPath = func() string { return `C:\Users\Jane Doe\AppData\Roaming\saladcloud\known_hosts` }
 	t.Cleanup(func() { app.KnownHostsPath = old })
@@ -350,21 +357,13 @@ func TestHostKeyOptionsQuoteASpacedPath(t *testing.T) {
 	}
 }
 
-// TestHelperExit255 is not a test: runChild runs the test binary with it to
-// get a child that exits 255.
-func TestHelperExit255(t *testing.T) {
-	if app.Env.Getenv("SALAD_CLI_TEST_HELPER_EXIT") == "" {
-		t.Skip("a helper for TestRunChildHints")
-	}
-	os.Exit(255) //nolint:revive // deep-exit: the test binary run as a child that exits 255
-}
-
 // TestRunChildHints: a child that exits 255 (ssh or sftp could not open the
 // session) carries the SSH Keys hint; a program that is not installed gets
 // the per-OS install hint.
 func TestRunChildHints(t *testing.T) {
-	t.Setenv("SALAD_CLI_TEST_HELPER_EXIT", "1")
-	cerr := app.runChildTo(io.Discard, os.Args[0], []string{"-test.run=^TestHelperExit255$"})
+	app := newTestRun(t)
+	app.setenv("SALAD_CLI_TEST_HELPER_EXIT", "1")
+	cerr := app.runChildTo(io.Discard, os.Args[0], []string{"-test.run=^$"})
 	if cerr == nil || cerr.Code != 255 || cerr.Kind != clierr.KindChildExit || cerr.HintText() != sessionFailedHint {
 		t.Errorf("exit 255: %+v hint %q", cerr, cerr.HintText())
 	}

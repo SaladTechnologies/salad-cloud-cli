@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -21,8 +22,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 )
@@ -261,7 +260,7 @@ func (c *fakeConsole) next(hidden bool) (string, error) {
 // session is one command line and the world it runs in.
 type session struct {
 	args  []string
-	env   map[string]string // set for the run; the shared variables not named here are empty
+	env   map[string]string // the run's variables besides the harness's own; nothing comes from the process
 	saved *config.File      // the config file before the run; nil: no file
 	// rawConfig, when set, is the config file's content before the run.
 	rawConfig string
@@ -277,6 +276,9 @@ type session struct {
 	// openStdin makes stdin a pipe that is never closed: a run that reads it
 	// waits until stdinPatience runs out (outcome.hung).
 	openStdin bool
+	// deps, when set, changes the run's seams (the sftp program, ssh's
+	// presence) before it runs.
+	deps func(d *Deps)
 }
 
 // outcome is what a session's run did.
@@ -297,13 +299,6 @@ type outcome struct {
 	configPath, apiURL, home string
 }
 
-// clearedVars are cleared for every run unless a session sets them, so the
-// developer's own shell, or CI's, never leaks into a test.
-var clearedVars = []string{
-	"SALAD_API_KEY", "SALAD_ORGANIZATION", "SALAD_PROJECT", "SALAD_AI_GATEWAY_API_KEY", "SALAD_CLI_NO_PROMPT", "CI",
-	"SSH_CONNECTION", "SSH_TTY", "DISPLAY", "WAYLAND_DISPLAY", "WSL_DISTRO_NAME",
-}
-
 func (s session) run(t *testing.T) outcome {
 	t.Helper()
 	api := s.api
@@ -321,13 +316,16 @@ func (s session) run(t *testing.T) outcome {
 
 	dir := t.TempDir()
 	cfgDir := filepath.Join(dir, "config")
-	t.Setenv("SALAD_CLI_CONFIG_DIR", cfgDir)
-	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
-	t.Setenv("SALAD_CLI_AI_GATEWAY_BASE_URL", srv.URL+"/gw")
-	for _, v := range clearedVars {
-		t.Setenv(v, "")
-	}
 	home := filepath.Join(dir, "home")
+	env := map[string]string{
+		"SALAD_CLI_CONFIG_DIR":          cfgDir,
+		"SALAD_CLI_API_BASE_URL":        srv.URL,
+		"SALAD_CLI_AI_GATEWAY_BASE_URL": srv.URL + "/gw",
+		"HOME":                          home,
+		"USERPROFILE":                   home,
+	}
+	maps.Copy(env, s.env)
+	d := testDeps(env)
 	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -344,13 +342,8 @@ func (s session) run(t *testing.T) outcome {
 			t.Fatal(err)
 		}
 	}
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-	for k, v := range s.env {
-		t.Setenv(k, v)
-	}
 	if s.saved != nil {
-		if err := config.Save(app.Env, *s.saved); err != nil {
+		if err := config.Save(d.Env, *s.saved); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -362,7 +355,7 @@ func (s session) run(t *testing.T) outcome {
 			t.Fatal(err)
 		}
 	}
-	configPath := must(config.Path(app.Env))(t)
+	configPath := must(config.Path(d.Env))(t)
 
 	stdin := tempFile(t, dir, "stdin", s.stdin)
 	var hold *os.File // the open end of a never-closed stdin
@@ -379,7 +372,6 @@ func (s session) run(t *testing.T) outcome {
 	fc := &fakeConsole{terminal: s.tty != nil, answers: append([]string(nil), s.tty...), transcript: &transcript}
 	var opened []string
 
-	d := app.Deps
 	d.Args = s.args
 	d.Stdin = stdin
 	d.Stdout = io.MultiWriter(&stdout, &transcript)
@@ -390,10 +382,9 @@ func (s session) run(t *testing.T) outcome {
 	if d.Env.GOOS == "" {
 		d.Env.GOOS = "windows"
 	}
-	// cobra keeps a command's context from an earlier in-process run and
-	// would hand it to this one, which Ctrl-C (the fake's cancel) could then
-	// not reach.
-	walkTree(rootCmd, func(c *cobra.Command) { c.SetContext(nil) }) //nolint:staticcheck // nil is what cobra checks for
+	if s.deps != nil {
+		s.deps(&d)
+	}
 	done := make(chan int, 1)
 	go func() { done <- Run(ctx, d) }()
 	var code int
@@ -412,12 +403,11 @@ func (s session) run(t *testing.T) outcome {
 	} else {
 		code = <-done
 	}
-	resetRun(t)
 	noErr(t, stdin.Close())
 	noErr(t, stderr.Close())
 
 	errBytes := must(os.ReadFile(stderr.Name()))(t)
-	after, err := config.Load(app.Env)
+	after, err := config.Load(d.Env)
 	if err != nil && s.rawConfig == "" {
 		t.Fatalf("the config file after the run: %v", err)
 	}
@@ -426,16 +416,6 @@ func (s session) run(t *testing.T) outcome {
 		opened: opened, config: after, api: api, hung: hung, transcript: transcript.String(), configPath: configPath,
 		apiURL: srv.URL, home: home,
 	}
-}
-
-// resetRun puts back what a run leaves behind in the process: flags, the
-// output mode, the command line and the per-command notes.
-func resetRun(t *testing.T) {
-	t.Helper()
-	setOutputMode(t, "table")
-	rootCmd.SetArgs(nil)
-	app.Args = nil
-	resetFlags(t)
 }
 
 // tempFile creates dir/name holding content, open for reading and writing.
@@ -560,23 +540,4 @@ func assertAs[T any](t *testing.T, v any) T {
 		t.Fatalf("got %T, want %T", v, x)
 	}
 	return x
-}
-
-// setOutputMode selects the output mode, reporting a mode SetMode rejects.
-func setOutputMode(t *testing.T, mode string) {
-	t.Helper()
-	if cerr := app.printer.SetMode(mode); cerr != nil {
-		t.Error(cerr)
-	}
-}
-
-// findCommand returns the command at path, failing the test when the tree
-// has none.
-func findCommand(t *testing.T, path ...string) *cobra.Command {
-	t.Helper()
-	c, _, err := rootCmd.Find(path)
-	if err != nil {
-		t.Fatalf("%v: %v", path, err)
-	}
-	return c
 }

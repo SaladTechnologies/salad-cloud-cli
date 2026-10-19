@@ -45,6 +45,7 @@ func TestFromTag(t *testing.T) {
 // TestNameCheck covers every branch of the name check, as an error from a
 // flag or variable and as a retry line at a prompt.
 func TestNameCheck(t *testing.T) {
+	app := newTestRun(t)
 	for _, tc := range []struct {
 		kind, name, origin string
 		msg, hint, retry   string
@@ -198,6 +199,7 @@ func TestMalformedKey(t *testing.T) {
 }
 
 func TestOrgsClause(t *testing.T) {
+	app := newTestRun(t)
 	names := func(n int) []string {
 		out := make([]string, n)
 		for i := range out {
@@ -205,7 +207,7 @@ func TestOrgsClause(t *testing.T) {
 		}
 		return out
 	}
-	atATerminal(t, true, "linux", "table")
+	app.atATerminal(t, true, "linux", "table")
 	for _, tc := range []struct {
 		names []string
 		want  string
@@ -223,7 +225,7 @@ func TestOrgsClause(t *testing.T) {
 		}
 	}
 	for _, mode := range []string{"table", "json"} {
-		atATerminal(t, false, "linux", mode)
+		app.atATerminal(t, false, "linux", mode)
 		for _, n := range [][]string{names(2), names(22), nil} {
 			if got := app.orgsClause(n); got != "to list yours, run saladcloud orgs list" {
 				t.Errorf("no terminal, %s mode, %d names: %q", mode, len(n), got)
@@ -239,8 +241,9 @@ func TestOrgsClause(t *testing.T) {
 }
 
 func TestConfigReady(t *testing.T) {
+	app := newTestRun(t)
 	dir := t.TempDir()
-	t.Setenv("SALAD_CLI_CONFIG_DIR", dir)
+	app.setenv("SALAD_CLI_CONFIG_DIR", dir)
 	if err := app.configReady("login"); err != nil {
 		t.Fatalf("no file yet: %v", err)
 	}
@@ -279,7 +282,7 @@ func TestConfigReady(t *testing.T) {
 	t.Cleanup(
 		func() { reportErr(t, os.Chmod(ro, 0o700)) },
 	) //nolint:gosec // a directory: TempDir cleanup needs its x bit back
-	t.Setenv("SALAD_CLI_CONFIG_DIR", ro)
+	app.setenv("SALAD_CLI_CONFIG_DIR", ro)
 	for _, tc := range []struct{ command, hint string }{
 		{"login", "set SALAD_CLI_CONFIG_DIR to a writable folder, or set SALAD_API_KEY, SALAD_ORGANIZATION and " +
 			"SALAD_PROJECT instead of logging in"},
@@ -346,6 +349,7 @@ func TestReadKeysCRLF(t *testing.T) {
 }
 
 func TestBrowserOffer(t *testing.T) {
+	app := newTestRun(t)
 	for _, tc := range []struct {
 		os  string
 		env []string
@@ -363,10 +367,10 @@ func TestBrowserOffer(t *testing.T) {
 		old := app.Env.GOOS
 		app.Env.GOOS = tc.os
 		for _, v := range []string{"DISPLAY", "WAYLAND_DISPLAY", "SSH_CONNECTION", "SSH_TTY"} {
-			t.Setenv(v, "")
+			app.setenv(v, "")
 		}
 		for i := 0; i+1 < len(tc.env); i += 2 {
-			t.Setenv(tc.env[i], tc.env[i+1])
+			app.setenv(tc.env[i], tc.env[i+1])
 		}
 		want := "Paste it here, hidden:"
 		if tc.ok {
@@ -380,8 +384,9 @@ func TestBrowserOffer(t *testing.T) {
 }
 
 func TestOpener(t *testing.T) {
+	app := newTestRun(t)
 	const url = "https://portal.salad.com/api-key"
-	t.Setenv("WSL_DISTRO_NAME", "")
+	app.setenv("WSL_DISTRO_NAME", "")
 	old := app.Env.GOOS
 	t.Cleanup(func() { app.Env.GOOS = old })
 	for _, tc := range []struct {
@@ -393,7 +398,7 @@ func TestOpener(t *testing.T) {
 		{"linux", "Ubuntu", "cmd.exe /c start  " + url},
 	} {
 		app.Env.GOOS = tc.os
-		t.Setenv("WSL_DISTRO_NAME", tc.wsl)
+		app.setenv("WSL_DISTRO_NAME", tc.wsl)
 		name, args := opener(app.Env, url)
 		if got := name + " " + strings.Join(args, " "); got != tc.want {
 			t.Errorf("%s (WSL %q): %q, want %q", tc.os, tc.wsl, got, tc.want)
@@ -402,6 +407,7 @@ func TestOpener(t *testing.T) {
 }
 
 func TestOpenOffered(t *testing.T) {
+	app := newTestRun(t)
 	const url = "https://portal.salad.com/api-key"
 	fc := &fakeConsole{terminal: true}
 	oldCon, oldOpen := app.Console, app.OpenPage
@@ -421,6 +427,7 @@ func TestOpenOffered(t *testing.T) {
 // TestAskUntil: prompts and retry lines go to the terminal device, answers
 // are re-asked until accepted, and Ctrl-C or end of input end the exchange.
 func TestAskUntil(t *testing.T) {
+	app := newTestRun(t)
 	old := app.Console
 	t.Cleanup(func() { app.Console = old })
 	fc := &fakeConsole{terminal: true, answers: []string{"Acme Prod", "my-org"}}

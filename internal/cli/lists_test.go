@@ -14,6 +14,7 @@ import (
 // TestJobIDsMustBeFullUUIDs: jobs are not resolved by prefix, so a prefix
 // is rejected before any request, with where to find the full ID.
 func TestJobIDsMustBeFullUUIDs(t *testing.T) {
+	app := newTestRun(t)
 	for _, tc := range []struct {
 		args []string
 		list string
@@ -26,8 +27,8 @@ func TestJobIDsMustBeFullUUIDs(t *testing.T) {
 			"list --endpoint transcribe"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
-			stubAPI(t, make(map[string]string)) // any request would 404
-			_, err := runRoot(t, tc.args...)
+			app.stubAPI(t, make(map[string]string)) // any request would 404
+			_, err := app.runRoot(t, tc.args...)
 			want := `job IDs must be full UUIDs, not "c39e9f69"; to list them, run ` + tc.list
 			var cerr *clierr.Error
 			ok := errors.As(err, &cerr)
@@ -42,17 +43,18 @@ func TestJobIDsMustBeFullUUIDs(t *testing.T) {
 // TestAIGatewayModelsListNeedsNoKey: the model list is public, so it works
 // with no gateway key and sends none.
 func TestAIGatewayModelsListNeedsNoKey(t *testing.T) {
+	app := newTestRun(t)
 	var auth []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		auth = append(auth, r.Header.Get("Authorization"))
 		respond(t, w, `{"object":"list","data":[{"id":"m1","owned_by":"salad"}]}`)
 	}))
 	defer srv.Close()
-	t.Setenv("SALAD_CLI_AI_GATEWAY_BASE_URL", srv.URL)
-	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	t.Setenv("SALAD_AI_GATEWAY_API_KEY", "")
+	app.setenv("SALAD_CLI_AI_GATEWAY_BASE_URL", srv.URL)
+	app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
+	app.setenv("SALAD_AI_GATEWAY_API_KEY", "")
 
-	out, err := runRoot(t, "ai-gateway", "models", "list", "-o", "json")
+	out, err := app.runRoot(t, "ai-gateway", "models", "list", "-o", "json")
 	if err != nil {
 		t.Fatalf("models list with no key: %v", err)
 	}
@@ -67,7 +69,7 @@ func TestAIGatewayModelsListNeedsNoKey(t *testing.T) {
 	}
 
 	// A bare 'models' is a noun now.
-	if _, err := runRoot(
+	if _, err := app.runRoot(
 		t,
 		"ai-gateway",
 		"models",
@@ -81,7 +83,8 @@ func TestAIGatewayModelsListNeedsNoKey(t *testing.T) {
 // collection's paging keys would always be null; the envelope is items
 // alone, as on every other list.
 func TestListEnvelopesAreItemsOnly(t *testing.T) {
-	stubAPI(t, map[string]string{
+	app := newTestRun(t)
+	app.stubAPI(t, map[string]string{
 		"/inference-endpoints":                 `{"items":[{"name":"transcribe"}],"page":1,"page_size":25,"total_size":null}`,
 		"/inference-endpoints/transcribe/jobs": `{"items":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","create_time":"2026-10-01T00:00:00Z"}],"page":1,"page_size":25,"total_size":null}`,
 	})
@@ -90,7 +93,7 @@ func TestListEnvelopesAreItemsOnly(t *testing.T) {
 		{"inference", "jobs", "list", "--endpoint", "transcribe", "-o", "json"},
 	} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			out, err := runRoot(t, args...)
+			out, err := app.runRoot(t, args...)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -112,9 +115,10 @@ func TestListEnvelopesAreItemsOnly(t *testing.T) {
 // TestQueuesListSaysWhenEmpty: an empty table keeps its header on stdout and
 // says so on stderr, as every other list does.
 func TestQueuesListSaysWhenEmpty(t *testing.T) {
-	stubAPI(t, map[string]string{"/queues": `{"items":[]}`})
-	stderr := captureStderr(t, func() {
-		if _, err := runRoot(t, "queues", "list"); err != nil {
+	app := newTestRun(t)
+	app.stubAPI(t, map[string]string{"/queues": `{"items":[]}`})
+	stderr := app.captureStderr(t, func() {
+		if _, err := app.runRoot(t, "queues", "list"); err != nil {
 			t.Fatal(err)
 		}
 	})

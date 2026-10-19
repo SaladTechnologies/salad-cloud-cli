@@ -66,9 +66,10 @@ func TestFindLocalPublicKeyIgnoresDirectories(t *testing.T) {
 // TestResolveIdentity: the flag wins; else the dedicated key when present;
 // else "" so OpenSSH uses its own defaults.
 func TestResolveIdentity(t *testing.T) {
+	app := newTestRun(t)
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
+	app.setenv("HOME", home)
+	app.setenv("USERPROFILE", home)
 	if got := app.resolveIdentity("/explicit/key"); got != "/explicit/key" {
 		t.Errorf("flag = %q", got)
 	}

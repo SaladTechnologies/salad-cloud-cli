@@ -10,6 +10,7 @@ import (
 // TestAtTerminal: SALAD_CLI_NO_PROMPT, or CI set to anything but empty,
 // false or 0, makes a terminal count as none.
 func TestAtTerminal(t *testing.T) {
+	app := newTestRun(t)
 	old := app.Console
 	t.Cleanup(func() { app.Console = old })
 	for _, tc := range []struct {
@@ -29,8 +30,8 @@ func TestAtTerminal(t *testing.T) {
 		{true, "", "0", true},
 		{false, "", "false", false},
 	} {
-		t.Setenv("SALAD_CLI_NO_PROMPT", tc.noPrompt)
-		t.Setenv("CI", tc.ci)
+		app.setenv("SALAD_CLI_NO_PROMPT", tc.noPrompt)
+		app.setenv("CI", tc.ci)
 		app.Console = &fakeConsole{terminal: tc.terminal}
 		if got := app.atTerminal(); got != tc.want {
 			t.Errorf(
@@ -48,10 +49,11 @@ func TestAtTerminal(t *testing.T) {
 // TestErrorHint: a hint prints as a hint: line under the error in table
 // mode and as the hint key in the error document, which is ASCII.
 func TestErrorHint(t *testing.T) {
+	app := newTestRun(t)
 	var buf strings.Builder
 	old := app.Stderr
 	app.Stderr = &buf
-	t.Cleanup(func() { app.Stderr = old; setOutputMode(t, "table") })
+	t.Cleanup(func() { app.Stderr = old; app.setOutputMode(t, "table") })
 	e := clierr.New(clierr.CodeUsage, clierr.KindUsage, "invalid organization name %q", "Café").
 		WithHint("did you mean %q?", "cafe")
 	app.printError(e)
@@ -60,7 +62,7 @@ func TestErrorHint(t *testing.T) {
 		t.Errorf("table mode:\n%q\nwant\n%q", got, want)
 	}
 	buf.Reset()
-	setOutputMode(t, "json")
+	app.setOutputMode(t, "json")
 	app.printError(e)
 	want := `{"error":{"exit_code":2,"kind":"usage","message":"invalid organization name \"Caf\u00e9\"","hint":"did ` +
 		`you mean \"cafe\"?","http_status":null}}` + "\n"

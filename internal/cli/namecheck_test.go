@@ -172,6 +172,7 @@ func TestTrimmedValues(t *testing.T) {
 // organization or the project neither offers nor accepts --org or
 // --project.
 func TestFlagsACommandDoesNotRead(t *testing.T) {
+	app := newTestRun(t)
 	saved := &config.File{APIKey: testAPIKey, Organization: "my-org", Project: "default"}
 	for _, args := range [][]string{
 		{"use", "my-org", "--project", "staging"},
@@ -189,12 +190,12 @@ func TestFlagsACommandDoesNotRead(t *testing.T) {
 	if o := (session{args: []string{"quotas", "get", "--org", "my-org"}, saved: saved}).run(t); o.code != 0 {
 		t.Errorf("quotas get --org: exit %d\n%s", o.code, o.stderr)
 	}
-	walkTree(rootCmd, func(c *cobra.Command) {
+	walkTree(app.root, func(c *cobra.Command) {
 		top := c
-		for top.Parent() != nil && top.Parent() != rootCmd {
+		for top.Parent() != nil && top.Parent() != app.root {
 			top = top.Parent()
 		}
-		if top == rootCmd || !contextFreeCommands()[top.Name()] {
+		if top == app.root || !contextFreeCommands()[top.Name()] {
 			return
 		}
 		if readsOrg(c) || readsProject(c) {

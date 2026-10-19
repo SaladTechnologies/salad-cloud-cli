@@ -88,7 +88,8 @@ func TestFormatLogLineNamesItsSource(t *testing.T) {
 // resolved against one group's instances, so without a group it is a usage
 // error before any client or API work.
 func TestLogsInstancePrefixNeedsGroup(t *testing.T) {
-	_, err := runRoot(t, "logs", "--instance", "8a2f")
+	app := newTestRun(t)
+	_, err := app.runRoot(t, "logs", "--instance", "8a2f")
 	var cerr *clierr.Error
 	ok := errors.As(err, &cerr)
 	if !ok || cerr.Code != clierr.CodeUsage {

@@ -14,6 +14,7 @@ import (
 // says the job has finished and in what status, keeping the 409's exit code
 // and kind.
 func TestQueueJobCancelFinishedSaysWhy(t *testing.T) {
+	app := newTestRun(t)
 	const id = "30add6e3-6f35-49a1-9905-dfc21805a783"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/queues/q/jobs/"+id) {
@@ -28,13 +29,13 @@ func TestQueueJobCancelFinishedSaysWhy(t *testing.T) {
 		respond(t, w, `{"id":"`+id+`","status":"succeeded","events":[]}`)
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
-	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	t.Setenv("SALAD_API_KEY", "salad_cloud_user_test0000")
-	t.Setenv("SALAD_ORGANIZATION", "my-org")
-	t.Setenv("SALAD_PROJECT", "default")
+	app.setenv("SALAD_CLI_API_BASE_URL", srv.URL)
+	app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
+	app.setenv("SALAD_API_KEY", "salad_cloud_user_test0000")
+	app.setenv("SALAD_ORGANIZATION", "my-org")
+	app.setenv("SALAD_PROJECT", "default")
 
-	_, err := runRoot(t, "queues", "jobs", "cancel", id, "--queue", "q", "-o", "json")
+	_, err := app.runRoot(t, "queues", "jobs", "cancel", id, "--queue", "q", "-o", "json")
 	var cerr *clierr.Error
 	ok := errors.As(err, &cerr)
 	if !ok {

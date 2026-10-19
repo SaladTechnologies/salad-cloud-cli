@@ -69,7 +69,8 @@ func TestUsageSummary(t *testing.T) {
 // TestAIGatewayHelpPointsAtWhoami: there is no gateway status verb; the help
 // says where the key in effect is shown.
 func TestAIGatewayHelpPointsAtWhoami(t *testing.T) {
-	c, _, err := rootCmd.Find([]string{"ai-gateway"})
+	app := newTestRun(t)
+	c, _, err := app.root.Find([]string{"ai-gateway"})
 	if err != nil ||
 		!strings.Contains(c.Long, "To see which key is in effect and where it came from, run saladcloud whoami.") {
 		t.Errorf("ai-gateway --help lacks the whoami line: %q", c.Long)

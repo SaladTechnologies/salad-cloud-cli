@@ -143,6 +143,7 @@ func TestCopyDocumentDisplayName(t *testing.T) {
 }
 
 func TestCopyDocumentBuildsARequest(t *testing.T) {
+	app := newTestRun(t)
 	raw, err := copyDocument(grp(t, copySource(t)), "my-copy", false)
 	if err != nil {
 		t.Fatal(err)

@@ -14,35 +14,36 @@ const (
 )
 
 // atATerminal puts the run at a terminal (or not) on os, in mode.
-func atATerminal(t *testing.T, terminal bool, os, mode string) {
+func (app *testRun) atATerminal(t *testing.T, terminal bool, os, mode string) {
 	t.Helper()
 	oldCon, oldOS := app.Console, app.Env.GOOS
 	app.Console, app.Env.GOOS = &fakeConsole{terminal: terminal}, os
-	t.Setenv("CI", "")
-	t.Setenv("SALAD_CLI_NO_PROMPT", "")
+	app.setenv("CI", "")
+	app.setenv("SALAD_CLI_NO_PROMPT", "")
 	if err := app.printer.SetMode(mode); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { app.Console, app.Env.GOOS = oldCon, oldOS; setOutputMode(t, "table") })
+	t.Cleanup(func() { app.Console, app.Env.GOOS = oldCon, oldOS; app.setOutputMode(t, "table") })
 }
 
-func setEnv(t *testing.T, kv ...string) {
+func (app *testRun) setEnv(t *testing.T, kv ...string) {
 	t.Helper()
 	for _, v := range []string{"SALAD_API_KEY", "SALAD_ORGANIZATION", "SALAD_PROJECT", "SALAD_AI_GATEWAY_API_KEY"} {
-		t.Setenv(v, "")
+		app.setenv(v, "")
 	}
 	for i := 0; i+1 < len(kv); i += 2 {
-		t.Setenv(kv[i], kv[i+1])
+		app.setenv(kv[i], kv[i+1])
 	}
 }
 
-func warned(when overrideWhen, ovs []override) string {
+func (app *testRun) warned(when overrideWhen, ovs []override) string {
 	var b strings.Builder
 	app.warnOverrides(&b, when, ovs)
 	return b.String()
 }
 
 func TestOverrideWarnings(t *testing.T) {
+	app := newTestRun(t)
 	saved := config.File{APIKey: key9QxZ, Organization: "my-org", Project: "default"}
 	for _, tc := range []struct {
 		name     string
@@ -173,9 +174,9 @@ Then open a new terminal (restart VS Code if you use its terminal).
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			atATerminal(t, tc.terminal, tc.os, tc.mode)
-			setEnv(t, tc.env...)
-			if got := warned(tc.when, app.overridesOf(tc.file, tc.vars...)); got != tc.want {
+			app.atATerminal(t, tc.terminal, tc.os, tc.mode)
+			app.setEnv(t, tc.env...)
+			if got := app.warned(tc.when, app.overridesOf(tc.file, tc.vars...)); got != tc.want {
 				t.Errorf("got:\n%s\nwant:\n%s", got, tc.want)
 			}
 		})
@@ -183,6 +184,7 @@ Then open a new terminal (restart VS Code if you use its terminal).
 }
 
 func TestRemovalWarnings(t *testing.T) {
+	app := newTestRun(t)
 	for _, tc := range []struct {
 		name, os, mode string
 		terminal       bool
@@ -217,10 +219,10 @@ Then open a new terminal (restart VS Code if you use its terminal).
 		{"logout, nothing set", "windows", "table", true, nil, []string{"SALAD_API_KEY"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			atATerminal(t, tc.terminal, tc.os, tc.mode)
-			setEnv(t, tc.env...)
+			app.atATerminal(t, tc.terminal, tc.os, tc.mode)
+			app.setEnv(t, tc.env...)
 			ovs := app.stillSupplied(tc.vars...)
-			if got := warned(afterRemove, ovs); got != tc.want {
+			if got := app.warned(afterRemove, ovs); got != tc.want {
 				t.Errorf("got:\n%s\nwant:\n%s", got, tc.want)
 			}
 			if names := overrideNames(ovs); names == nil || len(names) != len(tc.env)/2 {
@@ -233,11 +235,12 @@ Then open a new terminal (restart VS Code if you use its terminal).
 // TestNoPromptAndCIDropTheSteps: SALAD_CLI_NO_PROMPT and CI make the warning
 // the line alone, as no terminal does.
 func TestNoPromptAndCIDropTheSteps(t *testing.T) {
+	app := newTestRun(t)
 	for _, v := range []string{"SALAD_CLI_NO_PROMPT", "CI"} {
-		atATerminal(t, true, "windows", "table")
-		setEnv(t, "SALAD_API_KEY", keyABCD)
-		t.Setenv(v, "1")
-		got := warned(
+		app.atATerminal(t, true, "windows", "table")
+		app.setEnv(t, "SALAD_API_KEY", keyABCD)
+		app.setenv(v, "1")
+		got := app.warned(
 			afterRemove,
 			app.stillSupplied("SALAD_API_KEY"),
 		)
@@ -248,7 +251,8 @@ func TestNoPromptAndCIDropTheSteps(t *testing.T) {
 }
 
 func TestBeforePrompt(t *testing.T) {
-	setEnv(
+	app := newTestRun(t)
+	app.setEnv(
 		t,
 		"SALAD_API_KEY",
 		keyABCD,
@@ -290,7 +294,8 @@ func TestBeforePrompt(t *testing.T) {
 }
 
 func TestOverrideNames(t *testing.T) {
-	setEnv(t, "SALAD_ORGANIZATION", "my-org")
+	app := newTestRun(t)
+	app.setEnv(t, "SALAD_ORGANIZATION", "my-org")
 	if got := overrideNames(
 		app.overridesOf(config.File{Organization: "my-org"}, "SALAD_ORGANIZATION"),
 	); got == nil ||

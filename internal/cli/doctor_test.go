@@ -48,17 +48,14 @@ const (
 )
 
 // stubSSH makes ssh present or not, and keys passphrase-protected or not.
-func stubSSH(t *testing.T, sshInstalled, passphrase bool) {
-	t.Helper()
-	oldLook, oldPass := app.LookPath, app.HasPassphrase
-	app.LookPath = func(name string) (string, error) {
+func stubSSH(d *Deps, sshInstalled, passphrase bool) {
+	d.LookPath = func(name string) (string, error) {
 		if sshInstalled {
 			return "/usr/bin/" + name, nil
 		}
 		return "", errors.New("not found")
 	}
-	app.HasPassphrase = func(string) (bool, bool) { return passphrase, true }
-	t.Cleanup(func() { app.LookPath, app.HasPassphrase = oldLook, oldPass })
+	d.HasPassphrase = func(string) (bool, bool) { return passphrase, true }
 }
 
 func failed(n int, names string) string {
@@ -75,7 +72,6 @@ func failed(n int, names string) string {
 }
 
 func TestDoctorRows(t *testing.T) {
-	stubSSH(t, true, false)
 	k, o := testAPIKey, testOtherAPIKey
 	good := &config.File{APIKey: k, Organization: "my-org", Project: "default"}
 	doctor := []string{"doctor"}
@@ -90,7 +86,7 @@ func TestDoctorRows(t *testing.T) {
 	skipNone := dRow{"organization", "SKIP", "none set"}
 	skipProject := dRow{"project", "SKIP", "none set"}
 	skipProjectSet := dRow{"project", "SKIP", "default (from config); checking it needs a working organization"}
-	runBranches(t, failingHint([]branchCase{
+	runBranches(t, withDeps(func(d *Deps) { stubSSH(d, true, false) }, failingHint([]branchCase{
 		{
 			id: "all good",
 			s:  session{args: doctor, saved: good},
@@ -617,7 +613,7 @@ func TestDoctorRows(t *testing.T) {
 				"hint: api-key: run saladcloud login, or set SALAD_API_KEY; for the AI Gateway only, run saladcloud " +
 				"ai-gateway login\n" + hGateway + hSSH + failed(2, "config, api-key"),
 		},
-	}))
+	})))
 }
 
 // failingHint sets the json-mode hint of a failing doctor run: the error
@@ -636,8 +632,7 @@ func TestDoctorSSHRows(t *testing.T) {
 	good := &config.File{APIKey: testAPIKey, Organization: "my-org", Project: "default", GatewayAPIKey: testGatewayKey}
 	rG := dRow{"ai-gateway-api-key-present", "PASS", "****...EFGH (from config; not tested)"}
 	t.Run("a passphrase", func(t *testing.T) {
-		stubSSH(t, true, true)
-		runBranches(t, []branchCase{
+		runBranches(t, withDeps(func(d *Deps) { stubSSH(d, true, true) }, []branchCase{
 			{
 				id: "a key of your own",
 				s:  session{args: []string{"doctor"}, saved: good, sshKey: true},
@@ -682,17 +677,16 @@ func TestDoctorSSHRows(t *testing.T) {
 					"saladcloud_ed25519",
 				) + " first\n",
 			},
-		})
+		}))
 	})
 	t.Run("ssh not installed", func(t *testing.T) {
-		stubSSH(t, false, false)
 		for _, tc := range []struct{ os, hint string }{
 			{"windows", "add the OpenSSH Client optional feature in Windows Settings, then open a new terminal"},
 			{"darwin", "macOS includes it at /usr/bin/ssh; check that /usr/bin is on your PATH"},
 			{"linux", "install your distribution's OpenSSH client (openssh-client on Debian and Ubuntu, " +
 				"openssh-clients on Fedora)"},
 		} {
-			runBranches(t, []branchCase{
+			runBranches(t, withDeps(func(d *Deps) { stubSSH(d, false, false) }, []branchCase{
 				{
 					id: tc.os,
 					s:  session{args: []string{"doctor"}, saved: good, sshKey: true, os: tc.os},
@@ -707,7 +701,7 @@ func TestDoctorSSHRows(t *testing.T) {
 					),
 					stderr: hReachable + "hint: local-ssh-key-present: " + tc.hint + "\n",
 				},
-			})
+			}))
 		}
 	})
 }
@@ -715,8 +709,10 @@ func TestDoctorSSHRows(t *testing.T) {
 // TestDoctorJSON: rows carry their hint (null under a PASS row), and a
 // failing run's error says the rows' hints say how to fix it.
 func TestDoctorJSON(t *testing.T) {
-	stubSSH(t, true, false)
-	o := withMode(session{args: []string{"doctor"}, saved: &config.File{APIKey: testOtherAPIKey}}, "json").run(t)
+	o := withMode(session{
+		args: []string{"doctor"}, saved: &config.File{APIKey: testOtherAPIKey},
+		deps: func(d *Deps) { stubSSH(d, true, false) },
+	}, "json").run(t)
 	doc := o.document(t)
 	items := assertAs[[]any](t, doc["items"])
 	first, key := assertAs[map[string]any](t, items[0]), assertAs[map[string]any](t, items[2])
@@ -734,21 +730,22 @@ func TestDoctorJSON(t *testing.T) {
 // TestDoctorReachable: the API row names https://api.salad.com when no
 // stand-in is set, and a failure says to check the network.
 func TestDoctorReachable(t *testing.T) {
+	app := newTestRun(t)
 	old := app.ProductionAPI
 	t.Cleanup(func() { app.ProductionAPI = old })
-	t.Setenv("SALAD_CLI_API_BASE_URL", "")
+	app.setenv("SALAD_CLI_API_BASE_URL", "")
 	srv := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) }),
 	)
 	defer srv.Close()
 	app.ProductionAPI = srv.URL
-	d := &doctorRun{ctx: t.Context(), app: app}
+	d := &doctorRun{ctx: t.Context(), app: app.App}
 	if r := d.reachableRow(); r.Status != checkPass || r.Detail != "https://api.salad.com" || r.Hint != nil ||
 		!d.reachable {
 		t.Errorf("reachable: %+v", r)
 	}
 	app.ProductionAPI = "http://127.0.0.1:1"
-	d = &doctorRun{ctx: t.Context(), app: app}
+	d = &doctorRun{ctx: t.Context(), app: app.App}
 	if r := d.reachableRow(); r.Status != checkFail || !strings.HasPrefix(r.Detail, "https://api.salad.com: ") ||
 		r.Hint == nil ||
 		*r.Hint != "check your network or proxy settings" ||

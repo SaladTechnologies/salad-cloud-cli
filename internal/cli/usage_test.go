@@ -12,6 +12,7 @@ import (
 // usage error (exit 2) that names the input and prints the command to type,
 // in one phrasing, never cobra's or pflag's.
 func TestUsageErrorsPrintWhatToType(t *testing.T) {
+	app := newTestRun(t)
 	for _, tc := range []struct {
 		args []string
 		want string
@@ -144,7 +145,7 @@ func TestUsageErrorsPrintWhatToType(t *testing.T) {
 	} {
 		// A subtest each: runRoot resets the tree's flags when its test ends.
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
-			_, err := runRoot(t, tc.args...)
+			_, err := app.runRoot(t, tc.args...)
 			var cerr *clierr.Error
 			ok := errors.As(err, &cerr)
 			if !ok {

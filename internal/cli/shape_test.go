@@ -26,14 +26,14 @@ import (
 
 // emitJSON renders v through output.Emit (or Stream) in mode (json or
 // yaml) and returns the decoded document.
-func emitJSON(t *testing.T, v any, stream bool, mode string) any {
+func (app *testRun) emitJSON(t *testing.T, v any, stream bool, mode string) any {
 	t.Helper()
 	var buf bytes.Buffer
 	old := app.printer
 	app.printer = output.NewPrinter(&buf)
 	t.Cleanup(func() {
 		app.printer = old
-		setOutputMode(t, "table")
+		app.setOutputMode(t, "table")
 	})
 	if err := app.printer.SetMode(mode); err != nil {
 		t.Fatal(err)
@@ -140,6 +140,7 @@ func assertShape(t *testing.T, path string, typ reflect.Type, doc any) {
 // all omitempty. Zero values cover the top level; the populated cases reach
 // nested objects and array elements.
 func TestSDKBackedJSONShape(t *testing.T) {
+	app := newTestRun(t)
 	cases := []struct {
 		name   string
 		v      any
@@ -198,7 +199,7 @@ func TestSDKBackedJSONShape(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, mode := range []string{"json", "yaml"} {
-				doc := emitJSON(t, tc.v, tc.stream, mode)
+				doc := app.emitJSON(t, tc.v, tc.stream, mode)
 				assertShape(t, tc.name+" ("+mode+")", reflect.TypeOf(tc.v), doc)
 			}
 		})
@@ -209,6 +210,7 @@ func TestSDKBackedJSONShape(t *testing.T) {
 // a listing that cannot list (404) renders organizations null (unknown), one that
 // answers with no items renders [] (none).
 func TestWhoamiOrganizationsUnavailableVsEmpty(t *testing.T) {
+	app := newTestRun(t)
 	for _, tc := range []struct {
 		name   string
 		status int
@@ -229,13 +231,13 @@ func TestWhoamiOrganizationsUnavailableVsEmpty(t *testing.T) {
 				respond(t, w, `{}`) // the quotas probe
 			}))
 			defer srv.Close()
-			t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
-			t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-			t.Setenv("SALAD_API_KEY", "salad_cloud_user_test0000")
-			t.Setenv("SALAD_ORGANIZATION", "my-org")
-			t.Setenv("SALAD_PROJECT", "")
+			app.setenv("SALAD_CLI_API_BASE_URL", srv.URL)
+			app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
+			app.setenv("SALAD_API_KEY", "salad_cloud_user_test0000")
+			app.setenv("SALAD_ORGANIZATION", "my-org")
+			app.setenv("SALAD_PROJECT", "")
 
-			out, err := runRoot(t, "whoami", "-o", "json", "--org", "", "--project", "")
+			out, err := app.runRoot(t, "whoami", "-o", "json", "--org", "", "--project", "")
 			if err != nil {
 				t.Fatalf("whoami: %v", err)
 			}
@@ -255,6 +257,7 @@ func TestWhoamiOrganizationsUnavailableVsEmpty(t *testing.T) {
 // same document under -o yaml as under -o json, so the JSON shape tests
 // cover both modes.
 func TestCLIResultsSameInYAML(t *testing.T) {
+	app := newTestRun(t)
 	cases := map[string]any{
 		"agent init":             agentInitResult{},
 		"changelog":              changelogResult{},
@@ -279,7 +282,7 @@ func TestCLIResultsSameInYAML(t *testing.T) {
 	}
 	for name, v := range cases {
 		t.Run(name, func(t *testing.T) {
-			j, y := emitJSON(t, v, false, "json"), emitJSON(t, v, false, "yaml")
+			j, y := app.emitJSON(t, v, false, "json"), app.emitJSON(t, v, false, "yaml")
 			if !reflect.DeepEqual(j, y) {
 				t.Errorf("yaml differs from json:\njson %v\nyaml %v", j, y)
 			}

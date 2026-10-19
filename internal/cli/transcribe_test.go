@@ -11,7 +11,12 @@ import (
 
 // parsedTranscribeCmd parses args into a porcelain command for endpoint and
 // returns the input fields they set.
-func parsedTranscribeCmd(t *testing.T, endpoint string, fields []inputField, args ...string) fieldValues {
+func (app *testRun) parsedTranscribeCmd(
+	t *testing.T,
+	endpoint string,
+	fields []inputField,
+	args ...string,
+) fieldValues {
 	t.Helper()
 	cmd, o := app.transcribeCmd(endpoint, fields, "")
 	if err := cmd.ParseFlags(args); err != nil {
@@ -23,6 +28,7 @@ func parsedTranscribeCmd(t *testing.T, endpoint string, fields []inputField, arg
 // A flag that is not set is not sent: the input carries url plus what the
 // user passed, so the endpoint's own defaults govern the rest.
 func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
+	app := newTestRun(t)
 	tests := []struct {
 		name  string
 		args  []string
@@ -74,7 +80,7 @@ func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			set := parsedTranscribeCmd(t, "transcribe", transcribeFields(), tt.args...)
+			set := app.parsedTranscribeCmd(t, "transcribe", transcribeFields(), tt.args...)
 			got, cerr := buildTranscribeInput("u", transcribeFields(), set, tt.extra)
 			if cerr != nil {
 				t.Fatalf("buildTranscribeInput: %v", cerr)
@@ -87,7 +93,8 @@ func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
 }
 
 func TestBuildTranscribeInputRejectsBadExtra(t *testing.T) {
-	set := parsedTranscribeCmd(t, "transcribe", transcribeFields())
+	app := newTestRun(t)
+	set := app.parsedTranscribeCmd(t, "transcribe", transcribeFields())
 	for _, extra := range []string{"{not json", `"a string"`, "[1,2]"} {
 		_, cerr := buildTranscribeInput("u", transcribeFields(), set, extra)
 		if cerr == nil {
@@ -103,6 +110,7 @@ func TestBuildTranscribeInputRejectsBadExtra(t *testing.T) {
 // kebab-cased: lite rejects a full-only flag by itself, and the two never
 // spell one input differently.
 func TestTranscribeFlagsAreTheEndpointFields(t *testing.T) {
+	app := newTestRun(t)
 	if len(transcribeFields())+1 != 20 || len(transcriptionLiteFields())+1 != 9 {
 		t.Errorf("fields with url: transcribe %d, transcription-lite %d; want 20 and 9",
 			len(transcribeFields())+1, len(transcriptionLiteFields())+1)

@@ -75,7 +75,8 @@ func TestWatchLoopEndsOnFatalError(t *testing.T) {
 }
 
 func TestWatchIsTableModeOnly(t *testing.T) {
-	_, err := runRoot(t, "container-groups", "list", "-w", "-o", "json")
+	app := newTestRun(t)
+	_, err := app.runRoot(t, "container-groups", "list", "-w", "-o", "json")
 	var cerr *clierr.Error
 	ok := errors.As(err, &cerr)
 	if !ok || cerr.Code != clierr.CodeUsage || !strings.Contains(cerr.Message, "--wait") {

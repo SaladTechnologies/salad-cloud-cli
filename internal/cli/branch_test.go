@@ -30,6 +30,14 @@ type branchCase struct {
 	status int
 }
 
+// withDeps gives every case's session the seams set sets.
+func withDeps(set func(d *Deps), cases []branchCase) []branchCase {
+	for i := range cases {
+		cases[i].s.deps = set
+	}
+	return cases
+}
+
 func runBranches(t *testing.T, cases []branchCase) {
 	t.Helper()
 	for _, tc := range cases {

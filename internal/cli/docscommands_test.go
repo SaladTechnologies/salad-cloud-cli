@@ -48,10 +48,10 @@ func commandDocRows(t *testing.T) (commandRows []string, aliasRows [][2]string) 
 
 // documentedLeaves are the leaf commands the docs must cover: every runnable,
 // visible leaf except cobra's own help and completion subcommands.
-func documentedLeaves() []*cobra.Command {
+func (app *testRun) documentedLeaves() []*cobra.Command {
 	var leaves []*cobra.Command
-	walkCommands(rootCmd, func(c *cobra.Command) {
-		if c.HasSubCommands() || !c.Runnable() || c.Hidden || c == rootCmd {
+	walkCommands(app.root, func(c *cobra.Command) {
+		if c.HasSubCommands() || !c.Runnable() || c.Hidden || c == app.root {
 			return
 		}
 		if c.Name() == "help" || c.Parent() != nil && c.Parent().Name() == "completion" {
@@ -77,9 +77,10 @@ func rowWords(cell string) map[string]bool {
 }
 
 func TestEveryCommandIsDocumented(t *testing.T) {
+	app := newTestRun(t)
 	rows, _ := commandDocRows(t)
-	for _, c := range documentedLeaves() {
-		path := strings.TrimPrefix(c.CommandPath(), rootCmd.Name()+" ")
+	for _, c := range app.documentedLeaves() {
+		path := strings.TrimPrefix(c.CommandPath(), app.root.Name()+" ")
 		parent := strings.TrimSuffix(strings.TrimSuffix(path, c.Name()), " ")
 		found := false
 		for _, cell := range rows {
@@ -104,8 +105,9 @@ func TestEveryCommandIsDocumented(t *testing.T) {
 }
 
 func TestEveryDocumentedCommandExists(t *testing.T) {
-	rootCmd.InitDefaultHelpCmd() // cobra adds these two at Execute time
-	rootCmd.InitDefaultCompletionCmd()
+	app := newTestRun(t)
+	app.root.InitDefaultHelpCmd() // cobra adds these two at Execute time
+	app.root.InitDefaultCompletionCmd()
 	rows, _ := commandDocRows(t)
 	for _, cell := range rows {
 		spans := backtickSpan.FindAllStringSubmatch(cell, -1)
@@ -127,7 +129,7 @@ func TestEveryDocumentedCommandExists(t *testing.T) {
 		last := words[len(words)-1]
 		for alt := range strings.SplitSeq(last, "/") {
 			path := append(append([]string{}, words[:len(words)-1]...), alt)
-			c, rest, err := rootCmd.Find(path)
+			c, rest, err := app.root.Find(path)
 			if err != nil || len(rest) > 0 || c.Name() != alt {
 				t.Errorf(
 					"docs/commands.md row %q names %q, which is not a command",
@@ -140,6 +142,7 @@ func TestEveryDocumentedCommandExists(t *testing.T) {
 }
 
 func TestAliasTableMatchesTheTree(t *testing.T) {
+	app := newTestRun(t)
 	_, aliasRows := commandDocRows(t)
 	documented := make(map[string][]string)
 	for _, row := range aliasRows {
@@ -153,13 +156,13 @@ func TestAliasTableMatchesTheTree(t *testing.T) {
 		}
 	}
 	actual := make(map[string][]string)
-	walkCommands(rootCmd, func(c *cobra.Command) {
+	walkCommands(app.root, func(c *cobra.Command) {
 		if len(c.Aliases) == 0 || c.Hidden {
 			return
 		}
 		aliases := append([]string{}, c.Aliases...)
 		slices.Sort(aliases)
-		actual[strings.TrimPrefix(c.CommandPath(), rootCmd.Name()+" ")] = aliases
+		actual[strings.TrimPrefix(c.CommandPath(), app.root.Name()+" ")] = aliases
 	})
 	for path, aliases := range actual {
 		if got := strings.Join(documented[path], ", "); got != strings.Join(aliases, ", ") {

@@ -19,15 +19,13 @@ import (
 // and last line; with or without an instance prefix (without one, a note
 // names the instance).
 func TestCpErrorDocument(t *testing.T) {
-	old := app.SFTPProgram
-	app.SFTPProgram = os.Args[0]
-	t.Cleanup(func() { app.SFTPProgram = old })
 	for _, fake := range []string{"ok", "fail"} {
 		for _, src := range []string{"my-app:/etc/hostname", "my-app/8a2f:/etc/hostname"} {
 			for _, mode := range []string{"json", "yaml"} {
 				o := session{
 					args: []string{"cg", "cp", src, filepath.Join(t.TempDir(), "h"), "-o", mode},
 					env:  with(keyEnv, "SALAD_CLI_TEST_FAKE_SFTP", fake),
+					deps: func(d *Deps) { d.SFTPProgram = os.Args[0] },
 				}.run(t)
 				checkMachineStderr(t, o)
 				if fake == "ok" {
@@ -53,6 +51,7 @@ func TestCpErrorDocument(t *testing.T) {
 // --org on a command that reads neither are unknown flags whose hint says
 // why.
 func TestShadowedFlagSaysWhy(t *testing.T) {
+	app := newTestRun(t)
 	for _, tc := range []struct {
 		args []string
 		want string
@@ -63,7 +62,7 @@ func TestShadowedFlagSaysWhy(t *testing.T) {
 			"<org>[/<project>]"},
 	} {
 		t.Run(strings.Join(tc.args, " "), func(t *testing.T) {
-			_, err := runRoot(t, tc.args...)
+			_, err := app.runRoot(t, tc.args...)
 			var cerr *clierr.Error
 			if !errors.As(err, &cerr) || cerr.Code != clierr.CodeUsage ||
 				cerr.Message != "unknown flag: "+tc.args[len(tc.args)-2] ||
@@ -80,6 +79,7 @@ func TestShadowedFlagSaysWhy(t *testing.T) {
 // commands offer exactly the flags they read; a new command must be added
 // here, so it cannot offer a flag it ignores by default.
 func TestEveryCommandIsClassified(t *testing.T) {
+	app := newTestRun(t)
 	classes := map[string]string{
 		"availability": "both", "container-groups": "both", "doctor": "both", "login": "both",
 		"logs": "both", "queues": "both", "whoami": "both",
@@ -88,7 +88,7 @@ func TestEveryCommandIsClassified(t *testing.T) {
 		"config": "neither", "logout": "neither", "orgs": "neither", "ssh-key": "neither",
 		"use": "neither", "version": "neither",
 	}
-	for _, top := range rootCmd.Commands() {
+	for _, top := range app.root.Commands() {
 		if top.Hidden || top.Name() == "help" {
 			continue
 		}
@@ -177,9 +177,10 @@ func TestHiddenKeyReadWithCI(t *testing.T) {
 // TestSSHQuietInMachineMode: in json and yaml mode OpenSSH's informational
 // lines (the first-connection host key line) are kept off stderr.
 func TestSSHQuietInMachineMode(t *testing.T) {
-	t.Cleanup(func() { setOutputMode(t, "table") })
+	app := newTestRun(t)
+	t.Cleanup(func() { app.setOutputMode(t, "table") })
 	for _, mode := range []string{"table", "json", "yaml"} {
-		setOutputMode(t, mode)
+		app.setOutputMode(t, mode)
 		got := slices.Contains(app.hostKeyOptions("8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37"), "LogLevel=ERROR")
 		if want := mode != "table"; got != want {
 			t.Errorf("%s mode: LogLevel=ERROR %t, want %t", mode, got, want)
@@ -190,9 +191,10 @@ func TestSSHQuietInMachineMode(t *testing.T) {
 // TestOrgsListingWithoutItems: orgs list and orgs get report a listing that
 // came back without its items as an error, not as no organizations.
 func TestOrgsListingWithoutItems(t *testing.T) {
-	stubAPI(t, map[string]string{"/v1/organizations": `{}`})
+	app := newTestRun(t)
+	app.stubAPI(t, map[string]string{"/v1/organizations": `{}`})
 	for _, args := range [][]string{{"orgs", "list"}, {"orgs", "get", "my-org"}} {
-		_, err := runRoot(t, args...)
+		_, err := app.runRoot(t, args...)
 		var cerr *clierr.Error
 		if !errors.As(err, &cerr) || cerr.Kind != clierr.KindAPIError ||
 			!strings.Contains(cerr.Message, "cannot read") {

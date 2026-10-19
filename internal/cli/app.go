@@ -35,6 +35,8 @@ type Deps struct {
 	// LookPath and HasPassphrase are the system checks doctor's SSH row makes.
 	LookPath      func(file string) (string, error)
 	HasPassphrase func(keyPath string) (has, known bool)
+	// Environ is the environment ssh, sftp and cp's child process gets.
+	Environ func() []string
 }
 
 // ProcessDeps is the running process as a run's dependencies.
@@ -54,6 +56,7 @@ func ProcessDeps() Deps {
 		ProductionAPI:  api.DefaultBaseURL,
 		LookPath:       exec.LookPath,
 		HasPassphrase:  keyHasPassphrase,
+		Environ:        os.Environ,
 	}
 }
 

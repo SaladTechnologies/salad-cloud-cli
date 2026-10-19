@@ -11,7 +11,8 @@ import (
 // TestVersionJSONShape pins version's JSON document: every key present,
 // including the beta stage and the issues URL bug reports should go to.
 func TestVersionJSONShape(t *testing.T) {
-	out, err := runRoot(t, "version", "-o", "json")
+	app := newTestRun(t)
+	out, err := app.runRoot(t, "version", "-o", "json")
 	if err != nil {
 		t.Fatalf("version -o json: %v", err)
 	}
@@ -37,8 +38,9 @@ func TestVersionJSONShape(t *testing.T) {
 
 // TestRootHelpNamesBetaAndIssues: --help is where a new user looks first.
 func TestRootHelpNamesBetaAndIssues(t *testing.T) {
+	app := newTestRun(t)
 	for _, want := range []string{version.Stage + " release", version.IssuesURL, "saladcloud version"} {
-		if !strings.Contains(rootCmd.Long, want) {
+		if !strings.Contains(app.root.Long, want) {
 			t.Errorf("root --help lacks %q", want)
 		}
 	}

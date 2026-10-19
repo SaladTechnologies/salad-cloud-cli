@@ -19,6 +19,7 @@ import (
 // about this build.
 
 func TestRejectUnknownsNoHatchForTypos(t *testing.T) {
+	app := newTestRun(t)
 	cerr := app.rejectUnknowns([]input.Unknown{
 		{
 			Desc: `unknown field "replica" at the top level (did you mean "replicas"?)`,
@@ -41,6 +42,7 @@ func TestRejectUnknownsNoHatchForTypos(t *testing.T) {
 }
 
 func TestRejectUnknownsHatchNamesOnlyNovelFields(t *testing.T) {
+	app := newTestRun(t)
 	cerr := app.rejectUnknowns([]input.Unknown{
 		{
 			Desc: `unknown field "replica" at the top level (did you mean "replicas"?)`,
@@ -61,6 +63,7 @@ func TestRejectUnknownsHatchNamesOnlyNovelFields(t *testing.T) {
 }
 
 func TestRejectUnknownsSingleNovelDoesNotRepeat(t *testing.T) {
+	app := newTestRun(t)
 	cerr := app.rejectUnknowns([]input.Unknown{
 		{Desc: `unknown field "gpu_sharing" in "container"`, Path: "container.gpu_sharing"},
 	})
@@ -76,6 +79,7 @@ func TestRejectUnknownsSingleNovelDoesNotRepeat(t *testing.T) {
 }
 
 func TestRejectUnknownsGetResponseTellLeads(t *testing.T) {
+	app := newTestRun(t)
 	paths := []string{
 		"id", "create_time", "update_time", "version", "pending_change", "current_state", "organization_name",
 		"project_name", "container.hash", "container.size", "name", "autostart_policy", "restart_policy", "priority",
@@ -99,7 +103,7 @@ func TestRejectUnknownsGetResponseTellLeads(t *testing.T) {
 	// --debug adds the per-field list on stderr.
 	app.debugLevel = api.DebugRequests
 	t.Cleanup(func() { app.debugLevel = api.DebugOff })
-	stderr := captureStderr(t, func() {
+	stderr := app.captureStderr(t, func() {
 		if app.rejectUnknowns(us) == nil {
 			t.Error("the unknown fields were not rejected")
 		}
@@ -123,7 +127,7 @@ func errText(e *clierr.Error) string {
 }
 
 // captureStderr runs fn with os.Stderr sent to a file and returns what it wrote.
-func captureStderr(t *testing.T, fn func()) string {
+func (app *testRun) captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	var buf bytes.Buffer
 	old := app.Stderr
@@ -134,6 +138,7 @@ func captureStderr(t *testing.T, fn func()) string {
 }
 
 func TestRejectUnknownsHedgesSchemaFacts(t *testing.T) {
+	app := newTestRun(t)
 	for _, tt := range []struct{ path, want, mustNot string }{
 		{"restart_policy", "not in this CLI's update schema (create accepts it)", "cannot be changed by update"},
 		{"readme", "response-only in this CLI's API model", "is a response-only field and"},
@@ -172,6 +177,7 @@ func TestWarnUnknownsLenientTypo(t *testing.T) {
 // queue_connection is create-only, and update says why and what to do
 // instead of offering the escape hatch.
 func TestRejectUnknownsExplainsQueueConnection(t *testing.T) {
+	app := newTestRun(t)
 	cerr := app.rejectUnknowns([]input.Unknown{
 		{Desc: `unknown field "queue_connection" at the top level`, Path: "queue_connection"},
 	})
@@ -191,6 +197,7 @@ func TestRejectUnknownsExplainsQueueConnection(t *testing.T) {
 // TestUpdateNamesTheGroupToStartFrom: update knows the group, so a get
 // response given as its patch gets the exact command to start from.
 func TestUpdateNamesTheGroupToStartFrom(t *testing.T) {
+	app := newTestRun(t)
 	doc := filepath.Join(t.TempDir(), "g.json")
 	if err := os.WriteFile(
 		doc,
@@ -199,8 +206,8 @@ func TestUpdateNamesTheGroupToStartFrom(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	stubAPI(t, make(map[string]string))
-	_, err := runRoot(t, "cg", "update", "my-app", "-f", doc)
+	app.stubAPI(t, make(map[string]string))
+	_, err := app.runRoot(t, "cg", "update", "my-app", "-f", doc)
 	var cerr *clierr.Error
 	ok := errors.As(err, &cerr)
 	if !ok || cerr.Kind != clierr.KindUnknownField ||
