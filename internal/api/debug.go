@@ -82,9 +82,15 @@ func (d debugger) closeFailed(err error) {
 	}
 }
 
-// newHTTPClient is an HTTP client with timeout whose requests d reports.
+// newHTTPClient is an HTTP client with timeout whose requests d reports. Its transport is a copy of the default one
+// (the same proxy and timeout settings) with a connection pool of its own, which nothing else can reset:
+// httptest.Server.Close drops the default transport's idle connections, cutting off a parallel test's request.
 func newHTTPClient(timeout time.Duration, d debugger) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: debugTransport{base: http.DefaultTransport, debugger: d}}
+	base := http.DefaultTransport
+	if t, ok := base.(*http.Transport); ok {
+		base = t.Clone()
+	}
+	return &http.Client{Timeout: timeout, Transport: debugTransport{base: base, debugger: d}}
 }
 
 // debugTransport logs each request at the --debug level, then hands it to
