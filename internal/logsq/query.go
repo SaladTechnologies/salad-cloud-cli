@@ -48,21 +48,7 @@ type Filters struct {
 // query-language syntax and passes through verbatim inside parentheses.
 func Compile(f Filters) (string, *clierr.Error) {
 	var b strings.Builder
-	switch {
-	case f.Group != "":
-		b.WriteString("resource.labels.container_group_name = ")
-		b.WriteString(quoteValue(f.Group))
-		if f.Project != "" {
-			b.WriteString(" and resource.labels.project_name = ")
-			b.WriteString(quoteValue(f.Project))
-		}
-	case f.Project != "":
-		b.WriteString("resource.labels.project_name = ")
-		b.WriteString(quoteValue(f.Project))
-	case f.Org != "":
-		b.WriteString("resource.labels.organization_name = ")
-		b.WriteString(quoteValue(f.Org))
-	default:
+	if !writeScope(&b, f) {
 		return "", clierr.New(
 			clierr.CodeUsage,
 			clierr.KindUsage,
@@ -92,6 +78,29 @@ func Compile(f Filters) (string, *clierr.Error) {
 		b.WriteString(")")
 	}
 	return b.String(), nil
+}
+
+// writeScope writes the clause for f's scope, the narrowest of its group (within its project when that is set too),
+// project and organization, and reports false, writing nothing, when none is set.
+func writeScope(b *strings.Builder, f Filters) bool {
+	switch {
+	case f.Group != "":
+		b.WriteString("resource.labels.container_group_name = ")
+		b.WriteString(quoteValue(f.Group))
+		if f.Project != "" {
+			b.WriteString(" and resource.labels.project_name = ")
+			b.WriteString(quoteValue(f.Project))
+		}
+	case f.Project != "":
+		b.WriteString("resource.labels.project_name = ")
+		b.WriteString(quoteValue(f.Project))
+	case f.Org != "":
+		b.WriteString("resource.labels.organization_name = ")
+		b.WriteString(quoteValue(f.Org))
+	default:
+		return false
+	}
+	return true
 }
 
 func validSeverity(s string) bool {
