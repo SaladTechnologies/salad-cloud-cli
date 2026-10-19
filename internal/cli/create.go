@@ -759,7 +759,7 @@ func (app *App) createRequestBody(
 	if len(unknowns) == 0 {
 		return sent, nil
 	}
-	warnUnknowns(app.errw(), unknowns, true)
+	warnCreateUnknowns(app.errw(), unknowns)
 	return input.MergeJSON(baseRaw, sent)
 }
 

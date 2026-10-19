@@ -785,7 +785,7 @@ func (app *App) updateLoadPatchFile(opts *groupsUpdateOptions, group string) (js
 		return nil, cerr
 	}
 	if opts.allowUnknown {
-		warnUnknowns(app.errw(), unknowns, false)
+		warnUnknowns(app.errw(), unknowns)
 		return raw, nil
 	}
 	// Strict: load leniently, then reject with per-field advice so a

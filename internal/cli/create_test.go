@@ -840,7 +840,7 @@ func TestWarnUnknownsFlagsIgnoredFields(t *testing.T) {
 	var buf bytes.Buffer
 	warnUnknowns(&buf, []input.Unknown{
 		{Desc: `unknown field "auth" in "networking"`, Path: "networking.auth"},
-	}, false)
+	})
 	out := buf.String()
 	for _, want := range []string{"expect it to be ignored", "update schema"} {
 		if !strings.Contains(out, want) {
@@ -858,13 +858,13 @@ func TestWarnUnknowns(t *testing.T) {
 		{Desc: `unknown field "b" in "scaling-actions[0]"`, InArray: true},
 	}
 	var createBuf strings.Builder
-	warnUnknowns(&createBuf, unknowns, true)
+	warnCreateUnknowns(&createBuf, unknowns)
 	if got := createBuf.String(); !strings.Contains(got, "sent to the API anyway") ||
 		!strings.Contains(got, "; dropped, because") {
 		t.Errorf("create-mode warnings wrong:\n%s", got)
 	}
 	var updateBuf strings.Builder
-	warnUnknowns(&updateBuf, unknowns, false)
+	warnUnknowns(&updateBuf, unknowns)
 	if got := updateBuf.String(); strings.Contains(got, "dropped") ||
 		strings.Count(got, "sent to the API anyway") != 2 {
 		t.Errorf("update-mode warnings wrong:\n%s", got)

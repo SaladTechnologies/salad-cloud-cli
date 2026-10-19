@@ -26,7 +26,7 @@ replica right now is what saladcloud availability --gpu <class> answers,
 which costs a platform query and so is never run implicitly.`,
 	}
 
-	var allPrices bool
+	var listOpts gpusListOptions
 	listCmd := &cobra.Command{
 		Use:   verbNameList,
 		Short: "List GPU classes with their prices per priority tier",
@@ -41,9 +41,9 @@ column for.`,
   # Every price entry per class, as JSON
   saladcloud gpus list --all-prices -o json`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error { return app.runGpusList(cmd, args, allPrices) },
+		RunE: func(cmd *cobra.Command, _ []string) error { return app.runGpusList(cmd, &listOpts) },
 	}
-	listCmd.Flags().BoolVar(&allPrices, "all-prices", false, "add a column listing every price entry verbatim")
+	listCmd.Flags().BoolVar(&listOpts.allPrices, "all-prices", false, "add a column listing every price entry verbatim")
 	gpusCmd.AddCommand(listCmd)
 
 	gpusCmd.AddCommand(&cobra.Command{
@@ -77,7 +77,14 @@ func (app *App) sortedGpuClasses(cmd *cobra.Command) ([]organizationdata.GpuClas
 	return classes, nil
 }
 
-func (app *App) runGpusList(cmd *cobra.Command, _ []string, allPrices bool) error {
+// gpusListOptions are gpus list's flags.
+type gpusListOptions struct {
+	allPrices bool
+}
+
+// runGpusList is gpus list's RunE: list the GPU classes, sorted by name, and
+// emit them with their prices.
+func (app *App) runGpusList(cmd *cobra.Command, opts *gpusListOptions) error {
 	classes, cerr := app.sortedGpuClasses(cmd)
 	if cerr != nil {
 		return cerr
@@ -87,7 +94,7 @@ func (app *App) runGpusList(cmd *cobra.Command, _ []string, allPrices bool) erro
 	}{classes}
 	emitErr := app.printer.Emit(payload, func(w *output.Writer) {
 		header := "NAME\tTYPE\tHIGH DEMAND\tBATCH\tLOW\tMEDIUM\tHIGH"
-		if allPrices {
+		if opts.allPrices {
 			header += "\tPRICES"
 		}
 		w.Println(header)
@@ -102,7 +109,7 @@ func (app *App) runGpusList(cmd *cobra.Command, _ []string, allPrices bool) erro
 				orDash(prices["medium"]),
 				orDash(prices["high"]),
 			}
-			if allPrices {
+			if opts.allPrices {
 				cells = append(cells, formatAllPrices(c.Prices))
 			}
 			w.Println(strings.Join(cells, "\t"))

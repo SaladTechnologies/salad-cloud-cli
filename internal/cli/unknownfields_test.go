@@ -112,7 +112,10 @@ func TestRejectUnknownsGetResponseTellLeads(t *testing.T) {
 			t.Error("the unknown fields were not rejected")
 		}
 	})
-	for _, want := range []string{"debug: 14 unknown fields", "not in this CLI's update schema", "response-only in this CLI's API model", `"priority" belongs at "container.priority"`} {
+	for _, want := range []string{
+		"debug: 14 unknown fields", "not in this CLI's update schema", "response-only in this CLI's API model",
+		`"priority" belongs at "container.priority"`,
+	} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("--debug output lacks %q: %s", want, stderr)
 		}
@@ -169,7 +172,7 @@ func TestWarnUnknownsLenientTypo(t *testing.T) {
 			Path: "replica",
 			Hint: "replicas",
 		},
-	}, false)
+	})
 	out := buf.String()
 	if !strings.Contains(out, `did you mean "replicas"?`) ||
 		!strings.Contains(out, "sent to the API anyway (--allow-unknown-fields)") {
@@ -207,11 +210,8 @@ func TestUpdateNamesTheGroupToStartFrom(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
 	doc := filepath.Join(t.TempDir(), "g.json")
-	if err := os.WriteFile(
-		doc,
-		[]byte(`{"id":"x","create_time":"t","update_time":"t","version":1,"current_state":{}}`),
-		0o600,
-	); err != nil {
+	body := []byte(`{"id":"x","create_time":"t","update_time":"t","version":1,"current_state":{}}`)
+	if err := os.WriteFile(doc, body, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	app.stubAPI(t, make(map[string]string))

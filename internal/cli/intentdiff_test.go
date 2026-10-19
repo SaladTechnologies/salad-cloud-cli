@@ -517,11 +517,13 @@ func TestDriftWarningsNeverPrintSecrets(t *testing.T) {
 	const sentinel = "sentinel-s3cret-value"
 	before := grp(
 		t,
-		`{"name":"g","replicas":1,"container":{"image":"x","environment_variables":{"KEEP":"`+sentinel+`","DROP":"`+sentinel+`","SWAP":"`+sentinel+`"}}}`,
+		`{"name":"g","replicas":1,"container":{"image":"x","environment_variables":{`+
+			`"KEEP":"`+sentinel+`","DROP":"`+sentinel+`","SWAP":"`+sentinel+`"}}}`,
 	)
 	after := grp(
 		t,
-		`{"name":"g","replicas":1,"container":{"image":"x","environment_variables":{"KEEP":"`+sentinel+`","SWAP":"other-`+sentinel+`","NEW":"`+sentinel+`"}}}`,
+		`{"name":"g","replicas":1,"container":{"image":"x","environment_variables":{`+
+			`"KEEP":"`+sentinel+`","SWAP":"other-`+sentinel+`","NEW":"`+sentinel+`"}}}`,
 	)
 
 	var out bytes.Buffer

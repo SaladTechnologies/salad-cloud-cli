@@ -274,18 +274,24 @@ func secretPath(path string) bool {
 	if strings.HasPrefix(path, "container.environment_variables.") {
 		return true // a variable's name may itself contain dots
 	}
-	key, parent := pathKeys(path)
-	return api.SecretField(key, parent)
+	tail := pathKeys(path)
+	return api.SecretField(tail.key, tail.parent)
+}
+
+// pathTail is the last two segments of a dotted path: its key, and the key
+// of the object holding it ("" at the top level).
+type pathTail struct {
+	key, parent string
 }
 
 // pathKeys returns the last two segments of a dotted path.
-func pathKeys(path string) (key, parent string) {
+func pathKeys(path string) pathTail {
 	segs := strings.Split(path, ".")
-	key = segs[len(segs)-1]
+	tail := pathTail{key: segs[len(segs)-1], parent: ""}
 	if len(segs) > 1 {
-		parent = segs[len(segs)-2]
+		tail.parent = segs[len(segs)-2]
 	}
-	return key, parent
+	return tail
 }
 
 // redactNested returns v with every credential inside it replaced, walking
@@ -319,8 +325,8 @@ func shownValue(path string, v any) string {
 	if v != nil && secretPath(path) {
 		return "(hidden)"
 	}
-	key, parent := pathKeys(path)
-	return compactValue(redactNested(v, key, parent))
+	tail := pathKeys(path)
+	return compactValue(redactNested(v, tail.key, tail.parent))
 }
 
 // secretChange describes a credential's change without its value.
@@ -334,17 +340,21 @@ func secretChange(before, after any) string {
 	return "(changed)"
 }
 
+// fieldsNoun is "field" for n of one or fewer, else "fields".
+func fieldsNoun(n int) string {
+	if n > 1 {
+		return "fields"
+	}
+	return "field"
+}
+
 // warnIgnoredFields reports dropped writes on stderr. Warnings always go to
 // stderr, including in json mode, so the stdout one-document contract holds.
 func warnIgnoredFields(w io.Writer, fields []ignoredField) {
 	if len(fields) == 0 {
 		return
 	}
-	noun := "field"
-	if len(fields) > 1 {
-		noun = "fields"
-	}
-	fprintf(w, "warning: the API accepted this update but did not apply %d %s:\n", len(fields), noun)
+	fprintf(w, "warning: the API accepted this update but did not apply %d %s:\n", len(fields), fieldsNoun(len(fields)))
 	for _, f := range fields {
 		if f.Moved {
 			fprintf(w, "warning:   %s: requested %s, got %s\n", f.Path, f.Requested, f.Actual)
@@ -409,14 +419,17 @@ const maxReportedChanges = 8
 // fires again.
 func remediation() map[string]string {
 	return map[string]string{
-		"scheduled-scaling-enabled":       "scheduled scaling is on hold (the flag is false; the actions are kept); to re-enable it, put " + reenableSchedule,
-		"container.environment_variables": "the API replaces the whole environment_variables map rather than merging it, so keys you did not mention are dropped; send the complete desired map",
+		"scheduled-scaling-enabled": "scheduled scaling is on hold (the flag is false; the actions are kept); " +
+			"to re-enable it, put " + reenableSchedule,
+		"container.environment_variables": "the API replaces the whole environment_variables map rather than " +
+			"merging it, so keys you did not mention are dropped; send the complete desired map",
 	}
 }
 
 // reenableSchedule is the fix for scheduled scaling left on hold, with no
 // shell syntax: a patch file works in every shell.
-const reenableSchedule = `{"scheduled-scaling-enabled": true} in a file and run saladcloud container-groups update <group> -f <file>`
+const reenableSchedule = `{"scheduled-scaling-enabled": true} in a file and run ` +
+	`saladcloud container-groups update <group> -f <file>`
 
 // holdRule is the one documented platform rule the inverse diff knows the
 // meaning of: writing `replicas` puts scheduled scaling on hold — the flag
@@ -567,7 +580,8 @@ func warnUnrequestedChanges(w io.Writer, changes []unrequestedChange) {
 		// whose entry is worded for the flag flipping WITHOUT a replicas write.
 		fprintf(
 			w,
-			"note: %s: %s -> %s; setting replicas puts scheduled scaling on hold (actions kept); to re-enable it, put %s\n",
+			"note: %s: %s -> %s; setting replicas puts scheduled scaling on hold (actions kept); "+
+				"to re-enable it, put %s\n",
 			c.Path,
 			c.Before,
 			c.After,
@@ -586,11 +600,12 @@ func warnUnrequestedList(w io.Writer, warns []unrequestedChange) {
 		extra = len(shown) - maxReportedChanges
 		shown = shown[:maxReportedChanges]
 	}
-	noun := "field"
-	if len(warns) > 1 {
-		noun = "fields"
-	}
-	fprintf(w, "warning: this update also changed %d %s the patch did not mention:\n", len(warns), noun)
+	fprintf(
+		w,
+		"warning: this update also changed %d %s the patch did not mention:\n",
+		len(warns),
+		fieldsNoun(len(warns)),
+	)
 	for _, c := range shown {
 		if c.Secret {
 			fprintf(w, "warning:   %s: %s\n", c.Path, c.Before)
@@ -609,20 +624,20 @@ func warnUnrequestedList(w io.Writer, warns []unrequestedChange) {
 func warnRemediations(w io.Writer, changes []unrequestedChange) {
 	seen := make(map[string]bool)
 	for _, c := range changes {
-		if hint, at := remediationFor(c.Path); hint != "" && !seen[at] {
+		if at, ok := remediationFor(c.Path); ok && !seen[at] {
 			seen[at] = true
-			fprintf(w, "warning:   %s\n", hint)
+			fprintf(w, "warning:   %s\n", remediation()[at])
 		}
 	}
 }
 
 // remediationFor finds the most specific remediation covering a path,
-// returning the advice and the key it matched (so it is printed once per
-// cause rather than once per affected key).
-func remediationFor(path string) (string, string) {
+// returning the remediation key it matched (so the advice is printed once
+// per cause rather than once per affected key), and false when none does.
+func remediationFor(path string) (string, bool) {
 	for p := path; p != ""; {
-		if hint, ok := remediation()[p]; ok {
-			return hint, p
+		if _, ok := remediation()[p]; ok {
+			return p, true
 		}
 		i := strings.LastIndexByte(p, '.')
 		if i < 0 {
@@ -630,7 +645,7 @@ func remediationFor(path string) (string, string) {
 		}
 		p = p[:i]
 	}
-	return "", ""
+	return "", false
 }
 
 // findUnappliedCreateFields is findIgnoredFields for create, where there is
@@ -767,11 +782,8 @@ func warnUnappliedCreateFields(w io.Writer, fields []ignoredField) {
 	if len(fields) == 0 {
 		return
 	}
-	noun := "field"
-	if len(fields) > 1 {
-		noun = "fields"
-	}
-	fprintf(w, "warning: the group was created but the API did not apply %d requested %s:\n", len(fields), noun)
+	fprintf(w, "warning: the group was created but the API did not apply %d requested %s:\n",
+		len(fields), fieldsNoun(len(fields)))
 	for _, f := range fields {
 		fprintf(w, "warning:   %s: requested %s, got %s\n", f.Path, f.Requested, f.Actual)
 	}

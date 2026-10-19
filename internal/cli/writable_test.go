@@ -34,8 +34,14 @@ const richResponse = `{
   "scheduled-scaling-enabled": true,
   "scaling-actions": [{"replicas": 1, "schedule": "0 9 * * 1-5"}],
   "liveness_probe": null,
-  "startup_probe": {"tcp": {"port": 8080}, "initial_delay_seconds": 1, "period_seconds": 3, "timeout_seconds": 1, "success_threshold": 1, "failure_threshold": 3},
-  "networking": {"protocol": "http", "port": 8080, "auth": true, "dns": "x.salad.cloud", "load_balancer": "round_robin", "single_connection_limit": false, "client_request_timeout": 100, "server_response_timeout": 100},
+  "startup_probe": {
+    "tcp": {"port": 8080}, "initial_delay_seconds": 1, "period_seconds": 3, "timeout_seconds": 1,
+    "success_threshold": 1, "failure_threshold": 3
+  },
+  "networking": {
+    "protocol": "http", "port": 8080, "auth": true, "dns": "x.salad.cloud", "load_balancer": "round_robin",
+    "single_connection_limit": false, "client_request_timeout": 100, "server_response_timeout": 100
+  },
   "container": {
     "image": "docker.io/library/busybox:1.36",
     "hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -45,7 +51,11 @@ const richResponse = `{
     "environment_variables": {"A": "1", "weird.KEY-2": "x"},
     "resources": {"cpu": 1, "memory": 1024, "gpu_classes": [], "shm_size": 64}
   },
-  "current_state": {"status": "running", "description": null, "start_time": "2026-08-30T18:21:12.4390000Z", "finish_time": "0001-01-01T00:00:00Z", "instance_status_counts": {"allocating_count": 0, "creating_count": 0, "running_count": 2, "stopping_count": 0}}
+  "current_state": {
+    "status": "running", "description": null,
+    "start_time": "2026-08-30T18:21:12.4390000Z", "finish_time": "0001-01-01T00:00:00Z",
+    "instance_status_counts": {"allocating_count": 0, "creating_count": 0, "running_count": 2, "stopping_count": 0}
+  }
 }`
 
 // writableRichResponse is writableDocument of richResponse: the document,
