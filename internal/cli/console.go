@@ -148,8 +148,7 @@ type keyReader struct {
 // characters (an arrow key's escape sequence, paste markers) are kept unechoed,
 // for the caller's checks to judge.
 func (k *keyReader) readLine(echo io.Writer) (string, error) {
-	var line []rune
-	var partial []byte // a UTF-8 character still arriving
+	var l keyLine
 	b := make([]byte, 1)
 	skipLF := k.afterCR
 	k.afterCR = false
@@ -157,10 +156,7 @@ func (k *keyReader) readLine(echo io.Writer) (string, error) {
 		n, err := k.r.Read(b)
 		if n == 0 {
 			if err != nil {
-				if len(line) == 0 {
-					return "", io.EOF
-				}
-				return strings.TrimSpace(string(line)), nil
+				return l.atEnd()
 			}
 			continue
 		}
@@ -170,32 +166,71 @@ func (k *keyReader) readLine(echo io.Writer) (string, error) {
 			continue
 		}
 		skipLF = false
-		switch {
-		case c == keyInterrupt:
-			return "", errInterrupt
-		case c == keyEndUnix || c == keyEndWin:
-			if len(line) == 0 {
-				return "", io.EOF
-			}
-		case c == '\r' || c == '\n':
-			k.afterCR = c == '\r'
-			return strings.TrimSpace(string(line)), nil
-		case c == keyBackspace || c == keyCtrlH:
-			if len(line) > 0 {
-				line = line[:len(line)-1]
-				fprint(echo, "\b \b")
-			}
-		case c < 0x20:
-			line = append(line, rune(c))
-		default:
-			partial = append(partial, c)
-			if utf8.FullRune(partial) {
-				ch, _ := utf8.DecodeRune(partial)
-				line = append(line, ch)
-				writeUnreported(echo, string(partial))
-				partial = partial[:0]
-			}
+		if done, line, err := k.press(&l, c, echo); done {
+			return line, err
 		}
+	}
+}
+
+// keyLine is the line keyReader.readLine is reading.
+type keyLine struct {
+	runes   []rune
+	partial []byte // a UTF-8 character still arriving
+}
+
+// press acts on one keystroke c, as readLine says; it reports whether the line has ended, with the line or the
+// error that ended it.
+func (k *keyReader) press(l *keyLine, c byte, echo io.Writer) (bool, string, error) {
+	switch {
+	case c == keyInterrupt:
+		return true, "", errInterrupt
+	case isEndOfInputKey(c):
+		if len(l.runes) == 0 {
+			return true, "", io.EOF
+		}
+	case c == '\r' || c == '\n':
+		k.afterCR = c == '\r'
+		return true, strings.TrimSpace(string(l.runes)), nil
+	case isBackspaceKey(c):
+		l.backspace(echo)
+	case c < 0x20:
+		l.runes = append(l.runes, rune(c))
+	default:
+		l.add(c, echo)
+	}
+	return false, "", nil
+}
+
+// isEndOfInputKey reports whether c ends input: Ctrl-D, or Ctrl-Z as Windows spells it.
+func isEndOfInputKey(c byte) bool { return c == keyEndUnix || c == keyEndWin }
+
+// isBackspaceKey reports whether c is Backspace, as the terminal sends it (DEL or Ctrl-H).
+func isBackspaceKey(c byte) bool { return c == keyBackspace || c == keyCtrlH }
+
+// atEnd is the line when input ends: [io.EOF] when it is empty, else the line trimmed.
+func (l *keyLine) atEnd() (string, error) {
+	if len(l.runes) == 0 {
+		return "", io.EOF
+	}
+	return strings.TrimSpace(string(l.runes)), nil
+}
+
+// backspace removes the last character, from the line and the echo, if there is one.
+func (l *keyLine) backspace(echo io.Writer) {
+	if len(l.runes) > 0 {
+		l.runes = l.runes[:len(l.runes)-1]
+		fprint(echo, "\b \b")
+	}
+}
+
+// add takes one byte of a printable character, which is kept and echoed once all its bytes have arrived.
+func (l *keyLine) add(c byte, echo io.Writer) {
+	l.partial = append(l.partial, c)
+	if utf8.FullRune(l.partial) {
+		ch, _ := utf8.DecodeRune(l.partial)
+		l.runes = append(l.runes, ch)
+		writeUnreported(echo, string(l.partial))
+		l.partial = l.partial[:0]
 	}
 }
 
