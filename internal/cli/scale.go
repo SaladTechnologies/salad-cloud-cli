@@ -66,13 +66,16 @@ func replicas(n int64) string {
 	return fmt.Sprintf("%d replicas", n)
 }
 
+// scaleOptions are scale's flags.
+type scaleOptions struct {
+	replicas     int64
+	keepSchedule bool
+	settle       settleOptions
+}
+
 // addScaleCommands adds scale.go's commands to the tree.
 func (app *App) addScaleCommands(cg *cobra.Command) {
-	var scaleOpts struct {
-		replicas     int64
-		keepSchedule bool
-		settle       settleOptions
-	}
+	var scaleOpts scaleOptions
 	scaleCmd := &cobra.Command{
 		Use:   "scale <group> --replicas <n>",
 		Short: "Set the replica count of a container group (waits for the change to settle; --no-wait returns at once)",
@@ -86,57 +89,7 @@ write (the API does not honor the flag in the same patch as replicas), for
 "new setpoint, keep the program".`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			keep := scaleOpts.keepSchedule
-			wait, timeout, cerr := scaleOpts.settle.values()
-			if cerr != nil {
-				return cerr
-			}
-			if !cmd.Flags().Changed("replicas") {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing required flag: --replicas <n>")
-			}
-			n := scaleOpts.replicas
-			if cerr = validateScaleReplicas(n); cerr != nil {
-				return cerr
-			}
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			var before *shared.ContainerGroup
-			if keep {
-				if b, cerr := client.GetGroup(cmd.Context(), args[0]); cerr == nil {
-					before = b
-				}
-			}
-			// No settle line: the one success line below says it.
-			group, err := app.applyPatch(cmd, client, args[0], scalePatch(n), nil, wait, timeout, "")
-			if err != nil {
-				return err
-			}
-			if keep {
-				switch {
-				case shouldReenableSchedule(keep, before, group):
-					if _, err := app.applyPatch(
-						cmd,
-						client,
-						args[0],
-						reenableSchedulePatch(),
-						nil,
-						wait,
-						timeout,
-						"scheduled scaling re-enabled",
-					); err != nil {
-						return err
-					}
-					fprintln(app.errw(), "note: scheduled scaling re-enabled (--keep-schedule)")
-				case before != nil && !ptr.Deref(before.ScheduledScalingEnabled):
-					fprintln(app.errw(), "note: --keep-schedule: scheduled scaling was not enabled, nothing to keep")
-				}
-			}
-			v := scaleResult{Name: args[0], Action: "scaled", Replicas: n, OK: true}
-			return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
-				w.Printf("Scaled %s to %s\n", v.Name, replicas(v.Replicas))
-			}))
+			return app.runScale(cmd, &scaleOpts, args[0])
 		},
 	}
 	scaleCmd.Flags().Int64Var(&scaleOpts.replicas, "replicas", 0, "desired replica count (0-500)")
@@ -144,4 +97,67 @@ write (the API does not honor the flag in the same patch as replicas), for
 		BoolVar(&scaleOpts.keepSchedule, "keep-schedule", false, "re-enable scheduled scaling after the write (setting replicas puts it on hold)")
 	addSettleFlags(scaleCmd, &scaleOpts.settle)
 	cg.AddCommand(scaleCmd)
+}
+
+// runScale is scale's RunE: check the flags pre-flight, write the replica
+// count, restore the schedule under --keep-schedule, and emit the result.
+func (app *App) runScale(cmd *cobra.Command, opts *scaleOptions, name string) error {
+	keep := opts.keepSchedule
+	wait, timeout, cerr := opts.settle.values()
+	if cerr != nil {
+		return cerr
+	}
+	if !cmd.Flags().Changed("replicas") {
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing required flag: --replicas <n>")
+	}
+	n := opts.replicas
+	if cerr = validateScaleReplicas(n); cerr != nil {
+		return cerr
+	}
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	write := func(patch []byte, doneMsg string) (*shared.ContainerGroup, error) {
+		return app.applyPatch(cmd, client, name, patch, nil, wait, timeout, doneMsg)
+	}
+	var before *shared.ContainerGroup
+	if keep {
+		if b, cerr := client.GetGroup(cmd.Context(), name); cerr == nil {
+			before = b
+		}
+	}
+	// No settle line: the one success line below says it.
+	group, err := write(scalePatch(n), "")
+	if err != nil {
+		return err
+	}
+	if keep {
+		if err := app.scaleKeepSchedule(before, group, write); err != nil {
+			return err
+		}
+	}
+	v := scaleResult{Name: name, Action: "scaled", Replicas: n, OK: true}
+	return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
+		w.Printf("Scaled %s to %s\n", v.Name, replicas(v.Replicas))
+	}))
+}
+
+// scaleKeepSchedule is --keep-schedule after the replicas write: switch the
+// schedule back on through write when the write put it on hold, or note
+// that there was none to keep.
+func (app *App) scaleKeepSchedule(
+	before, after *shared.ContainerGroup,
+	write func(patch []byte, doneMsg string) (*shared.ContainerGroup, error),
+) error {
+	switch {
+	case shouldReenableSchedule(true, before, after): // true: --keep-schedule was given
+		if _, err := write(reenableSchedulePatch(), "scheduled scaling re-enabled"); err != nil {
+			return err
+		}
+		fprintln(app.errw(), "note: scheduled scaling re-enabled (--keep-schedule)")
+	case before != nil && !ptr.Deref(before.ScheduledScalingEnabled):
+		fprintln(app.errw(), "note: --keep-schedule: scheduled scaling was not enabled, nothing to keep")
+	}
+	return nil
 }

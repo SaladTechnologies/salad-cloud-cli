@@ -31,24 +31,18 @@ func TestValidateScaleReplicas(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			cerr := validateScaleReplicas(tt.n)
-			if !tt.wantErr {
-				if cerr != nil {
-					t.Fatalf("validateScaleReplicas(%d) = %v, want nil", tt.n, cerr)
-				}
-				return
+			if (cerr != nil) != tt.wantErr {
+				t.Fatalf("validateScaleReplicas(%d) = %v, want an error: %v", tt.n, cerr, tt.wantErr)
 			}
 			if cerr == nil {
-				t.Fatalf("validateScaleReplicas(%d) = nil, want an error", tt.n)
+				return
 			}
 			if cerr.Code != clierr.CodeInvalidInput {
 				t.Errorf("code = %d, want %d", cerr.Code, clierr.CodeInvalidInput)
 			}
 			// The message must name the flag and the range, not just fail.
-			if !strings.Contains(cerr.Message, "--replicas") {
-				t.Errorf("message %q does not name --replicas", cerr.Message)
-			}
-			if !strings.Contains(cerr.Message, "0 and 500") {
-				t.Errorf("message %q does not state the accepted range", cerr.Message)
+			if !strings.Contains(cerr.Message, "--replicas") || !strings.Contains(cerr.Message, "0 and 500") {
+				t.Errorf("message %q does not name --replicas and the accepted range", cerr.Message)
 			}
 		})
 	}
