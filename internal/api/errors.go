@@ -1,6 +1,7 @@
 package api
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -111,37 +112,7 @@ func messageFromBody(status int, body []byte) (msg, hint string) {
 	}
 	var doc problemDoc
 	if err := json.Unmarshal(body, &doc); err == nil {
-		msg = doc.Detail
-		if msg == "" {
-			msg = doc.Title
-		}
-		if msg == "" {
-			msg = doc.Message
-		}
-		// ASP.NET ValidationProblemDetails carries the actual field-level
-		// messages in an errors dict; without them "One or more validation
-		// errors occurred." says nothing actionable.
-		flat := flattenFieldErrors(doc.Errors)
-		if flat != "" {
-			if msg == "" {
-				msg = fmt.Sprintf("HTTP %d", status)
-			}
-			msg = truncateMessage(msg+"; "+flat, maxErrorMessageLen)
-		}
-		// Some API 400s carry only a domain type ("Bad Request (type: x)",
-		// or "Entitlement check failed.") with no actionable detail; translate
-		// the known ones into sentences. A real detail or field-error list
-		// always wins; the known type's fix applies either way.
-		if known, ok := typeHints()[doc.Type]; ok {
-			if doc.Detail == "" && flat == "" {
-				msg = known.msg
-			}
-			hint = known.hint
-		}
-		if msg != "" {
-			if doc.Type != "" && !isRFCTypeURL(doc.Type) {
-				return fmt.Sprintf("%s (type: %s)", msg, doc.Type), hint
-			}
+		if msg, hint := doc.message(status); msg != "" {
 			return msg, hint
 		}
 	}
@@ -149,6 +120,36 @@ func messageFromBody(status int, body []byte) (msg, hint string) {
 		trimmed = trimmed[:200]
 	}
 	return fmt.Sprintf("HTTP %d: %s", status, trimmed), ""
+}
+
+// message is the problem document's message, with its domain type when that carries signal, and the fix for the
+// problem types the CLI knows; the message is "" when the document says nothing the CLI can show.
+func (doc *problemDoc) message(status int) (string, string) {
+	msg, hint := cmp.Or(doc.Detail, doc.Title, doc.Message), ""
+	// ASP.NET ValidationProblemDetails carries the actual field-level
+	// messages in an errors dict; without them "One or more validation
+	// errors occurred." says nothing actionable.
+	flat := flattenFieldErrors(doc.Errors)
+	if flat != "" {
+		if msg == "" {
+			msg = fmt.Sprintf("HTTP %d", status)
+		}
+		msg = truncateMessage(msg+"; "+flat, maxErrorMessageLen)
+	}
+	// Some API 400s carry only a domain type ("Bad Request (type: x)",
+	// or "Entitlement check failed.") with no actionable detail; translate
+	// the known ones into sentences. A real detail or field-error list
+	// always wins; the known type's fix applies either way.
+	if known, ok := typeHints()[doc.Type]; ok {
+		if doc.Detail == "" && flat == "" {
+			msg = known.msg
+		}
+		hint = known.hint
+	}
+	if msg != "" && doc.Type != "" && !isRFCTypeURL(doc.Type) {
+		msg = fmt.Sprintf("%s (type: %s)", msg, doc.Type)
+	}
+	return msg, hint
 }
 
 // typeHints maps the API's opaque problem-document types to a sentence and
