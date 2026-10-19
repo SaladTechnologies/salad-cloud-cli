@@ -67,38 +67,45 @@ func lastPage[T any](get func(int) ([]T, *clierr.Error), pageSize int) (int, *cl
 	if len(first) < pageSize {
 		return 1, nil
 	}
-	full, empty := 1, 0 // the highest page known full, the lowest known empty
-	for p := 2; empty == 0; p *= 2 {
+	s := pageSearch[T]{get: get, pageSize: pageSize, full: 1, empty: 0}
+	for p := 2; s.empty == 0; p *= 2 {
 		if p > maxProbePage {
-			return full, nil
+			return s.full, nil
 		}
-		v, cerr := get(p)
-		switch {
-		case cerr != nil:
-			return 0, cerr
-		case len(v) == pageSize:
-			full = p
-		case len(v) > 0:
-			return p, nil
-		default:
-			empty = p
+		if last, cerr := s.probe(p); cerr != nil || last > 0 {
+			return last, cerr
 		}
 	}
-	for empty-full > 1 {
-		mid := (full + empty) / 2
-		v, cerr := get(mid)
-		switch {
-		case cerr != nil:
-			return 0, cerr
-		case len(v) == pageSize:
-			full = mid
-		case len(v) > 0:
-			return mid, nil
-		default:
-			empty = mid
+	for s.empty-s.full > 1 {
+		if last, cerr := s.probe((s.full + s.empty) / 2); cerr != nil || last > 0 {
+			return last, cerr
 		}
 	}
-	return full, nil
+	return s.full, nil
+}
+
+// pageSearch is lastPage's state: the highest page known full and the lowest known empty (0 until one is met).
+type pageSearch[T any] struct {
+	get         func(int) ([]T, *clierr.Error)
+	pageSize    int
+	full, empty int
+}
+
+// probe reads page p and narrows the search with it: a full page raises full, an empty one lowers empty, and a
+// short one is the last page, returned (0 otherwise).
+func (s *pageSearch[T]) probe(p int) (int, *clierr.Error) {
+	v, cerr := s.get(p)
+	switch {
+	case cerr != nil:
+		return 0, cerr
+	case len(v) == s.pageSize:
+		s.full = p
+	case len(v) > 0:
+		return p, nil
+	default:
+		s.empty = p
+	}
+	return 0, nil
 }
 
 // sortNewestFirst orders items by creation time, newest first; an item whose
