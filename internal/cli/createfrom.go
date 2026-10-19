@@ -7,6 +7,7 @@ package cli
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"reflect"
 	"strings"
@@ -87,11 +88,11 @@ func copyDocument(g *shared.ContainerGroup, newName string, displayNameSet bool)
 	// headers among them) and the copy must send them back.
 	b, err := output.MarshalRequest(g)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("encoding the source group: %w", err)
 	}
 	var tree any
-	if err := json.Unmarshal(b, &tree); err != nil {
-		return nil, err
+	if err = json.Unmarshal(b, &tree); err != nil {
+		return nil, fmt.Errorf("decoding the source group: %w", err)
 	}
 	obj, ok := tree.(map[string]any)
 	if !ok {
@@ -114,7 +115,11 @@ func copyDocument(g *shared.ContainerGroup, newName string, displayNameSet bool)
 	if newName != "" && newName != ptr.Deref(g.Name) && !displayNameSet {
 		filtered["display_name"] = newName
 	}
-	return json.Marshal(filtered)
+	doc, err := json.Marshal(filtered)
+	if err != nil {
+		return nil, fmt.Errorf("encoding the copy: %w", err)
+	}
+	return doc, nil
 }
 
 // publicRegistries are the hosts whose images pull without credentials as

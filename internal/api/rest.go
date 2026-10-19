@@ -37,12 +37,12 @@ var restHTTPClient = &http.Client{Timeout: restTimeout, Transport: debugTranspor
 func Probe(ctx context.Context, target string) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("building the probe: %w", err)
 	}
 	req.Header.Set("User-Agent", UserAgent)
 	resp, err := restHTTPClient.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("probing the API: %w", err)
 	}
 	closeFailed(resp.Body.Close())
 	return resp.StatusCode, nil

@@ -13,6 +13,9 @@ may change, and every such change is listed here.
   `job_cancelled` is now `job_canceled`, and `inference jobs cancel` and `queues jobs cancel` emit
   `"action": "canceled"`. Messages change too (`login canceled, nothing changed`, `<command> canceled` after Ctrl-C). A
   job's `status` and event `action` still read `cancelled`, as the API sends them.
+- Network, output and config file error messages now name what the CLI was doing, for example
+  `network error: Get "…": no response: dial tcp …`, `writing the document: write /dev/stdout: broken pipe` or
+  `replacing the config file: …`. Exit codes and error kinds are unchanged.
 
 ## [0.1.0-beta.1] - 2026-10-08
 

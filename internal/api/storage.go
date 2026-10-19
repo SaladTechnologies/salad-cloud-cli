@@ -151,20 +151,22 @@ func writeUploadForm(
 	signatureExpSeconds int64,
 ) error {
 	if err := mw.WriteField("mimeType", mimeType); err != nil {
-		return err
+		return fmt.Errorf("writing the upload form: %w", err)
 	}
 	if sign {
 		if err := mw.WriteField("sign", "true"); err != nil {
-			return err
+			return fmt.Errorf("writing the upload form: %w", err)
 		}
 		if err := mw.WriteField("signatureExp", strconv.FormatInt(signatureExpSeconds, 10)); err != nil {
-			return err
+			return fmt.Errorf("writing the upload form: %w", err)
 		}
 	}
 	part, err := mw.CreateFormFile("file", path.Base(remoteName))
 	if err != nil {
-		return err
+		return fmt.Errorf("writing the upload form: %w", err)
 	}
-	_, err = io.Copy(part, r)
-	return err
+	if _, err := io.Copy(part, r); err != nil {
+		return fmt.Errorf("copying the file into the upload: %w", err)
+	}
+	return nil
 }

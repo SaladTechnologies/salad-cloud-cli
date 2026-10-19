@@ -24,7 +24,7 @@ func Marshal(v any) ([]byte, error) {
 	enc := json.NewEncoder(&b)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("encoding the document: %w", err)
 	}
 	return bytes.TrimSuffix(b.Bytes(), []byte("\n")), nil
 }
@@ -58,7 +58,7 @@ func MarshalRequest(v any) ([]byte, error) {
 func encode(v any, mode fillMode) ([]byte, error) {
 	data, err := json.Marshal(v)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("encoding the document: %w", err)
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.UseNumber()
@@ -110,7 +110,7 @@ var errKeyNotString = errors.New("is not a string")
 func decodeOrdered(dec *json.Decoder) (any, error) {
 	tok, err := dec.Token()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decoding the document: %w", err)
 	}
 	if t, ok := tok.(json.Delim); ok {
 		switch t {
@@ -119,7 +119,7 @@ func decodeOrdered(dec *json.Decoder) (any, error) {
 			for dec.More() {
 				kt, err := dec.Token()
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("decoding the document: %w", err)
 				}
 				k, ok := kt.(string)
 				if !ok {
@@ -135,7 +135,7 @@ func decodeOrdered(dec *json.Decoder) (any, error) {
 				o.vals[k] = v
 			}
 			if _, err := dec.Token(); err != nil { // '}'
-				return nil, err
+				return nil, fmt.Errorf("decoding the document: %w", err)
 			}
 			return o, nil
 		case '[':
@@ -148,7 +148,7 @@ func decodeOrdered(dec *json.Decoder) (any, error) {
 				arr = append(arr, v)
 			}
 			if _, err := dec.Token(); err != nil { // ']'
-				return nil, err
+				return nil, fmt.Errorf("decoding the document: %w", err)
 			}
 			return arr, nil
 		}

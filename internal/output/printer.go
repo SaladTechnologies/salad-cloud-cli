@@ -56,10 +56,12 @@ func Emit(v any, table func(w *Writer)) error {
 		}
 		y, err := yaml.JSONToYAML(data)
 		if err != nil {
-			return err
+			return fmt.Errorf("converting the document to YAML: %w", err)
 		}
-		_, err = Stdout.Write(y)
-		return err
+		if _, err = Stdout.Write(y); err != nil {
+			return fmt.Errorf("writing the document: %w", err)
+		}
+		return nil
 	}
 	if mode == "json" {
 		data, err := encodeFilled(v)
@@ -68,10 +70,12 @@ func Emit(v any, table func(w *Writer)) error {
 		}
 		var buf bytes.Buffer
 		if err = json.Indent(&buf, ASCII(data), "", "  "); err != nil {
-			return err
+			return fmt.Errorf("indenting the document: %w", err)
 		}
-		_, err = fmt.Fprintln(Stdout, buf.String())
-		return err
+		if _, err = fmt.Fprintln(Stdout, buf.String()); err != nil {
+			return fmt.Errorf("writing the document: %w", err)
+		}
+		return nil
 	}
 	tw := newTabWriter(Stdout)
 	w := NewWriter(tw)
@@ -79,7 +83,10 @@ func Emit(v any, table func(w *Writer)) error {
 	if err := tw.Flush(); w.err == nil {
 		w.err = err
 	}
-	return w.err
+	if w.err != nil {
+		return fmt.Errorf("writing the table: %w", w.err)
+	}
+	return nil
 }
 
 // Stream renders one streamed record (e.g. a log line) and flushes
@@ -95,10 +102,10 @@ func Stream(v any, line string) error {
 		}
 		y, err := yaml.JSONToYAML(data)
 		if err != nil {
-			return err
+			return fmt.Errorf("converting the document to YAML: %w", err)
 		}
 		if _, err := fmt.Fprintf(Stdout, "---\n%s", y); err != nil {
-			return err
+			return fmt.Errorf("writing the record: %w", err)
 		}
 		return flush(Stdout)
 	}
@@ -108,11 +115,11 @@ func Stream(v any, line string) error {
 			return err
 		}
 		if _, err := fmt.Fprintln(Stdout, string(ASCII(data))); err != nil {
-			return err
+			return fmt.Errorf("writing the record: %w", err)
 		}
 	} else {
 		if _, err := fmt.Fprintln(Stdout, line); err != nil {
-			return err
+			return fmt.Errorf("writing the line: %w", err)
 		}
 	}
 	return flush(Stdout)
@@ -122,7 +129,9 @@ func Stream(v any, line string) error {
 // [os.Stdout] is unbuffered in Go, so there is nothing to do for it.
 func flush(w io.Writer) error {
 	if f, ok := w.(interface{ Flush() error }); ok {
-		return f.Flush()
+		if err := f.Flush(); err != nil {
+			return fmt.Errorf("flushing the output: %w", err)
+		}
 	}
 	return nil
 }

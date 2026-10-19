@@ -35,7 +35,7 @@ func Path() (string, error) {
 	}
 	base, err := os.UserConfigDir()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("finding the user config folder: %w", err)
 	}
 	return filepath.Join(base, "saladcloud", "config.json"), nil
 }
@@ -157,7 +157,7 @@ func Save(f File) error {
 	}
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("encoding the config: %w", err)
 	}
 	data = append(data, '\n')
 	// Write a temp file beside the config and rename it into place, so a
@@ -180,7 +180,7 @@ func Save(f File) error {
 		return errors.Join(fmt.Errorf("closing the temp file: %w", err), os.Remove(name))
 	}
 	if err := os.Rename(name, p); err != nil {
-		return errors.Join(err, os.Remove(name))
+		return errors.Join(fmt.Errorf("replacing the config file: %w", err), os.Remove(name))
 	}
 	return nil
 }

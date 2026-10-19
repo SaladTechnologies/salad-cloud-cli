@@ -61,7 +61,11 @@ type debugTransport struct{ base http.RoundTripper }
 
 func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if debugLevel == DebugOff {
-		return d.base.RoundTrip(req)
+		resp, err := d.base.RoundTrip(req)
+		if err != nil {
+			return nil, fmt.Errorf("no response: %w", err)
+		}
+		return resp, nil
 	}
 	if debugLevel >= DebugBodies {
 		debugf("debug: > %s %s\n", req.Method, redactText(req.URL.String()))
@@ -80,7 +84,7 @@ func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			took,
 			err,
 		)
-		return nil, err
+		return nil, fmt.Errorf("no response: %w", err)
 	}
 	debugf("debug: %s %s -> %d (%s)\n", req.Method, redactText(req.URL.String()), resp.StatusCode, took)
 	if debugLevel >= DebugBodies && resp.Body != nil {
@@ -88,7 +92,7 @@ func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		closeBody(resp.Body)
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 		if rerr != nil {
-			return nil, rerr
+			return nil, fmt.Errorf("reading the response for --debug: %w", rerr)
 		}
 		debugf("debug: < %s\n", redactBody(body))
 	}
