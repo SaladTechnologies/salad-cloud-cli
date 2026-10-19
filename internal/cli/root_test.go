@@ -9,16 +9,22 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 )
 
+// executeOutput is how one Run ended: its exit code, and what it wrote to stdout and stderr.
+type executeOutput struct {
+	code           int
+	stdout, stderr string
+}
+
 // runExecute runs Run with args through the real command tree, capturing
 // stdout and stderr. It resets the run's state afterward because cobra keeps
 // flag values between executions in one process.
-func (app *testRun) runExecute(t *testing.T, args ...string) (code int, stdout, stderr string) {
+func (app *testRun) runExecute(t *testing.T, args ...string) executeOutput {
 	t.Helper()
 	var out, errBuf bytes.Buffer
 	d := app.Deps
 	d.Args, d.Stdout, d.Stderr = args, &out, &errBuf
-	code = Run(t.Context(), d)
-	return code, out.String(), errBuf.String()
+	code := Run(t.Context(), d)
+	return executeOutput{code: code, stdout: out.String(), stderr: errBuf.String()}
 }
 
 // TestErrorDocumentIsNotHTMLEscaped: a placeholder in a message reads as
@@ -26,7 +32,7 @@ func (app *testRun) runExecute(t *testing.T, args ...string) (code int, stdout, 
 func TestErrorDocumentIsNotHTMLEscaped(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
-	_, _, stderr := app.runExecute(t, "container-groups", "scale", "sr-ex2", "-o", "json")
+	stderr := app.runExecute(t, "container-groups", "scale", "sr-ex2", "-o", "json").stderr
 	escaped := `\` + "u003c"
 	if !strings.Contains(stderr, "<n>") || strings.Contains(stderr, escaped) {
 		t.Errorf("error document = %s, want <n> unescaped", stderr)
@@ -55,7 +61,8 @@ func TestCommandLineErrorsHonourJSONMode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			app := newTestRun(t)
-			code, stdout, stderr := app.runExecute(t, tc.args...)
+			run := app.runExecute(t, tc.args...)
+			code, stdout, stderr := run.code, run.stdout, run.stderr
 			if code != clierr.CodeUsage {
 				t.Errorf("exit = %d, want %d", code, clierr.CodeUsage)
 			}
@@ -115,7 +122,8 @@ func TestCommandLineErrorsInTableMode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			app := newTestRun(t)
-			code, stdout, stderr := app.runExecute(t, tc.args...)
+			run := app.runExecute(t, tc.args...)
+			code, stdout, stderr := run.code, run.stdout, run.stderr
 			if code != clierr.CodeUsage {
 				t.Errorf("exit = %d, want %d", code, clierr.CodeUsage)
 			}
@@ -137,7 +145,8 @@ func TestCommandLineErrorsInTableMode(t *testing.T) {
 func TestErrorsAreJSONUnderYAML(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
-	code, stdout, stderr := app.runExecute(t, "container-groups", "get", "-o", "yaml")
+	run := app.runExecute(t, "container-groups", "get", "-o", "yaml")
+	code, stdout, stderr := run.code, run.stdout, run.stderr
 	if code != clierr.CodeUsage || stdout != "" {
 		t.Fatalf("exit %d stdout %q", code, stdout)
 	}
@@ -159,7 +168,8 @@ func TestVersionFlag(t *testing.T) {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
 			t.Parallel()
 			app := newTestRun(t)
-			code, stdout, stderr := app.runExecute(t, args...)
+			run := app.runExecute(t, args...)
+			code, stdout, stderr := run.code, run.stdout, run.stderr
 			var doc map[string]any
 			if code != clierr.CodeOK || json.Unmarshal([]byte(stdout), &doc) != nil {
 				t.Fatalf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
@@ -172,7 +182,8 @@ func TestVersionFlag(t *testing.T) {
 	t.Run("table", func(t *testing.T) {
 		t.Parallel()
 		app := newTestRun(t)
-		code, stdout, _ := app.runExecute(t, "--version")
+		run := app.runExecute(t, "--version")
+		code, stdout := run.code, run.stdout
 		if code != clierr.CodeOK || !strings.HasPrefix(stdout, "saladcloud") {
 			t.Errorf("exit %d, stdout %q", code, stdout)
 		}

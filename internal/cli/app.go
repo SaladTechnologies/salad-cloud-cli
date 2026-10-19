@@ -92,13 +92,26 @@ type runFlags struct {
 // newApp is a run with dependencies d.
 func newApp(d Deps) *App {
 	return &App{
-		Deps:          d,
-		printer:       output.NewPrinter(d.Stdout),
+		Deps:    d,
+		printer: output.NewPrinter(d.Stdout),
+		flags: runFlags{
+			output:   "",
+			debug:    "",
+			org:      "",
+			project:  "",
+			version:  false,
+			group:    "",
+			queue:    "",
+			endpoint: "",
+		},
 		debugLevel:    api.DebugOff,
 		assumedWarned: atomic.Bool{},
 		treeErrs:      nil,
 	}
 }
+
+// knownHostsDirMode is the permissions of the config directory defaultKnownHostsPath creates: the owner's only.
+const knownHostsDirMode = 0o700
 
 // defaultKnownHostsPath is the CLI's own known_hosts, beside the config file,
 // so a relay port reused by another instance never touches the user's
@@ -110,7 +123,7 @@ func defaultKnownHostsPath(env config.Env) string {
 		return ""
 	}
 	dir := filepath.Dir(p)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := os.MkdirAll(dir, knownHostsDirMode); err != nil {
 		return ""
 	}
 	return filepath.Join(dir, "known_hosts")

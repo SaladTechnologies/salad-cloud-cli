@@ -18,12 +18,41 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/version"
 )
 
+// The global flags whose definitions root.go owns and other commands read or shadow, and the --output modes.
+const (
+	globalFlagOrg     = "org"
+	globalFlagProject = "project"
+	globalOutputTable = "table"
+	globalOutputJSON  = "json"
+	globalOutputYAML  = "yaml"
+)
+
+// The sources config.Resolve records for a resolved value.
+const (
+	resolveSourceFlag   = "flag"
+	resolveSourceEnv    = "env"
+	resolveSourceConfig = "config"
+)
+
+// The top-level commands whose names more than one file spells.
+const (
+	cmdNameConfig = "config"
+	cmdNameLogout = "logout"
+)
+
+// The kinds of context name checkName checks.
+const (
+	contextKindOrganization = "organization"
+	contextKindProject      = "project"
+)
+
 // newRootCmd is the root command with the global flags.
 func (app *App) newRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "saladcloud",
 		Short: "A thin command-line wrapper over the SaladCloud Public API",
-		Long: `saladcloud is a thin command-line wrapper over the SaladCloud Public API, built for people, scripts, CI and AI agents.
+		Long: `saladcloud is a thin command-line wrapper over the SaladCloud Public API, ` +
+			`built for people, scripts, CI and AI agents.
 
 Get started:
   saladcloud login     save your API key, organization and project
@@ -32,7 +61,8 @@ Get started:
 Scripts and CI set SALAD_API_KEY, SALAD_ORGANIZATION and SALAD_PROJECT instead of logging in.
 Coding agents: ask the user to run saladcloud login in their own terminal; never ask for a key in the chat.
 
-This is a ` + version.Stage + ` release: expect bugs and changes. Report them at ` + version.IssuesURL + `, with the output of saladcloud version.
+This is a ` + version.Stage + ` release: expect bugs and changes. Report them at ` + version.IssuesURL +
+			`, with the output of saladcloud version.
 
 Configuration resolves per field with precedence flag > environment > config
 file. SALAD_AI_GATEWAY_API_KEY sets the AI Gateway key, and
@@ -76,14 +106,18 @@ stderr as a single-line JSON document: {"error": {...}}, in yaml mode too.
 			return rejectShadowed(cmd)
 		},
 	}
-	root.PersistentFlags().StringVarP(&app.flags.output, "output", "o", "table", "output format: table|json|yaml")
 	root.PersistentFlags().
-		StringVar(&app.flags.org, "org", "", "organization name as in the portal URL, not the display name (overrides SALAD_ORGANIZATION and the config file)")
-	root.PersistentFlags().
-		StringVar(&app.flags.debug, "debug", "", "print each API request (method, URL, status, duration) on stderr; --debug=body adds headers and bodies, credentials redacted")
+		StringVarP(&app.flags.output, "output", "o", globalOutputTable, "output format: table|json|yaml")
+	root.PersistentFlags().StringVar(&app.flags.org, globalFlagOrg, "",
+		"organization name as in the portal URL, not the display name "+
+			"(overrides SALAD_ORGANIZATION and the config file)")
+	root.PersistentFlags().StringVar(&app.flags.debug, "debug", "",
+		"print each API request (method, URL, status, duration) on stderr; "+
+			"--debug=body adds headers and bodies, credentials redacted")
 	root.PersistentFlags().Lookup("debug").NoOptDefVal = "requests"
-	root.PersistentFlags().
-		StringVar(&app.flags.project, "project", "", "project name as in the portal URL, not the display name (overrides SALAD_PROJECT and the config file; with none set, \"default\" is used with a warning)")
+	root.PersistentFlags().StringVar(&app.flags.project, globalFlagProject, "",
+		"project name as in the portal URL, not the display name "+
+			"(overrides SALAD_PROJECT and the config file; with none set, \"default\" is used with a warning)")
 	root.SetFlagErrorFunc(flagError)
 	// cobra's multi-line "Did you mean this?" block; withSuggestions gives
 	// the one-line form instead.
@@ -109,12 +143,12 @@ groups. For logs across the organization or a project, run saladcloud logs.`,
 
 // orgScoped marks c and the commands under it organization-scoped: nothing
 // there reads the project, so --project is neither offered nor accepted.
-func (app *App) orgScoped(c *cobra.Command) { app.shadow(c, "project") }
+func (app *App) orgScoped(c *cobra.Command) { app.shadow(c, globalFlagProject) }
 
 // contextFree marks c and the commands under it as reading neither the
 // organization nor the project: --org and --project are neither offered
 // nor accepted there.
-func (app *App) contextFree(c *cobra.Command) { app.shadow(c, "org", "project") }
+func (app *App) contextFree(c *cobra.Command) { app.shadow(c, globalFlagOrg, globalFlagProject) }
 
 // shadow gives c hidden flags of these names in place of the global ones,
 // so its help does not offer them; rejectShadowed refuses one that is set.
@@ -129,7 +163,7 @@ func (app *App) shadow(c *cobra.Command, names ...string) {
 
 // contextFlag is the field --org or --project binds to.
 func (app *App) contextFlag(name string) *string {
-	if name == "org" {
+	if name == globalFlagOrg {
 		return &app.flags.org
 	}
 	return &app.flags.project
@@ -138,14 +172,20 @@ func (app *App) contextFlag(name string) *string {
 // rejectShadowed is the unknown-flag error for a global flag cmd shadows
 // (orgScoped, contextFree) but was given anyway: the command would ignore it.
 func rejectShadowed(cmd *cobra.Command) error {
-	for _, n := range []string{"org", "project"} {
+	for _, n := range []string{globalFlagOrg, globalFlagProject} {
 		if f := cmd.Flags().Lookup(n); f != nil && f.Hidden && f.Changed {
 			why := "is organization-scoped and takes no --project"
 			if !readsOrg(cmd) {
 				why = "takes neither --org nor --project"
 			}
 			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: --%s", n).
-				WithHint("%s %s; run %s, or to list its flags, run %s --help", strings.TrimPrefix(cmd.CommandPath(), "saladcloud "), why, usageLine(cmd), cmd.CommandPath())
+				WithHint(
+					"%s %s; run %s, or to list its flags, run %s --help",
+					strings.TrimPrefix(cmd.CommandPath(), "saladcloud "),
+					why,
+					usageLine(cmd),
+					cmd.CommandPath(),
+				)
 		}
 	}
 	return nil
@@ -193,7 +233,7 @@ func New(app *App) *cobra.Command {
 // fix, "hint: <fix>" under it.
 func Run(ctx context.Context, d Deps) int {
 	app := newApp(d)
-	rootCmd := New(app)
+	rootCmd := New(app) //nolint:contextcheck // New only builds the tree; commands get ctx from ExecuteContextC below
 	if err := errors.Join(app.treeErrs...); err != nil {
 		ce := clierr.New(clierr.CodeGeneric, clierr.KindInternal, "the command tree is incomplete: %v", err)
 		app.printError(ce)
@@ -273,8 +313,8 @@ func (app *App) prepareTree(root *cobra.Command) {
 // organization nor the project, with everything under them.
 func contextFreeCommands() map[string]bool {
 	return map[string]bool{
-		"agent": true, "ai-gateway": true, "changelog": true, "completion": true, "config": true,
-		"logout": true, "orgs": true, "ssh-key": true, "use": true, "version": true,
+		"agent": true, "ai-gateway": true, "changelog": true, "completion": true, cmdNameConfig: true,
+		cmdNameLogout: true, "orgs": true, "ssh-key": true, "use": true, "version": true,
 	}
 }
 
@@ -322,7 +362,7 @@ func lastOutputArg(args []string) string {
 		}
 		v, consumed := outputArgValue(args[i], args[i+1:])
 		i += consumed
-		if v == "json" || v == "yaml" || v == "table" {
+		if v == globalOutputJSON || v == globalOutputYAML || v == globalOutputTable {
 			mode = v
 		}
 	}
@@ -381,8 +421,13 @@ func (app *App) NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *cl
 	res, err := config.Resolve(app.Env, app.flags.org, app.flags.project)
 	if err != nil {
 		path := app.configPath()
-		return nil, config.Resolved{}, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
-			WithHint("fix or delete it")
+		return nil, config.Resolved{}, clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot read the config file %s: %s",
+			path,
+			readReason(err),
+		).WithHint("fix or delete it")
 	}
 	if cerr := app.newClientCheckNames(cmd, &res); cerr != nil {
 		return nil, res, cerr
@@ -404,7 +449,7 @@ func (app *App) NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *cl
 	saved := app.savedConfig()
 	client.OnRejected = func() *clierr.Error { return keyRejected(res.APIKey, keyFrom, saved.APIKey) }
 	ctx := cmd.Context()
-	client.OnOrgGone = func() *clierr.Error { return app.organizationGone(ctx, res) }
+	client.OnOrgGone = func() *clierr.Error { return app.organizationGone(ctx, &res) }
 	return client, res, nil
 }
 
@@ -416,17 +461,23 @@ func (app *App) newClientCheckNames(cmd *cobra.Command, res *config.Resolved) *c
 		kind, name, source, flag, env string
 		reads                         bool
 	}{
-		{"organization", res.Organization, res.OrganizationSource, "--org", envOrganization, readsOrg(cmd)},
-		{"project", res.Project, res.ProjectSource, "--project", envProject, readsProject(cmd)},
+		{
+			contextKindOrganization, res.Organization, res.OrganizationSource,
+			"--" + globalFlagOrg, envOrganization, readsOrg(cmd),
+		},
+		{
+			contextKindProject, res.Project, res.ProjectSource,
+			"--" + globalFlagProject, envProject, readsProject(cmd),
+		},
 	} {
 		switch {
 		case !n.reads || n.name == "":
-		case n.source == "flag" || n.source == "env":
+		case n.source == resolveSourceFlag || n.source == resolveSourceEnv:
 			if cerr := app.checkName(n.kind, n.name, originOf(n.source, n.flag, n.env)); cerr != nil {
 				return cerr
 			}
-		case n.source == "config" && app.looksLikeKey(n.name):
-			return keyLikeName(n.kind, "config")
+		case n.source == resolveSourceConfig && app.looksLikeKey(n.name):
+			return keyLikeName(n.kind, resolveSourceConfig)
 		}
 	}
 	return nil
@@ -435,14 +486,14 @@ func (app *App) newClientCheckNames(cmd *cobra.Command, res *config.Resolved) *c
 // readsProject reports whether cmd uses the project: organization-scoped
 // commands hide the --project they cannot use.
 func readsProject(cmd *cobra.Command) bool {
-	f := cmd.Flag("project") // as readsOrg
+	f := cmd.Flag(globalFlagProject) // as readsOrg
 	return f != nil && !f.Hidden
 }
 
 // readsOrg reports whether cmd reads the organization: --org is its own,
 // not shadowed by contextFree.
 func readsOrg(cmd *cobra.Command) bool {
-	f := cmd.Flag("org") // the nearest definition, merged into cmd.Flags() yet or not
+	f := cmd.Flag(globalFlagOrg) // the nearest definition, merged into cmd.Flags() yet or not
 	return f != nil && !f.Hidden
 }
 
@@ -469,37 +520,24 @@ func keyRejected(key, from, saved string) *clierr.Error {
 // see (a 404 under it, confirmed by the organization check): it names the
 // organization and its source, and the fix there; at a terminal the hint
 // lists your organizations.
-func (app *App) organizationGone(ctx context.Context, res config.Resolved) *clierr.Error {
+func (app *App) organizationGone(ctx context.Context, res *config.Resolved) *clierr.Error {
 	from := originOf(res.OrganizationSource, "--org", envOrganization)
-	e := clierr.New(clierr.CodeNotFound, clierr.KindNotFound, `organization "%s"%s not found`, res.Organization, fromTag(from)).
-		WithStatus(http.StatusNotFound)
+	e := clierr.New(
+		clierr.CodeNotFound,
+		clierr.KindNotFound,
+		`organization "%s"%s not found`,
+		res.Organization,
+		fromTag(from),
+	).WithStatus(http.StatusNotFound)
 	var names []string
 	if app.atTerminal() {
-		if c, cerr := api.New(
-			config.Resolved{
-				APIKey:              res.APIKey,
-				APIKeySource:        "",
-				Organization:        "",
-				OrganizationSource:  "",
-				Project:             "",
-				ProjectSource:       "",
-				GatewayAPIKey:       "",
-				GatewayAPIKeySource: "",
-				SkippedProject:      "",
-				SkippedProjectOrg:   "",
-			},
-			app.apiOptions(),
-		); cerr == nil {
-			if list, lerr := c.OrganizationListing(ctx); lerr == nil && list != nil {
-				names = list.OrgNames()
-			}
-		}
+		names = app.keyOrgNames(ctx, res.APIKey)
 	}
 	fix := ""
 	switch from {
 	case envOrganization:
 		fix = "fix or remove SALAD_ORGANIZATION"
-	case "config":
+	case resolveSourceConfig:
 		fix = "to switch, run saladcloud use <org>"
 	}
 	if h := hintClauses(app.orgsClause(names), fix); h != "" {
@@ -508,22 +546,50 @@ func (app *App) organizationGone(ctx context.Context, res config.Resolved) *clie
 	return e
 }
 
+// keyOrgNames is the names of the organizations key can see, nil when they cannot be listed.
+func (app *App) keyOrgNames(ctx context.Context, key string) []string {
+	c, cerr := api.New(
+		config.Resolved{
+			APIKey:              key,
+			APIKeySource:        "",
+			Organization:        "",
+			OrganizationSource:  "",
+			Project:             "",
+			ProjectSource:       "",
+			GatewayAPIKey:       "",
+			GatewayAPIKeySource: "",
+			SkippedProject:      "",
+			SkippedProjectOrg:   "",
+		},
+		app.apiOptions(),
+	)
+	if cerr != nil {
+		return nil
+	}
+	list, lerr := c.OrganizationListing(ctx)
+	if lerr != nil || list == nil {
+		return nil
+	}
+	return list.OrgNames()
+}
+
 // warnOnAssumedProject makes c print the assumed-project warning, once per
 // command, the first time it uses an assumed project.
 func (app *App) warnOnAssumedProject(c *api.Client, res config.Resolved) {
 	c.OnAssumedProject = func() {
 		if app.assumedWarned.CompareAndSwap(false, true) {
-			fprintln(app.errw(), app.assumedProjectWarning(res))
+			fprintln(app.errw(), app.assumedProjectWarning(&res))
 		}
 	}
 }
 
 // assumedProjectWarning is the stderr line a project-scoped command prints
 // when its project is the "default" fallback rather than one that was set.
-func (app *App) assumedProjectWarning(res config.Resolved) string {
+func (app *App) assumedProjectWarning(res *config.Resolved) string {
 	if res.SkippedProject != "" {
 		return fmt.Sprintf(
-			`warning: using project "%s": none was set for organization "%s" (the saved project "%s" is for "%s"); pass --project or set SALAD_PROJECT`,
+			`warning: using project "%s": none was set for organization "%s" `+
+				`(the saved project "%s" is for "%s"); pass --project or set SALAD_PROJECT`,
 			res.Project,
 			res.Organization,
 			app.shownName(res.SkippedProject),
@@ -531,7 +597,8 @@ func (app *App) assumedProjectWarning(res config.Resolved) string {
 		)
 	}
 	return fmt.Sprintf(
-		`warning: using project "%s" because none was set; pass --project or set SALAD_PROJECT to choose one`,
+		`warning: using project "%s" because none was set; `+
+			`pass --project or set SALAD_PROJECT to choose one`,
 		res.Project,
 	)
 }

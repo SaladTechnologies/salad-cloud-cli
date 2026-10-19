@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -26,7 +27,7 @@ func TestCtrlCDuringARequest(t *testing.T) {
 				api := newFakeAPI()
 				api.cancelOn = tc.cancelOn
 				o := session{
-					args: append(append([]string{}, tc.args...), "-o", mode), api: api,
+					args: append(slices.Clone(tc.args), "-o", mode), api: api,
 					env: with(keyEnv(), "SALAD_AI_GATEWAY_API_KEY", testGatewayKey),
 				}.run(t)
 				checkCanceledRun(t, &o, mode, tc.want)

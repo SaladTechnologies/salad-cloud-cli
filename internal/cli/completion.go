@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
@@ -95,7 +96,7 @@ func groupNames(ctx context.Context, c *api.Client, _ *cobra.Command, _ []string
 // the positional group of ssh/sftp.
 func instanceIDs(ctx context.Context, c *api.Client, cmd *cobra.Command, args []string) []string {
 	group := ""
-	if f := cmd.Flags().Lookup("container-group"); f != nil {
+	if f := cmd.Flags().Lookup(ancestorFlagGroup); f != nil {
 		group = f.Value.String()
 	} else if len(args) > 0 {
 		group = args[0]
@@ -158,6 +159,18 @@ func orgNames(ctx context.Context, c *api.Client, _ *cobra.Command, _ []string) 
 	return list.OrgNames()
 }
 
+// completionGroupStatuses are the container group statuses --status completes to, in the API's order.
+func completionGroupStatuses() []string {
+	return []string{
+		string(shared.CONTAINER_GROUP_STATUS_PENDING),
+		string(shared.CONTAINER_GROUP_STATUS_RUNNING),
+		string(shared.CONTAINER_GROUP_STATUS_STOPPED),
+		string(shared.CONTAINER_GROUP_STATUS_SUCCEEDED),
+		string(shared.CONTAINER_GROUP_STATUS_FAILED),
+		string(shared.CONTAINER_GROUP_STATUS_DEPLOYING),
+	}
+}
+
 // registerCompletions attaches the completion functions to the tree:
 // positional arguments by command path, flags by name wherever they occur.
 func (app *App) registerCompletions(root *cobra.Command) {
@@ -185,18 +198,18 @@ func (app *App) registerCompletions(root *cobra.Command) {
 		"use":                                   orgNames,
 	}
 	flags := map[string]completer{
-		"container-group": groupNames,
-		"from":            groupNames,
-		"instance":        instanceIDs,
-		"endpoint":        endpointNames,
-		"queue":           queueNames,
-		"gpu":             gpuClassNames,
+		ancestorFlagGroup:    groupNames,
+		"from":               groupNames,
+		ancestorFlagInstance: instanceIDs,
+		"endpoint":           endpointNames,
+		ancestorFlagQueue:    queueNames,
+		"gpu":                gpuClassNames,
 	}
 	enums := map[string][]string{
 		"priority":       {"high", "medium", "low", "batch"},
 		"restart-policy": {"always", "on_failure", "never"},
 		"severity":       logsq.Severities(),
-		"status":         {"pending", "running", "stopped", "succeeded", "failed", "deploying"},
+		"status":         completionGroupStatuses(),
 	}
 	app.noteTreeErr(root.RegisterFlagCompletionFunc("output", staticValues("table", "json", "yaml")))
 	app.noteTreeErr(root.RegisterFlagCompletionFunc("debug", staticValues("body")))

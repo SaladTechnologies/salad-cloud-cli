@@ -6,10 +6,15 @@ import (
 	"testing"
 )
 
+// completeOutput is what one __complete run wrote: the candidates on stdout, and on stderr cobra's writer and the
+// process's own stderr, where the CLI's notes and warnings go.
+type completeOutput struct {
+	stdout, stderr string
+}
+
 // runComplete runs cobra's hidden __complete command, as the shell scripts
-// do, and returns its stdout and stderr: cobra's writer and the process's
-// own stderr, where the CLI's notes and warnings go.
-func (app *testRun) runComplete(t *testing.T, args ...string) (stdout, stderr string) {
+// do, and returns what it wrote.
+func (app *testRun) runComplete(t *testing.T, args ...string) completeOutput {
 	t.Helper()
 	var out, errBuf, cliErr bytes.Buffer
 	a, root := app.fresh()
@@ -20,7 +25,7 @@ func (app *testRun) runComplete(t *testing.T, args ...string) (stdout, stderr st
 	if err := root.ExecuteContext(t.Context()); err != nil {
 		t.Fatalf("__complete %v: %v", args, err)
 	}
-	return out.String(), errBuf.String() + cliErr.String()
+	return completeOutput{stdout: out.String(), stderr: errBuf.String() + cliErr.String()}
 }
 
 // cliStderr drops cobra's own "Completion ended with directive" line, which
@@ -39,13 +44,15 @@ func TestCompleteInstanceIDsSilently(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
 	app.stubAPI(t, map[string]string{
-		"/containers/my-app/instances": `{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37"},{"id":"1111aaaa-01c2-4a29-9c4d-52c7e5a44e37"}]}`,
+		"/containers/my-app/instances": `{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37"},` +
+			`{"id":"1111aaaa-01c2-4a29-9c4d-52c7e5a44e37"}]}`,
 	})
-	out, stderr := app.runComplete(t, "container-groups", "instances", "get", "-c", "my-app", "")
-	if !strings.Contains(out, "8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37") || !strings.Contains(out, "1111aaaa") {
-		t.Errorf("candidates = %q, want both instance ids", out)
+	got := app.runComplete(t, "container-groups", "instances", "get", "-c", "my-app", "")
+	if !strings.Contains(got.stdout, "8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37") ||
+		!strings.Contains(got.stdout, "1111aaaa") {
+		t.Errorf("candidates = %q, want both instance ids", got.stdout)
 	}
-	if s := cliStderr(stderr); s != "" {
+	if s := cliStderr(got.stderr); s != "" {
 		t.Errorf("completion wrote to stderr: %q", s)
 	}
 }
@@ -56,11 +63,12 @@ func TestCompleteWithoutKeyIsEmptyAndSilent(t *testing.T) {
 	app := newTestRun(t)
 	app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
 	app.setenv("SALAD_API_KEY", "")
-	out, stderr := app.runComplete(t, "container-groups", "get", "")
-	if lines := strings.Split(strings.TrimSpace(out), "\n"); len(lines) != 1 || !strings.HasPrefix(lines[0], ":") {
-		t.Errorf("candidates = %q, want none (only the directive line)", out)
+	got := app.runComplete(t, "container-groups", "get", "")
+	lines := strings.Split(strings.TrimSpace(got.stdout), "\n")
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], ":") {
+		t.Errorf("candidates = %q, want none (only the directive line)", got.stdout)
 	}
-	if s := cliStderr(stderr); s != "" {
+	if s := cliStderr(got.stderr); s != "" {
 		t.Errorf("completion wrote to stderr: %q", s)
 	}
 }
@@ -68,13 +76,13 @@ func TestCompleteWithoutKeyIsEmptyAndSilent(t *testing.T) {
 func TestCompleteEnumFlags(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
-	out, _ := app.runComplete(t, "container-groups", "create", "x", "--priority", "")
+	out := app.runComplete(t, "container-groups", "create", "x", "--priority", "").stdout
 	for _, want := range []string{"high", "medium", "low", "batch"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("--priority candidates = %q, want %s", out, want)
 		}
 	}
-	out, _ = app.runComplete(t, "gpus", "list", "-o", "y")
+	out = app.runComplete(t, "gpus", "list", "-o", "y").stdout
 	if !strings.Contains(out, "yaml") || strings.Contains(out, "json") {
 		t.Errorf("-o y candidates = %q, want yaml only", out)
 	}
@@ -87,11 +95,11 @@ func TestCompleteWithProjectFallbackIsSilent(t *testing.T) {
 	app := newTestRun(t)
 	app.stubAPI(t, map[string]string{"/containers": `{"items":[{"name":"my-app"}]}`})
 	app.setenv("SALAD_PROJECT", "")
-	out, stderr := app.runComplete(t, "container-groups", "get", "")
-	if !strings.Contains(out, "my-app") {
-		t.Errorf("candidates = %q, want my-app", out)
+	got := app.runComplete(t, "container-groups", "get", "")
+	if !strings.Contains(got.stdout, "my-app") {
+		t.Errorf("candidates = %q, want my-app", got.stdout)
 	}
-	if s := cliStderr(stderr); s != "" {
+	if s := cliStderr(got.stderr); s != "" {
 		t.Errorf("completion wrote to stderr: %q", s)
 	}
 }

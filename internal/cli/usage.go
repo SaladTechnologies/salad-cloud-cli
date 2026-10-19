@@ -29,6 +29,25 @@ const (
 	annotationArgsWrapped = "saladcloud/args-wrapped"
 )
 
+// The flags that name a resource above a command's subject, and the instance flag of ssh, sftp and logs.
+const (
+	ancestorFlagGroup    = "container-group"
+	ancestorFlagQueue    = "queue"
+	ancestorFlagInstance = "instance"
+)
+
+// The Use of the list verbs and of the jobs noun under queues and inference.
+const (
+	cmdUseList = "list"
+	cmdUseJobs = "jobs"
+)
+
+// usageWordsPerSliceValue is the words flagWords renders for each value of a repeatable flag: its name and the value.
+const usageWordsPerSliceValue = 2
+
+// nearestFlagShortName is the longest flag name nearestFlag matches within one edit only, not two.
+const nearestFlagShortName = 4
+
 func annotate(c *cobra.Command, key, value string) {
 	if c.Annotations == nil {
 		c.Annotations = make(map[string]string)
@@ -39,8 +58,8 @@ func annotate(c *cobra.Command, key, value string) {
 // addHiddenGroupFlag gives c the hidden -c that only ever produces the
 // corrected command: the group is c's argument (or part of cp's path).
 func (app *App) addHiddenGroupFlag(c *cobra.Command) {
-	c.Flags().StringVarP(&app.flags.group, "container-group", "c", "", "")
-	app.noteTreeErr(c.Flags().MarkHidden("container-group"))
+	c.Flags().StringVarP(&app.flags.group, ancestorFlagGroup, "c", "", "")
+	app.noteTreeErr(c.Flags().MarkHidden(ancestorFlagGroup))
 	annotate(c, annotationGroupIsArg, "true")
 }
 
@@ -133,9 +152,9 @@ func flagPlaceholder(cmd *cobra.Command, f *pflag.Flag) string {
 		}
 	}
 	switch f.Name {
-	case "container-group":
+	case ancestorFlagGroup:
 		return "<group>"
-	case "instance":
+	case ancestorFlagInstance:
 		return "<id>"
 	}
 	return "<" + f.Name + ">"
@@ -187,7 +206,7 @@ func flagWords(f *pflag.Flag) []string {
 	name := flagSpelling(f)
 	if v, ok := f.Value.(pflag.SliceValue); ok {
 		values := v.GetSlice()
-		words := make([]string, 0, 2*len(values))
+		words := make([]string, 0, usageWordsPerSliceValue*len(values))
 		for _, s := range values {
 			words = append(words, name, shellWord(s))
 		}
@@ -225,16 +244,21 @@ func correctedLine(cmd *cobra.Command, positionals []string, f *pflag.Flag, valu
 	return strings.Join(words, " ")
 }
 
+// usageArgSplit is a command line's arguments split at "--": the positionals before it, and the words after it.
+type usageArgSplit struct {
+	pos, dash []string
+}
+
 // splitDash separates the positionals before "--" from the words after it,
 // for a command whose Use takes a command after "--" (ssh).
-func splitDash(cmd *cobra.Command, args []string) (pos, dash []string) {
+func splitDash(cmd *cobra.Command, args []string) usageArgSplit {
 	if !strings.Contains(cmd.Use, "[-- <") {
-		return args, nil
+		return usageArgSplit{pos: args, dash: nil}
 	}
 	if n := cmd.ArgsLenAtDash(); n >= 0 && n <= len(args) {
-		return args[:n], args[n:]
+		return usageArgSplit{pos: args[:n], dash: args[n:]}
 	}
-	return args, nil
+	return usageArgSplit{pos: args, dash: nil}
 }
 
 // cobra's positional-count errors, and the bounds each states.
@@ -251,9 +275,14 @@ var (
 // reads them the same way.
 var errAccepts = errors.New("accepts")
 
+// usageArgBounds are the fewest and the most positionals a command takes.
+type usageArgBounds struct {
+	minArgs, maxArgs int
+}
+
 // argBounds reads the positional bounds from a cobra Args error; ok is
 // false for any other error.
-func argBounds(err error) (minArgs, maxArgs int, ok bool) {
+func argBounds(err error) (usageArgBounds, bool) {
 	msg := err.Error()
 	atoi := func(s string) int {
 		n, err := strconv.Atoi(s)
@@ -264,30 +293,32 @@ func argBounds(err error) (minArgs, maxArgs int, ok bool) {
 	}
 	switch {
 	case noArgsRe.MatchString(msg):
-		return 0, 0, true
+		return usageArgBounds{minArgs: 0, maxArgs: 0}, true
 	case exactArgsRe.MatchString(msg):
 		n := atoi(exactArgsRe.FindStringSubmatch(msg)[1])
-		return n, n, true
+		return usageArgBounds{minArgs: n, maxArgs: n}, true
 	case maxArgsRe.MatchString(msg):
-		return 0, atoi(maxArgsRe.FindStringSubmatch(msg)[1]), true
+		return usageArgBounds{minArgs: 0, maxArgs: atoi(maxArgsRe.FindStringSubmatch(msg)[1])}, true
 	case minArgsRe.MatchString(msg):
-		return atoi(minArgsRe.FindStringSubmatch(msg)[1]), int(^uint(0) >> 1), true
+		return usageArgBounds{minArgs: atoi(minArgsRe.FindStringSubmatch(msg)[1]), maxArgs: int(^uint(0) >> 1)}, true
 	case rangeArgsRe.MatchString(msg):
 		m := rangeArgsRe.FindStringSubmatch(msg)
-		return atoi(m[1]), atoi(m[2]), true
+		return usageArgBounds{minArgs: atoi(m[1]), maxArgs: atoi(m[2])}, true
 	}
-	return 0, 0, false
+	return usageArgBounds{}, false
 }
 
 // argsError rewrites a positional-count error: a missing argument names its
 // placeholder; one argument too many, where a flag would have taken it,
 // prints the corrected command; anything else names the stray argument.
 func argsError(cmd *cobra.Command, args []string, err error) *clierr.Error {
-	minArgs, maxArgs, ok := argBounds(err)
+	bounds, ok := argBounds(err)
 	if !ok {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
 	}
-	pos, dash := splitDash(cmd, args)
+	minArgs, maxArgs := bounds.minArgs, bounds.maxArgs
+	split := splitDash(cmd, args)
+	pos, dash := split.pos, split.dash
 	if len(pos) < minArgs {
 		ph := "<argument>"
 		if names := positionalPlaceholders(cmd); len(pos) < len(names) {
@@ -302,7 +333,7 @@ func argsError(cmd *cobra.Command, args []string, err error) *clierr.Error {
 			// A parent comes first (the old <parent> <leaf> order); the
 			// instance comes after the group it belongs to.
 			value, rest := pos[0], pos[1:]
-			if name == "instance" {
+			if name == ancestorFlagInstance {
 				value, rest = pos[maxArgs], pos[:maxArgs]
 			}
 			return clierr.New(
@@ -327,7 +358,7 @@ func argsError(cmd *cobra.Command, args []string, err error) *clierr.Error {
 
 // flagNoun is what a parent flag names, for "takes the group as -c".
 func flagNoun(flag string) string {
-	if flag == "container-group" {
+	if flag == ancestorFlagGroup {
 		return "group"
 	}
 	return flag
@@ -337,13 +368,17 @@ func flagNoun(flag string) string {
 // argument: ssh, sftp and container-groups logs take the group as the
 // argument and the instance as --instance; cp names both in its path.
 func (app *App) groupGivenAsFlag(cmd *cobra.Command, args []string) *clierr.Error {
-	if cmd.Annotations[annotationGroupIsArg] == "" || !cmd.Flags().Changed("container-group") {
+	if cmd.Annotations[annotationGroupIsArg] == "" || !cmd.Flags().Changed(ancestorFlagGroup) {
 		return nil
 	}
 	group := app.flags.group
 	if cmd.Name() == "cp" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "cp takes the group in its remote path, not as -c").
-			WithHint("run %s", strings.Join(strings.Fields(cmd.CommandPath()), " ")+" "+shellWord(group)+"[/<instance>]:<path> <local-path>")
+			WithHint(
+				"run %s",
+				strings.Join(strings.Fields(cmd.CommandPath()), " ")+" "+shellWord(group)+
+					"[/<instance>]:<path> <local-path>",
+			)
 	}
 	return clierr.New(clierr.CodeUsage, clierr.KindUsage,
 		"%s takes the group as its argument and the instance as --instance", commandName(cmd)).
@@ -353,8 +388,9 @@ func (app *App) groupGivenAsFlag(cmd *cobra.Command, args []string) *clierr.Erro
 // groupAsArgLine is the command groupGivenAsFlag suggests: the group -c gave as the argument, the instance (from
 // --instance, or the argument given in its place) as --instance, the other flags as given, and anything after "--".
 func groupAsArgLine(cmd *cobra.Command, args []string, group string) string {
-	pos, dash := splitDash(cmd, args)
-	inst := cmd.Flags().Lookup("instance")
+	split := splitDash(cmd, args)
+	pos, dash := split.pos, split.dash
+	inst := cmd.Flags().Lookup(ancestorFlagInstance)
 	value := ""
 	if len(pos) > 0 && !inst.Changed {
 		value = pos[0]
@@ -366,7 +402,7 @@ func groupAsArgLine(cmd *cobra.Command, args []string, group string) string {
 		words = append(words, "--instance", shellWord(value))
 	}
 	line := strings.Join(append(strings.Fields(cmd.CommandPath()), words...), " ")
-	if rest := changedFlagWords(cmd, "container-group", "instance"); len(rest) > 0 {
+	if rest := changedFlagWords(cmd, ancestorFlagGroup, ancestorFlagInstance); len(rest) > 0 {
 		line += " " + strings.Join(rest, " ")
 	}
 	if len(dash) > 0 {
@@ -477,7 +513,12 @@ func usageUnknownFlagError(cmd *cobra.Command, msg string) *clierr.Error {
 	}
 	if near != "" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: %s", given).
-			WithHint("did you mean --%s?; run %s, or to list its flags, run %s --help", near, usageLine(cmd), cmd.CommandPath())
+			WithHint(
+				"did you mean --%s?; run %s, or to list its flags, run %s --help",
+				near,
+				usageLine(cmd),
+				cmd.CommandPath(),
+			)
 	}
 	return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: %s", given).
 		WithHint("run %s, or to list its flags, run %s --help", usageLine(cmd), cmd.CommandPath())
@@ -491,7 +532,7 @@ var unknownFlagRe = regexp.MustCompile(`^unknown (?:shorthand )?flag: (?:'([a-zA
 // is as close.
 func nearestFlag(cmd *cobra.Command, name string) string {
 	limit := 2
-	if len(name) <= 4 {
+	if len(name) <= nearestFlagShortName {
 		limit = 1
 	}
 	best, bestDist, tie := "", limit+1, false
@@ -517,7 +558,7 @@ func nearestFlag(cmd *cobra.Command, name string) string {
 // waitUntil is what a verb's --wait waits for.
 func waitUntil(cmd *cobra.Command) string {
 	switch {
-	case cmd.Parent() != nil && cmd.Parent().Name() == "jobs":
+	case cmd.Parent() != nil && cmd.Parent().Name() == cmdUseJobs:
 		return "the job finishes"
 	case cmd.Name() == "stop":
 		return "the group is stopped"
