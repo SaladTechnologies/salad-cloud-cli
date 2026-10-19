@@ -92,28 +92,16 @@ func (f *fakeAPI) Requests() []string {
 	return append([]string(nil), f.requests...)
 }
 
+// ServeHTTP records the request and answers it: Ctrl-C at cancelOn, a status set for the path's suffix, the gateway
+// under /gw/, then the API for a known key (401 for any other).
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.requests = append(f.requests, r.Method+" "+r.URL.Path)
 	f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	path := r.URL.Path
-	if f.cancelOn != "" && strings.HasSuffix(path, f.cancelOn) {
-		f.cancel()
-		// Read the body first: until it has, the server cannot see the
-		// client hang up.
-		should(io.Copy(io.Discard, r.Body))(f.t)
-		select {
-		case <-r.Context().Done():
-		case <-time.After(5 * time.Second):
-		}
+	if f.answerOverride(w, r) {
 		return
-	}
-	for suffix, code := range f.status {
-		if strings.HasSuffix(path, suffix) {
-			w.WriteHeader(code)
-			return
-		}
 	}
 	if strings.HasPrefix(path, "/gw/") {
 		f.serveGateway(w, r, strings.TrimPrefix(path, "/gw"))
@@ -130,44 +118,96 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	switch {
 	case path == "/v1/organizations":
-		items := []map[string]any{}
-		order := f.orgOrder
-		if order == nil {
-			order = sortedKeys(f.orgs)
-		}
-		for _, name := range order {
-			items = append(items, map[string]any{
-				"organization_name": name, "display_name": f.display[name],
-				"organization_id": "o-" + name, "create_time": "2026-01-01T00:00:00Z",
-			})
-		}
-		reportErr(f.t, json.NewEncoder(w).Encode(map[string]any{"items": items}))
+		f.serveOrganizations(w)
 	case len(parts) >= 2 && parts[0] == "organizations":
-		projects, ok := f.orgs[parts[1]]
-		if !ok {
+		f.serveOrganization(w, r, parts)
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+// answerOverride answers r ahead of any route when the setup says to, and reports whether it did: Ctrl-C at
+// cancelOn, or the status set for a suffix of the path.
+func (f *fakeAPI) answerOverride(w http.ResponseWriter, r *http.Request) bool {
+	path := r.URL.Path
+	if f.cancelOn != "" && strings.HasSuffix(path, f.cancelOn) {
+		f.pressCtrlC(r)
+		return true
+	}
+	for suffix, code := range f.status {
+		if strings.HasSuffix(path, suffix) {
+			w.WriteHeader(code)
+			return true
+		}
+	}
+	return false
+}
+
+// pressCtrlC cancels the run and holds the request r until the CLI gives up on it (or five seconds pass).
+func (f *fakeAPI) pressCtrlC(r *http.Request) {
+	f.cancel()
+	// Read the body first: until it has, the server cannot see the
+	// client hang up.
+	should(io.Copy(io.Discard, r.Body))(f.t)
+	select {
+	case <-r.Context().Done():
+	case <-time.After(5 * time.Second):
+	}
+}
+
+// serveOrganizations answers the organizations listing: every organization, in orgOrder or sorted by name.
+func (f *fakeAPI) serveOrganizations(w http.ResponseWriter) {
+	order := f.orgOrder
+	if order == nil {
+		order = sortedKeys(f.orgs)
+	}
+	items := make([]map[string]any, 0, len(order))
+	for _, name := range order {
+		items = append(items, map[string]any{
+			"organization_name": name, "display_name": f.display[name],
+			"organization_id": "o-" + name, "create_time": "2026-01-01T00:00:00Z",
+		})
+	}
+	reportErr(f.t, json.NewEncoder(w).Encode(map[string]any{"items": items}))
+}
+
+// serveOrganization answers a request under /organizations/<org>/, split into parts: the quotas, the GPU classes and
+// the project containers paths; 404 for an unknown organization and for anything else.
+func (f *fakeAPI) serveOrganization(w http.ResponseWriter, r *http.Request, parts []string) {
+	projects, ok := f.orgs[parts[1]]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	switch {
+	case len(parts) == 3 && parts[2] == "quotas":
+		respond(f.t, w, `{}`)
+	case len(parts) == 3 && parts[2] == "gpu-classes":
+		respond(f.t, w, `{"items":[]}`)
+	case len(parts) >= 5 && parts[2] == "projects" && parts[4] == "containers":
+		f.serveContainers(w, r, projects, parts)
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+// serveContainers answers a request under /organizations/<org>/projects/<project>/containers, split into parts, for
+// an organization with the given projects: a group's instances (one running), and a project's group listing (empty,
+// 404 for an unknown project); 404 for anything else.
+func (f *fakeAPI) serveContainers(w http.ResponseWriter, r *http.Request, projects, parts []string) {
+	switch {
+	case len(parts) == 7 && parts[6] == "instances":
+		respond(
+			f.t,
+			w,
+			`{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","state":"running","ssh_ip":"203.0.113.7","ssh_port":30123}]}`,
+		)
+	case len(parts) == 5 && r.Method == http.MethodGet:
+		if !slices.Contains(projects, parts[3]) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		switch {
-		case len(parts) == 3 && parts[2] == "quotas":
-			respond(f.t, w, `{}`)
-		case len(parts) == 3 && parts[2] == "gpu-classes":
-			respond(f.t, w, `{"items":[]}`)
-		case len(parts) == 7 && parts[2] == "projects" && parts[4] == "containers" && parts[6] == "instances":
-			respond(
-				f.t,
-				w,
-				`{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","state":"running","ssh_ip":"203.0.113.7","ssh_port":30123}]}`,
-			)
-		case len(parts) == 5 && parts[2] == "projects" && parts[4] == "containers" && r.Method == http.MethodGet:
-			if !slices.Contains(projects, parts[3]) {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			respond(f.t, w, `{"items":[]}`)
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
+		respond(f.t, w, `{"items":[]}`)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
@@ -337,35 +377,8 @@ func (s session) run(t *testing.T) outcome {
 	}
 	maps.Copy(env, s.env)
 	d := testDeps(env)
-	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if s.sshKey {
-		name := s.sshKeyName
-		if name == "" {
-			name = "id_ed25519.pub"
-		}
-		if err := os.WriteFile(
-			filepath.Join(home, ".ssh", name),
-			[]byte("ssh-ed25519 AAAA test@host\n"),
-			0o600,
-		); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if s.saved != nil {
-		if err := config.Save(d.Env, *s.saved); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if s.rawConfig != "" {
-		if err := os.MkdirAll(cfgDir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(s.rawConfig), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
+	setUpSessionHome(t, &s, home)
+	setUpSessionConfig(t, &s, d.Env, cfgDir)
 	configPath := must(config.Path(d.Env))(t)
 
 	stdin := tempFile(t, dir, "stdin", s.stdin)
@@ -398,22 +411,7 @@ func (s session) run(t *testing.T) outcome {
 	}
 	done := make(chan int, 1)
 	go func() { done <- Run(ctx, d) }()
-	var code int
-	hung := false
-	if hold != nil {
-		select {
-		case code = <-done:
-		case <-time.After(stdinPatience):
-			hung = true
-			noErr(t, hold.Close()) // let the stuck read end so the run can finish
-			code = <-done
-		}
-		if !hung { // a hung run's hold is closed already
-			noErr(t, hold.Close())
-		}
-	} else {
-		code = <-done
-	}
+	code, hung := waitForRun(t, done, hold)
 	noErr(t, stdin.Close())
 	noErr(t, stderr.Close())
 
@@ -426,6 +424,65 @@ func (s session) run(t *testing.T) outcome {
 		code: code, stdout: stdout.String(), stderr: string(errBytes), device: fc.device.String(),
 		opened: opened, config: after, api: api, hung: hung, transcript: transcript.String(), configPath: configPath,
 		apiURL: srv.URL, home: home,
+	}
+}
+
+// setUpSessionHome makes the run's home folder with its .ssh folder, and puts the session's public key there when
+// it has one.
+func setUpSessionHome(t *testing.T, s *session, home string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if !s.sshKey {
+		return
+	}
+	name := s.sshKeyName
+	if name == "" {
+		name = "id_ed25519.pub"
+	}
+	if err := os.WriteFile(
+		filepath.Join(home, ".ssh", name),
+		[]byte("ssh-ed25519 AAAA test@host\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// setUpSessionConfig writes the config file the session starts with: saved through config.Save, then rawConfig as
+// is into cfgDir.
+func setUpSessionConfig(t *testing.T, s *session, env config.Env, cfgDir string) {
+	t.Helper()
+	if s.saved != nil {
+		if err := config.Save(env, *s.saved); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s.rawConfig != "" {
+		if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(s.rawConfig), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// waitForRun waits for the run's exit code on done. With hold, the open end of a never-closed stdin, it waits only
+// stdinPatience before calling the run hung and closing hold so a stuck read ends; hold is closed either way.
+func waitForRun(t *testing.T, done <-chan int, hold *os.File) (int, bool) {
+	t.Helper()
+	if hold == nil {
+		return <-done, false
+	}
+	select {
+	case code := <-done:
+		noErr(t, hold.Close())
+		return code, false
+	case <-time.After(stdinPatience):
+		noErr(t, hold.Close()) // let the stuck read end so the run can finish
+		return <-done, true
 	}
 }
 
