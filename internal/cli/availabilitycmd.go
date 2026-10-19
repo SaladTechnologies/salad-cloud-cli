@@ -290,14 +290,17 @@ class can be all zeros while others answer).`,
 }
 
 func runAvailability(cmd *cobra.Command, _ []string) error {
-	fl := cmd.Flags()
+	fl := readFlags(cmd.Flags())
 	var af availabilityFlags
-	af.Gpus, _ = fl.GetStringArray("gpu")
-	af.CPU, _ = fl.GetInt64("cpu")
-	af.Memory, _ = fl.GetInt64("memory")
-	af.Storage, _ = fl.GetInt64("storage")
-	af.Countries, _ = fl.GetStringArray("country")
-	af.From, _ = fl.GetString("from")
+	af.Gpus = fl.StringArray("gpu")
+	af.CPU = fl.Int64("cpu")
+	af.Memory = fl.Int64("memory")
+	af.Storage = fl.Int64("storage")
+	af.Countries = fl.StringArray("country")
+	af.From = fl.String("from")
+	if cerr := fl.Err(); cerr != nil {
+		return cerr
+	}
 	af.CPUSet, af.MemorySet, af.StorageOK = fl.Changed("cpu"), fl.Changed("memory"), fl.Changed("storage")
 	if cerr := validateAvailabilityFlags(af); cerr != nil {
 		return cerr

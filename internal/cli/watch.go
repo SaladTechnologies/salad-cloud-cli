@@ -35,14 +35,20 @@ func addWatchFlags(cmd *cobra.Command) {
 // validateWatchFlags rejects --watch outside table mode and an --interval
 // below the minimum.
 func validateWatchFlags(cmd *cobra.Command) *clierr.Error {
-	if watch, _ := cmd.Flags().GetBool("watch"); !watch {
+	fr := readFlags(cmd.Flags())
+	watch := fr.Bool("watch")
+	interval := fr.Duration("interval")
+	if cerr := fr.Err(); cerr != nil {
+		return cerr
+	}
+	if !watch {
 		return nil
 	}
 	if output.Mode() != "table" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage,
 			"--watch is table mode only; in scripts use --wait, or loop over '%s -o json'", cmd.CommandPath())
 	}
-	if interval, _ := cmd.Flags().GetDuration("interval"); interval < watchMinInterval {
+	if interval < watchMinInterval {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--interval must be at least %s", watchMinInterval)
 	}
 	return nil
@@ -53,7 +59,12 @@ func validateWatchFlags(cmd *cobra.Command) *clierr.Error {
 // output mode is a usage error, because a stream of documents is not one
 // document; scripts poll with --wait or a loop over 'get -o json'.
 func runMaybeWatch(cmd *cobra.Command, render func(ctx context.Context) *clierr.Error) error {
-	watch, _ := cmd.Flags().GetBool("watch")
+	fr := readFlags(cmd.Flags())
+	watch := fr.Bool("watch")
+	interval := fr.Duration("interval")
+	if cerr := fr.Err(); cerr != nil {
+		return cerr
+	}
 	if !watch {
 		//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
 		if cerr := render(cmd.Context()); cerr != nil {
@@ -64,7 +75,6 @@ func runMaybeWatch(cmd *cobra.Command, render func(ctx context.Context) *clierr.
 	if cerr := validateWatchFlags(cmd); cerr != nil {
 		return cerr
 	}
-	interval, _ := cmd.Flags().GetDuration("interval")
 	return watchLoop(cmd.Context(), watchDeps{
 		out:     output.Stdout,
 		errOut:  os.Stderr,

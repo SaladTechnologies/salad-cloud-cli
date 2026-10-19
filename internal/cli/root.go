@@ -61,6 +61,7 @@ stderr as a single-line JSON document: {"error": {...}}, in yaml mode too.
 	SilenceUsage:  true,
 	SilenceErrors: true,
 	PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+		fr := readFlags(cmd.Flags())
 		m, err := cmd.Flags().GetString("output")
 		if err != nil {
 			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
@@ -68,7 +69,10 @@ stderr as a single-line JSON document: {"error": {...}}, in yaml mode too.
 		if err := output.SetMode(m); err != nil {
 			return err
 		}
-		d, _ := cmd.Flags().GetString("debug")
+		d := fr.String("debug")
+		if cerr := fr.Err(); cerr != nil {
+			return cerr
+		}
 		switch d {
 		case "":
 			api.SetDebug(api.DebugOff)
@@ -346,8 +350,12 @@ func wrapErr(err error) error {
 // reads the --org/--project flags, resolves configuration, and constructs
 // the client (which requires an API key but not org/project).
 func NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error) {
-	orgFlag, _ := cmd.Flags().GetString("org")
-	projectFlag, _ := cmd.Flags().GetString("project")
+	fr := readFlags(cmd.Flags())
+	orgFlag := fr.String("org")
+	projectFlag := fr.String("project")
+	if cerr := fr.Err(); cerr != nil {
+		return nil, config.Resolved{}, cerr
+	}
 	res, err := config.Resolve(orgFlag, projectFlag)
 	if err != nil {
 		path, _ := config.Path()

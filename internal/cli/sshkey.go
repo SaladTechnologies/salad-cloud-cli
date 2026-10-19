@@ -166,7 +166,11 @@ type sshKeySetup struct {
 }
 
 func runSSHKeySetup(cmd *cobra.Command, _ []string) error {
-	generate, _ := cmd.Flags().GetBool("generate")
+	fr := readFlags(cmd.Flags())
+	generate := fr.Bool("generate")
+	if cerr := fr.Err(); cerr != nil {
+		return cerr
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return clierr.New(

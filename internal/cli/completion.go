@@ -36,8 +36,11 @@ type completer func(ctx context.Context, c *api.Client, cmd *cobra.Command, args
 // (and no file completion) on any failure.
 func complete(f completer) func(*cobra.Command, []string, string) ([]string, cobra.ShellCompDirective) {
 	return func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-		org, _ := cmd.Root().PersistentFlags().GetString("org")
-		project, _ := cmd.Root().PersistentFlags().GetString("project")
+		fr := readFlags(cmd.Root().PersistentFlags())
+		org, project := fr.String("org"), fr.String("project")
+		if fr.Err() != nil {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
 		res, err := config.Resolve(org, project)
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp

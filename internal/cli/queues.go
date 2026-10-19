@@ -142,20 +142,21 @@ func addQueueFlag(cmd *cobra.Command) {
 }
 
 // queueFlag reads --queue.
-func queueFlag(cmd *cobra.Command) string {
-	q, _ := cmd.Flags().GetString("queue")
-	return q
+func queueFlag(cmd *cobra.Command) (string, *clierr.Error) {
+	fr := readFlags(cmd.Flags())
+	q := fr.String("queue")
+	return q, fr.Err()
 }
 
 // queueFields reads --display-name and --description into the values to
 // send; set reports whether either was passed.
-func queueFields(cmd *cobra.Command) (displayName, description *string, set bool) {
-	if cmd.Flags().Changed("display-name") {
-		v, _ := cmd.Flags().GetString("display-name")
+func queueFields(fr *flagReader) (displayName, description *string, set bool) {
+	if fr.Changed("display-name") {
+		v := fr.String("display-name")
 		displayName = &v
 	}
-	if cmd.Flags().Changed("description") {
-		v, _ := cmd.Flags().GetString("description")
+	if fr.Changed("description") {
+		v := fr.String("description")
 		description = &v
 	}
 	return displayName, description, displayName != nil || description != nil
@@ -191,7 +192,11 @@ is whatever your container returns.`,
 			if cerr := validateResourceName("queue", args[0]); cerr != nil {
 				return cerr
 			}
-			displayName, description, _ := queueFields(cmd)
+			fr := readFlags(cmd.Flags())
+			displayName, description, _ := queueFields(fr)
+			if cerr := fr.Err(); cerr != nil {
+				return cerr
+			}
 			client, _, cerr := NewClient(cmd)
 			if cerr != nil {
 				return cerr
@@ -272,7 +277,11 @@ is whatever your container returns.`,
 		Short: "Change a job queue's display name or description",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			displayName, description, set := queueFields(cmd)
+			fr := readFlags(cmd.Flags())
+			displayName, description, set := queueFields(fr)
+			if cerr := fr.Err(); cerr != nil {
+				return cerr
+			}
 			if !set {
 				return clierr.New(
 					clierr.CodeUsage,
@@ -350,8 +359,15 @@ larger) and says so on stderr when the queue may hold more; --limit 0 reads
 every job, up to 10,000.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			queue := queueFlag(cmd)
-			limit, _ := cmd.Flags().GetInt("limit")
+			fr := readFlags(cmd.Flags())
+			queue, cerr := queueFlag(cmd)
+			if cerr != nil {
+				return cerr
+			}
+			limit := fr.Int("limit")
+			if cerr = fr.Err(); cerr != nil {
+				return cerr
+			}
 			if limit < 0 {
 				return clierr.New(
 					clierr.CodeUsage,
@@ -413,8 +429,11 @@ every job, up to 10,000.`,
 		Short: "Show one queue job (input/output truncated; -o json for the full document)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			queue := queueFlag(cmd)
-			if cerr := requireJobUUID(args[0], "saladcloud queues jobs list --queue "+queue); cerr != nil {
+			queue, cerr := queueFlag(cmd)
+			if cerr != nil {
+				return cerr
+			}
+			if cerr = requireJobUUID(args[0], "saladcloud queues jobs list --queue "+queue); cerr != nil {
 				return cerr
 			}
 			client, _, cerr := NewClient(cmd)
@@ -475,8 +494,11 @@ it to the end, so a handler with side effects should be idempotent. A job
 that has finished cannot be canceled (exit 1).`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			queue := queueFlag(cmd)
-			if cerr := requireJobUUID(args[0], "saladcloud queues jobs list --queue "+queue); cerr != nil {
+			queue, cerr := queueFlag(cmd)
+			if cerr != nil {
+				return cerr
+			}
+			if cerr = requireJobUUID(args[0], "saladcloud queues jobs list --queue "+queue); cerr != nil {
 				return cerr
 			}
 			client, _, cerr := NewClient(cmd)
@@ -512,9 +534,17 @@ func queueGroupsCell(groups []shared.ContainerGroup) string {
 }
 
 func runQueueJobCreate(cmd *cobra.Command, _ []string) error {
-	queue := queueFlag(cmd)
-	file, _ := cmd.Flags().GetString("file")
-	inputJSON, _ := cmd.Flags().GetString("input")
+	fr := readFlags(cmd.Flags())
+	queue, cerr := queueFlag(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	file := fr.String("file")
+	inputJSON := fr.String("input")
+	wh := fr.String("webhook")
+	if cerr = fr.Err(); cerr != nil {
+		return cerr
+	}
 	if (file == "") == (inputJSON == "") {
 		return clierr.New(
 			clierr.CodeUsage,
@@ -545,7 +575,6 @@ func runQueueJobCreate(cmd *cobra.Command, _ []string) error {
 		proto.Input = json.RawMessage(inputJSON)
 	}
 	if cmd.Flags().Changed("webhook") {
-		wh, _ := cmd.Flags().GetString("webhook")
 		proto.Webhook = &wh
 	}
 

@@ -77,7 +77,7 @@ func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cmd := parsedTranscribeCmd(t, "transcribe", transcribeFields, tt.args...)
-			got, cerr := buildTranscribeInput("u", transcribeFields, cmd.Flags(), tt.extra)
+			got, cerr := buildTranscribeInput("u", transcribeFields, readFlags(cmd.Flags()), tt.extra)
 			if cerr != nil {
 				t.Fatalf("buildTranscribeInput: %v", cerr)
 			}
@@ -91,7 +91,7 @@ func TestBuildTranscribeInputSendsOnlySetFlags(t *testing.T) {
 func TestBuildTranscribeInputRejectsBadExtra(t *testing.T) {
 	cmd := parsedTranscribeCmd(t, "transcribe", transcribeFields)
 	for _, extra := range []string{"{not json", `"a string"`, "[1,2]"} {
-		_, cerr := buildTranscribeInput("u", transcribeFields, cmd.Flags(), extra)
+		_, cerr := buildTranscribeInput("u", transcribeFields, readFlags(cmd.Flags()), extra)
 		if cerr == nil {
 			t.Fatalf("buildTranscribeInput(extra=%q) = nil error, want invalid_input", extra)
 		}

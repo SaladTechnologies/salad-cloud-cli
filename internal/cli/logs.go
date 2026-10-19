@@ -131,24 +131,28 @@ func init() {
 }
 
 func runLogs(cmd *cobra.Command, args []string) error {
+	fr := readFlags(cmd.Flags())
 	// The group is the subject of 'container-groups logs <group>' and a
 	// filter (-c) on the top-level query.
 	group := ""
 	if len(args) == 1 {
 		group = args[0]
 	} else if cmd.Annotations[annotationGroupIsArg] == "" { // logs -c; container-groups logs only hides its -c
-		group, _ = cmd.Flags().GetString("container-group")
+		group = fr.String("container-group")
 	}
-	sinceStr, _ := cmd.Flags().GetString("since")
-	untilStr, _ := cmd.Flags().GetString("until")
-	instance, _ := cmd.Flags().GetString("instance")
-	severity, _ := cmd.Flags().GetString("severity")
-	filter, _ := cmd.Flags().GetString("filter")
-	rawQuery, _ := cmd.Flags().GetString("query")
-	follow, _ := cmd.Flags().GetBool("follow")
-	pollInterval, _ := cmd.Flags().GetDuration("poll-interval")
-	lookback, _ := cmd.Flags().GetDuration("lookback")
-	pageSize, _ := cmd.Flags().GetInt("page-size")
+	sinceStr := fr.String("since")
+	untilStr := fr.String("until")
+	instance := fr.String("instance")
+	severity := fr.String("severity")
+	filter := fr.String("filter")
+	rawQuery := fr.String("query")
+	follow := fr.Bool("follow")
+	pollInterval := fr.Duration("poll-interval")
+	lookback := fr.Duration("lookback")
+	pageSize := fr.Int("page-size")
+	if cerr := fr.Err(); cerr != nil {
+		return cerr
+	}
 
 	// Pre-flight validation: everything below must fail with a usage error
 	// before any configuration or client work, so bad input exits 2 even

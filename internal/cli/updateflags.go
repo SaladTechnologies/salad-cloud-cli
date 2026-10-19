@@ -56,25 +56,25 @@ func addUpdateFlags(cmd *cobra.Command) {
 	f.String("display-name", "", "human-readable display name")
 }
 
-func collectUpdateFlags(cmd *cobra.Command) updateFlags {
-	f := cmd.Flags()
+func collectUpdateFlags(cmd *cobra.Command) (updateFlags, *clierr.Error) {
+	f := readFlags(cmd.Flags())
 	var u updateFlags
-	u.Image, _ = f.GetString("image")
-	u.CPU, _ = f.GetInt64("cpu")
-	u.Memory, _ = f.GetInt64("memory")
-	u.Gpus, _ = f.GetStringArray("gpu")
-	u.Storage, _ = f.GetInt64("storage")
+	u.Image = f.String("image")
+	u.CPU = f.Int64("cpu")
+	u.Memory = f.Int64("memory")
+	u.Gpus = f.StringArray("gpu")
+	u.Storage = f.Int64("storage")
 	u.StorageSet = f.Changed("storage")
-	u.Countries, _ = f.GetStringArray("country")
-	u.Replicas, _ = f.GetInt64("replicas")
-	u.Env, _ = f.GetStringArray("env")
-	u.Priority, _ = f.GetString("priority")
-	u.Port, _ = f.GetInt64("port")
-	u.DisplayName, _ = f.GetString("display-name")
+	u.Countries = f.StringArray("country")
+	u.Replicas = f.Int64("replicas")
+	u.Env = f.StringArray("env")
+	u.Priority = f.String("priority")
+	u.Port = f.Int64("port")
+	u.DisplayName = f.String("display-name")
 	u.ImageSet, u.CPUSet, u.MemorySet = f.Changed("image"), f.Changed("cpu"), f.Changed("memory")
 	u.ReplicasSet, u.PrioritySet = f.Changed("replicas"), f.Changed("priority")
 	u.PortSet, u.DisplayNameSet = f.Changed("port"), f.Changed("display-name")
-	return u
+	return u, f.Err()
 }
 
 // validateUpdateFlags checks the flag values before any file or API work,

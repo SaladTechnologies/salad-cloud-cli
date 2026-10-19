@@ -71,8 +71,12 @@ func addSettleFlags(cmd *cobra.Command) {
 // wait is true unless --no-wait was given. Call it pre-flight, like
 // waitFlagValues.
 func settleFlagValues(cmd *cobra.Command) (bool, time.Duration, *clierr.Error) {
-	noWait, _ := cmd.Flags().GetBool("no-wait")
-	timeout, _ := cmd.Flags().GetDuration("timeout")
+	fr := readFlags(cmd.Flags())
+	noWait := fr.Bool("no-wait")
+	timeout := fr.Duration("timeout")
+	if cerr := fr.Err(); cerr != nil {
+		return false, 0, cerr
+	}
 	if !noWait && timeout <= 0 {
 		return false, 0, clierr.New(
 			clierr.CodeUsage,
@@ -87,8 +91,12 @@ func settleFlagValues(cmd *cobra.Command) (bool, time.Duration, *clierr.Error) {
 // waitFlagValues reads and validates --wait/--timeout. Call it pre-flight —
 // before any file or API work — so a bad --timeout is a pure usage error.
 func waitFlagValues(cmd *cobra.Command) (bool, time.Duration, *clierr.Error) {
-	wait, _ := cmd.Flags().GetBool("wait")
-	timeout, _ := cmd.Flags().GetDuration("timeout")
+	fr := readFlags(cmd.Flags())
+	wait := fr.Bool("wait")
+	timeout := fr.Duration("timeout")
+	if cerr := fr.Err(); cerr != nil {
+		return false, 0, cerr
+	}
 	if wait && timeout <= 0 {
 		return false, 0, clierr.New(
 			clierr.CodeUsage,

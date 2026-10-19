@@ -30,7 +30,12 @@ func init() {
 	// all, which prints the help as before.
 	rootCmd.Flags().Bool("version", false, "print the version (same as saladcloud version)")
 	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if v, _ := cmd.Flags().GetBool("version"); v {
+		fr := readFlags(cmd.Flags())
+		v := fr.Bool("version")
+		if cerr := fr.Err(); cerr != nil {
+			return cerr
+		}
+		if v {
 			return runVersion(cmd, args)
 		}
 		return cmd.Help()

@@ -18,7 +18,6 @@ import (
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/inferenceendpoints"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
@@ -235,7 +234,7 @@ var transcriptionLiteFields = []inputField{
 func buildTranscribeInput(
 	url string,
 	fields []inputField,
-	flags *pflag.FlagSet,
+	flags *flagReader,
 	inputExtra string,
 ) (map[string]any, *clierr.Error) {
 	in := map[string]any{"url": url}
@@ -245,18 +244,21 @@ func buildTranscribeInput(
 		}
 		switch f.kind {
 		case fieldBool:
-			v, _ := flags.GetBool(f.flag())
+			v := flags.Bool(f.flag())
 			in[f.name] = v
 		case fieldString:
-			v, _ := flags.GetString(f.flag())
+			v := flags.String(f.flag())
 			in[f.name] = v
 		case fieldInt:
-			v, _ := flags.GetInt64(f.flag())
+			v := flags.Int64(f.flag())
 			in[f.name] = v
 		case fieldList:
-			v, _ := flags.GetStringArray(f.flag())
+			v := flags.StringArray(f.flag())
 			in[f.name] = strings.Join(v, ",")
 		}
+	}
+	if cerr := flags.Err(); cerr != nil {
+		return nil, cerr
 	}
 	if inputExtra != "" {
 		var extra map[string]any
@@ -400,18 +402,21 @@ endpoint's price row, run saladcloud inference get ` + endpoint + `.`,
 }
 
 func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputField) error {
-	flags := cmd.Flags()
-	inputExtra, _ := flags.GetString("input-extra")
-	noWait, _ := flags.GetBool("no-wait")
-	keepUpload, _ := flags.GetBool("keep-upload")
-	timeout, _ := flags.GetDuration("timeout")
+	flags := readFlags(cmd.Flags())
+	inputExtra := flags.String("input-extra")
+	noWait := flags.Bool("no-wait")
+	keepUpload := flags.Bool("keep-upload")
+	timeout := flags.Duration("timeout")
 	srt := flags.Changed("srt")
 	if srt {
-		srt, _ = flags.GetBool("srt")
+		srt = flags.Bool("srt")
 	}
 	asFile := flags.Changed("return-as-file")
 	if asFile {
-		asFile, _ = flags.GetBool("return-as-file")
+		asFile = flags.Bool("return-as-file")
+	}
+	if cerr := flags.Err(); cerr != nil {
+		return cerr
 	}
 
 	// Pre-flight validation, before any upload or API work.
@@ -419,7 +424,11 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--timeout must be greater than zero (got %s)", timeout)
 	}
 	if flags.Lookup("summarize") != nil {
-		if n, _ := flags.GetInt64("summarize"); n < 0 {
+		n := flags.Int64("summarize")
+		if cerr := flags.Err(); cerr != nil {
+			return cerr
+		}
+		if n < 0 {
 			return clierr.New(
 				clierr.CodeInvalidInput,
 				clierr.KindInvalidInput,

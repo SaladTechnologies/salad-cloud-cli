@@ -316,10 +316,14 @@ func flagNoun(flag string) string {
 // argument: ssh, sftp and container-groups logs take the group as the
 // argument and the instance as --instance; cp names both in its path.
 func groupGivenAsFlag(cmd *cobra.Command, args []string) *clierr.Error {
+	fr := readFlags(cmd.Flags())
 	if cmd.Annotations[annotationGroupIsArg] == "" || !cmd.Flags().Changed("container-group") {
 		return nil
 	}
-	group, _ := cmd.Flags().GetString("container-group")
+	group := fr.String("container-group")
+	if cerr := fr.Err(); cerr != nil {
+		return cerr
+	}
 	if cmd.Name() == "cp" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "cp takes the group in its remote path, not as -c").
 			WithHint("run %s", strings.Join(strings.Fields(cmd.CommandPath()), " ")+" "+shellWord(group)+"[/<instance>]:<path> <local-path>")

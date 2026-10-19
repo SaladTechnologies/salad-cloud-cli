@@ -418,13 +418,13 @@ func addCreateOverrideFlags(cmd *cobra.Command) {
 }
 
 // collectCreateFlags reads the shared override flags into a createFlags.
-func collectCreateFlags(cmd *cobra.Command, name string, hasBase bool) createFlags {
-	f := cmd.Flags()
-	str := func(n string) string { v, _ := f.GetString(n); return v }
-	i64 := func(n string) int64 { v, _ := f.GetInt64(n); return v }
-	b := func(n string) bool { v, _ := f.GetBool(n); return v }
-	arr := func(n string) []string { v, _ := f.GetStringArray(n); return v }
-	return createFlags{
+func collectCreateFlags(cmd *cobra.Command, name string, hasBase bool) (createFlags, *clierr.Error) {
+	f := readFlags(cmd.Flags())
+	str := func(n string) string { return f.String(n) }
+	i64 := func(n string) int64 { return f.Int64(n) }
+	b := func(n string) bool { return f.Bool(n) }
+	arr := func(n string) []string { return f.StringArray(n) }
+	opts := createFlags{
 		Name:             name,
 		DisplayName:      str("display-name"),
 		Image:            str("image"),
@@ -452,6 +452,7 @@ func collectCreateFlags(cmd *cobra.Command, name string, hasBase bool) createFla
 		NoAutostart:      b("no-autostart"),
 		HasBase:          hasBase,
 	}
+	return opts, f.Err()
 }
 
 // runCreate is the tail of create: apply the
@@ -486,18 +487,21 @@ func runCreate(
 		return client, nil
 	}
 
-	opts := collectCreateFlags(cmd, name, hasBase)
+	opts, cerr := collectCreateFlags(cmd, name, hasBase)
+	if cerr != nil {
+		return cerr
+	}
 	opts.Command = command
 	var classes []organizationdata.GpuClass // fetched once, on first non-UUID --gpu
 	opts.ResolveGpu = func(value string) (string, *clierr.Error) {
 		if classes == nil {
-			c, cerr := getClient()
-			if cerr != nil {
-				return "", cerr
+			c, err := getClient()
+			if err != nil {
+				return "", err
 			}
-			list, cerr := c.ListGpuClasses(cmd.Context())
-			if cerr != nil {
-				return "", cerr
+			list, err := c.ListGpuClasses(cmd.Context())
+			if err != nil {
+				return "", err
 			}
 			classes = list.Items
 		}
@@ -637,6 +641,14 @@ together, so it starts with the program: -- python app.py --port 8080, not
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			fr := readFlags(cmd.Flags())
+			noAutostart := fr.Bool("no-autostart")
+			file := fr.String("file")
+			allowUnknown := fr.Bool("allow-unknown-fields")
+			from := fr.String("from")
+			if cerr := fr.Err(); cerr != nil {
+				return cerr
+			}
 			args, command, commandGiven := splitCommand(cmd, args)
 			if cerr := validateCommand(command, commandGiven); cerr != nil {
 				return cerr
@@ -647,12 +659,9 @@ together, so it starts with the program: -- python app.py --port 8080, not
 			if cerr != nil {
 				return cerr
 			}
-			noAutostart, _ := cmd.Flags().GetBool("no-autostart")
 			if cerr = validateWaitAutostart(wait, noAutostart); cerr != nil {
 				return cerr
 			}
-			file, _ := cmd.Flags().GetString("file")
-			allowUnknown, _ := cmd.Flags().GetBool("allow-unknown-fields")
 			var base containergroups.ContainerGroupCreationRequest
 			var baseRaw []byte
 			var unknowns []input.Unknown
@@ -661,7 +670,7 @@ together, so it starts with the program: -- python app.py --port 8080, not
 			if len(args) == 1 {
 				name = args[0]
 			}
-			if from, _ := cmd.Flags().GetString("from"); from != "" {
+			if from != "" {
 				base, baseRaw, unknowns, cerr = loadFromBase(cmd, from, file, allowUnknown, name, os.Stderr)
 				if cerr != nil {
 					return cerr

@@ -65,9 +65,13 @@ install (npx skills add https://docs.salad.com).`,
 }
 
 func runAgentInit(cmd *cobra.Command, _ []string) error {
-	file, _ := cmd.Flags().GetString("file")
-	dir, _ := cmd.Flags().GetString("dir")
-	printOnly, _ := cmd.Flags().GetBool("print")
+	fr := readFlags(cmd.Flags())
+	file := fr.String("file")
+	dir := fr.String("dir")
+	printOnly := fr.Bool("print")
+	if cerr := fr.Err(); cerr != nil {
+		return cerr
+	}
 
 	if printOnly {
 		res := agentInitResult{Action: "printed", OK: true, Reason: "--print", Version: version.Version}

@@ -39,7 +39,11 @@ In JSON mode the result is {"version","since","items":[{"version",
 never null.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			since, _ := cmd.Flags().GetString("since")
+			fr := readFlags(cmd.Flags())
+			since := fr.String("since")
+			if cerr := fr.Err(); cerr != nil {
+				return cerr
+			}
 			all := changelog.Parse(saladcloudcli.Changelog)
 			releases, err := changelog.Since(all, since)
 			if err != nil {

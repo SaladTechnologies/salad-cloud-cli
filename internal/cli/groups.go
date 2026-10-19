@@ -250,7 +250,12 @@ flag for each: --projects a --projects b) and adds a PROJECT column. Name
 the projects you want listed.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			statusFilter, _ := cmd.Flags().GetString("status")
+			fr := readFlags(cmd.Flags())
+			statusFilter := fr.String("status")
+			projects := fr.StringArray("projects")
+			if cerr := fr.Err(); cerr != nil {
+				return cerr
+			}
 			if statusFilter != "" && !validGroupStatuses[statusFilter] {
 				return clierr.New(
 					clierr.CodeUsage,
@@ -259,7 +264,6 @@ the projects you want listed.`,
 					statusFilter,
 				).WithHint("use pending, running, stopped, succeeded, failed or deploying")
 			}
-			projects, _ := cmd.Flags().GetStringArray("projects")
 			client, res, cerr := NewClient(cmd)
 			if cerr != nil {
 				return cerr
@@ -378,8 +382,13 @@ document unless you mean to change it. The CLI prints a note when the
 group has scheduled scaling enabled.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			writable, _ := cmd.Flags().GetBool("writable")
-			if watch, _ := cmd.Flags().GetBool("watch"); watch && writable {
+			fr := readFlags(cmd.Flags())
+			writable := fr.Bool("writable")
+			watch := fr.Bool("watch")
+			if cerr := fr.Err(); cerr != nil {
+				return cerr
+			}
+			if watch && writable {
 				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--writable and --watch cannot be combined")
 			}
 			client, _, cerr := NewClient(cmd)
@@ -480,6 +489,12 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			fr := readFlags(cmd.Flags())
+			file := fr.String("file")
+			allowUnknown := fr.Bool("allow-unknown-fields")
+			if cerr := fr.Err(); cerr != nil {
+				return cerr
+			}
 			args, command, commandGiven := splitCommand(cmd, args)
 			if cerr := validateCommand(command, commandGiven); cerr != nil {
 				return cerr
@@ -489,12 +504,14 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 			if cerr != nil {
 				return cerr // pre-flight: a bad --timeout must not patch anything
 			}
-			flags := collectUpdateFlags(cmd)
+			flags, cerr := collectUpdateFlags(cmd)
+			if cerr != nil {
+				return cerr
+			}
 			flags.Command = command
 			if cerr = validateUpdateFlags(flags); cerr != nil {
 				return cerr
 			}
-			file, _ := cmd.Flags().GetString("file")
 			if file == "" && !flags.any() {
 				return clierr.New(clierr.CodeUsage, clierr.KindUsage,
 					"nothing to update").
@@ -507,7 +524,6 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 			// Because the wire document is the user's own bytes, the
 			// --allow-unknown-fields path needs no grafting here: tolerated
 			// fields ride through untouched.
-			allowUnknown, _ := cmd.Flags().GetBool("allow-unknown-fields")
 			var patch containergroups.ContainerGroupPatch
 			var raw json.RawMessage
 			switch {

@@ -79,6 +79,11 @@ write (the API does not honor the flag in the same patch as replicas), for
 "new setpoint, keep the program".`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			fr := readFlags(cmd.Flags())
+			keep := fr.Bool("keep-schedule")
+			if cerr := fr.Err(); cerr != nil {
+				return cerr
+			}
 			wait, timeout, cerr := settleFlagValues(cmd)
 			if cerr != nil {
 				return cerr
@@ -97,7 +102,6 @@ write (the API does not honor the flag in the same patch as replicas), for
 			if cerr != nil {
 				return cerr
 			}
-			keep, _ := cmd.Flags().GetBool("keep-schedule")
 			var before *shared.ContainerGroup
 			if keep {
 				if b, cerr := client.GetGroup(cmd.Context(), args[0]); cerr == nil {

@@ -120,14 +120,18 @@ type login struct {
 var errKeyRejected = clierr.New(clierr.CodeAuth, clierr.KindAuth, "the API key was rejected")
 
 func runLogin(cmd *cobra.Command, _ []string) error {
-	keyFlag, _ := cmd.Flags().GetString("api-key")
-	orgFlag, _ := cmd.Flags().GetString("org")
-	projectFlag, _ := cmd.Flags().GetString("project")
+	fr := readFlags(cmd.Flags())
+	keyFlag := fr.String("api-key")
+	orgFlag := fr.String("org")
+	projectFlag := fr.String("project")
 	for _, f := range []string{"api-key", "org", "project"} {
-		if v, _ := cmd.Flags().GetString(f); cmd.Flags().Changed(f) && v == "" {
+		if v := fr.String(f); cmd.Flags().Changed(f) && v == "" {
 			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s is empty", "--"+f).
 				WithHint("check that the variable you passed is set")
 		}
+	}
+	if cerr := fr.Err(); cerr != nil {
+		return cerr
 	}
 	if org, project, ok := strings.Cut(orgFlag, "/"); ok {
 		if org == "" {

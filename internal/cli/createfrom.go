@@ -226,7 +226,11 @@ func loadFromBase(cmd *cobra.Command, ref, file string, allowUnknown bool, name 
 		image = ptr.Deref(base.Container.Image)
 	}
 	if cmd.Flags().Changed("image") {
-		image, _ = cmd.Flags().GetString("image")
+		fr := readFlags(cmd.Flags())
+		image = fr.String("image")
+		if cerr = fr.Err(); cerr != nil {
+			return base, nil, nil, cerr
+		}
 	}
 	noteRegistryCredentials(notes, fileRaw, image)
 	if allowUnknown && len(unknowns) > 0 {

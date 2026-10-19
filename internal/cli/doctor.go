@@ -92,8 +92,12 @@ type doctorRun struct {
 }
 
 func runDoctor(cmd *cobra.Command, _ []string) error {
-	orgFlag, _ := cmd.Flags().GetString("org")
-	projectFlag, _ := cmd.Flags().GetString("project")
+	fr := readFlags(cmd.Flags())
+	orgFlag := fr.String("org")
+	projectFlag := fr.String("project")
+	if cerr := fr.Err(); cerr != nil {
+		return cerr
+	}
 	d := &doctorRun{ctx: cmd.Context(), orgFlag: orgFlag, projectFlag: projectFlag}
 	rows := []checkResult{
 		d.configRow(), d.reachableRow(), d.apiKeyRow(), d.organizationRow(), d.projectRow(), d.gatewayRow(), d.sshRow(),

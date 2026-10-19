@@ -347,9 +347,10 @@ func addEndpointFlag(cmd *cobra.Command) {
 }
 
 // endpointFlag reads --endpoint.
-func endpointFlag(cmd *cobra.Command) string {
-	e, _ := cmd.Flags().GetString("endpoint")
-	return e
+func endpointFlag(cmd *cobra.Command) (string, *clierr.Error) {
+	fr := readFlags(cmd.Flags())
+	e := fr.String("endpoint")
+	return e, fr.Err()
 }
 
 func init() {
@@ -437,8 +438,15 @@ the newest N (default 100; 0 for all, up to 10,000); a stderr note says when
 older jobs were left out.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			endpoint := endpointFlag(cmd)
-			limit, _ := cmd.Flags().GetInt("limit")
+			fr := readFlags(cmd.Flags())
+			endpoint, cerr := endpointFlag(cmd)
+			if cerr != nil {
+				return cerr
+			}
+			limit := fr.Int("limit")
+			if cerr = fr.Err(); cerr != nil {
+				return cerr
+			}
 			if limit < 0 {
 				return clierr.New(
 					clierr.CodeUsage,
@@ -487,8 +495,11 @@ older jobs were left out.`,
 		Short: "Show one job (input/output truncated; -o json for the full document)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			endpoint := endpointFlag(cmd)
-			if cerr := requireJobUUID(args[0], "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
+			endpoint, cerr := endpointFlag(cmd)
+			if cerr != nil {
+				return cerr
+			}
+			if cerr = requireJobUUID(args[0], "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
 				return cerr
 			}
 			client, _, cerr := NewClient(cmd)
@@ -528,9 +539,16 @@ canceled exits 1 with the job's status and last event. --timeout (default
   saladcloud inference jobs create --endpoint transcribe -f job.yaml`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			endpoint := endpointFlag(cmd)
-			file, _ := cmd.Flags().GetString("file")
-			inputJSON, _ := cmd.Flags().GetString("input")
+			fr := readFlags(cmd.Flags())
+			endpoint, cerr := endpointFlag(cmd)
+			if cerr != nil {
+				return cerr
+			}
+			file := fr.String("file")
+			inputJSON := fr.String("input")
+			if cerr = fr.Err(); cerr != nil {
+				return cerr
+			}
 			// Pre-flight validation, before any file or API work.
 			if (file == "") == (inputJSON == "") {
 				return clierr.New(clierr.CodeUsage, clierr.KindUsage,
@@ -594,8 +612,11 @@ answers with no body; to see the job's status afterwards, run
 saladcloud inference jobs get <id> --endpoint <endpoint>.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			endpoint := endpointFlag(cmd)
-			if cerr := requireJobUUID(args[0], "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
+			endpoint, cerr := endpointFlag(cmd)
+			if cerr != nil {
+				return cerr
+			}
+			if cerr = requireJobUUID(args[0], "saladcloud inference jobs list --endpoint "+endpoint); cerr != nil {
 				return cerr
 			}
 			client, _, cerr := NewClient(cmd)

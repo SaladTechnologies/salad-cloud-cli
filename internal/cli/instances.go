@@ -178,9 +178,10 @@ func addGroupFlag(cmd *cobra.Command) {
 }
 
 // groupFlag reads -c/--container-group.
-func groupFlag(cmd *cobra.Command) string {
-	g, _ := cmd.Flags().GetString("container-group")
-	return g
+func groupFlag(cmd *cobra.Command) (string, *clierr.Error) {
+	fr := readFlags(cmd.Flags())
+	g := fr.String("container-group")
+	return g, fr.Err()
 }
 
 // maxDeletionCost is the API's upper bound on an instance's deletion_cost.
@@ -197,7 +198,10 @@ func instanceVerb(
 		Short: short,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			group := groupFlag(cmd)
+			group, cerr := groupFlag(cmd)
+			if cerr != nil {
+				return cerr
+			}
 			client, _, cerr := NewClient(cmd)
 			if cerr != nil {
 				return cerr
@@ -233,7 +237,10 @@ positional argument (its ID, or a unique prefix of it) and the group is
 		Short: "List the instances of a container group",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			group := groupFlag(cmd)
+			group, cerr := groupFlag(cmd)
+			if cerr != nil {
+				return cerr
+			}
 			client, _, cerr := NewClient(cmd)
 			if cerr != nil {
 				return cerr
@@ -290,7 +297,10 @@ positional argument (its ID, or a unique prefix of it) and the group is
 		Short: "Show one container group instance (the ID may be a unique prefix)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			group := groupFlag(cmd)
+			group, cerr := groupFlag(cmd)
+			if cerr != nil {
+				return cerr
+			}
 			client, _, cerr := NewClient(cmd)
 			if cerr != nil {
 				return cerr
@@ -319,12 +329,19 @@ so raising it protects an instance doing long work. 0-100000.`,
   saladcloud container-groups instances update 8a2f13ba -c my-app --deletion-cost 1000`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cost, _ := cmd.Flags().GetInt64("deletion-cost")
+			fr := readFlags(cmd.Flags())
+			cost := fr.Int64("deletion-cost")
+			if cerr := fr.Err(); cerr != nil {
+				return cerr
+			}
 			if cost < 0 || cost > maxDeletionCost {
 				return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
 					"invalid --deletion-cost %d: must be between 0 and %d", cost, maxDeletionCost)
 			}
-			group := groupFlag(cmd)
+			group, cerr := groupFlag(cmd)
+			if cerr != nil {
+				return cerr
+			}
 			client, _, cerr := NewClient(cmd)
 			if cerr != nil {
 				return cerr

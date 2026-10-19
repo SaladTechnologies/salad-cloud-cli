@@ -87,7 +87,11 @@ type gatewayLogin struct {
 }
 
 func runGatewayLogin(cmd *cobra.Command, _ []string) error {
-	keyFlag, _ := cmd.Flags().GetString("api-key")
+	fr := readFlags(cmd.Flags())
+	keyFlag := fr.String("api-key")
+	if cerr := fr.Err(); cerr != nil {
+		return cerr
+	}
 	if cmd.Flags().Changed("api-key") && keyFlag == "" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s is empty", "--api-key").
 			WithHint("check that the variable you passed is set")
