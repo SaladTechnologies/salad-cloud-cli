@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/organizationdata"
@@ -31,9 +32,11 @@ type updateFlags struct {
 
 // any reports whether at least one update flag was given.
 func (f updateFlags) any() bool {
-	return f.ImageSet || f.PrioritySet || f.DisplayNameSet || f.CPUSet || f.MemorySet ||
-		f.ReplicasSet || f.PortSet || len(f.Gpus) > 0 || len(f.Env) > 0 || f.StorageSet || len(f.Countries) > 0 ||
-		f.Command != nil
+	return slices.Contains([]bool{
+		f.ImageSet, f.PrioritySet, f.DisplayNameSet, f.CPUSet, f.MemorySet,
+		f.ReplicasSet, f.PortSet, len(f.Gpus) > 0, len(f.Env) > 0, f.StorageSet, len(f.Countries) > 0,
+		f.Command != nil,
+	}, true)
 }
 
 // addUpdateFlags binds the update flags to u.
@@ -85,6 +88,25 @@ func validateUpdateFlags(u updateFlags) *clierr.Error {
 	if u.ImageSet && u.Image == "" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--image cannot be empty")
 	}
+	if cerr := updateValidateResources(&u); cerr != nil {
+		return cerr
+	}
+	if _, cerr := normalizeCountries(u.Countries); cerr != nil {
+		return cerr
+	}
+	if cerr := updateValidateScheduling(&u); cerr != nil {
+		return cerr
+	}
+	for _, kv := range u.Env {
+		if cerr := checkGroupEnvFlag(kv); cerr != nil {
+			return cerr
+		}
+	}
+	return nil
+}
+
+// updateValidateResources checks --cpu, --memory and --storage.
+func updateValidateResources(u *updateFlags) *clierr.Error {
 	if u.CPUSet && u.CPU < 1 {
 		return clierr.New(
 			clierr.CodeInvalidInput,
@@ -109,20 +131,19 @@ func validateUpdateFlags(u updateFlags) *clierr.Error {
 			u.Storage,
 		)
 	}
-	if _, cerr := normalizeCountries(u.Countries); cerr != nil {
-		return cerr
-	}
+	return nil
+}
+
+// updateValidateScheduling checks --replicas, --priority and --port.
+func updateValidateScheduling(u *updateFlags) *clierr.Error {
 	if u.ReplicasSet {
 		if cerr := validateScaleReplicas(u.Replicas); cerr != nil {
 			return cerr
 		}
 	}
 	if u.PrioritySet {
-		switch u.Priority {
-		case "high", "medium", "low", "batch":
-		default:
-			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-				`invalid --priority "%s"`, u.Priority).WithHint("use high, medium, low or batch")
+		if _, cerr := parseGroupPriorityFlag(u.Priority); cerr != nil {
+			return cerr
 		}
 	}
 	if u.PortSet && (u.Port < 1 || u.Port > 65535) {
@@ -132,12 +153,6 @@ func validateUpdateFlags(u updateFlags) *clierr.Error {
 			"invalid --port %d: must be between 1 and 65535",
 			u.Port,
 		)
-	}
-	for _, kv := range u.Env {
-		if k, _, ok := strings.Cut(kv, "="); !ok || k == "" {
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --env "%s"`, kv).
-				WithHint("write it as KEY=VALUE")
-		}
 	}
 	return nil
 }
@@ -158,19 +173,56 @@ func buildUpdatePatch(
 	u updateFlags,
 	currentEnv map[string]*string,
 ) (wire, intent json.RawMessage, cerr *clierr.Error) {
-	doc := make(map[string]any)
-	if len(fileRaw) > 0 {
-		dec := json.NewDecoder(bytes.NewReader(fileRaw))
-		dec.UseNumber() // keep the file's numbers exactly as written
-		if err := dec.Decode(&doc); err != nil {
-			return nil, nil, clierr.New(
-				clierr.CodeInvalidInput,
-				clierr.KindInvalidInput,
-				"patch file is not a JSON object: %v",
-				err,
-			)
-		}
+	doc, cerr := updateDecodePatchFile(fileRaw)
+	if cerr != nil {
+		return nil, nil, cerr
 	}
+	updateSetContainerFlags(doc, &u)
+	if perr := updateSetPlacementFlags(doc, &u); perr != nil {
+		return nil, nil, perr
+	}
+	updateSetGroupFlags(doc, &u)
+	var removed []string // variables the file set to null, under -e
+	if len(u.Env) > 0 {
+		removed = updateMergeEnv(doc, u.Env, currentEnv)
+	}
+	wire, err := json.Marshal(doc)
+	if err != nil {
+		return nil, nil, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot encode the patch: %v", err)
+	}
+	if len(removed) == 0 {
+		return wire, wire, nil
+	}
+	intent, cerr = updateIntentPatch(doc, removed)
+	if cerr != nil {
+		return nil, nil, cerr
+	}
+	return wire, intent, nil
+}
+
+// updateDecodePatchFile decodes the patch file (fileRaw may be nil, for an
+// empty document), keeping its numbers exactly as written.
+func updateDecodePatchFile(fileRaw []byte) (map[string]any, *clierr.Error) {
+	doc := make(map[string]any)
+	if len(fileRaw) == 0 {
+		return doc, nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(fileRaw))
+	dec.UseNumber() // keep the file's numbers exactly as written
+	if err := dec.Decode(&doc); err != nil {
+		return nil, clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"patch file is not a JSON object: %v",
+			err,
+		)
+	}
+	return doc, nil
+}
+
+// updateSetContainerFlags lays --image, the container command, --cpu,
+// --memory and --storage over doc.
+func updateSetContainerFlags(doc map[string]any, u *updateFlags) {
 	if u.ImageSet {
 		setPath(doc, "container.image", u.Image)
 	}
@@ -186,32 +238,31 @@ func buildUpdatePatch(
 	if u.StorageSet {
 		setPath(doc, "container.resources.storage_amount", u.Storage*bytesPerGB)
 	}
+}
+
+// updateSetPlacementFlags lays --country and --gpu over doc, the GPU names
+// resolved to class UUIDs.
+func updateSetPlacementFlags(doc map[string]any, u *updateFlags) *clierr.Error {
 	if len(u.Countries) > 0 {
 		codes, cerr := normalizeCountries(u.Countries)
 		if cerr != nil {
-			return nil, nil, cerr
+			return cerr
 		}
 		doc["country_codes"] = codes
 	}
 	if len(u.Gpus) > 0 {
-		ids := make([]string, 0, len(u.Gpus))
-		for _, g := range u.Gpus {
-			if isUUID(g) {
-				ids = append(ids, g)
-				continue
-			}
-			if u.ResolveGpu == nil {
-				return nil, nil, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-					`--gpu "%s" is not a GPU class UUID, and name resolution is unavailable`, g)
-			}
-			id, rerr := u.ResolveGpu(g)
-			if rerr != nil {
-				return nil, nil, rerr
-			}
-			ids = append(ids, id)
+		ids, cerr := resolveGroupGpuFlags(u.Gpus, u.ResolveGpu)
+		if cerr != nil {
+			return cerr
 		}
 		setPath(doc, "container.resources.gpu_classes", ids)
 	}
+	return nil
+}
+
+// updateSetGroupFlags lays --priority, --replicas, --port and
+// --display-name over doc.
+func updateSetGroupFlags(doc map[string]any, u *updateFlags) {
 	if u.PrioritySet {
 		setPath(doc, "container.priority", u.Priority)
 	}
@@ -224,43 +275,56 @@ func buildUpdatePatch(
 	if u.DisplayNameSet {
 		doc["display_name"] = u.DisplayName
 	}
-	var removed []string // variables the file set to null, under -e
-	if len(u.Env) > 0 {
-		merged := make(map[string]any)
-		for k, v := range currentEnv {
-			if v != nil {
-				merged[k] = *v
-			}
+}
+
+// updateMergeEnv sets doc's container.environment_variables to the full
+// merged map -e needs: currentEnv, then the file's changes (null removes a
+// variable), then the -e values. It returns the variables the file removed.
+func updateMergeEnv(doc map[string]any, env []string, currentEnv map[string]*string) []string {
+	merged := make(map[string]any)
+	for k, v := range currentEnv {
+		if v != nil {
+			merged[k] = *v
 		}
-		if c, ok := doc["container"].(map[string]any); ok {
-			if fileEnv, ok := c["environment_variables"].(map[string]any); ok {
-				for k, v := range fileEnv {
-					if v == nil {
-						delete(merged, k)
-						removed = append(removed, k)
-					} else {
-						merged[k] = v
-					}
-				}
-			}
-		}
-		for _, kv := range u.Env {
-			k, v, _ := strings.Cut(kv, "=")
+	}
+	var removed []string
+	for k, v := range updateFileEnv(doc) {
+		if v == nil {
+			delete(merged, k)
+			removed = append(removed, k)
+		} else {
 			merged[k] = v
 		}
-		setPath(doc, "container.environment_variables", merged)
 	}
-	wire, err := json.Marshal(doc)
-	if err != nil {
-		return nil, nil, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot encode the patch: %v", err)
+	for _, kv := range env {
+		k, v, _ := strings.Cut(kv, "=")
+		merged[k] = v
 	}
-	if len(removed) == 0 {
-		return wire, wire, nil
+	setPath(doc, "container.environment_variables", merged)
+	return removed
+}
+
+// updateFileEnv is the patch file's container.environment_variables; nil
+// when it has none.
+func updateFileEnv(doc map[string]any) map[string]any {
+	c, ok := doc["container"].(map[string]any)
+	if !ok {
+		return nil
 	}
+	fileEnv, ok := c["environment_variables"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return fileEnv
+}
+
+// updateIntentPatch encodes buildUpdatePatch's intent: doc, already encoded
+// as the wire patch, with an explicit null for each removed variable.
+func updateIntentPatch(doc map[string]any, removed []string) (json.RawMessage, *clierr.Error) {
 	container, ok := doc["container"].(map[string]any)
 	env, envOK := container["environment_variables"].(map[string]any)
 	if !ok || !envOK {
-		return nil, nil, clierr.New(
+		return nil, clierr.New(
 			clierr.CodeGeneric,
 			clierr.KindInternal,
 			"cannot encode the patch: no environment variables to remove from",
@@ -269,11 +333,11 @@ func buildUpdatePatch(
 	for _, k := range removed {
 		env[k] = nil
 	}
-	intent, err = json.Marshal(doc)
+	intent, err := json.Marshal(doc)
 	if err != nil {
-		return nil, nil, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot encode the patch: %v", err)
+		return nil, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot encode the patch: %v", err)
 	}
-	return wire, intent, nil
+	return intent, nil
 }
 
 // lazyGpuResolver resolves --gpu names against the organization's GPU

@@ -267,7 +267,7 @@ func createApplySchedulingFlags(req *containergroups.ContainerGroupCreationReque
 		req.Replicas = ptr.To(opts.Replicas)
 	}
 	if opts.Priority != "" {
-		p, cerr := createParsePriority(opts.Priority)
+		p, cerr := parseGroupPriorityFlag(opts.Priority)
 		if cerr != nil {
 			return cerr
 		}
@@ -286,8 +286,9 @@ func createApplySchedulingFlags(req *containergroups.ContainerGroupCreationReque
 	return nil
 }
 
-// createParsePriority is the --priority value as the API's priority enum.
-func createParsePriority(value string) (shared.ContainerGroupPriority, *clierr.Error) {
+// parseGroupPriorityFlag is a --priority value (create's or update's) as the
+// API's priority enum.
+func parseGroupPriorityFlag(value string) (shared.ContainerGroupPriority, *clierr.Error) {
 	switch p := shared.ContainerGroupPriority(value); p {
 	case shared.CONTAINER_GROUP_PRIORITY_HIGH, shared.CONTAINER_GROUP_PRIORITY_MEDIUM,
 		shared.CONTAINER_GROUP_PRIORITY_LOW, shared.CONTAINER_GROUP_PRIORITY_BATCH:
@@ -321,12 +322,21 @@ func createApplyEnvFlags(req *containergroups.ContainerGroupCreationRequest, opt
 		c.EnvironmentVariables = make(map[string]*string, len(opts.Env))
 	}
 	for _, kv := range opts.Env {
-		k, v, ok := strings.Cut(kv, "=")
-		if !ok || k == "" {
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --env "%s"`, kv).
-				WithHint("write it as KEY=VALUE")
+		if cerr := checkGroupEnvFlag(kv); cerr != nil {
+			return cerr
 		}
+		k, v, _ := strings.Cut(kv, "=")
 		c.EnvironmentVariables[k] = ptr.To(v) // flag wins over the base, per key
+	}
+	return nil
+}
+
+// checkGroupEnvFlag checks a -e value (create's or update's): KEY=VALUE,
+// split at the first "=", with a name before it.
+func checkGroupEnvFlag(kv string) *clierr.Error {
+	if k, _, ok := strings.Cut(kv, "="); !ok || k == "" {
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --env "%s"`, kv).
+			WithHint("write it as KEY=VALUE")
 	}
 	return nil
 }
@@ -337,7 +347,7 @@ func createApplyGpuFlags(req *containergroups.ContainerGroupCreationRequest, opt
 	if len(opts.Gpus) == 0 {
 		return nil
 	}
-	ids, cerr := resolveGpuFlagValues(opts.Gpus, opts.ResolveGpu)
+	ids, cerr := resolveGroupGpuFlags(opts.Gpus, opts.ResolveGpu)
 	if cerr != nil {
 		return cerr
 	}
@@ -345,10 +355,10 @@ func createApplyGpuFlags(req *containergroups.ContainerGroupCreationRequest, opt
 	return nil
 }
 
-// resolveGpuFlagValues is the --gpu values (create's and update's) as GPU
+// resolveGroupGpuFlags is the --gpu values (create's and update's) as GPU
 // class UUIDs: a UUID is kept as given, and any other value goes through
 // resolve, which is nil when name resolution is unavailable.
-func resolveGpuFlagValues(
+func resolveGroupGpuFlags(
 	gpus []string,
 	resolve func(value string) (string, *clierr.Error),
 ) ([]string, *clierr.Error) {
@@ -630,8 +640,8 @@ func (app *App) runCreate(
 	if cerr != nil {
 		return cerr
 	}
-	if cerr = createCheckQueue(cmd, c, &req); cerr != nil {
-		return cerr
+	if qerr := createCheckQueue(cmd, c, &req); qerr != nil {
+		return qerr
 	}
 	sent, cerr := app.createRequestBody(&req, baseRaw, unknowns)
 	if cerr != nil {
