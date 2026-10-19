@@ -411,7 +411,7 @@ Host alias.`,
 				n = len(args)
 			}
 			if n != 1 {
-				return fmt.Errorf("accepts 1 arg(s) before --, received %d", n)
+				return fmt.Errorf("%w 1 arg(s) before --, received %d", errAccepts, n)
 			}
 			return nil
 		},

@@ -639,7 +639,7 @@ together, so it starts with the program: -- python app.py --port 8080, not
 			// The one optional positional is <group>; the words after -- are
 			// the container command and are not counted.
 			if pos, _, _ := splitCommand(cmd, args); len(pos) > 1 {
-				return fmt.Errorf("accepts at most 1 arg(s), received %d", len(pos))
+				return fmt.Errorf("%w at most 1 arg(s), received %d", errAccepts, len(pos))
 			}
 			return nil
 		},

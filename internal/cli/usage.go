@@ -236,6 +236,11 @@ var (
 	rangeArgsRe = regexp.MustCompile(`^accepts between (\d+) and (\d+) arg\(s\), received \d+$`)
 )
 
+// errAccepts starts every positional-count error the CLI's own Args checks
+// return, worded like cobra's ("accepts 1 arg(s), received 2") so argBounds
+// reads them the same way.
+var errAccepts = errors.New("accepts")
+
 // argBounds reads the positional bounds from a cobra Args error; ok is
 // false for any other error.
 func argBounds(err error) (minArgs, maxArgs int, ok bool) {

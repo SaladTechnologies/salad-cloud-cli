@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -100,6 +101,10 @@ func (o *object) MarshalJSON() ([]byte, error) {
 
 func (o *object) has(k string) bool { _, ok := o.vals[k]; return ok }
 
+// errKeyNotString is an object key the JSON decoder did not return as a
+// string. It does not happen: JSON keys are strings.
+var errKeyNotString = errors.New("is not a string")
+
 // decodeOrdered reads one JSON value, objects as *object and numbers as
 // [json.Number] so re-encoding reproduces them exactly.
 func decodeOrdered(dec *json.Decoder) (any, error) {
@@ -118,7 +123,7 @@ func decodeOrdered(dec *json.Decoder) (any, error) {
 				}
 				k, ok := kt.(string)
 				if !ok {
-					return nil, fmt.Errorf("object key %v is not a string", kt)
+					return nil, fmt.Errorf("object key %v %w", kt, errKeyNotString)
 				}
 				v, err := decodeOrdered(dec)
 				if err != nil {
@@ -129,8 +134,10 @@ func decodeOrdered(dec *json.Decoder) (any, error) {
 				}
 				o.vals[k] = v
 			}
-			_, err := dec.Token() // '}'
-			return o, err
+			if _, err := dec.Token(); err != nil { // '}'
+				return nil, err
+			}
+			return o, nil
 		case '[':
 			arr := []any{}
 			for dec.More() {
@@ -140,8 +147,10 @@ func decodeOrdered(dec *json.Decoder) (any, error) {
 				}
 				arr = append(arr, v)
 			}
-			_, err := dec.Token() // ']'
-			return arr, err
+			if _, err := dec.Token(); err != nil { // ']'
+				return nil, err
+			}
+			return arr, nil
 		}
 	}
 	return tok, nil

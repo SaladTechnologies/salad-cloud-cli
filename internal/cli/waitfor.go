@@ -355,7 +355,10 @@ func runStatusWait(
 	final, err := runGroupWait(cmd, client, group, "be "+target, "is "+target,
 		func(g *shared.ContainerGroup) bool { return groupStatus(g) == target },
 		abortUnreachable(group, target, fromActive), timeout)
-	if err == nil && target == "running" && hasReadinessProbe(final) {
+	if err != nil {
+		return nil, err
+	}
+	if target == "running" && hasReadinessProbe(final) {
 		// The group document counts running instances, not ready ones, so a
 		// probe that never passes would otherwise look like success. One
 		// instances call; if it fails, the note is skipped, not the wait.
@@ -365,7 +368,7 @@ func runStatusWait(
 			}
 		}
 	}
-	return final, err
+	return final, nil
 }
 
 // hasReadinessProbe reports whether the group defines a readiness probe.

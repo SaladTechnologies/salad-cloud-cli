@@ -96,6 +96,10 @@ func Load() (File, error) {
 	return f, nil
 }
 
+// ErrNotFolder is a path on the way to the config file that exists but is
+// not a folder.
+var ErrNotFolder = errors.New("is not a folder")
+
 // Writable reports why the config file could not be saved, or nil: the
 // file, when it exists, opens for writing, and its folder (or the nearest
 // folder above it that exists, which Save would create it in) takes a new
@@ -117,7 +121,7 @@ func Writable() error {
 		st, statErr := os.Stat(dir)
 		if statErr == nil {
 			if !st.IsDir() {
-				return fmt.Errorf("%s is not a folder", dir)
+				return fmt.Errorf("%s %w", dir, ErrNotFolder)
 			}
 			break
 		}

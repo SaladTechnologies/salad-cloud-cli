@@ -70,6 +70,10 @@ func checkCopyTarget(sameProject bool, name, source string) *clierr.Error {
 	return nil
 }
 
+// errUnexpectedGroupDocument is a group document that did not decode to a
+// JSON object.
+var errUnexpectedGroupDocument = errors.New("unexpected group document")
+
 // copyDocument renders g as a creation request document. The priority
 // relocation is applied and every field the creation schema does not know
 // (id, current_state, readme, networking.dns, …) is removed. autostart_policy
@@ -91,7 +95,7 @@ func copyDocument(g *shared.ContainerGroup, newName string, displayNameSet bool)
 	}
 	obj, ok := tree.(map[string]any)
 	if !ok {
-		return nil, errors.New("unexpected group document")
+		return nil, errUnexpectedGroupDocument
 	}
 	for reqPath, respPath := range requestToResponsePath {
 		if v, present := lookupPath(obj, respPath); present {
@@ -105,7 +109,7 @@ func copyDocument(g *shared.ContainerGroup, newName string, displayNameSet bool)
 	var dropped []string
 	filtered, ok := input.FilterTree(obj, reflect.TypeFor[containergroups.ContainerGroupCreationRequest](), "", &dropped).(map[string]any)
 	if !ok {
-		return nil, errors.New("unexpected group document")
+		return nil, errUnexpectedGroupDocument
 	}
 	if newName != "" && newName != ptr.Deref(g.Name) && !displayNameSet {
 		filtered["display_name"] = newName

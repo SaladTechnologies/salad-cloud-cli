@@ -484,7 +484,7 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 			// The one positional is <group>; the words after -- are the
 			// container command and are not counted.
 			if pos, _, _ := splitCommand(cmd, args); len(pos) != 1 {
-				return fmt.Errorf("accepts 1 arg(s) before --, received %d", len(pos))
+				return fmt.Errorf("%w 1 arg(s) before --, received %d", errAccepts, len(pos))
 			}
 			return nil
 		},
