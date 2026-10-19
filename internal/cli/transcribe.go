@@ -110,6 +110,28 @@ func resultURLKeys() []string {
 	return []string{"url"}
 }
 
+// transcriptForm is what a transcription command prints in table mode: the text, the SRT document (--srt), or the
+// result URL (--return-as-file, which wins over --srt).
+type transcriptForm int
+
+// The forms of transcriptForm.
+const (
+	transcriptFormText transcriptForm = iota
+	transcriptFormSRT
+	transcriptFormURL
+)
+
+// transcriptFormOf is the transcript form the given fields ask for.
+func transcriptFormOf(set fieldValues) transcriptForm {
+	switch {
+	case givenTrue(set, "return_as_file"):
+		return transcriptFormURL
+	case givenTrue(set, "srt"):
+		return transcriptFormSRT
+	}
+	return transcriptFormText
+}
+
 // transcriptText extracts the table-mode stdout payload from a succeeded
 // job's output: the SRT document when requested, else the text field, else
 // the whole output as compact JSON (the output schema is modeled tolerantly
@@ -118,16 +140,16 @@ func resultURLKeys() []string {
 // --srt was asked for and no SRT field is present, that is an error, not a
 // silent fallback to the plain text — scripts piping to an .srt file must
 // not receive a transcript instead.
-func transcriptText(out any, wantSRT, wantFile bool) (string, *clierr.Error) {
+func transcriptText(out any, form transcriptForm) (string, *clierr.Error) {
 	m, isMap := out.(map[string]any)
-	if isMap && wantFile {
+	if isMap && form == transcriptFormURL {
 		if s := transcriptField(m, resultURLKeys()...); s != "" {
 			return s, nil
 		}
 		return "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
 			"the job succeeded, but its output has no result URL").WithHint("inspect the job document with -o json")
 	}
-	if isMap && wantSRT {
+	if isMap && form == transcriptFormSRT {
 		if s := transcriptField(m, "srt_content", "srt"); s != "" {
 			return s, nil
 		}
@@ -153,18 +175,21 @@ func transcriptField(m map[string]any, keys ...string) string {
 	return ""
 }
 
+// jobOutputFailure is the error a terminal job's output embeds: its message and its code, each "" when absent.
+type jobOutputFailure struct {
+	msg, code string
+}
+
 // jobOutputError extracts the error message and code a terminal job's output
 // may embed: a failed job can return `succeeded` with output.error set (e.g.
 // an undownloadable URL), and a failed transcription has to be a nonzero
 // exit either way.
-func jobOutputError(out any) (msg, code string) {
+func jobOutputError(out any) jobOutputFailure {
 	m, ok := out.(map[string]any)
 	if !ok {
-		return "", ""
+		return jobOutputFailure{msg: "", code: ""}
 	}
-	msg = asType[string](m["error"])
-	code = asType[string](m["error_code"])
-	return msg, code
+	return jobOutputFailure{msg: asType[string](m["error"]), code: asType[string](m["error_code"])}
 }
 
 // fieldKind is the JSON type of one porcelain input field.
@@ -198,7 +223,8 @@ func transcribeFields() []inputField {
 		{
 			"language_code",
 			fieldString,
-			"language of the audio, for example en or de (omit to detect it automatically; setting it forces that language)",
+			"language of the audio, for example en or de " +
+				"(omit to detect it automatically; setting it forces that language)",
 		},
 		{"audio_stream_index", fieldInt, "zero-based audio stream to transcribe in multitrack media"},
 		{"multichannel", fieldBool, "preserve audio channels for channel-based diarization"},
@@ -216,7 +242,8 @@ func transcribeFields() []inputField {
 		{
 			"llm_translation",
 			fieldList,
-			"a language to translate the transcript into, repeatable (--llm-translation german --llm-translation french)",
+			"a language to translate the transcript into, repeatable " +
+				"(--llm-translation german --llm-translation french)",
 		},
 		{"srt_translation", fieldList, "a language to translate the SRT into, repeatable"},
 		{"custom_prompt", fieldString, "an instruction for processing the transcript"},
@@ -260,7 +287,7 @@ type transcribeOptions struct {
 
 // given is the fields whose flags cmd's command line set.
 func (o *transcribeOptions) given(cmd *cobra.Command) fieldValues {
-	set := fieldValues{}
+	set := make(fieldValues)
 	for name, v := range o.fields {
 		if cmd.Flags().Changed(strings.ReplaceAll(name, "_", "-")) {
 			set[name] = v
@@ -342,7 +369,11 @@ func (app *App) addTranscribeCommands(inferenceCmd *cobra.Command) {
 // carries a working link to the uploaded file: the CLI shows the API's own
 // document unedited (the output rule in AGENTS.md), so the warning goes
 // where the CLI sends people to it.
-const signedLinkNote = "the job document's input.url is a working link to your uploaded file until it expires; remove it before sharing the output"
+const signedLinkNote = "the job document's input.url is a working link to your uploaded file until it expires; " +
+	"remove it before sharing the output"
+
+// transcribeHelpWidth is the column listFieldsHelp wraps its sentence at, to match the rest of the help text.
+const transcribeHelpWidth = 74
 
 // listFieldsHelp is the help sentence on an endpoint's list fields, naming
 // only the ones it takes, on lines of its own; "" when it takes none.
@@ -363,7 +394,7 @@ func listFieldsHelp(fields []inputField) string {
 	for word := range strings.FieldsSeq(sentence) {
 		switch {
 		case width == 0:
-		case width+1+len(word) > 74:
+		case width+1+len(word) > transcribeHelpWidth:
 			b.WriteString("\n")
 			width = 0
 		default:
@@ -386,7 +417,13 @@ func (app *App) newTranscribeCmd(endpoint string, fields []inputField, short str
 
 // transcribeCmd is newTranscribeCmd with the options its flags bind.
 func (app *App) transcribeCmd(endpoint string, fields []inputField, short string) (*cobra.Command, *transcribeOptions) {
-	o := &transcribeOptions{fields: map[string]any{}}
+	o := &transcribeOptions{
+		fields:     make(map[string]any),
+		inputExtra: "",
+		noWait:     false,
+		keepUpload: false,
+		timeout:    0,
+	}
 	cmd := &cobra.Command{
 		Use:   endpoint + " <file-or-url>",
 		Short: short,
@@ -490,7 +527,8 @@ func (app *App) runTranscribe(
 	if cerr != nil {
 		return cerr
 	}
-	if cerr = client.RequireOrg(); cerr != nil {
+	cerr = client.RequireOrg()
+	if cerr != nil {
 		return cerr
 	}
 
@@ -570,7 +608,7 @@ func (app *App) transcribeUpload(
 	source, remote string,
 	fileSize int64,
 ) (string, *clierr.Error) {
-	fh, err := os.Open(source)
+	fh, err := os.Open(source) //nolint:gosec // the audio file the user named is the one to upload
 	if err != nil {
 		return "", clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, `cannot read "%s": %v`, source, err)
 	}
@@ -581,7 +619,7 @@ func (app *App) transcribeUpload(
 	if cerr != nil {
 		return "", cerr
 	}
-	if app.printer.Mode() == "table" {
+	if app.printer.Mode() == globalOutputTable {
 		fprintf(app.errw(), "uploaded %s (%s) to S4\n", source, humanSize(fileSize))
 	}
 	return url, nil
@@ -614,7 +652,7 @@ func (app *App) transcribeCreateJob(
 // transcribeQueued emits a job queued with --no-wait, and in table mode the notes and the hint to check on it.
 func (app *App) transcribeQueued(job *inferenceendpoints.InferenceEndpointJob, endpoint, remote string) error {
 	id := ptr.Deref(job.Id)
-	if remote != "" && app.printer.Mode() == "table" {
+	if remote != "" && app.printer.Mode() == globalOutputTable {
 		fprintf(app.errw(), "note: the upload stays in S4 as %s; the queued job reads it\n", remote)
 	}
 	return wrapErr(app.printer.Emit(job, func(w *output.Writer) {
@@ -652,7 +690,7 @@ func (app *App) transcribeAwait(
 	if ferr := app.transcribeOutputFailure(final, id, endpoint, remote); ferr != nil {
 		return ferr
 	}
-	text, cerr := transcriptText(final.Output, givenTrue(set, "srt"), givenTrue(set, "return_as_file"))
+	text, cerr := transcriptText(final.Output, transcriptFormOf(set))
 	if cerr != nil {
 		app.keptUploadNote(remote)
 		return cerr
@@ -675,7 +713,8 @@ func (app *App) transcribeOutputFailure(
 	final *inferenceendpoints.InferenceEndpointJob,
 	id, endpoint, remote string,
 ) *clierr.Error {
-	errMsg, errCode := jobOutputError(final.Output)
+	failure := jobOutputError(final.Output)
+	errMsg, errCode := failure.msg, failure.code
 	if errMsg == "" && errCode == "" {
 		return nil
 	}

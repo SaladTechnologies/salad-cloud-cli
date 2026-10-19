@@ -101,16 +101,19 @@ func queueJobStatus(j *queues.QueueJob) string {
 }
 
 // queueJobView is jobWaitDeps.view for queue jobs.
-func queueJobView(j *queues.QueueJob) (string, string) {
+func queueJobView(j *queues.QueueJob) jobWaitView {
 	if j == nil || len(j.Events) == 0 {
-		return queueJobStatus(j), ""
+		return jobWaitView{status: queueJobStatus(j), lastEvent: ""}
 	}
 	e := &j.Events[len(j.Events)-1]
 	action := "-"
 	if e.Action != nil {
 		action = string(*e.Action)
 	}
-	return queueJobStatus(j), fmt.Sprintf(" (last event: %s @ %s)", action, ptr.Deref(e.Time))
+	return jobWaitView{
+		status:    queueJobStatus(j),
+		lastEvent: fmt.Sprintf(" (last event: %s @ %s)", action, ptr.Deref(e.Time)),
+	}
 }
 
 // writeQueueDetail writes the key/value table for one queue.
@@ -121,8 +124,8 @@ func writeQueueDetail(w *output.Writer, q *queues.Queue) {
 	row("Description", orDash(oneLine(ptr.Deref(q.Description))))
 	row("Queue length", int64Cell(q.CurrentQueueLength))
 	groups := make([]string, 0, len(q.ContainerGroups))
-	for _, g := range q.ContainerGroups {
-		groups = append(groups, ptr.Deref(g.Name))
+	for i := range q.ContainerGroups {
+		groups = append(groups, ptr.Deref(q.ContainerGroups[i].Name))
 	}
 	row("Container groups", orDash(strings.Join(groups, ", ")))
 	row("Created", timeCell(q.CreateTime))
@@ -139,15 +142,15 @@ func writeQueueJobDetail(w *output.Writer, j *queues.QueueJob) {
 	if wh := ptr.Deref(j.Webhook); wh != "" {
 		row("Webhook", wh)
 	}
-	_, last := queueJobView(j)
-	writeJobBody(row, j.Input, j.Output, len(j.Events), last)
+	writeJobBody(row, j.Input, j.Output, len(j.Events), queueJobView(j).lastEvent)
 }
 
 // addQueueFlag registers the required --queue flag on a queue jobs verb.
 func (app *App) addQueueFlag(cmd *cobra.Command) {
-	cmd.Flags().StringVar(&app.flags.queue, "queue", "", "the queue (required; saladcloud queues list shows them)")
-	app.noteTreeErr(cmd.MarkFlagRequired("queue"))
-	annotate(cmd, annotationFlagForArg, "queue")
+	cmd.Flags().
+		StringVar(&app.flags.queue, ancestorFlagQueue, "", "the queue (required; saladcloud queues list shows them)")
+	app.noteTreeErr(cmd.MarkFlagRequired(ancestorFlagQueue))
+	annotate(cmd, annotationFlagForArg, ancestorFlagQueue)
 }
 
 // queueFieldOptions are --display-name and --description.
@@ -155,16 +158,26 @@ type queueFieldOptions struct {
 	displayName, description string
 }
 
-// queueFields is --display-name and --description as the values to send,
-// each nil when not passed; set reports whether either was.
-func queueFields(cmd *cobra.Command, o queueFieldOptions) (displayName, description *string, set bool) {
+// queueFieldValues are --display-name and --description as the values to send, each nil when not passed.
+type queueFieldValues struct {
+	displayName, description *string
+}
+
+// set reports whether either field was passed.
+func (v queueFieldValues) set() bool {
+	return v.displayName != nil || v.description != nil
+}
+
+// queueFields is --display-name and --description as the values to send.
+func queueFields(cmd *cobra.Command, o queueFieldOptions) queueFieldValues {
+	v := queueFieldValues{displayName: nil, description: nil}
 	if cmd.Flags().Changed("display-name") {
-		displayName = &o.displayName
+		v.displayName = &o.displayName
 	}
 	if cmd.Flags().Changed("description") {
-		description = &o.description
+		v.description = &o.description
 	}
-	return displayName, description, displayName != nil || description != nil
+	return v
 }
 
 func addQueueFieldFlags(cmd *cobra.Command, o *queueFieldOptions) {
@@ -216,7 +229,8 @@ func (app *App) runQueuesCreate(cmd *cobra.Command, name string, fields queueFie
 	if cerr := validateResourceName("queue", name); cerr != nil {
 		return cerr
 	}
-	displayName, description, _ := queueFields(cmd, fields)
+	values := queueFields(cmd, fields)
+	displayName, description := values.displayName, values.description
 	client, _, cerr := app.NewClient(cmd)
 	if cerr != nil {
 		return cerr
@@ -233,7 +247,7 @@ func (app *App) runQueuesCreate(cmd *cobra.Command, name string, fields queueFie
 // newQueuesListCmd is 'saladcloud queues list'.
 func (app *App) newQueuesListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
+		Use:   cmdUseList,
 		Short: "List the current project's job queues",
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return app.runQueuesList(cmd) },
@@ -254,7 +268,7 @@ func (app *App) runQueuesList(cmd *cobra.Command) error {
 		Items []queues.Queue `json:"items"`
 	}{list.Items}
 	if payload.Items == nil {
-		payload.Items = []queues.Queue{}
+		payload.Items = []queues.Queue{} //nolint:revive // the JSON contract renders none as [], not null
 	}
 	err := wrapErr(app.printer.Emit(payload, func(w *output.Writer) {
 		w.Println("NAME\tDISPLAY NAME\tLENGTH\tGROUPS\tCREATED")
@@ -267,7 +281,7 @@ func (app *App) runQueuesList(cmd *cobra.Command) error {
 	if err != nil {
 		return err
 	}
-	if len(payload.Items) == 0 && app.printer.Mode() == "table" {
+	if len(payload.Items) == 0 && app.printer.Mode() == globalOutputTable {
 		fprintf(
 			app.errw(),
 			"no queues in %s/%s\nhint: to create one, run saladcloud queues create <name>\n",
@@ -316,8 +330,9 @@ func (app *App) newQueuesUpdateCmd() *cobra.Command {
 
 // runQueuesUpdate patches the display name and description of the queue name with the ones given.
 func (app *App) runQueuesUpdate(cmd *cobra.Command, name string, fields queueFieldOptions) error {
-	displayName, description, set := queueFields(cmd, fields)
-	if !set {
+	values := queueFields(cmd, fields)
+	displayName, description := values.displayName, values.description
+	if !values.set() {
 		return clierr.New(
 			clierr.CodeUsage,
 			clierr.KindUsage,
@@ -371,7 +386,7 @@ func (app *App) runQueuesDelete(cmd *cobra.Command, name string) error {
 // queue is --queue.
 func (app *App) newQueueJobsCmd() *cobra.Command {
 	jobsCmd := &cobra.Command{
-		Use:     "jobs",
+		Use:     cmdUseJobs,
 		Aliases: []string{"job"},
 		Short:   "Submit and inspect the jobs in a queue",
 		Long: `Submit and inspect the jobs in a queue. The job is the positional argument
@@ -404,8 +419,11 @@ every job, up to 10,000.`,
 		RunE: func(cmd *cobra.Command, _ []string) error { return app.runQueueJobsList(cmd, limit) },
 	}
 	app.addQueueFlag(cmd)
-	cmd.Flags().
-		IntVar(&limit, "limit", 100, fmt.Sprintf("how many of the newest jobs to list; a limit reads at most %d jobs (or the limit), 0 reads all, up to %d", api.QueueJobsBudget, api.QueueJobsCap))
+	cmd.Flags().IntVar(&limit, "limit", jobsDefaultLimit, fmt.Sprintf(
+		"how many of the newest jobs to list; a limit reads at most %d jobs (or the limit), 0 reads all, up to %d",
+		api.QueueJobsBudget,
+		api.QueueJobsCap,
+	))
 	return cmd
 }
 
@@ -448,14 +466,15 @@ func (app *App) runQueueJobsList(cmd *cobra.Command, limit int) error {
 	if err != nil {
 		return err
 	}
-	if len(jobs) == 0 && app.printer.Mode() == "table" {
+	if len(jobs) == 0 && app.printer.Mode() == globalOutputTable {
 		fprintf(app.errw(), "no jobs in queue %s\n", queue)
 	}
 	app.jobsLimitNote(app.errw(), len(jobs), limit, api.QueueJobsCap, more)
 	if partial {
 		fprintf(
 			app.errw(),
-			"note: read the first %d jobs only; the queue may hold more, and the API lists jobs in no time order, so these are the newest of those read; --limit 0 reads all (up to %d)\n",
+			"note: read the first %d jobs only; the queue may hold more, and the API lists jobs in no time order, "+
+				"so these are the newest of those read; --limit 0 reads all (up to %d)\n",
 			max(limit, api.QueueJobsBudget),
 			api.QueueJobsCap,
 		)
@@ -511,7 +530,8 @@ With --wait the command polls the job every 5s until it reaches a terminal
 status: succeeded emits the final job document and exits 0; failed or
 canceled exits 1 with the job's status and last event. --timeout (default
 10m) caps the wait; the job stays queued or running on timeout.`,
-		Example: `  # Inline input, wait for the result (bash, zsh, PowerShell 7.3 or later; older PowerShell drops the inner quotes, so use -f)
+		Example: `  # Inline input, wait for the result (bash, zsh, PowerShell 7.3 or later; ` +
+			`older PowerShell drops the inner quotes, so use -f)
   saladcloud queues jobs create --queue my-queue --input '{"prompt": "hello"}' --wait
 
   # Full prototype from a file, with a webhook
@@ -520,8 +540,8 @@ canceled exits 1 with the job's status and last event. --timeout (default
 		RunE: func(cmd *cobra.Command, _ []string) error { return app.runQueueJobCreate(cmd, &o) },
 	}
 	app.addQueueFlag(cmd)
-	cmd.Flags().
-		StringVarP(&o.file, "file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
+	cmd.Flags().StringVarP(&o.file, "file", "f", "",
+		"job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
 	cmd.Flags().
 		StringVar(&o.input, "input", "", "the job input as inline JSON (wrapped into the prototype)")
 	cmd.Flags().

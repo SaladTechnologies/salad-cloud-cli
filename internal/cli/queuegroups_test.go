@@ -14,7 +14,8 @@ func TestQueueGroupsCell(t *testing.T) {
 	if got := queueGroupsCell(nil); got != "-" {
 		t.Errorf("nil list = %q, want -", got)
 	}
-	if got := queueGroupsCell([]shared.ContainerGroup{}); got != "-" {
+	empty := []shared.ContainerGroup{} //nolint:revive // the empty, non-nil list is the case under test
+	if got := queueGroupsCell(empty); got != "-" {
 		t.Errorf("empty list = %q, want -", got)
 	}
 	if got := queueGroupsCell(make([]shared.ContainerGroup, 2)); got != "2" {

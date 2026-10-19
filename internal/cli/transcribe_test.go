@@ -200,35 +200,35 @@ func TestTranscriptText(t *testing.T) {
 	// The endpoint returns the SRT under "srt_content" (verified live).
 	out := map[string]any{"text": "hello world", "srt_content": srtDoc}
 	cases := []struct {
-		name              string
-		out               any
-		wantSRT, wantFile bool
-		want              string
+		name string
+		out  any
+		form transcriptForm
+		want string
 		// wantErr is a fragment of the error message; "" expects no error.
 		wantErr string
 	}{
 		{name: "text", out: out, want: "hello world"},
-		{name: "srt", out: out, wantSRT: true, want: srtDoc},
+		{name: "srt", out: out, form: transcriptFormSRT, want: srtDoc},
 		// The legacy "srt" spelling is accepted too.
-		{name: "legacy srt", out: map[string]any{"srt": srtDoc}, wantSRT: true, want: srtDoc},
+		{name: "legacy srt", out: map[string]any{"srt": srtDoc}, form: transcriptFormSRT, want: srtDoc},
 		// srt requested but absent: an error, NOT a silent fallback to the text —
 		// a script piping to an .srt file must not receive a transcript instead.
-		{name: "srt missing", out: map[string]any{"text": "t"}, wantSRT: true, wantErr: "srt_content"},
+		{name: "srt missing", out: map[string]any{"text": "t"}, form: transcriptFormSRT, wantErr: "srt_content"},
 		// Neither field: compact JSON of the whole output.
 		{name: "no text", out: map[string]any{"words": []any{"a"}}, want: `{"words":["a"]}`},
 		// --return-as-file prints the result URL; none is an error, not the text.
 		{
-			name:     "file",
-			out:      map[string]any{"text": "t", "url": "https://r/x.json"},
-			wantFile: true,
-			want:     "https://r/x.json",
+			name: "file",
+			out:  map[string]any{"text": "t", "url": "https://r/x.json"},
+			form: transcriptFormURL,
+			want: "https://r/x.json",
 		},
-		{name: "file, no url", out: map[string]any{"text": "t"}, wantFile: true, wantErr: "no result URL"},
+		{name: "file, no url", out: map[string]any{"text": "t"}, form: transcriptFormURL, wantErr: "no result URL"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, cerr := transcriptText(tc.out, tc.wantSRT, tc.wantFile)
+			got, cerr := transcriptText(tc.out, tc.form)
 			if tc.wantErr == "" {
 				if cerr != nil || got != tc.want {
 					t.Errorf("transcriptText = %q, %v; want %q", got, cerr, tc.want)
@@ -246,17 +246,17 @@ func TestJobOutputError(t *testing.T) {
 	t.Parallel()
 	// The API marks some failed transcriptions `succeeded` with the failure
 	// embedded in the output; the CLI must surface it as a real error.
-	msg, code := jobOutputError(map[string]any{
+	got := jobOutputError(map[string]any{
 		"duration": 0, "error": "File can not be downloaded", "error_code": "download_failed",
 	})
-	if msg != "File can not be downloaded" || code != "download_failed" {
-		t.Errorf("jobOutputError = (%q, %q), want the embedded error", msg, code)
+	if got.msg != "File can not be downloaded" || got.code != "download_failed" {
+		t.Errorf("jobOutputError = (%q, %q), want the embedded error", got.msg, got.code)
 	}
-	if msg, code := jobOutputError(map[string]any{"text": "fine"}); msg != "" || code != "" {
-		t.Errorf("jobOutputError(clean output) = (%q, %q), want empty", msg, code)
+	if clean := jobOutputError(map[string]any{"text": "fine"}); clean.msg != "" || clean.code != "" {
+		t.Errorf("jobOutputError(clean output) = (%q, %q), want empty", clean.msg, clean.code)
 	}
-	if msg, code := jobOutputError("not a map"); msg != "" || code != "" {
-		t.Errorf("jobOutputError(non-map) = (%q, %q), want empty", msg, code)
+	if other := jobOutputError("not a map"); other.msg != "" || other.code != "" {
+		t.Errorf("jobOutputError(non-map) = (%q, %q), want empty", other.msg, other.code)
 	}
 }
 
@@ -283,7 +283,8 @@ func TestListFieldsHelpNamesOnlyTheEndpointsFlags(t *testing.T) {
 		for _, f := range ep.fields {
 			isList["--"+f.flag()] = f.kind == fieldList
 		}
-		for _, name := range []string{"--llm-translation", "--srt-translation", "--custom-vocabulary", "--classification-labels"} {
+		lists := []string{"--llm-translation", "--srt-translation", "--custom-vocabulary", "--classification-labels"}
+		for _, name := range lists {
 			if got := strings.Contains(help, name); got != isList[name] {
 				t.Errorf("%s: help names %s = %v, endpoint takes it as a list = %v", ep.name, name, got, isList[name])
 			}

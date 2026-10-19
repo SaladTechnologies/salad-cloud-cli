@@ -116,11 +116,14 @@ func writeJobDetail(w *output.Writer, job *inferenceendpoints.InferenceEndpointJ
 	writeJobBody(row, job.Input, job.Output, len(job.Events), lastEventSuffix(job))
 }
 
+// jobCellMaxBytes is where a job table cuts its compact input and output JSON.
+const jobCellMaxBytes = 200
+
 // writeJobBody writes the rows both job tables share: input and output as
 // compact JSON cut to 200 bytes, the events row, and the note pointing at
 // -o json only when something was cut.
 func writeJobBody(row func(k, v string), input, out any, events int, lastEvent string) {
-	in, outCell := compactJSON(input, 200), compactJSON(out, 200)
+	in, outCell := compactJSON(input, jobCellMaxBytes), compactJSON(out, jobCellMaxBytes)
 	row("Input", in)
 	row("Output", outCell)
 	if events > 0 {
@@ -147,8 +150,8 @@ type jobCreateOptions struct {
 // addJobWaitFlags binds --wait/--timeout on jobs create to o (the shared
 // waitOptions, waitfor.go).
 func addJobWaitFlags(cmd *cobra.Command, o *waitOptions) {
-	cmd.Flags().
-		BoolVar(&o.wait, "wait", false, "block until the job reaches a terminal status (succeeded exits 0; failed/canceled exit 1)")
+	cmd.Flags().BoolVar(&o.wait, "wait", false,
+		"block until the job reaches a terminal status (succeeded exits 0; failed/canceled exit 1)")
 	cmd.Flags().DurationVar(&o.timeout, "timeout", jobWaitDefaultTimeout, "give up on --wait after this long")
 }
 
@@ -157,8 +160,8 @@ func addJobWaitFlags(cmd *cobra.Command, o *waitOptions) {
 // one document shape ({input, metadata?, webhook?} plus status and events).
 type jobWaitDeps[J any] struct {
 	get func(ctx context.Context) (*J, *clierr.Error)
-	// view reads the job's status and its last event ("" when none).
-	view  func(*J) (status, lastEvent string)
+	// view reads the job's status and its last event.
+	view  func(*J) jobWaitView
 	now   func() time.Time
 	sleep func(ctx context.Context, d time.Duration) error // returns ctx.Err() when canceled
 	// progress receives the table-mode progress lines and transient-error
@@ -173,9 +176,14 @@ type jobWaitDeps[J any] struct {
 	check string
 }
 
+// jobWaitView is what a job wait reads from a job: its status and its last event ("" when none).
+type jobWaitView struct {
+	status, lastEvent string
+}
+
 // inferenceJobView is jobWaitDeps.view for inference jobs.
-func inferenceJobView(j *inferenceendpoints.InferenceEndpointJob) (string, string) {
-	return jobStatusString(j), lastEventSuffix(j)
+func inferenceJobView(j *inferenceendpoints.InferenceEndpointJob) jobWaitView {
+	return jobWaitView{status: jobStatusString(j), lastEvent: lastEventSuffix(j)}
 }
 
 // waitForJobTerminal polls d.get until the job's status is terminal, the
@@ -208,7 +216,8 @@ func waitForJobTerminal[J any](
 			// Transient (network, 5xx, rate limit): note it, keep polling.
 			fprintf(progress.w, "warning: %s (still waiting)\n", cerr.Message)
 		default:
-			status, lastEvent := d.view(job)
+			view := d.view(job)
+			status, lastEvent := view.status, view.lastEvent
 			lastStatus = status
 			if done, end := jobWaitEnd(status, lastEvent, id, d.where); done {
 				return job, end
@@ -218,7 +227,10 @@ func waitForJobTerminal[J any](
 		if !d.now().Before(deadline) {
 			return nil, clierr.New(clierr.CodeGeneric, clierr.KindWaitTimeout,
 				"timed out after %s waiting for job %s %s (last status: %s)", timeout, id, d.where, lastStatus).
-				WithHint("retry with a longer --timeout, or to check on the job, run %s; the job continues server-side", d.check)
+				WithHint(
+					"retry with a longer --timeout, or to check on the job, run %s; the job continues server-side",
+					d.check,
+				)
 		}
 		if err := d.sleep(ctx, poll); err != nil {
 			return nil, jobWaitInterrupted()
@@ -244,6 +256,8 @@ func jobWaitEnd(status, lastEvent, id, where string) (bool, *clierr.Error) {
 		return true, nil
 	case inferenceendpoints.STATUS_FAILED, jobStatusCanceled:
 		return true, clierr.New(clierr.CodeGeneric, jobEndKind(status), "job %s %s %s%s", id, where, status, lastEvent)
+	case inferenceendpoints.STATUS_PENDING, inferenceendpoints.STATUS_RUNNING:
+		return false, nil
 	}
 	return false, nil
 }
@@ -266,7 +280,7 @@ func newJobWaitProgress(app *App, w io.Writer, label string, start time.Time) *j
 	}
 	return &jobWaitProgress{
 		w:           w,
-		table:       app.printer.Mode() == "table",
+		table:       app.printer.Mode() == globalOutputTable,
 		label:       label,
 		start:       start,
 		last:        "",
@@ -301,6 +315,8 @@ func jobEndKind(status string) clierr.Kind {
 		return clierr.KindJobFailed
 	case jobStatusCanceled:
 		return clierr.KindJobCanceled
+	case inferenceendpoints.STATUS_PENDING, inferenceendpoints.STATUS_RUNNING, inferenceendpoints.STATUS_SUCCEEDED:
+		return clierr.KindAPIError
 	}
 	return clierr.KindAPIError
 }
@@ -394,8 +410,8 @@ func endpointInputFields(schema *string) []string {
 
 // addEndpointFlag registers the required --endpoint flag on a jobs verb.
 func (app *App) addEndpointFlag(cmd *cobra.Command) {
-	cmd.Flags().
-		StringVar(&app.flags.endpoint, "endpoint", "", "the inference endpoint (required; saladcloud inference list shows them)")
+	cmd.Flags().StringVar(&app.flags.endpoint, "endpoint", "",
+		"the inference endpoint (required; saladcloud inference list shows them)")
 	app.noteTreeErr(cmd.MarkFlagRequired("endpoint"))
 	annotate(cmd, annotationFlagForArg, "endpoint")
 }
@@ -421,7 +437,7 @@ func (app *App) addInferenceCommands(root *cobra.Command) {
 // newInferenceListCmd is 'saladcloud inference list'.
 func (app *App) newInferenceListCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
+		Use:   cmdUseList,
 		Short: "List the available inference endpoints",
 		Args:  cobra.NoArgs,
 		RunE:  func(cmd *cobra.Command, _ []string) error { return app.runInferenceList(cmd) },
@@ -444,7 +460,7 @@ func (app *App) runInferenceList(cmd *cobra.Command) error {
 		Items []inferenceendpoints.InferenceEndpoint `json:"items"`
 	}{endpoints.Items}
 	if payload.Items == nil {
-		payload.Items = []inferenceendpoints.InferenceEndpoint{}
+		payload.Items = []inferenceendpoints.InferenceEndpoint{} //nolint:revive // the JSON contract renders none as []
 	}
 	return wrapErr(app.printer.Emit(payload, func(w *output.Writer) {
 		w.Println("NAME\tDISPLAY NAME\tDESCRIPTION")
@@ -452,10 +468,13 @@ func (app *App) runInferenceList(cmd *cobra.Command) error {
 			e := &endpoints.Items[i]
 			w.Printf("%s\t%s\t%s\n",
 				ptr.Deref(e.Name), ptr.Deref(e.DisplayName),
-				truncateRunes(oneLine(ptr.Deref(e.Description)), 60))
+				truncateRunes(oneLine(ptr.Deref(e.Description)), inferenceDescriptionCellRunes))
 		}
 	}))
 }
+
+// inferenceDescriptionCellRunes is where the inference list table cuts an endpoint's description.
+const inferenceDescriptionCellRunes = 60
 
 // newInferenceGetCmd is 'saladcloud inference get <endpoint>'.
 func (app *App) newInferenceGetCmd() *cobra.Command {
@@ -501,7 +520,7 @@ func writeInferenceEndpointDetail(w *output.Writer, endpoint *inferenceendpoints
 // newInferenceJobsCmd is the 'saladcloud inference jobs' noun.
 func newInferenceJobsCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "jobs",
+		Use:     cmdUseJobs,
 		Aliases: []string{"job"},
 		Short:   "Queue and inspect jobs on an inference endpoint",
 		Long: `Queue and inspect jobs on any inference endpoint. The job is the positional
@@ -511,6 +530,9 @@ argument and the endpoint is --endpoint:
     saladcloud inference jobs get <id> --endpoint transcribe`,
 	}
 }
+
+// jobsDefaultLimit is the default --limit of the jobs list verbs: how many of the newest jobs they list.
+const jobsDefaultLimit = 100
 
 // newInferenceJobsListCmd is 'saladcloud inference jobs list --endpoint <endpoint>'.
 func (app *App) newInferenceJobsListCmd() *cobra.Command {
@@ -525,8 +547,8 @@ older jobs were left out.`,
 		RunE: func(cmd *cobra.Command, _ []string) error { return app.runInferenceJobsList(cmd, limit) },
 	}
 	app.addEndpointFlag(cmd)
-	cmd.Flags().
-		IntVar(&limit, "limit", 100, fmt.Sprintf("how many of the newest jobs to list (0 = all, up to %d)", api.InferenceJobsCap))
+	cmd.Flags().IntVar(&limit, "limit", jobsDefaultLimit,
+		fmt.Sprintf("how many of the newest jobs to list (0 = all, up to %d)", api.InferenceJobsCap))
 	return cmd
 }
 
@@ -564,7 +586,7 @@ func (app *App) runInferenceJobsList(cmd *cobra.Command, limit int) error {
 	if err != nil {
 		return err
 	}
-	if len(jobs) == 0 && app.printer.Mode() == "table" {
+	if len(jobs) == 0 && app.printer.Mode() == globalOutputTable {
 		fprintf(app.errw(), "no jobs on endpoint %s\n", endpoint)
 	}
 	app.jobsLimitNote(app.errw(), len(jobs), limit, api.InferenceJobsCap, more)
@@ -616,8 +638,10 @@ With --wait the command polls the job every 5s until it reaches a terminal
 status: succeeded emits the final job document and exits 0; failed or
 canceled exits 1 with the job's status and last event. --timeout (default
 10m) caps the wait; the job keeps running server-side on timeout.`,
-		Example: `  # Inline input (bash, zsh, PowerShell 7.3 or later; older PowerShell drops the inner quotes, so use -f)
-  saladcloud inference jobs create --endpoint transcribe --input '{"url": "https://example.com/meeting.mp3", "language_code": "en"}' --wait
+		Example: `  # Inline input (bash, zsh, PowerShell 7.3 or later; ` +
+			`older PowerShell drops the inner quotes, so use -f)
+  saladcloud inference jobs create --endpoint transcribe ` +
+			`--input '{"url": "https://example.com/meeting.mp3", "language_code": "en"}' --wait
 
   # Full prototype from a file (input + webhook)
   saladcloud inference jobs create --endpoint transcribe -f job.yaml`,
@@ -625,8 +649,8 @@ canceled exits 1 with the job's status and last event. --timeout (default
 		RunE: func(cmd *cobra.Command, _ []string) error { return app.runInferenceJobsCreate(cmd, &o) },
 	}
 	app.addEndpointFlag(cmd)
-	cmd.Flags().
-		StringVarP(&o.file, "file", "f", "", "job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
+	cmd.Flags().StringVarP(&o.file, "file", "f", "",
+		"job prototype file {input, metadata?, webhook?} (.json/.yaml; \"-\" reads stdin)")
 	cmd.Flags().
 		StringVar(&o.input, "input", "", "the job input object as inline JSON (wrapped into the prototype)")
 	addJobWaitFlags(cmd, &o.wait)
@@ -740,10 +764,11 @@ func (app *App) jobsLimitNote(w io.Writer, shown, limit, ceiling int, more bool)
 			"note: showing the newest %d jobs, the most one listing returns; older jobs are not shown\n",
 			ceiling,
 		)
-	case app.printer.Mode() == "table":
+	case app.printer.Mode() == globalOutputTable:
 		fprintf(
 			w,
-			"note: showing the newest %d jobs; older ones exist\nhint: for more, raise --limit; 0 means all, up to %d\n",
+			"note: showing the newest %d jobs; older ones exist\n"+
+				"hint: for more, raise --limit; 0 means all, up to %d\n",
 			shown,
 			ceiling,
 		)
