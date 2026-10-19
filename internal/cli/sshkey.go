@@ -163,8 +163,9 @@ func readPublicKey(path string) (string, *clierr.Error) {
 
 // sshKeySetup is one run of ssh-key setup.
 type sshKeySetup struct {
-	keyPath string // the CLI's own key, without .pub
-	app     *App   // the run
+	keyPath      string // the CLI's own key, without .pub
+	generateFlag bool   // --generate
+	app          *App   // the run
 }
 
 func (app *App) runSSHKeySetup(cmd *cobra.Command, _ []string, generate bool) error {
@@ -177,37 +178,62 @@ func (app *App) runSSHKeySetup(cmd *cobra.Command, _ []string, generate bool) er
 			config.Reason(err),
 		)
 	}
-	k := sshKeySetup{keyPath: filepath.Join(home, ".ssh", sshDedicatedKeyName), app: app}
+	k := sshKeySetup{keyPath: filepath.Join(home, ".ssh", sshDedicatedKeyName), generateFlag: generate, app: app}
 	path, found := findLocalPublicKey(home)
 	if found {
-		priv := strings.TrimSuffix(path, ".pub")
-		enc, known := app.HasPassphrase(priv)
-		if known && enc {
-			app.warnPassphrase(priv)
-			if !isDedicatedKey(priv) {
-				switch {
-				case generate:
-					return k.generate()
-				case app.atTerminal():
-					answer, err := app.ask(
-						fmt.Sprintf(
-							"Generate a key without a passphrase at %s? The CLI will use it instead, and registering it replaces your account's current key. [y/N]:",
-							k.keyPath,
-						),
-						false,
-					)
-					if err != nil {
-						return setupCanceled()
-					}
-					if yes(answer) {
-						return k.generate()
-					}
-				}
-			}
-		}
-		return k.show(path, false, passphraseOf(enc, known))
+		return k.useFound(path)
 	}
-	if !generate {
+	return k.setupMissing()
+}
+
+// useFound shows the local key found at path, unless it has a passphrase and the CLI's own key is to replace it.
+func (k sshKeySetup) useFound(path string) error {
+	app := k.app
+	priv := strings.TrimSuffix(path, ".pub")
+	enc, known := app.HasPassphrase(priv)
+	if known && enc {
+		app.warnPassphrase(priv)
+		replace, cerr := k.replaceWithDedicated(priv)
+		if cerr != nil {
+			return cerr
+		}
+		if replace {
+			return k.generate()
+		}
+	}
+	return k.show(path, false, passphraseOf(enc, known))
+}
+
+// replaceWithDedicated reports whether to generate the CLI's own key in place of priv, a key with a passphrase:
+// with --generate, or when the person at a terminal says yes; never when priv is already the CLI's own key.
+func (k sshKeySetup) replaceWithDedicated(priv string) (bool, *clierr.Error) {
+	app := k.app
+	switch {
+	case isDedicatedKey(priv):
+		return false, nil
+	case k.generateFlag:
+		return true, nil
+	case app.atTerminal():
+		answer, err := app.ask(
+			fmt.Sprintf(
+				"Generate a key without a passphrase at %s? The CLI will use it instead, and registering it replaces your account's current key. [y/N]:",
+				k.keyPath,
+			),
+			false,
+		)
+		if err != nil {
+			return false, setupCanceled()
+		}
+		return yes(answer), nil
+	}
+	return false, nil
+}
+
+// setupMissing generates the CLI's own key when there is no local key: with --generate, or when the person at a
+// terminal does not say no; an error without a terminal.
+func (k sshKeySetup) setupMissing() error {
+	app := k.app
+	if !k.generateFlag {
 		if !app.atTerminal() {
 			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "no local SSH key found, and no terminal to ask whether to generate one").
 				WithHint("to generate one, run saladcloud ssh-key setup --generate")
