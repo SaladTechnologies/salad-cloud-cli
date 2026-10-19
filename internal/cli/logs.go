@@ -246,7 +246,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	}
 
 	if output.Mode() == "table" {
-		fmt.Fprintln(os.Stderr, scopeLine(scope, client.Org(), res.Project))
+		fprintln(os.Stderr, scopeLine(scope, client.Org(), res.Project))
 	}
 
 	// --instance accepts an ID prefix (like ssh/cp); the log query language
@@ -305,7 +305,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		// say so on stderr in table mode. JSON/NDJSON stays machine-clean,
 		// and --follow's silence correctly means "waiting".
 		if emitted == 0 && output.Mode() == "table" {
-			fmt.Fprintln(os.Stderr, noMatchNote(scope, sinceStr, instance, severity, filter))
+			fprintln(os.Stderr, noMatchNote(scope, sinceStr, instance, severity, filter))
 		}
 		return nil
 	}
@@ -313,11 +313,11 @@ func runLogs(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context() // canceled by the one signal handler in Execute
 	if group != "" {
 		if note := followGroupNote(ctx, client, group); note != "" {
-			fmt.Fprintln(os.Stderr, note)
+			fprintln(os.Stderr, note)
 		}
 	}
 	if output.Mode() == "table" {
-		fmt.Fprintln(os.Stderr, "waiting for log entries (Ctrl-C to stop)")
+		fprintln(os.Stderr, "waiting for log entries (Ctrl-C to stop)")
 	}
 	query, cerr := logsq.Compile(baseFilters)
 	if cerr != nil {

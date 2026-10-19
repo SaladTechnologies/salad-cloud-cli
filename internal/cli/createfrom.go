@@ -7,7 +7,6 @@ package cli
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"reflect"
 	"strings"
@@ -148,7 +147,7 @@ func noteRegistryCredentials(w io.Writer, fileRaw json.RawMessage, image string)
 			}
 		}
 	}
-	fmt.Fprintln(
+	fprintln(
 		w,
 		"note: registry credentials are never returned by the API, so they are not copied; for a private image, "+
 			"pass them with -f <file> holding container.registry_authentication",

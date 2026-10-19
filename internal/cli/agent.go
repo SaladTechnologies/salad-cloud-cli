@@ -2,8 +2,6 @@ package cli
 
 import (
 	"errors"
-	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,8 +71,8 @@ func runAgentInit(cmd *cobra.Command, _ []string) error {
 
 	if printOnly {
 		res := agentInitResult{Action: "printed", OK: true, Reason: "--print", Version: version.Version}
-		return wrapErr(output.Emit(res, func(w io.Writer) {
-			fmt.Fprint(w, agentdoc.Block(version.Version))
+		return wrapErr(output.Emit(res, func(w *output.Writer) {
+			w.Print(agentdoc.Block(version.Version))
 		}))
 	}
 
@@ -134,14 +132,14 @@ func runAgentInit(cmd *cobra.Command, _ []string) error {
 		shown = rel
 	}
 	res := agentInitResult{File: &shown, Action: action, OK: true, Reason: target.Reason, Version: version.Version}
-	return wrapErr(output.Emit(res, func(w io.Writer) {
+	return wrapErr(output.Emit(res, func(w *output.Writer) {
 		switch action {
 		case "created":
-			fmt.Fprintf(w, "Created %s with the SaladCloud block (%s)\n", shown, target.Reason)
+			w.Printf("Created %s with the SaladCloud block (%s)\n", shown, target.Reason)
 		case "updated":
-			fmt.Fprintf(w, "Updated the SaladCloud block in %s (%s)\n", shown, target.Reason)
+			w.Printf("Updated the SaladCloud block in %s (%s)\n", shown, target.Reason)
 		default:
-			fmt.Fprintf(w, "%s already has the current SaladCloud block; nothing to do\n", shown)
+			w.Printf("%s already has the current SaladCloud block; nothing to do\n", shown)
 		}
 	}))
 }

@@ -104,8 +104,8 @@ func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
 // writeJobDetail writes the two-column key/value table for one job. Input
 // and output are compact JSON truncated to 200 bytes; the note row points
 // at -o json for the full document.
-func writeJobDetail(w io.Writer, job *inferenceendpoints.InferenceEndpointJob) {
-	row := func(k, v string) { fmt.Fprintf(w, "%s\t%s\n", k, v) }
+func writeJobDetail(w *output.Writer, job *inferenceendpoints.InferenceEndpointJob) {
+	row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
 	row("ID", ptr.Deref(job.Id))
 	row("Endpoint", ptr.Deref(job.InferenceEndpointName))
 	row("Status", jobStatusString(job))
@@ -206,7 +206,7 @@ func waitForJobTerminal[J any](
 				return nil, cerr
 			default:
 				// Transient (network, 5xx, rate limit): note it, keep polling.
-				fmt.Fprintf(stderr, "warning: %s (still waiting)\n", cerr.Message)
+				fprintf(stderr, "warning: %s (still waiting)\n", cerr.Message)
 			}
 		default:
 			status, lastEvent := d.view(job)
@@ -224,7 +224,7 @@ func waitForJobTerminal[J any](
 				line := fmt.Sprintf("%s: %s", d.label, status)
 				if now := d.now(); line != lastProgress || now.Sub(lastPrinted) >= progressRepeat {
 					lastProgress, lastPrinted = line, now
-					fmt.Fprintf(stderr, "%s (%s elapsed)\n", line, d.now().Sub(start).Round(time.Second))
+					fprintf(stderr, "%s (%s elapsed)\n", line, d.now().Sub(start).Round(time.Second))
 				}
 			}
 		}
@@ -374,11 +374,11 @@ func init() {
 			if payload.Items == nil {
 				payload.Items = []inferenceendpoints.InferenceEndpoint{}
 			}
-			return wrapErr(output.Emit(payload, func(w io.Writer) {
-				fmt.Fprintln(w, "NAME\tDISPLAY NAME\tDESCRIPTION")
+			return wrapErr(output.Emit(payload, func(w *output.Writer) {
+				w.Println("NAME\tDISPLAY NAME\tDESCRIPTION")
 				for i := range endpoints.Items {
 					e := &endpoints.Items[i]
-					fmt.Fprintf(w, "%s\t%s\t%s\n",
+					w.Printf("%s\t%s\t%s\n",
 						ptr.Deref(e.Name), ptr.Deref(e.DisplayName),
 						truncateRunes(oneLine(ptr.Deref(e.Description)), 60))
 				}
@@ -399,8 +399,8 @@ func init() {
 			if cerr != nil {
 				return endpointNotFound(cerr, args[0], client.Org())
 			}
-			return wrapErr(output.Emit(endpoint, func(w io.Writer) {
-				row := func(k, v string) { fmt.Fprintf(w, "%s\t%s\n", k, v) }
+			return wrapErr(output.Emit(endpoint, func(w *output.Writer) {
+				row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
 				row("Name", ptr.Deref(endpoint.Name))
 				row("Display name", ptr.Deref(endpoint.DisplayName))
 				if org := ptr.Deref(endpoint.OrganizationName); org != "" {
@@ -458,11 +458,11 @@ older jobs were left out.`,
 			payload := struct {
 				Items []inferenceendpoints.InferenceEndpointJob `json:"items"`
 			}{jobs}
-			err := wrapErr(output.Emit(payload, func(w io.Writer) {
-				fmt.Fprintln(w, "ID\tSTATUS\tCREATED\tUPDATED")
+			err := wrapErr(output.Emit(payload, func(w *output.Writer) {
+				w.Println("ID\tSTATUS\tCREATED\tUPDATED")
 				for i := range jobs {
 					j := &jobs[i]
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+					w.Printf("%s\t%s\t%s\t%s\n",
 						ptr.Deref(j.Id), jobStatusString(j),
 						timeCell(j.CreateTime), timeCell(j.UpdateTime))
 				}
@@ -471,7 +471,7 @@ older jobs were left out.`,
 				return err
 			}
 			if len(jobs) == 0 && output.Mode() == "table" {
-				fmt.Fprintf(os.Stderr, "no jobs on endpoint %s\n", endpoint)
+				fprintf(os.Stderr, "no jobs on endpoint %s\n", endpoint)
 			}
 			jobsLimitNote(os.Stderr, len(jobs), limit, api.InferenceJobsCap, more)
 			return nil
@@ -499,7 +499,7 @@ older jobs were left out.`,
 			if cerr != nil {
 				return jobNotFound(cerr, endpoint, args[0])
 			}
-			return wrapErr(output.Emit(job, func(w io.Writer) { writeJobDetail(w, job) }))
+			return wrapErr(output.Emit(job, func(w *output.Writer) { writeJobDetail(w, job) }))
 		},
 	}
 	addEndpointFlag(jobsGetCmd)
@@ -567,7 +567,7 @@ canceled exits 1 with the job's status and last event. --timeout (default
 				return endpointNotFound(cerr, endpoint, client.Org())
 			}
 			if !wait {
-				return wrapErr(output.Emit(job, func(w io.Writer) { writeJobDetail(w, job) }))
+				return wrapErr(output.Emit(job, func(w *output.Writer) { writeJobDetail(w, job) }))
 			}
 			ctx := cmd.Context() // canceled by the one signal handler in Execute
 			id := ptr.Deref(job.Id)
@@ -576,7 +576,7 @@ canceled exits 1 with the job's status and last event. --timeout (default
 			if cerr != nil {
 				return cerr
 			}
-			return wrapErr(output.Emit(final, func(w io.Writer) { writeJobDetail(w, final) }))
+			return wrapErr(output.Emit(final, func(w *output.Writer) { writeJobDetail(w, final) }))
 		},
 	}
 	addEndpointFlag(jobsCreateCmd)
@@ -606,8 +606,8 @@ saladcloud inference jobs get <id> --endpoint <endpoint>.`,
 				return jobNotFound(cerr, endpoint, args[0])
 			}
 			v := jobActionResult{Endpoint: endpoint, ID: args[0], Action: "canceled", OK: true}
-			return wrapErr(output.Emit(v, func(w io.Writer) {
-				fmt.Fprintf(w, "Job %s on endpoint %s canceled\n", v.ID, v.Endpoint)
+			return wrapErr(output.Emit(v, func(w *output.Writer) {
+				w.Printf("Job %s on endpoint %s canceled\n", v.ID, v.Endpoint)
 			}))
 		},
 	}
@@ -627,13 +627,13 @@ func jobsLimitNote(w io.Writer, shown, limit, ceiling int, more bool) {
 	switch {
 	case !more:
 	case (limit == 0 || limit > ceiling) && shown >= ceiling:
-		fmt.Fprintf(
+		fprintf(
 			w,
 			"note: showing the newest %d jobs, the most one listing returns; older jobs are not shown\n",
 			ceiling,
 		)
 	case output.Mode() == "table":
-		fmt.Fprintf(
+		fprintf(
 			w,
 			"note: showing the newest %d jobs; older ones exist\nhint: for more, raise --limit; 0 means all, up to %d\n",
 			shown,

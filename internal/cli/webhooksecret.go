@@ -1,9 +1,6 @@
 package cli
 
 import (
-	"fmt"
-	"io"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/webhooksecretkey"
 	"github.com/spf13/cobra"
 
@@ -29,8 +26,8 @@ Both commands print the key itself; keep their output out of logs.`,
 	}
 
 	emit := func(k *webhooksecretkey.WebhookSecretKey) error {
-		return wrapErr(output.Emit(k, func(w io.Writer) {
-			fmt.Fprintln(w, ptr.Deref(k.SecretKey))
+		return wrapErr(output.Emit(k, func(w *output.Writer) {
+			w.Println(ptr.Deref(k.SecretKey))
 		}))
 	}
 	run := func(call func(c *api.Client, cmd *cobra.Command) (*webhooksecretkey.WebhookSecretKey, *clierr.Error)) func(*cobra.Command, []string) error {

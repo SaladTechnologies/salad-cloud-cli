@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -78,8 +77,8 @@ func instanceState(inst *containergroups.ContainerGroupInstance) string {
 }
 
 // writeInstanceDetail writes the two-column key/value table for one instance.
-func writeInstanceDetail(w io.Writer, inst *containergroups.ContainerGroupInstance) {
-	row := func(k, v string) { fmt.Fprintf(w, "%s\t%s\n", k, v) }
+func writeInstanceDetail(w *output.Writer, inst *containergroups.ContainerGroupInstance) {
+	row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
 	row("ID", ptr.Deref(inst.Id))
 	row("Machine", ptr.Deref(inst.MachineId))
 	row("State", instanceState(inst))
@@ -164,8 +163,8 @@ func instanceAction(group, id, pastTense string, call func() *clierr.Error) erro
 		return instanceNotFound(err, group, id)
 	}
 	v := instanceActionResult{Group: group, ID: id, Action: pastTense, OK: true}
-	return wrapErr(output.Emit(v, func(w io.Writer) {
-		fmt.Fprintf(w, "Instance %s in container group %s %s\n", v.ID, v.Group, v.Action)
+	return wrapErr(output.Emit(v, func(w *output.Writer) {
+		w.Printf("Instance %s in container group %s %s\n", v.ID, v.Group, v.Action)
 	}))
 }
 
@@ -250,11 +249,11 @@ positional argument (its ID, or a unique prefix of it) and the group is
 				if payload.Items == nil {
 					payload.Items = []containergroups.ContainerGroupInstance{}
 				}
-				err := output.Emit(payload, func(w io.Writer) {
-					fmt.Fprintln(w, "ID\tMACHINE\tSTATE\tREADY\tCPU\tMEMORY\tPULL%\tSSH\tUPDATED")
+				err := output.Emit(payload, func(w *output.Writer) {
+					w.Println("ID\tMACHINE\tSTATE\tREADY\tCPU\tMEMORY\tPULL%\tSSH\tUPDATED")
 					for i := range instances.Instances {
 						inst := &instances.Instances[i]
-						fmt.Fprintf(w, "%s\t%s\t%s\t%t\t%s\t%s\t%s\t%s\t%s\n",
+						w.Printf("%s\t%s\t%s\t%t\t%s\t%s\t%s\t%s\t%s\n",
 							ptr.Deref(inst.Id), ptr.Deref(inst.MachineId), instanceState(inst),
 							ptr.Deref(inst.Ready), instanceCPU(inst), instanceMem(inst),
 							instancePull(inst), instanceSSH(inst), timeCell(inst.UpdateTime))
@@ -274,7 +273,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 							counts = cg.CurrentState.InstanceStatusCounts
 						}
 						if note := emptyInstancesNote(counts); note != "" {
-							fmt.Fprintln(os.Stderr, note)
+							fprintln(os.Stderr, note)
 						}
 					}
 				}
@@ -304,7 +303,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 			if cerr != nil {
 				return instanceNotFound(cerr, group, id)
 			}
-			return wrapErr(output.Emit(inst, func(w io.Writer) { writeInstanceDetail(w, inst) }))
+			return wrapErr(output.Emit(inst, func(w *output.Writer) { writeInstanceDetail(w, inst) }))
 		},
 	}
 	addGroupFlag(getCmd)
@@ -344,7 +343,7 @@ so raising it protects an instance doing long work. 0-100000.`,
 					return instanceNotFound(cerr, group, id)
 				}
 			}
-			return wrapErr(output.Emit(inst, func(w io.Writer) { writeInstanceDetail(w, inst) }))
+			return wrapErr(output.Emit(inst, func(w *output.Writer) { writeInstanceDetail(w, inst) }))
 		},
 	}
 	addGroupFlag(updateCmd)

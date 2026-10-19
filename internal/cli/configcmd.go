@@ -2,8 +2,6 @@ package cli
 
 import (
 	"bufio"
-	"fmt"
-	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -178,7 +176,7 @@ config set says so.`,
 		RunE: func(_ *cobra.Command, args []string) error {
 			key, value := args[0], args[1]
 			if isSecretKey(key) && value != "-" {
-				fmt.Fprintf(
+				fprintf(
 					errw(),
 					"warning: a key passed as an argument is exposed on the command line; pipe it to saladcloud config set %s - instead\n",
 					key,
@@ -234,14 +232,14 @@ config set says so.`,
 			}
 			ovs := overridesOf(f, configKeyEnv[key])
 			result := configSetResult{key, shown, overrideNames(ovs), path, "set", true}
-			if err := output.Emit(result, func(w io.Writer) {
-				fmt.Fprintf(w, "Set %s to %s\n", key, shown)
-				fmt.Fprintf(w, "Config at: %s\n", path)
+			if err := output.Emit(result, func(w *output.Writer) {
+				w.Printf("Set %s to %s\n", key, shown)
+				w.Printf("Config at: %s\n", path)
 			}); err != nil {
 				return wrapErr(err)
 			}
 			if carried {
-				fmt.Fprintf(
+				fprintf(
 					errw(),
 					"warning: the saved project \"%s\" was saved with %s and now applies to %s\n",
 					shownName(f.Project),
@@ -279,9 +277,9 @@ SALAD_AI_GATEWAY_API_KEY) is still used; config unset says so.`,
 			}
 			ovs := stillSupplied(configKeyEnv[key])
 			result := configUnsetResult{key, overrideNames(ovs), path, "unset", true}
-			if err := output.Emit(result, func(w io.Writer) {
-				fmt.Fprintf(w, "Unset %s\n", key)
-				fmt.Fprintf(w, "Config at: %s\n", path)
+			if err := output.Emit(result, func(w *output.Writer) {
+				w.Printf("Unset %s\n", key)
+				w.Printf("Config at: %s\n", path)
 			}); err != nil {
 				return wrapErr(err)
 			}
@@ -312,12 +310,12 @@ Keys: ` + configKeys + `.`,
 				value = maskedOrNil(*field)
 			}
 			result := configGetResult{key, value}
-			return wrapErr(output.Emit(result, func(w io.Writer) {
+			return wrapErr(output.Emit(result, func(w *output.Writer) {
 				if value == nil {
-					fmt.Fprintln(w, "(not set)")
+					w.Println("(not set)")
 					return
 				}
-				fmt.Fprintln(w, *value)
+				w.Println(*value)
 			}))
 		},
 	}
@@ -332,12 +330,12 @@ Keys: ` + configKeys + `.`,
 				return cerr
 			}
 			result := configListOf(f, path)
-			return wrapErr(output.Emit(result, func(w io.Writer) {
-				fmt.Fprintf(w, "api-key\t%s\n", maskAPIKey(f.APIKey))
-				fmt.Fprintf(w, "organization\t%s\n", orNotSet(shownName(f.Organization)))
-				fmt.Fprintf(w, "project\t%s\n", orNotSet(shownName(f.Project)))
-				fmt.Fprintf(w, "ai-gateway-api-key\t%s\n", maskAPIKey(f.GatewayAPIKey))
-				fmt.Fprintf(w, "config-path\t%s\n", path)
+			return wrapErr(output.Emit(result, func(w *output.Writer) {
+				w.Printf("api-key\t%s\n", maskAPIKey(f.APIKey))
+				w.Printf("organization\t%s\n", orNotSet(shownName(f.Organization)))
+				w.Printf("project\t%s\n", orNotSet(shownName(f.Project)))
+				w.Printf("ai-gateway-api-key\t%s\n", maskAPIKey(f.GatewayAPIKey))
+				w.Printf("config-path\t%s\n", path)
 			}))
 		},
 	}
@@ -353,8 +351,8 @@ Keys: ` + configKeys + `.`,
 					WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder")
 			}
 			result := configPathResult{path}
-			return wrapErr(output.Emit(result, func(w io.Writer) {
-				fmt.Fprintln(w, path)
+			return wrapErr(output.Emit(result, func(w *output.Writer) {
+				w.Println(path)
 			}))
 		},
 	}

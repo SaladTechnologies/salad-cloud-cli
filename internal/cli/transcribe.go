@@ -10,7 +10,6 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -34,7 +33,7 @@ const (
 // keptUploadNote says, on stderr, that a failed job's upload stays in S4.
 func keptUploadNote(remote string) {
 	if remote != "" {
-		fmt.Fprintf(os.Stderr, "note: the upload stays in S4 as %s for inspection\n", remote)
+		fprintf(os.Stderr, "note: the upload stays in S4 as %s for inspection\n", remote)
 	}
 }
 
@@ -478,7 +477,7 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 			return cerr
 		}
 		if output.Mode() == "table" {
-			fmt.Fprintf(os.Stderr, "uploaded %s (%s) to S4\n", source, humanSize(fileSize))
+			fprintf(os.Stderr, "uploaded %s (%s) to S4\n", source, humanSize(fileSize))
 		}
 	}
 
@@ -503,14 +502,14 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 	}
 	if noWait {
 		if remote != "" && output.Mode() == "table" {
-			fmt.Fprintf(os.Stderr, "note: the upload stays in S4 as %s; the queued job reads it\n", remote)
+			fprintf(os.Stderr, "note: the upload stays in S4 as %s; the queued job reads it\n", remote)
 		}
-		return wrapErr(output.Emit(job, func(w io.Writer) {
-			fmt.Fprintf(w, "Job %s queued on endpoint %s (status: %s)\n", id, endpoint, jobStatusString(job))
+		return wrapErr(output.Emit(job, func(w *output.Writer) {
+			w.Printf("Job %s queued on endpoint %s (status: %s)\n", id, endpoint, jobStatusString(job))
 			if remote != "" {
-				fmt.Fprintf(os.Stderr, "note: %s\n", signedLinkNote)
+				fprintf(os.Stderr, "note: %s\n", signedLinkNote)
 			}
-			fmt.Fprintf(
+			fprintf(
 				os.Stderr,
 				"hint: to check on it, run saladcloud inference jobs get %s --endpoint %s\n",
 				id,
@@ -558,12 +557,12 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 	}
 	if remote != "" && !keepUpload {
 		if derr := client.DeleteFile(cmd.Context(), remote); derr != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not delete the S4 upload %s: %s\n", remote, derr.Message)
+			fprintf(os.Stderr, "warning: could not delete the S4 upload %s: %s\n", remote, derr.Message)
 		}
 	}
 	// Table mode prints the transcript itself; -o json emits the full job.
-	return wrapErr(output.Emit(final, func(w io.Writer) {
-		fmt.Fprintln(w, text)
+	return wrapErr(output.Emit(final, func(w *output.Writer) {
+		w.Println(text)
 	}))
 }
 

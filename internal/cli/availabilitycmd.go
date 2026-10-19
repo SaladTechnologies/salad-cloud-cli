@@ -7,7 +7,6 @@ package cli
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"regexp"
 	"strconv"
@@ -374,17 +373,17 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 			return cerr
 		}
 		if w := overloadWarning("CPU", allZeroCPU(avail)); w != "" {
-			fmt.Fprintln(os.Stderr, w)
+			fprintln(os.Stderr, w)
 		}
 		result := cpuAvailabilityResult{Items: []organizations.CpuAvailability{*avail}}
-		return wrapErr(output.Emit(result, func(w io.Writer) {
+		return wrapErr(output.Emit(result, func(w *output.Writer) {
 			if !reportsOnCall(avail.OnCallCpu) {
-				fmt.Fprintln(w, "CLASS\tBATCH")
-				fmt.Fprintf(w, "CPU\t%s\n", countCell(avail.AvailableCpuBatch))
+				w.Println("CLASS\tBATCH")
+				w.Printf("CPU\t%s\n", countCell(avail.AvailableCpuBatch))
 				return
 			}
-			fmt.Fprintln(w, "CLASS\tBATCH\tON-CALL")
-			fmt.Fprintf(w, "CPU\t%s\t%s\n", countCell(avail.AvailableCpuBatch), countCell(avail.OnCallCpu))
+			w.Println("CLASS\tBATCH\tON-CALL")
+			w.Printf("CPU\t%s\t%s\n", countCell(avail.AvailableCpuBatch), countCell(avail.OnCallCpu))
 		}))
 	}
 
@@ -400,7 +399,7 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 		}
 		row := gpuAvailabilityRow{GpuClass: id, GpuClassName: className(id), GpuAvailability: *avail}
 		if w := overloadWarning(row.GpuClassName, allZeroGpu(avail)); w != "" {
-			fmt.Fprintln(os.Stderr, w)
+			fprintln(os.Stderr, w)
 		}
 		result.Items = append(result.Items, row)
 	}
@@ -412,11 +411,11 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 			return cerr
 		}
 		if w := overloadWarning("the combined query", allZeroGpu(avail)); w != "" {
-			fmt.Fprintln(os.Stderr, w)
+			fprintln(os.Stderr, w)
 		}
 		result.Combined = &gpuCombinedRow{GpuClasses: req.GpuClasses, GpuAvailability: *avail}
 	}
-	return wrapErr(output.Emit(result, func(w io.Writer) {
+	return wrapErr(output.Emit(result, func(w *output.Writer) {
 		onCall := []*int64{}
 		for i := range result.Items {
 			onCall = append(onCall, result.Items[i].OnCallGpu)
@@ -429,7 +428,7 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 		if showOnCall {
 			header += "\tON-CALL"
 		}
-		fmt.Fprintln(w, header)
+		w.Println(header)
 		line := func(name string, a *organizations.GpuAvailability) {
 			cells := []string{
 				name,
@@ -441,7 +440,7 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 			if showOnCall {
 				cells = append(cells, countCell(a.OnCallGpu))
 			}
-			fmt.Fprintln(w, strings.Join(cells, "\t"))
+			w.Println(strings.Join(cells, "\t"))
 		}
 		for i := range result.Items {
 			line(result.Items[i].GpuClassName, &result.Items[i].GpuAvailability)

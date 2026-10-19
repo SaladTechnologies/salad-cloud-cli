@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"regexp"
@@ -101,7 +100,7 @@ func warnCommand(w io.Writer, cmd *cobra.Command, words []string) {
 		return
 	}
 	if first := words[0]; strings.ContainsAny(first, " \t\n") {
-		fmt.Fprintf(
+		fprintf(
 			w,
 			"warning: the command's first word \"%s\" contains a space, so it runs as one program name; give the program and its arguments as separate words (-- sleep 2147483647, not -- \"sleep 2147483647\"); unlike cg ssh, there is no shell\n",
 			first,
@@ -116,7 +115,7 @@ func warnCommand(w io.Writer, cmd *cobra.Command, words []string) {
 		}
 	}
 	if len(hits) > 0 {
-		fmt.Fprintf(
+		fprintf(
 			w,
 			"warning: %s after -- went into the container command, not to saladcloud; put saladcloud's own flags before --\n",
 			quoteList(hits),

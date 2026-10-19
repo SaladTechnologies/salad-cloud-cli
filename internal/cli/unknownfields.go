@@ -233,7 +233,7 @@ func rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
 	// from; the per-field list goes to --debug.
 	if len(responseOnly) >= 3 {
 		if api.Debugging() {
-			fmt.Fprintf(os.Stderr, "debug: %s; %s\n", full.Message, full.HintText())
+			fprintf(os.Stderr, "debug: %s; %s\n", full.Message, full.HintText())
 		}
 		return clierr.New(clierr.CodeInvalidInput, clierr.KindUnknownField,
 			"this document is a get response, not a patch (%d of its fields only responses carry)", len(responseOnly)).
@@ -284,7 +284,7 @@ func adviseUnknownShort(path string) string {
 func warnUnknowns(w io.Writer, unknowns []input.Unknown, createMode bool) {
 	for _, u := range unknowns {
 		if createMode && u.InArray {
-			fmt.Fprintf(
+			fprintf(
 				w,
 				"warning: %s; dropped, because create rebuilds array fields from its API model; set it with update -f instead\n",
 				u.Desc,
@@ -292,7 +292,7 @@ func warnUnknowns(w io.Writer, unknowns []input.Unknown, createMode bool) {
 			continue
 		}
 		if advice := adviseUnknownShort(u.Path); advice != "" {
-			fmt.Fprintf(
+			fprintf(
 				w,
 				"warning: %s; sent to the API anyway (--allow-unknown-fields), but expect it to be ignored: %s\n",
 				u.Desc,
@@ -300,6 +300,6 @@ func warnUnknowns(w io.Writer, unknowns []input.Unknown, createMode bool) {
 			)
 			continue
 		}
-		fmt.Fprintf(w, "warning: %s; sent to the API anyway (--allow-unknown-fields)\n", u.Desc)
+		fprintf(w, "warning: %s; sent to the API anyway (--allow-unknown-fields)\n", u.Desc)
 	}
 }

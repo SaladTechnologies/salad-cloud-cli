@@ -319,13 +319,13 @@ func printError(e *clierr.Error) {
 	// included, so a script parses one error shape.
 	if output.Machine() {
 		if payload, err := output.Marshal(map[string]*clierr.Error{"error": e}); err == nil {
-			fmt.Fprintln(errOut, string(output.ASCII(payload)))
+			fprintln(errOut, string(output.ASCII(payload)))
 			return
 		}
 	}
-	fmt.Fprintln(errOut, "saladcloud: error: "+e.Message)
+	fprintln(errOut, "saladcloud: error: "+e.Message)
 	if h := e.HintText(); h != "" {
-		fmt.Fprintln(errOut, "hint: "+h)
+		fprintln(errOut, "hint: "+h)
 	}
 }
 
@@ -466,7 +466,7 @@ var assumedWarned atomic.Bool
 func warnOnAssumedProject(c *api.Client, res config.Resolved) {
 	c.OnAssumedProject = func() {
 		if assumedWarned.CompareAndSwap(false, true) {
-			fmt.Fprintln(os.Stderr, assumedProjectWarning(res))
+			fprintln(os.Stderr, assumedProjectWarning(res))
 		}
 	}
 }

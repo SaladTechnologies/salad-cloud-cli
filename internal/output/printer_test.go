@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"testing"
 
@@ -73,7 +72,7 @@ func TestEmitJSON(t *testing.T) {
 	}
 
 	v := row{Name: "my-group", State: "running"}
-	if err := Emit(v, func(_ io.Writer) { t.Error("table func must not be called in json mode") }); err != nil {
+	if err := Emit(v, func(_ *Writer) { t.Error("table func must not be called in json mode") }); err != nil {
 		t.Fatalf("Emit error: %v", err)
 	}
 
@@ -93,9 +92,9 @@ func TestEmitTable(t *testing.T) {
 	buf := capture(t)
 	// Default mode is table (capture's cleanup guarantees the reset).
 	v := row{Name: "my-group", State: "running"}
-	err := Emit(v, func(w io.Writer) {
-		fmt.Fprint(w, "NAME\tSTATE\n")
-		fmt.Fprintf(w, "%s\t%s\n", v.Name, v.State)
+	err := Emit(v, func(w *Writer) {
+		w.Print("NAME\tSTATE\n")
+		w.Printf("%s\t%s\n", v.Name, v.State)
 	})
 	if err != nil {
 		t.Fatalf("Emit error: %v", err)

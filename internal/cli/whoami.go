@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -149,8 +148,8 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 		Organizations:       orgs,
 		ConfigPath:          path,
 	}
-	return wrapErr(output.Emit(r, func(w io.Writer) {
-		fmt.Fprintf(
+	return wrapErr(output.Emit(r, func(w *output.Writer) {
+		fprintf(
 			w,
 			"api-key\t%s\n",
 			whoamiRow(
@@ -185,7 +184,7 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 				notFound,
 			)
 		}
-		fmt.Fprintf(w, "organization\t%s\n", organization)
+		w.Printf("organization\t%s\n", organization)
 		project := whoamiRow(
 			shownName(res.Project),
 			res.ProjectSource,
@@ -198,8 +197,8 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 		if res.ProjectSource == config.SourceDefault {
 			project = `none set, using "default"`
 		}
-		fmt.Fprintf(w, "project\t%s\n", project)
-		fmt.Fprintf(
+		w.Printf("project\t%s\n", project)
+		fprintf(
 			w,
 			"ai-gateway-api-key\t%s\n",
 			whoamiRow(
@@ -223,9 +222,9 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 		case authenticated != nil:
 			auth = "no (the API rejected the key)"
 		}
-		fmt.Fprintf(w, "authenticated\t%s\n", auth)
-		fmt.Fprintf(w, "organizations\t%s\n", orgListCell(orgs))
-		fmt.Fprintf(w, "config-path\t%s\n", path)
+		w.Printf("authenticated\t%s\n", auth)
+		w.Printf("organizations\t%s\n", orgListCell(orgs))
+		w.Printf("config-path\t%s\n", path)
 	}))
 }
 

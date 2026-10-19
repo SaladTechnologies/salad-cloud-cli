@@ -2,8 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
-	"io"
 
 	"github.com/spf13/cobra"
 
@@ -45,10 +43,10 @@ func init() {
 				if cerr != nil {
 					return cerr
 				}
-				err := output.Emit(orgs, func(w io.Writer) {
-					fmt.Fprintln(w, "NAME\tDISPLAY NAME\tCREATED")
+				err := output.Emit(orgs, func(w *output.Writer) {
+					w.Println("NAME\tDISPLAY NAME\tCREATED")
 					for _, o := range orgs.Items {
-						fmt.Fprintf(
+						fprintf(
 							w,
 							"%s\t%s\t%s\n",
 							ptr.Deref(o.OrganizationName),
@@ -92,8 +90,8 @@ name. It is looked up in the same listing orgs list prints.
 				return clierr.New(clierr.CodeNotFound, clierr.KindNotFound,
 					`organization "%s" not found`, args[0]).WithHint("to list yours, run saladcloud orgs list")
 			}
-			return wrapErr(output.Emit(org, func(w io.Writer) {
-				row := func(k, v string) { fmt.Fprintf(w, "%s\t%s\n", k, v) }
+			return wrapErr(output.Emit(org, func(w *output.Writer) {
+				row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
 				row("Name", ptr.Deref(org.OrganizationName))
 				row("Display name", ptr.Deref(org.DisplayName))
 				row("ID", ptr.Deref(org.OrganizationID))

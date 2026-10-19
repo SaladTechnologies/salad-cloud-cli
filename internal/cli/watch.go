@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"time"
@@ -96,11 +95,11 @@ func watchLoop(ctx context.Context, d watchDeps, render func(ctx context.Context
 		case d.tty:
 			// VT clear + home; supported by Windows Terminal, PowerShell,
 			// and every Unix terminal.
-			fmt.Fprint(d.out, "\x1b[2J\x1b[H")
+			fprint(d.out, "\x1b[2J\x1b[H")
 		case i > 0:
-			fmt.Fprintln(d.out)
+			fprintln(d.out)
 		}
-		fmt.Fprintf(d.out, "Every %s, at %s (Ctrl-C to stop)\n\n", d.refresh, d.now().Format(time.TimeOnly))
+		fprintf(d.out, "Every %s, at %s (Ctrl-C to stop)\n\n", d.refresh, d.now().Format(time.TimeOnly))
 		if cerr := render(ctx); cerr != nil {
 			if ctx.Err() != nil {
 				return nil //nolint:nilerr // interrupted mid-request: --watch ends with exit 0
@@ -109,7 +108,7 @@ func watchLoop(ctx context.Context, d watchDeps, render func(ctx context.Context
 			case clierr.CodeAuth, clierr.CodeUsage, clierr.CodeNotFound:
 				return cerr
 			default:
-				fmt.Fprintf(d.errOut, "watch: %s (retrying in %s)\n", cerr.Message, d.refresh)
+				fprintf(d.errOut, "watch: %s (retrying in %s)\n", cerr.Message, d.refresh)
 			}
 		}
 		select {

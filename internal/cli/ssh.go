@@ -140,7 +140,7 @@ func pickInstance(
 ) (*containergroups.ContainerGroupInstance, *clierr.Error) {
 	inst, cerr := resolveSSHInstance(instances, group, prefix)
 	if cerr == nil && prefix == "" {
-		fmt.Fprintf(w, "note: using instance %s\n", ptr.Deref(inst.Id))
+		fprintf(w, "note: using instance %s\n", ptr.Deref(inst.Id))
 	}
 	return inst, cerr
 }
@@ -263,16 +263,16 @@ func renderSSHConfigIdentity(
 		if inst.SshIp == nil || inst.SshPort == nil {
 			continue
 		}
-		fmt.Fprintf(&b, "\nHost %s\n    HostName %s\n    Port %d\n    User %s\n    StrictHostKeyChecking accept-new\n",
+		fprintf(&b, "\nHost %s\n    HostName %s\n    Port %d\n    User %s\n    StrictHostKeyChecking accept-new\n",
 			sshConfigAlias(group, ptr.Deref(inst.Id)), *inst.SshIp, *inst.SshPort, user)
 		if kh := knownHostsPath(); kh != "" {
-			fmt.Fprintf(&b, "    UserKnownHostsFile %s\n", sshConfigQuote(kh))
+			fprintf(&b, "    UserKnownHostsFile %s\n", sshConfigQuote(kh))
 		}
 		if id := ptr.Deref(inst.Id); id != "" {
-			fmt.Fprintf(&b, "    HostKeyAlias %s\n", hostKeyAlias(id))
+			fprintf(&b, "    HostKeyAlias %s\n", hostKeyAlias(id))
 		}
 		if identity != "" {
-			fmt.Fprintf(&b, "    IdentityFile %s\n", identity)
+			fprintf(&b, "    IdentityFile %s\n", identity)
 		}
 		n++
 	}
@@ -453,8 +453,8 @@ Host alias.`,
 						"no running SSH-ready instances in container group %s", group).
 						WithHint("to list its instances, run saladcloud container-groups instances list -c %s", group)
 				}
-				fmt.Fprint(os.Stdout, text)
-				return nil
+				_, err := io.WriteString(os.Stdout, text)
+				return wrapErr(err)
 			}
 
 			inst, cerr := pickInstance(os.Stderr, collection.Instances, group, instance)
@@ -470,7 +470,7 @@ Host alias.`,
 			runErr := runChild("ssh", sshArgs)
 			if len(command) > 0 {
 				if note := oneShotExitNote(childExitCode(runErr)); note != "" {
-					fmt.Fprintln(os.Stderr, note)
+					fprintln(os.Stderr, note)
 				}
 			}
 			if runErr != nil {

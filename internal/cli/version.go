@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-	"io"
 	"runtime"
 
 	"github.com/spf13/cobra"
@@ -48,8 +46,8 @@ func runVersion(_ *cobra.Command, _ []string) error {
 		Stage:     version.Stage,
 		IssuesURL: version.IssuesURL,
 	}
-	return wrapErr(output.Emit(v, func(w io.Writer) {
-		fmt.Fprintf(w, "saladcloud %s (%s) %s/%s\n", v.Version, v.Commit, v.OS, v.Arch)
-		fmt.Fprintf(w, "This is a %s release; report issues at %s\n", v.Stage, v.IssuesURL)
+	return wrapErr(output.Emit(v, func(w *output.Writer) {
+		w.Printf("saladcloud %s (%s) %s/%s\n", v.Version, v.Commit, v.OS, v.Arch)
+		w.Printf("This is a %s release; report issues at %s\n", v.Stage, v.IssuesURL)
 	}))
 }

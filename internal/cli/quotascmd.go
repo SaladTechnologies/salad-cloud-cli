@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-	"io"
 	"strconv"
 
 	"github.com/spf13/cobra"
@@ -30,22 +28,22 @@ func init() {
 			if qerr != nil {
 				return qerr
 			}
-			return wrapErr(output.Emit(q, func(w io.Writer) {
+			return wrapErr(output.Emit(q, func(w *output.Writer) {
 				cg := q.ContainerGroupsQuotas
 				if cg == nil {
-					fmt.Fprintln(w, "No container group quotas reported")
+					w.Println("No container group quotas reported")
 					return
 				}
-				fmt.Fprintf(w, "replicas\t%s / %s\n",
+				w.Printf("replicas\t%s / %s\n",
 					int64Cell(cg.ContainerReplicasUsed), int64Cell(cg.ContainerReplicasQuota))
 				if cg.MaxContainerGroupReallocationsPerMinute != nil {
-					fmt.Fprintf(w, "max reallocations/min\t%d\n", *cg.MaxContainerGroupReallocationsPerMinute)
+					w.Printf("max reallocations/min\t%d\n", *cg.MaxContainerGroupReallocationsPerMinute)
 				}
 				if cg.MaxContainerGroupRecreatesPerMinute != nil {
-					fmt.Fprintf(w, "max recreates/min\t%d\n", *cg.MaxContainerGroupRecreatesPerMinute)
+					w.Printf("max recreates/min\t%d\n", *cg.MaxContainerGroupRecreatesPerMinute)
 				}
 				if cg.MaxContainerGroupRestartsPerMinute != nil {
-					fmt.Fprintf(w, "max restarts/min\t%d\n", *cg.MaxContainerGroupRestartsPerMinute)
+					w.Printf("max restarts/min\t%d\n", *cg.MaxContainerGroupRestartsPerMinute)
 				}
 			}))
 		},

@@ -6,7 +6,6 @@ package cli
 // screen and keeps it out of the file.
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
 
@@ -15,14 +14,14 @@ import (
 
 // tell writes one line of the exchange to the terminal device.
 func tell(format string, args ...any) {
-	fmt.Fprintf(con.Device(), format+"\n", args...)
+	fprintf(con.Device(), format+"\n", args...)
 }
 
 // ask writes prompt to the terminal device and reads the answer, hidden when
 // asked. Ctrl-C returns errInterrupt and end of input [io.EOF]: both end the
 // exchange (answerEnded), and the terminal is already restored.
 func ask(prompt string, hidden bool) (string, error) {
-	fmt.Fprint(con.Device(), prompt+" ")
+	fprint(con.Device(), prompt+" ")
 	if hidden {
 		return con.ReadHidden()
 	}

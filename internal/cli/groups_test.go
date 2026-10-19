@@ -8,6 +8,7 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
@@ -147,13 +148,13 @@ func TestWriteGroupDetailScheduledScalingRow(t *testing.T) {
 	without := &shared.ContainerGroup{Name: ptr.To("demo")}
 
 	var buf strings.Builder
-	writeGroupDetail(&buf, with)
+	writeGroupDetail(output.NewWriter(&buf), with)
 	if !strings.Contains(buf.String(), "Scheduled scaling\tenabled (1 action: 2 replicas @ \"0 9 * * 1-5\")") {
 		t.Errorf("detail lacks the Scheduled scaling row:\n%s", buf.String())
 	}
 
 	buf.Reset()
-	writeGroupDetail(&buf, without)
+	writeGroupDetail(output.NewWriter(&buf), without)
 	if strings.Contains(buf.String(), "Scheduled scaling") {
 		t.Errorf("detail has a Scheduled scaling row for a group without any:\n%s", buf.String())
 	}
@@ -190,7 +191,7 @@ func TestWriteGroupDetailPendingAutostartNote(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var buf strings.Builder
-			writeGroupDetail(&buf, tt.group)
+			writeGroupDetail(output.NewWriter(&buf), tt.group)
 			got := strings.Contains(buf.String(), note)
 			if got != tt.wantNote {
 				t.Errorf("note present = %t, want %t\noutput:\n%s", got, tt.wantNote, buf.String())

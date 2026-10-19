@@ -155,7 +155,7 @@ func waitForGroup(
 				return nil, cerr
 			default:
 				// Transient (network, 5xx, rate limit): note it, keep polling.
-				fmt.Fprintf(stderr, "warning: %s (still waiting)\n", cerr.Message)
+				fprintf(stderr, "warning: %s (still waiting)\n", cerr.Message)
 			}
 		default:
 			status := groupStatus(g)
@@ -174,7 +174,7 @@ func waitForGroup(
 				line := fmt.Sprintf("waiting for %s to %s: %s%s", group, goal, status, instanceCountSummary(g))
 				if now := d.now(); line != lastProgress || now.Sub(lastPrinted) >= progressRepeat {
 					lastProgress, lastPrinted = line, now
-					fmt.Fprintf(stderr, "%s (%s elapsed)\n", line, d.now().Sub(start).Round(time.Second))
+					fprintf(stderr, "%s (%s elapsed)\n", line, d.now().Sub(start).Round(time.Second))
 				}
 			}
 		}
@@ -330,7 +330,7 @@ func runGroupWait(
 		return nil, cerr
 	}
 	if output.Mode() == "table" && doneMsg != "" {
-		fmt.Fprintf(os.Stderr, "%s %s (waited %s)\n", group, doneMsg, time.Since(start).Round(time.Second))
+		fprintf(os.Stderr, "%s %s (waited %s)\n", group, doneMsg, time.Since(start).Round(time.Second))
 	}
 	return final, nil
 }
@@ -353,7 +353,7 @@ func runStatusWait(
 		// instances call; if it fails, the note is skipped, not the wait.
 		if col, cerr := client.ListInstances(cmd.Context(), group); cerr == nil {
 			if note := readinessNote(group, col.Instances); note != "" {
-				fmt.Fprintln(os.Stderr, note)
+				fprintln(os.Stderr, note)
 			}
 		}
 	}

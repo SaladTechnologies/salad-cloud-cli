@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-	"io"
 	"os"
 	"slices"
 	"strings"
@@ -87,12 +85,12 @@ func runGpusList(cmd *cobra.Command, _ []string) error {
 	payload := struct {
 		Items []organizationdata.GpuClass `json:"items"`
 	}{classes}
-	emitErr := output.Emit(payload, func(w io.Writer) {
+	emitErr := output.Emit(payload, func(w *output.Writer) {
 		header := "NAME\tTYPE\tHIGH DEMAND\tBATCH\tLOW\tMEDIUM\tHIGH"
 		if allPrices {
 			header += "\tPRICES"
 		}
-		fmt.Fprintln(w, header)
+		w.Println(header)
 		for _, c := range classes {
 			prices := pricesByPriority(c.Prices)
 			cells := []string{
@@ -107,11 +105,11 @@ func runGpusList(cmd *cobra.Command, _ []string) error {
 			if allPrices {
 				cells = append(cells, formatAllPrices(c.Prices))
 			}
-			fmt.Fprintln(w, strings.Join(cells, "\t"))
+			w.Println(strings.Join(cells, "\t"))
 		}
 	})
 	if emitErr == nil && output.Mode() == "table" {
-		fmt.Fprintln(os.Stderr, gpusLegend)
+		fprintln(os.Stderr, gpusLegend)
 	}
 	return wrapErr(emitErr)
 }
@@ -141,8 +139,8 @@ func runGpusGet(cmd *cobra.Command, args []string) error {
 			args[0],
 		).WithHint("to list them, run saladcloud gpus list")
 	}
-	return wrapErr(output.Emit(class, func(w io.Writer) {
-		row := func(k, v string) { fmt.Fprintf(w, "%s\t%s\n", k, v) }
+	return wrapErr(output.Emit(class, func(w *output.Writer) {
+		row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
 		row("Name", gpuNameCell(class.Name))
 		row("ID", ptr.Deref(class.Id))
 		row("Type", gpuClassTypeCell(class.GpuClassType))

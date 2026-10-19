@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -163,7 +162,7 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 			return cerr
 		}
 	case keyFlag != "":
-		fmt.Fprintln(errw(), "warning: --api-key exposes the key on the command line; pipe it instead")
+		fprintln(errw(), "warning: --api-key exposes the key on the command line; pipe it instead")
 		l.key, l.keyFrom = keyFlag, keyFromFlag
 	case l.terminal:
 		if cerr := l.askForKey(true); cerr != nil {
@@ -780,13 +779,13 @@ func (l *login) save(org, project string) error {
 		Action:            "logged_in",
 		OK:                true,
 	}
-	if err := output.Emit(result, func(w io.Writer) {
+	if err := output.Emit(result, func(w *output.Writer) {
 		if project == "" {
-			fmt.Fprintf(w, "Logged in: %s, no project set\n", org)
+			w.Printf("Logged in: %s, no project set\n", org)
 		} else {
-			fmt.Fprintf(w, "Logged in: %s/%s\n", org, project)
+			w.Printf("Logged in: %s/%s\n", org, project)
 		}
-		fmt.Fprintf(w, "Config at: %s\n", path)
+		w.Printf("Config at: %s\n", path)
 	}); err != nil {
 		return wrapErr(err)
 	}

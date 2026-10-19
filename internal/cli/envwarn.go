@@ -143,20 +143,20 @@ func warnOverrides(w io.Writer, when overrideWhen, ovs []override) {
 			)
 		}
 		if !steps {
-			fmt.Fprintln(w, line)
+			fprintln(w, line)
 			return
 		}
-		fmt.Fprintln(w, line+". To remove the variable:")
-		fmt.Fprint(w, removalSteps(ovs))
+		fprintln(w, line+". To remove the variable:")
+		fprint(w, removalSteps(ovs))
 		return
 	}
 	switch when {
 	case afterRemove:
-		fmt.Fprintln(w, "warning: commands still use these environment variables:")
+		fprintln(w, "warning: commands still use these environment variables:")
 	case asSaved:
-		fmt.Fprintln(w, "warning: commands use these environment variables instead of what is saved:")
+		fprintln(w, "warning: commands use these environment variables instead of what is saved:")
 	default:
-		fmt.Fprintln(w, "warning: commands will use these environment variables instead of what you just saved:")
+		fprintln(w, "warning: commands will use these environment variables instead of what you just saved:")
 	}
 	nameWidth, valueWidth := 0, 0
 	for _, o := range ovs {
@@ -172,11 +172,11 @@ func warnOverrides(w io.Writer, when overrideWhen, ovs []override) {
 		default:
 			row += "  (saved: " + o.setting.show(o.saved) + ")"
 		}
-		fmt.Fprintln(w, strings.TrimRight(row, " "))
+		fprintln(w, strings.TrimRight(row, " "))
 	}
 	if steps {
-		fmt.Fprintln(w, "To remove the variables:")
-		fmt.Fprint(w, removalSteps(ovs))
+		fprintln(w, "To remove the variables:")
+		fprint(w, removalSteps(ovs))
 	}
 }
 
@@ -201,18 +201,18 @@ func removalSteps(ovs []override) string {
 		if one {
 			cmd = "set " + names[0] + "="
 		}
-		fmt.Fprintf(&b, "  PowerShell:  Remove-Item %s\n", strings.Join(envs, ", "))
-		fmt.Fprintf(&b, "  cmd:         %s\n", cmd)
-		fmt.Fprintf(&b, "If %s back in a new terminal, remove %s permanently:\n", comes, it)
+		fprintf(&b, "  PowerShell:  Remove-Item %s\n", strings.Join(envs, ", "))
+		fprintf(&b, "  cmd:         %s\n", cmd)
+		fprintf(&b, "If %s back in a new terminal, remove %s permanently:\n", comes, it)
 		for _, n := range names {
-			fmt.Fprintf(&b, "  [Environment]::SetEnvironmentVariable('%s', $null, 'User')\n", n)
+			fprintf(&b, "  [Environment]::SetEnvironmentVariable('%s', $null, 'User')\n", n)
 		}
 		b.WriteString("Then open a new terminal (restart VS Code if you use its terminal).\n")
 		return b.String()
 	}
-	fmt.Fprintf(&b, "  bash, zsh:  unset %s\n", strings.Join(names, " "))
-	fmt.Fprintf(&b, "  fish:       set -e %s\n", strings.Join(names, " "))
-	fmt.Fprintf(
+	fprintf(&b, "  bash, zsh:  unset %s\n", strings.Join(names, " "))
+	fprintf(&b, "  fish:       set -e %s\n", strings.Join(names, " "))
+	fprintf(
 		&b,
 		"If %s back in a new terminal, delete %s from your shell profile (~/.zshrc, ~/.bashrc or similar).\n",
 		comes,

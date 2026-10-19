@@ -1,9 +1,6 @@
 package cli
 
 import (
-	"fmt"
-	"io"
-
 	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -66,17 +63,17 @@ func runLogout(_ *cobra.Command, _ []string) error {
 		Removed: old != "", Organization: orgJSON, Project: projectJSON,
 		EnvOverrides: overrideNames(ovs), Action: "logged_out", OK: true,
 	}
-	if err := output.Emit(result, func(w io.Writer) {
+	if err := output.Emit(result, func(w *output.Writer) {
 		if old == "" {
-			fmt.Fprintln(w, "No API key was saved; nothing to remove")
+			w.Println("No API key was saved; nothing to remove")
 			return
 		}
-		fmt.Fprintf(w, "Logged out: removed the saved API key (%s)\n", maskAPIKey(old))
+		w.Printf("Logged out: removed the saved API key (%s)\n", maskAPIKey(old))
 		switch {
 		case f.Organization != "" && f.Project != "":
-			fmt.Fprintf(w, "Organization and project stay saved: %s/%s\n", orgShown, projectShown)
+			w.Printf("Organization and project stay saved: %s/%s\n", orgShown, projectShown)
 		case f.Organization != "":
-			fmt.Fprintf(w, "Organization stays saved: %s\n", orgShown)
+			w.Printf("Organization stays saved: %s\n", orgShown)
 		}
 	}); err != nil {
 		return wrapErr(err)

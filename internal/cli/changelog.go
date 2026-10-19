@@ -2,8 +2,6 @@ package cli
 
 import (
 	"errors"
-	"fmt"
-	"io"
 
 	"github.com/spf13/cobra"
 
@@ -57,12 +55,12 @@ never null.`,
 			if since != "" {
 				res.Since = &since
 			}
-			return wrapErr(output.Emit(res, func(w io.Writer) {
+			return wrapErr(output.Emit(res, func(w *output.Writer) {
 				if len(releases) == 0 {
-					fmt.Fprintf(w, "No releases newer than %s\n", since)
+					w.Printf("No releases newer than %s\n", since)
 					return
 				}
-				fmt.Fprint(w, changelog.Render(releases))
+				w.Print(changelog.Render(releases))
 			}))
 		},
 	}

@@ -36,9 +36,28 @@ func errw() io.Writer {
 // document, and the JSON document holds the fact.
 func say(format string, args ...any) {
 	if output.Mode() == "table" {
-		fmt.Fprintf(errw(), format+"\n", args...)
+		fprintf(errw(), format+"\n", args...)
 	}
 }
+
+// writeUnreported writes s to w, a stream the CLI has no way to report a
+// failed write on: stderr, the terminal device, or watch's screen. Every such
+// write goes through here (fprintf, fprintln, fprint), and this is where its
+// error is dropped.
+func writeUnreported(w io.Writer, s string) {
+	_, _ = io.WriteString(w, s) //nolint:errcheck // a failed write to stderr has nowhere to be reported
+}
+
+// fprintf is [fmt.Fprintf] for a stream writeUnreported covers.
+func fprintf(w io.Writer, format string, args ...any) {
+	writeUnreported(w, fmt.Sprintf(format, args...))
+}
+
+// fprintln is [fmt.Fprintln] for a stream writeUnreported covers.
+func fprintln(w io.Writer, args ...any) { writeUnreported(w, fmt.Sprintln(args...)) }
+
+// fprint is [fmt.Fprint] for a stream writeUnreported covers.
+func fprint(w io.Writer, args ...any) { writeUnreported(w, fmt.Sprint(args...)) }
 
 // hintLine writes a suggested next step after a success as a hint: line on
 // stderr, in table mode only.

@@ -3,8 +3,6 @@ package cli
 import (
 	"bufio"
 	"context"
-	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -118,7 +116,7 @@ func runGatewayLogin(cmd *cobra.Command, _ []string) error {
 		}
 		g.key, g.keyFrom = line, keyFromStdin
 	case keyFlag != "":
-		fmt.Fprintln(errw(), "warning: --api-key exposes the key on the command line; pipe it instead")
+		fprintln(errw(), "warning: --api-key exposes the key on the command line; pipe it instead")
 		g.key, g.keyFrom = keyFlag, keyFromFlag
 	case g.terminal:
 		if cerr := g.askForKey(); cerr != nil {
@@ -290,7 +288,7 @@ func (g *gatewayLogin) result(saved bool, path string, ovs []override) gatewayLo
 // warnNoCredits is the warning and hint for a working key whose
 // organization is out of credits; it replaces the try-it hint.
 func (*gatewayLogin) warnNoCredits() {
-	fmt.Fprintln(
+	fprintln(
 		errw(),
 		"warning: the key's organization is out of credits, so AI Gateway requests are rejected until you add some",
 	)
@@ -310,9 +308,9 @@ func (g *gatewayLogin) save() error {
 			WithHint("%s", unwritableHint("ai-gateway login"))
 	}
 	ovs := overridesOf(f, envGatewayKey)
-	if err := output.Emit(g.result(true, path, ovs), func(w io.Writer) {
-		fmt.Fprintln(w, "AI Gateway key saved")
-		fmt.Fprintf(w, "Config at: %s\n", path)
+	if err := output.Emit(g.result(true, path, ovs), func(w *output.Writer) {
+		w.Println("AI Gateway key saved")
+		w.Printf("Config at: %s\n", path)
 	}); err != nil {
 		return wrapErr(err)
 	}
@@ -331,8 +329,8 @@ func (g *gatewayLogin) save() error {
 func (g *gatewayLogin) reportUnsaved() error {
 	path, _ := config.Path()
 	say("No AI Gateway key provided, using SALAD_AI_GATEWAY_API_KEY (%s).", maskAPIKey(g.key))
-	err := output.Emit(g.result(false, path, nil), func(w io.Writer) {
-		fmt.Fprintln(
+	err := output.Emit(g.result(false, path, nil), func(w *output.Writer) {
+		fprintln(
 			w,
 			"The AI Gateway key works. It is not saved, so it works only where SALAD_AI_GATEWAY_API_KEY is set.",
 		)
@@ -392,12 +390,12 @@ func runGatewayLogout(_ *cobra.Command, _ []string) error {
 	}
 	ovs := stillSupplied(envGatewayKey)
 	result := gatewayLogoutResult{Removed: old != "", EnvOverrides: overrideNames(ovs), Action: "logged_out", OK: true}
-	if err := output.Emit(result, func(w io.Writer) {
+	if err := output.Emit(result, func(w *output.Writer) {
 		if old == "" {
-			fmt.Fprintln(w, "No AI Gateway key was saved; nothing to remove")
+			w.Println("No AI Gateway key was saved; nothing to remove")
 			return
 		}
-		fmt.Fprintf(w, "Logged out: removed the saved AI Gateway key (%s)\n", maskAPIKey(old))
+		w.Printf("Logged out: removed the saved AI Gateway key (%s)\n", maskAPIKey(old))
 	}); err != nil {
 		return wrapErr(err)
 	}

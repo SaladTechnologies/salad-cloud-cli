@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -106,8 +105,8 @@ func queueJobView(j *queues.QueueJob) (string, string) {
 }
 
 // writeQueueDetail writes the key/value table for one queue.
-func writeQueueDetail(w io.Writer, q *queues.Queue) {
-	row := func(k, v string) { fmt.Fprintf(w, "%s\t%s\n", k, v) }
+func writeQueueDetail(w *output.Writer, q *queues.Queue) {
+	row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
 	row("Name", ptr.Deref(q.Name))
 	row("Display name", ptr.Deref(q.DisplayName))
 	row("Description", orDash(oneLine(ptr.Deref(q.Description))))
@@ -122,8 +121,8 @@ func writeQueueDetail(w io.Writer, q *queues.Queue) {
 }
 
 // writeQueueJobDetail writes the key/value table for one queue job.
-func writeQueueJobDetail(w io.Writer, j *queues.QueueJob) {
-	row := func(k, v string) { fmt.Fprintf(w, "%s\t%s\n", k, v) }
+func writeQueueJobDetail(w *output.Writer, j *queues.QueueJob) {
+	row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
 	row("ID", ptr.Deref(j.Id))
 	row("Status", queueJobStatus(j))
 	row("Created", timeCell(j.CreateTime))
@@ -203,7 +202,7 @@ is whatever your container returns.`,
 			if cerr != nil {
 				return cerr
 			}
-			return wrapErr(output.Emit(q, func(w io.Writer) { writeQueueDetail(w, q) }))
+			return wrapErr(output.Emit(q, func(w *output.Writer) { writeQueueDetail(w, q) }))
 		},
 	}
 	addQueueFieldFlags(createCmd)
@@ -228,11 +227,11 @@ is whatever your container returns.`,
 			if payload.Items == nil {
 				payload.Items = []queues.Queue{}
 			}
-			err := wrapErr(output.Emit(payload, func(w io.Writer) {
-				fmt.Fprintln(w, "NAME\tDISPLAY NAME\tLENGTH\tGROUPS\tCREATED")
+			err := wrapErr(output.Emit(payload, func(w *output.Writer) {
+				w.Println("NAME\tDISPLAY NAME\tLENGTH\tGROUPS\tCREATED")
 				for i := range list.Items {
 					q := &list.Items[i]
-					fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", ptr.Deref(q.Name), ptr.Deref(q.DisplayName),
+					w.Printf("%s\t%s\t%s\t%s\t%s\n", ptr.Deref(q.Name), ptr.Deref(q.DisplayName),
 						int64Cell(q.CurrentQueueLength), queueGroupsCell(q.ContainerGroups), timeCell(q.CreateTime))
 				}
 			}))
@@ -240,7 +239,7 @@ is whatever your container returns.`,
 				return err
 			}
 			if len(payload.Items) == 0 && output.Mode() == "table" {
-				fmt.Fprintf(
+				fprintf(
 					os.Stderr,
 					"no queues in %s/%s\nhint: to create one, run saladcloud queues create <name>\n",
 					client.Org(),
@@ -264,7 +263,7 @@ is whatever your container returns.`,
 			if cerr != nil {
 				return queueNotFound(cerr, args[0], client)
 			}
-			return wrapErr(output.Emit(q, func(w io.Writer) { writeQueueDetail(w, q) }))
+			return wrapErr(output.Emit(q, func(w *output.Writer) { writeQueueDetail(w, q) }))
 		},
 	})
 
@@ -296,7 +295,7 @@ is whatever your container returns.`,
 			if cerr != nil {
 				return queueNotFound(cerr, args[0], client)
 			}
-			return wrapErr(output.Emit(q, func(w io.Writer) { writeQueueDetail(w, q) }))
+			return wrapErr(output.Emit(q, func(w *output.Writer) { writeQueueDetail(w, q) }))
 		},
 	}
 	addQueueFieldFlags(updateCmd)
@@ -315,8 +314,8 @@ is whatever your container returns.`,
 				return queueNotFound(cerr, args[0], client)
 			}
 			v := queueActionResult{Name: args[0], Action: "deleted", OK: true}
-			return wrapErr(output.Emit(v, func(w io.Writer) {
-				fmt.Fprintf(w, "Queue %s deleted\n", v.Name)
+			return wrapErr(output.Emit(v, func(w *output.Writer) {
+				w.Printf("Queue %s deleted\n", v.Name)
 			}))
 		},
 	})
@@ -372,11 +371,11 @@ every job, up to 10,000.`,
 			payload := struct {
 				Items []queues.QueueJob `json:"items"`
 			}{jobs}
-			err := wrapErr(output.Emit(payload, func(w io.Writer) {
-				fmt.Fprintln(w, "ID\tSTATUS\tCREATED\tUPDATED")
+			err := wrapErr(output.Emit(payload, func(w *output.Writer) {
+				w.Println("ID\tSTATUS\tCREATED\tUPDATED")
 				for i := range jobs {
 					j := &jobs[i]
-					fmt.Fprintf(
+					fprintf(
 						w,
 						"%s\t%s\t%s\t%s\n",
 						ptr.Deref(j.Id),
@@ -390,11 +389,11 @@ every job, up to 10,000.`,
 				return err
 			}
 			if len(jobs) == 0 && output.Mode() == "table" {
-				fmt.Fprintf(os.Stderr, "no jobs in queue %s\n", queue)
+				fprintf(os.Stderr, "no jobs in queue %s\n", queue)
 			}
 			jobsLimitNote(os.Stderr, len(jobs), limit, api.QueueJobsCap, more)
 			if partial {
-				fmt.Fprintf(
+				fprintf(
 					os.Stderr,
 					"note: read the first %d jobs only; the queue may hold more, and the API lists jobs in no time order, so these are the newest of those read; --limit 0 reads all (up to %d)\n",
 					max(limit, api.QueueJobsBudget),
@@ -426,7 +425,7 @@ every job, up to 10,000.`,
 			if cerr != nil {
 				return queueJobNotFound(cerr, queue, args[0])
 			}
-			return wrapErr(output.Emit(job, func(w io.Writer) { writeQueueJobDetail(w, job) }))
+			return wrapErr(output.Emit(job, func(w *output.Writer) { writeQueueJobDetail(w, job) }))
 		},
 	}
 	addQueueFlag(getCmd)
@@ -491,8 +490,8 @@ that has finished cannot be canceled (exit 1).`,
 				return queueJobNotFound(cerr, queue, args[0])
 			}
 			v := queueJobActionResult{Queue: queue, ID: args[0], Action: "canceled", OK: true}
-			return wrapErr(output.Emit(v, func(w io.Writer) {
-				fmt.Fprintf(w, "Job %s in queue %s canceled\n", v.ID, v.Queue)
+			return wrapErr(output.Emit(v, func(w *output.Writer) {
+				w.Printf("Job %s in queue %s canceled\n", v.ID, v.Queue)
 			}))
 		},
 	}
@@ -559,7 +558,7 @@ func runQueueJobCreate(cmd *cobra.Command, _ []string) error {
 		return queueNotFound(cerr, queue, client)
 	}
 	if !wait {
-		return wrapErr(output.Emit(job, func(w io.Writer) { writeQueueJobDetail(w, job) }))
+		return wrapErr(output.Emit(job, func(w *output.Writer) { writeQueueJobDetail(w, job) }))
 	}
 	ctx := cmd.Context() // canceled by the one signal handler in Execute
 	id := ptr.Deref(job.Id)
@@ -579,5 +578,5 @@ func runQueueJobCreate(cmd *cobra.Command, _ []string) error {
 	if cerr != nil {
 		return cerr
 	}
-	return wrapErr(output.Emit(final, func(w io.Writer) { writeQueueJobDetail(w, final) }))
+	return wrapErr(output.Emit(final, func(w *output.Writer) { writeQueueJobDetail(w, final) }))
 }

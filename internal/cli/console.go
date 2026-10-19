@@ -3,7 +3,6 @@ package cli
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"runtime"
@@ -112,7 +111,7 @@ func (c *stdConsole) read(hidden bool) (string, error) {
 		c.keys = &keyReader{r: os.Stdin}
 	}
 	answer, err := c.keys.readLine(echo)
-	fmt.Fprint(c.Device(), "\r\n") // raw mode does not turn \n into a new line
+	fprint(c.Device(), "\r\n") // raw mode does not turn \n into a new line
 	return answer, err
 }
 
@@ -120,7 +119,7 @@ func (c *stdConsole) read(hidden bool) (string, error) {
 func (c *stdConsole) readCooked(hidden bool) (string, error) {
 	if hidden {
 		raw, err := term.ReadPassword(int(os.Stdin.Fd()))
-		fmt.Fprintln(c.Device())
+		fprintln(c.Device())
 		return strings.TrimSpace(string(raw)), err
 	}
 	if c.in == nil {
@@ -189,7 +188,7 @@ func (k *keyReader) readLine(echo io.Writer) (string, error) {
 		case c == keyBackspace || c == keyCtrlH:
 			if len(line) > 0 {
 				line = line[:len(line)-1]
-				fmt.Fprint(echo, "\b \b")
+				fprint(echo, "\b \b")
 			}
 		case c < 0x20:
 			line = append(line, rune(c))
@@ -198,7 +197,7 @@ func (k *keyReader) readLine(echo io.Writer) (string, error) {
 			if utf8.FullRune(partial) {
 				ch, _ := utf8.DecodeRune(partial)
 				line = append(line, ch)
-				_, _ = echo.Write(partial)
+				writeUnreported(echo, string(partial))
 				partial = partial[:0]
 			}
 		}

@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -114,10 +113,10 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 			ovs = append(ovs, o)
 		}
 	}
-	err := output.Emit(doctorResult{Items: rows, EnvOverrides: overrideNames(ovs)}, func(w io.Writer) {
-		fmt.Fprintln(w, "CHECK\tSTATUS\tDETAIL")
+	err := output.Emit(doctorResult{Items: rows, EnvOverrides: overrideNames(ovs)}, func(w *output.Writer) {
+		w.Println("CHECK\tSTATUS\tDETAIL")
 		for _, r := range rows {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", r.Name, strings.ToUpper(r.Status), r.Detail)
+			w.Printf("%s\t%s\t%s\n", r.Name, strings.ToUpper(r.Status), r.Detail)
 		}
 	})
 	if err != nil {

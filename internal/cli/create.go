@@ -382,7 +382,7 @@ var msysDrivePath = regexp.MustCompile(`^[A-Za-z]:[/\\]`)
 // a queue: jobs reach it only through the job queue worker in its image, and
 // a missing worker is silent (the group runs, the jobs stay pending).
 func noteQueueWorker(w io.Writer, queue string) {
-	fmt.Fprintf(
+	fprintf(
 		w,
 		"note: jobs from queue %s reach this group only if its image runs the job queue worker beside your HTTP server; "+
 			"without it the jobs stay pending and nothing reports why; to add the worker, see %s\n",
@@ -567,7 +567,7 @@ func runCreate(
 		}
 		group = final
 	}
-	return wrapErr(output.Emit(group, func(w io.Writer) { writeGroupDetail(w, group) }))
+	return wrapErr(output.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
 }
 
 func init() {

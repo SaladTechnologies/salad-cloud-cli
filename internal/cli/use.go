@@ -1,8 +1,6 @@
 package cli
 
 import (
-	"fmt"
-	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -157,12 +155,12 @@ func runUse(cmd *cobra.Command, args []string) error {
 		Action:       "switched",
 		OK:           true,
 	}
-	if err := output.Emit(result, func(w io.Writer) {
+	if err := output.Emit(result, func(w *output.Writer) {
 		if project == "" {
-			fmt.Fprintf(w, "Switched to %s, no project set\n", org)
+			w.Printf("Switched to %s, no project set\n", org)
 			return
 		}
-		fmt.Fprintf(w, "Switched to %s/%s\n", org, project)
+		w.Printf("Switched to %s/%s\n", org, project)
 	}); err != nil {
 		return wrapErr(err)
 	}

@@ -11,7 +11,6 @@ package cli
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"slices"
@@ -187,7 +186,7 @@ every key, so no AI Gateway key is needed; with one set, it is sent.`,
 				return cerr
 			}
 			if output.Mode() == "table" {
-				fmt.Fprintf(os.Stderr, "pricing and the subscription tier: %s\n", api.GatewayPricingURL)
+				fprintf(os.Stderr, "pricing and the subscription tier: %s\n", api.GatewayPricingURL)
 			}
 			// The list envelope every list has; each model stays the
 			// gateway's own object.
@@ -195,15 +194,15 @@ every key, so no AI Gateway key is needed; with one set, it is sent.`,
 			if result.Items == nil {
 				result.Items = []map[string]any{}
 			}
-			return wrapErr(output.Emit(result, func(w io.Writer) {
-				fmt.Fprintln(w, "MODEL\tOWNED BY")
+			return wrapErr(output.Emit(result, func(w *output.Writer) {
+				w.Println("MODEL\tOWNED BY")
 				for _, m := range result.Items {
 					id, _ := m["id"].(string)
 					owner, _ := m["owned_by"].(string)
 					if owner == "" {
 						owner = "-"
 					}
-					fmt.Fprintf(w, "%s\t%s\n", id, owner)
+					w.Printf("%s\t%s\n", id, owner)
 				}
 			}))
 		},
@@ -273,9 +272,9 @@ budget then defaults to 1024).`,
 				)
 			}
 			v := gatewayTestResult{Model: chosen, Prompt: prompt, Reply: reply, Usage: c.Usage, OK: true}
-			return wrapErr(output.Emit(v, func(w io.Writer) {
-				fmt.Fprintf(w, "%s\n", reply)
-				fmt.Fprintf(os.Stderr, "AI Gateway key works: model %s answered (%s)\n", chosen, usageSummary(c.Usage))
+			return wrapErr(output.Emit(v, func(w *output.Writer) {
+				w.Printf("%s\n", reply)
+				fprintf(os.Stderr, "AI Gateway key works: model %s answered (%s)\n", chosen, usageSummary(c.Usage))
 			}))
 		},
 	}

@@ -8,6 +8,7 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/util"
 
+	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
@@ -37,13 +38,13 @@ func TestGetShowsTheReason(t *testing.T) {
 		&util.Nullable[string]{Value: "Access Denied, Check Permissions"},
 	)
 	var b bytes.Buffer
-	writeGroupDetail(&b, g)
+	writeGroupDetail(output.NewWriter(&b), g)
 	if !strings.Contains(b.String(), "Status\tfailed\nReason\tAccess Denied, Check Permissions\n") {
 		t.Errorf("get table lacks the Reason row:\n%s", b.String())
 	}
 	for _, none := range []*util.Nullable[string]{nil, {IsNull: true}, {Value: ""}} {
 		b.Reset()
-		writeGroupDetail(&b, failedGroup(shared.CONTAINER_GROUP_STATUS_STOPPED, none))
+		writeGroupDetail(output.NewWriter(&b), failedGroup(shared.CONTAINER_GROUP_STATUS_STOPPED, none))
 		if strings.Contains(b.String(), "Reason") {
 			t.Errorf("a group with no description shows a Reason row:\n%s", b.String())
 		}

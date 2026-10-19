@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -143,8 +142,8 @@ func priorityString(p *util.Nullable[shared.ContainerGroupPriority]) string {
 }
 
 // writeGroupDetail writes the two-column key/value table for one group.
-func writeGroupDetail(w io.Writer, g *shared.ContainerGroup) {
-	row := func(k, v string) { fmt.Fprintf(w, "%s\t%s\n", k, v) }
+func writeGroupDetail(w *output.Writer, g *shared.ContainerGroup) {
+	row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
 	row("Name", ptr.Deref(g.Name))
 	row("Display name", ptr.Deref(g.DisplayName))
 	row("ID", ptr.Deref(g.Id))
@@ -191,8 +190,8 @@ func groupAction(name, pastTense string, call func() *clierr.Error) error {
 		return err
 	}
 	v := groupActionResult{Name: name, Action: pastTense, OK: true}
-	return wrapErr(output.Emit(v, func(w io.Writer) {
-		fmt.Fprintf(w, "Container group %s %s\n", v.Name, v.Action)
+	return wrapErr(output.Emit(v, func(w *output.Writer) {
+		w.Printf("Container group %s %s\n", v.Name, v.Action)
 	}))
 }
 
@@ -227,8 +226,8 @@ func startStopRunE(
 			}
 		}
 		v := groupActionResult{Name: args[0], Action: pastTense, OK: true}
-		return wrapErr(output.Emit(v, func(w io.Writer) {
-			fmt.Fprintf(w, "Container group %s %s\n", v.Name, v.Action)
+		return wrapErr(output.Emit(v, func(w *output.Writer) {
+			w.Printf("Container group %s %s\n", v.Name, v.Action)
 		}))
 	}
 }
@@ -279,7 +278,7 @@ the projects you want listed.`,
 						groups, lerr := pc.ListGroups(ctx)
 						if lerr != nil {
 							if lerr.Code == clierr.CodeNotFound {
-								fmt.Fprintf(os.Stderr, "warning: project \"%s\" not found, skipped\n", proj)
+								fprintf(os.Stderr, "warning: project \"%s\" not found, skipped\n", proj)
 								continue
 							}
 							return lerr
@@ -309,17 +308,17 @@ the projects you want listed.`,
 				payload := struct {
 					Items []shared.ContainerGroup `json:"items"`
 				}{items}
-				if err := output.Emit(payload, func(w io.Writer) {
+				if err := output.Emit(payload, func(w *output.Writer) {
 					if multi {
-						fmt.Fprint(w, "PROJECT\t")
+						w.Print("PROJECT\t")
 					}
-					fmt.Fprintln(w, "NAME\tDISPLAY NAME\tPRIORITY\tREPLICAS\tRUNNING\tSTATUS\tPENDING\tIMAGE\tCREATED")
+					w.Println("NAME\tDISPLAY NAME\tPRIORITY\tREPLICAS\tRUNNING\tSTATUS\tPENDING\tIMAGE\tCREATED")
 					for i := range items {
 						g := &items[i]
 						if multi {
-							fmt.Fprintf(w, "%s\t", ptr.Deref(g.ProjectName))
+							w.Printf("%s\t", ptr.Deref(g.ProjectName))
 						}
-						fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\t%t\t%s\t%s\n",
+						w.Printf("%s\t%s\t%s\t%d\t%s\t%s\t%t\t%s\t%s\n",
 							ptr.Deref(g.Name), ptr.Deref(g.DisplayName), priorityString(g.Priority),
 							ptr.Deref(g.Replicas), runningCell(g), groupStatus(g), ptr.Deref(g.PendingChange),
 							imageCell(g), timeCell(g.CreateTime))
@@ -333,9 +332,9 @@ the projects you want listed.`,
 				if len(items) == 0 && output.Mode() == "table" {
 					switch {
 					case multi:
-						fmt.Fprintln(os.Stderr, "no container groups in the listed projects")
+						fprintln(os.Stderr, "no container groups in the listed projects")
 					case statusFilter != "":
-						fmt.Fprintf(
+						fprintf(
 							os.Stderr,
 							"no container groups in %s/%s matching --status %s\n",
 							res.Organization,
@@ -343,7 +342,7 @@ the projects you want listed.`,
 							statusFilter,
 						)
 					default:
-						fmt.Fprintf(os.Stderr, "no container groups in %s/%s\n", res.Organization, res.Project)
+						fprintf(os.Stderr, "no container groups in %s/%s\n", res.Organization, res.Project)
 					}
 				}
 				return nil
@@ -399,7 +398,7 @@ group has scheduled scaling enabled.`,
 				if m, ok := doc.(map[string]any); ok {
 					if enabled, _ := m["scheduled-scaling-enabled"].(bool); enabled {
 						if _, has := m["replicas"]; has {
-							fmt.Fprintln(
+							fprintln(
 								os.Stderr,
 								"note: replicas is included; writing it puts scheduled scaling on hold, so drop it unless you mean to change it",
 							)
@@ -407,7 +406,7 @@ group has scheduled scaling enabled.`,
 					}
 				}
 				if len(dropped) > 0 {
-					fmt.Fprintf(
+					fprintf(
 						os.Stderr,
 						"note: %d field(s) update cannot write were omitted: %s\n",
 						len(dropped),
@@ -427,7 +426,7 @@ group has scheduled scaling enabled.`,
 				if cerr != nil {
 					return groupNotFound(cerr, args[0], client.Org(), client.Project())
 				}
-				if err := output.Emit(group, func(w io.Writer) { writeGroupDetail(w, group) }); err != nil {
+				if err := output.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }); err != nil {
 					return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)
 				}
 				return nil
@@ -559,7 +558,7 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 			if err != nil {
 				return err
 			}
-			return wrapErr(output.Emit(group, func(w io.Writer) { writeGroupDetail(w, group) }))
+			return wrapErr(output.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
 		},
 	}
 	updateCmd.Flags().StringP("file", "f", "", "container group patch file (.json/.yaml; \"-\" reads stdin)")
@@ -655,7 +654,7 @@ func applyPatch(
 		}
 		group = final
 	} else if ptr.Deref(group.PendingChange) {
-		fmt.Fprintf(
+		fprintf(
 			os.Stderr,
 			"note: change accepted, still pending, not verified (--no-wait); to check it, run saladcloud container-groups get %s\n",
 			name,

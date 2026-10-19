@@ -7,7 +7,6 @@ package cli
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"regexp"
 	"strconv"
@@ -267,8 +266,8 @@ set it up, run saladcloud ssh-key setup.`,
 				Src:      args[0],
 				Dst:      args[1],
 			}
-			return wrapErr(output.Emit(v, func(w io.Writer) {
-				fmt.Fprintf(w, "Copied %s to %s (instance %s)\n", v.Src, v.Dst, v.Instance)
+			return wrapErr(output.Emit(v, func(w *output.Writer) {
+				w.Printf("Copied %s to %s (instance %s)\n", v.Src, v.Dst, v.Instance)
 			}))
 		},
 	}

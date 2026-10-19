@@ -8,7 +8,6 @@ package cli
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -84,7 +83,7 @@ func keyHasPassphrase(path string) (encrypted, known bool) {
 // warnPassphrase says a key has a passphrase that one-shot commands cannot
 // ask for, and how to load it first.
 func warnPassphrase(priv string) {
-	fmt.Fprintf(errw(), "warning: %s has a passphrase, which cp and one-shot ssh commands cannot ask for\n", priv)
+	fprintf(errw(), "warning: %s has a passphrase, which cp and one-shot ssh commands cannot ask for\n", priv)
 	hintLine("to use it with those, run ssh-add %s first", priv)
 }
 
@@ -274,19 +273,19 @@ func (sshKeySetup) show(path string, generated bool, passphrase *bool) error {
 		Action:        action,
 		OK:            true,
 	}
-	err := output.Emit(v, func(w io.Writer) {
+	err := output.Emit(v, func(w *output.Writer) {
 		if generated {
-			fmt.Fprintf(w, "Generated %s\n\n", strings.TrimSuffix(path, ".pub"))
+			w.Printf("Generated %s\n\n", strings.TrimSuffix(path, ".pub"))
 		}
-		fmt.Fprintf(w, "Public key (%s):\n  %s\n\n", path, key)
-		fmt.Fprintf(w, "Register the public key at %s\n", sshKeysPage)
-		fmt.Fprintln(w, "Your account holds one SSH key: registering this one replaces any other.")
+		w.Printf("Public key (%s):\n  %s\n\n", path, key)
+		w.Printf("Register the public key at %s\n", sshKeysPage)
+		w.Println("Your account holds one SSH key: registering this one replaces any other.")
 	})
 	if err != nil {
 		return wrapErr(err)
 	}
 	if output.Machine() {
-		fmt.Fprintf(
+		fprintf(
 			errw(),
 			"note: register the public key at %s; your account holds one SSH key, so registering this one replaces any other\n",
 			sshKeysPage,
@@ -320,8 +319,8 @@ func runSSHKeyGet(_ *cobra.Command, _ []string) error {
 		warnPassphrase(strings.TrimSuffix(path, ".pub"))
 	}
 	v := sshKeyResult{Path: path, PublicKey: key, HasPassphrase: passphraseOf(enc, known)}
-	return wrapErr(output.Emit(v, func(w io.Writer) {
-		fmt.Fprintf(w, "%s\n%s\n", path, key)
+	return wrapErr(output.Emit(v, func(w *output.Writer) {
+		w.Printf("%s\n%s\n", path, key)
 	}))
 }
 

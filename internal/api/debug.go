@@ -28,6 +28,13 @@ var (
 	debugOut   io.Writer = os.Stderr
 )
 
+// debugf writes a --debug line to stderr. A failed write there has nowhere to
+// be reported, so this, the one place --debug writes, drops its error.
+func debugf(format string, args ...any) {
+	line := fmt.Sprintf(format, args...)
+	_, _ = io.WriteString(debugOut, line) //nolint:errcheck // a failed write to stderr has nowhere to be reported
+}
+
 // SetDebug sets the --debug level for every request the CLI makes.
 func SetDebug(level DebugLevel) { debugLevel = level }
 
@@ -46,19 +53,17 @@ func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return d.base.RoundTrip(req)
 	}
 	if debugLevel >= DebugBodies {
-		fmt.Fprintf(debugOut, "debug: > %s %s\n", req.Method, redactText(req.URL.String()))
+		debugf("debug: > %s %s\n", req.Method, redactText(req.URL.String()))
 		for _, k := range sortedHeaderKeys(req.Header) {
-			fmt.Fprintf(debugOut, "debug: > %s: %s\n", k, redactHeader(k, req.Header.Get(k)))
+			debugf("debug: > %s: %s\n", k, redactHeader(k, req.Header.Get(k)))
 		}
-		fmt.Fprintf(debugOut, "debug: > %s\n", requestBodyForLog(req))
+		debugf("debug: > %s\n", requestBodyForLog(req))
 	}
 	start := time.Now()
 	resp, err := d.base.RoundTrip(req)
 	took := time.Since(start).Round(time.Millisecond)
 	if err != nil {
-		fmt.Fprintf(
-			debugOut,
-			"debug: %s %s -> error after %s: %v\n",
+		debugf("debug: %s %s -> error after %s: %v\n",
 			req.Method,
 			redactText(req.URL.String()),
 			took,
@@ -66,7 +71,7 @@ func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		)
 		return nil, err
 	}
-	fmt.Fprintf(debugOut, "debug: %s %s -> %d (%s)\n", req.Method, redactText(req.URL.String()), resp.StatusCode, took)
+	debugf("debug: %s %s -> %d (%s)\n", req.Method, redactText(req.URL.String()), resp.StatusCode, took)
 	if debugLevel >= DebugBodies && resp.Body != nil {
 		body, rerr := io.ReadAll(resp.Body)
 		resp.Body.Close()
@@ -74,7 +79,7 @@ func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		if rerr != nil {
 			return nil, rerr
 		}
-		fmt.Fprintf(debugOut, "debug: < %s\n", redactBody(body))
+		debugf("debug: < %s\n", redactBody(body))
 	}
 	return resp, nil
 }
@@ -226,6 +231,9 @@ func secretString(key, parent string) bool {
 func writeJSONString(buf *bytes.Buffer, s string) {
 	enc := json.NewEncoder(buf)
 	enc.SetEscapeHTML(false)
-	_ = enc.Encode(s)
+	if err := enc.Encode(s); err != nil {
+		buf.WriteString(`""`) // not reached: a Go string always encodes
+		return
+	}
 	buf.Truncate(buf.Len() - 1) // Encode's newline
 }

@@ -46,8 +46,9 @@ func Mode() string { return mode }
 // In json mode it writes v indented to Stdout, with every json-tagged key
 // present (see encodeFilled) and every non-ASCII character escaped (ASCII);
 // yaml mode writes the same document as YAML, characters as they are.
-// In table mode it calls table with a tabwriter that Emit flushes afterward.
-func Emit(v any, table func(w io.Writer)) error {
+// In table mode it calls table with a Writer over a tabwriter that Emit
+// flushes afterward, and returns the first write error.
+func Emit(v any, table func(w *Writer)) error {
 	if mode == "yaml" {
 		data, err := encodeFilled(v)
 		if err != nil {
@@ -73,8 +74,12 @@ func Emit(v any, table func(w io.Writer)) error {
 		return err
 	}
 	tw := newTabWriter(Stdout)
-	table(tw)
-	return tw.Flush()
+	w := NewWriter(tw)
+	table(w)
+	if err := tw.Flush(); w.err == nil {
+		w.err = err
+	}
+	return w.err
 }
 
 // Stream renders one streamed record (e.g. a log line) and flushes

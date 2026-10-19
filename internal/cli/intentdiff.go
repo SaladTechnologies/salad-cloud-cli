@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"reflect"
 	"slices"
@@ -303,13 +302,13 @@ func warnIgnoredFields(w io.Writer, fields []ignoredField) {
 	if len(fields) > 1 {
 		noun = "fields"
 	}
-	fmt.Fprintf(w, "warning: the API accepted this update but did not apply %d %s:\n", len(fields), noun)
+	fprintf(w, "warning: the API accepted this update but did not apply %d %s:\n", len(fields), noun)
 	for _, f := range fields {
 		if f.Moved {
-			fmt.Fprintf(w, "warning:   %s: requested %s, got %s\n", f.Path, f.Requested, f.Actual)
+			fprintf(w, "warning:   %s: requested %s, got %s\n", f.Path, f.Requested, f.Actual)
 			continue
 		}
-		fmt.Fprintf(w, "warning:   %s: requested %s, still %s\n", f.Path, f.Requested, f.Actual)
+		fprintf(w, "warning:   %s: requested %s, still %s\n", f.Path, f.Requested, f.Actual)
 	}
 }
 
@@ -515,22 +514,22 @@ func warnUnrequestedChanges(w io.Writer, changes []unrequestedChange) {
 		if len(warns) > 1 {
 			noun = "fields"
 		}
-		fmt.Fprintf(w, "warning: this update also changed %d %s the patch did not mention:\n", len(warns), noun)
+		fprintf(w, "warning: this update also changed %d %s the patch did not mention:\n", len(warns), noun)
 		for _, c := range shown {
 			if c.Secret {
-				fmt.Fprintf(w, "warning:   %s: %s\n", c.Path, c.Before)
+				fprintf(w, "warning:   %s: %s\n", c.Path, c.Before)
 				continue
 			}
-			fmt.Fprintf(w, "warning:   %s: %s -> %s\n", c.Path, c.Before, c.After)
+			fprintf(w, "warning:   %s: %s -> %s\n", c.Path, c.Before, c.After)
 		}
 		if extra > 0 {
-			fmt.Fprintf(w, "warning:   and %d more\n", extra)
+			fprintf(w, "warning:   and %d more\n", extra)
 		}
 		seen := make(map[string]bool)
 		for _, c := range shown {
 			if hint, at := remediationFor(c.Path); hint != "" && !seen[at] {
 				seen[at] = true
-				fmt.Fprintf(w, "warning:   %s\n", hint)
+				fprintf(w, "warning:   %s\n", hint)
 			}
 		}
 	}
@@ -538,7 +537,7 @@ func warnUnrequestedChanges(w io.Writer, changes []unrequestedChange) {
 		// Only one rule is classified today (holdRule), so its sentence is
 		// spelled out here rather than routed through the remediation map,
 		// whose entry is worded for the flag flipping WITHOUT a replicas write.
-		fmt.Fprintf(
+		fprintf(
 			w,
 			"note: %s: %s -> %s; setting replicas puts scheduled scaling on hold (actions kept); to re-enable it, put %s\n",
 			c.Path,
@@ -674,8 +673,8 @@ func warnUnappliedCreateFields(w io.Writer, fields []ignoredField) {
 	if len(fields) > 1 {
 		noun = "fields"
 	}
-	fmt.Fprintf(w, "warning: the group was created but the API did not apply %d requested %s:\n", len(fields), noun)
+	fprintf(w, "warning: the group was created but the API did not apply %d requested %s:\n", len(fields), noun)
 	for _, f := range fields {
-		fmt.Fprintf(w, "warning:   %s: requested %s, got %s\n", f.Path, f.Requested, f.Actual)
+		fprintf(w, "warning:   %s: requested %s, got %s\n", f.Path, f.Requested, f.Actual)
 	}
 }
