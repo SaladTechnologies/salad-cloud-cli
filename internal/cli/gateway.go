@@ -36,14 +36,6 @@ const (
 	gatewayTestMaxTokensThinking = 1024
 )
 
-// defaultMaxTokens is ai-gateway test's budget when --max-tokens is not set.
-func (o *gatewayTestOptions) defaultMaxTokens() int {
-	if o.thinking {
-		return gatewayTestMaxTokensThinking
-	}
-	return gatewayTestMaxTokens
-}
-
 // gatewayTestResult is `ai-gateway test`'s JSON contract.
 type gatewayTestResult struct {
 	Model  string         `json:"model"`
@@ -250,6 +242,14 @@ type gatewayTestOptions struct {
 	prompt    string
 	maxTokens int
 	thinking  bool
+}
+
+// defaultMaxTokens is ai-gateway test's budget when --max-tokens is not set.
+func (o *gatewayTestOptions) defaultMaxTokens() int {
+	if o.thinking {
+		return gatewayTestMaxTokensThinking
+	}
+	return gatewayTestMaxTokens
 }
 
 // gatewayTestCmd is ai-gateway test.
