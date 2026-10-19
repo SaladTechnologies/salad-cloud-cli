@@ -44,7 +44,7 @@ func Probe(ctx context.Context, target string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	closeBody(resp.Body)
+	closeFailed(resp.Body.Close())
 	return resp.StatusCode, nil
 }
 
@@ -118,7 +118,7 @@ func doRestJSON[T any](ctx context.Context, c *Client, method, path, contentType
 			return nil, transportErr(ctx, "network error", err)
 		}
 		respBody, err := io.ReadAll(resp.Body)
-		closeBody(resp.Body)
+		closeFailed(resp.Body.Close())
 		if err != nil {
 			return nil, readErr(ctx, "response", err)
 		}

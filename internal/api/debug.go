@@ -37,8 +37,11 @@ func debugf(format string, args ...any) {
 
 // closeBody closes a response body the CLI is done with. Its error says
 // nothing about the response, so it is only reported under --debug.
-func closeBody(body io.Closer) {
-	if err := body.Close(); err != nil && debugLevel != DebugOff {
+func closeBody(body io.Closer) { closeFailed(body.Close()) }
+
+// closeFailed reports, under --debug, a response body that did not close.
+func closeFailed(err error) {
+	if err != nil && debugLevel != DebugOff {
 		debugf("debug: closing a response body: %v\n", err)
 	}
 }

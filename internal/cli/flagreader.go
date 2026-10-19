@@ -15,18 +15,12 @@ import (
 // value methods hide FlagSet's flag-defining methods of the same names.
 type flagReader struct {
 	*pflag.FlagSet
+
 	err error
 }
 
 // readFlags returns a flagReader over fs.
 func readFlags(fs *pflag.FlagSet) *flagReader { return &flagReader{FlagSet: fs, err: nil} }
-
-// keep records err when it is the first.
-func (r *flagReader) keep(err error) {
-	if r.err == nil {
-		r.err = err
-	}
-}
 
 // Err returns the first read error as the CLI's error, wrapped as wrapErr
 // wraps any other error, or nil.
@@ -77,4 +71,11 @@ func (r *flagReader) StringArray(name string) []string {
 	v, err := r.GetStringArray(name)
 	r.keep(err)
 	return v
+}
+
+// keep records err when it is the first.
+func (r *flagReader) keep(err error) {
+	if r.err == nil {
+		r.err = err
+	}
 }

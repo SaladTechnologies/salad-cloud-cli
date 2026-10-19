@@ -87,7 +87,7 @@ func (c *Client) UploadFile(
 		return "", transportErr(ctx, "network error uploading to storage", err)
 	}
 	respBody, err := io.ReadAll(resp.Body)
-	closeBody(resp.Body)
+	closeFailed(resp.Body.Close())
 	if err != nil {
 		return "", readErr(ctx, "storage response", err)
 	}
@@ -133,7 +133,7 @@ func (c *Client) DeleteFile(ctx context.Context, remoteName string) *clierr.Erro
 	if err != nil {
 		body = nil // a body that cannot be read is no body: the status still decides
 	}
-	closeBody(resp.Body)
+	closeFailed(resp.Body.Close())
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return errorFromBody(resp.StatusCode, body)
 	}
