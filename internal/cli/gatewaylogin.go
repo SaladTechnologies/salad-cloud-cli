@@ -215,7 +215,7 @@ func (g *gatewayLogin) check() *clierr.Error {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
-		procEnv.Getenv,
+		apiOptions(),
 	)
 	if cerr != nil {
 		return cerr

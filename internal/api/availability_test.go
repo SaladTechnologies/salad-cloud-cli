@@ -5,7 +5,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -16,10 +15,14 @@ import (
 
 // newTestClient builds a Client pointed at the given base URL via the
 // SALAD_CLI_API_BASE_URL override New honors.
-func newTestClient(t *testing.T, baseURL string) *Client {
+func newTestClient(t *testing.T, baseURL string, opts ...Options) *Client {
 	t.Helper()
 	t.Setenv("SALAD_CLI_API_BASE_URL", baseURL)
-	c, cerr := New(config.Resolved{APIKey: "test-key", Organization: "test org"}, os.Getenv)
+	o := testOptions()
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	c, cerr := New(config.Resolved{APIKey: "test-key", Organization: "test org"}, o)
 	if cerr != nil {
 		t.Fatalf("New: %v", cerr)
 	}
@@ -97,9 +100,6 @@ func TestGetCPUAvailabilityDropsGpuClasses(t *testing.T) {
 // The availability calls share the API transport, so a 429 is retried
 // before it is reported.
 func TestGetGpuAvailabilityRetries429(t *testing.T) {
-	old := restBackoff
-	restBackoff = []time.Duration{time.Millisecond}
-	t.Cleanup(func() { restBackoff = old })
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
@@ -109,6 +109,7 @@ func TestGetGpuAvailabilityRetries429(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv.URL)
+	c.backoff = []time.Duration{time.Millisecond}
 	_, cerr := c.GetGpuAvailability(t.Context(), AvailabilityRequest{GpuClasses: []string{"g"}})
 	if cerr == nil || cerr.Code != clierr.CodeRateLimited || ptr.Deref(cerr.HTTPStatus) != 429 {
 		t.Fatalf("error = %+v, want rate limited 429", cerr)

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
 	"slices"
 	"strings"
@@ -23,62 +22,100 @@ const (
 	DebugBodies                     // --debug=body: plus headers and bodies, redacted
 )
 
-var (
-	debugLevel DebugLevel
-	debugOut   io.Writer = os.Stderr
-)
+// Options configures one run's clients: the environment their base URLs come
+// from, what --debug reports and where, and the retry waits and clock tests
+// shorten or fix.
+type Options struct {
+	Getenv   func(string) string
+	Debug    DebugLevel
+	DebugOut io.Writer        // where --debug writes; nil discards
+	Backoff  []time.Duration  // the waits between retries after a 429; nil: 2s, 4s, 8s
+	Now      func() time.Time // the clock certificate messages read; nil: time.Now
+}
+
+// backoff is o's waits between retries after a 429.
+func (o Options) backoff() []time.Duration {
+	if o.Backoff != nil {
+		return o.Backoff
+	}
+	return []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second}
+}
+
+// clock is o's clock.
+func (o Options) clock() func() time.Time {
+	if o.Now != nil {
+		return o.Now
+	}
+	return time.Now
+}
+
+// debugger is o's --debug reporting.
+func (o Options) debugger() debugger {
+	out := o.DebugOut
+	if out == nil {
+		out = io.Discard
+	}
+	return debugger{level: o.Debug, out: out}
+}
+
+// debugger is how much --debug reports and where.
+type debugger struct {
+	level DebugLevel
+	out   io.Writer
+}
 
 // debugf writes a --debug line to stderr. A failed write there has nowhere to
 // be reported, so this, the one place --debug writes, drops its error.
-func debugf(format string, args ...any) {
+func (d debugger) debugf(format string, args ...any) {
 	line := fmt.Sprintf(format, args...)
-	_, _ = io.WriteString(debugOut, line) //nolint:errcheck // a failed write to stderr has nowhere to be reported
+	_, _ = io.WriteString(d.out, line) //nolint:errcheck // a failed write to stderr has nowhere to be reported
 }
 
 // closeBody closes a response body the CLI is done with. Its error says
 // nothing about the response, so it is only reported under --debug.
-func closeBody(body io.Closer) { closeFailed(body.Close()) }
+func (d debugger) closeBody(body io.Closer) { d.closeFailed(body.Close()) }
 
 // closeFailed reports, under --debug, a response body that did not close.
-func closeFailed(err error) {
-	if err != nil && debugLevel != DebugOff {
-		debugf("debug: closing a response body: %v\n", err)
+func (d debugger) closeFailed(err error) {
+	if err != nil && d.level != DebugOff {
+		d.debugf("debug: closing a response body: %v\n", err)
 	}
 }
 
-// SetDebug sets the --debug level for every request the CLI makes.
-func SetDebug(level DebugLevel) { debugLevel = level }
-
-// Debugging reports whether --debug is on, for detail the CLI keeps out of
-// its messages otherwise.
-func Debugging() bool { return debugLevel != DebugOff }
+// newHTTPClient is an HTTP client with timeout whose requests d reports.
+func newHTTPClient(timeout time.Duration, d debugger) *http.Client {
+	return &http.Client{Timeout: timeout, Transport: debugTransport{base: http.DefaultTransport, debugger: d}}
+}
 
 // debugTransport logs each request at the --debug level, then hands it to
 // the real transport. Credentials never reach the log: the key headers,
 // credential fields, header values and environment variable values in JSON
 // bodies, and signed S4 URL query strings are redacted.
-type debugTransport struct{ base http.RoundTripper }
+type debugTransport struct {
+	base http.RoundTripper
+	debugger
+}
 
 func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if debugLevel == DebugOff {
+	if d.level == DebugOff {
 		resp, err := d.base.RoundTrip(req)
 		if err != nil {
 			return nil, fmt.Errorf("no response: %w", err)
 		}
 		return resp, nil
 	}
-	if debugLevel >= DebugBodies {
-		debugf("debug: > %s %s\n", req.Method, redactText(req.URL.String()))
+	if d.level >= DebugBodies {
+		d.debugf("debug: > %s %s\n", req.Method, redactText(req.URL.String()))
 		for _, k := range sortedHeaderKeys(req.Header) {
-			debugf("debug: > %s: %s\n", k, redactHeader(k, req.Header.Get(k)))
+			d.debugf("debug: > %s: %s\n", k, redactHeader(k, req.Header.Get(k)))
 		}
-		debugf("debug: > %s\n", requestBodyForLog(req))
+		d.debugf("debug: > %s\n", d.requestBodyForLog(req))
 	}
 	start := time.Now()
 	resp, err := d.base.RoundTrip(req)
 	took := time.Since(start).Round(time.Millisecond)
 	if err != nil {
-		debugf("debug: %s %s -> error after %s: %v\n",
+		d.debugf("debug: %s %s -> error after %s: %v\n",
 			req.Method,
 			redactText(req.URL.String()),
 			took,
@@ -86,22 +123,22 @@ func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		)
 		return nil, fmt.Errorf("no response: %w", err)
 	}
-	debugf("debug: %s %s -> %d (%s)\n", req.Method, redactText(req.URL.String()), resp.StatusCode, took)
-	if debugLevel >= DebugBodies && resp.Body != nil {
+	d.debugf("debug: %s %s -> %d (%s)\n", req.Method, redactText(req.URL.String()), resp.StatusCode, took)
+	if d.level >= DebugBodies && resp.Body != nil {
 		body, rerr := io.ReadAll(resp.Body)
-		closeBody(resp.Body)
+		d.closeBody(resp.Body)
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 		if rerr != nil {
 			return nil, fmt.Errorf("reading the response for --debug: %w", rerr)
 		}
-		debugf("debug: < %s\n", redactBody(body))
+		d.debugf("debug: < %s\n", redactBody(body))
 	}
 	return resp, nil
 }
 
 // requestBodyForLog renders a request body for --debug=body without
 // consuming it. A multipart upload (a file to S4) is not shown.
-func requestBodyForLog(req *http.Request) string {
+func (d debugTransport) requestBodyForLog(req *http.Request) string {
 	if req.Body == nil || req.Body == http.NoBody {
 		return "(no body)"
 	}
@@ -115,7 +152,7 @@ func requestBodyForLog(req *http.Request) string {
 	if err != nil {
 		return "(body not shown)"
 	}
-	defer closeBody(rc)
+	defer d.closeBody(rc)
 	b, err := io.ReadAll(rc)
 	if err != nil {
 		return "(body not shown)"

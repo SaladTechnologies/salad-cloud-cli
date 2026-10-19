@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -17,7 +16,7 @@ func orgsClient(t *testing.T, h http.HandlerFunc) *Client {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
-	c, err := New(config.Resolved{APIKey: "k"}, os.Getenv)
+	c, err := New(config.Resolved{APIKey: "k"}, testOptions())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,9 +71,6 @@ func TestOrganizationsListingStopsOnARepeatedToken(t *testing.T) {
 // 403, a 404 or rows without names mean no list; rate limiting, a server
 // error or the network is that error.
 func TestOrganizationListingByStatus(t *testing.T) {
-	old := restBackoff
-	restBackoff = []time.Duration{time.Millisecond}
-	t.Cleanup(func() { restBackoff = old })
 	for _, tc := range []struct {
 		name   string
 		status int
@@ -98,6 +94,7 @@ func TestOrganizationListingByStatus(t *testing.T) {
 				w.WriteHeader(tc.status)
 				respond(t, w, tc.body)
 			})
+			c.backoff = []time.Duration{time.Millisecond}
 			list, err := c.OrganizationListing(t.Context())
 			if (list != nil) != tc.list {
 				t.Errorf("list = %v, want a list: %t", list, tc.list)
@@ -115,7 +112,7 @@ func TestOrganizationListingByStatus(t *testing.T) {
 	}
 	t.Run("network", func(t *testing.T) {
 		t.Setenv("SALAD_CLI_API_BASE_URL", "http://127.0.0.1:1")
-		c, cerr := New(config.Resolved{APIKey: "k"}, os.Getenv)
+		c, cerr := New(config.Resolved{APIKey: "k"}, testOptions())
 		if cerr != nil {
 			t.Fatal(cerr)
 		}

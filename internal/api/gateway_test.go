@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -13,10 +12,14 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
-func newTestGateway(t *testing.T, url string) *Gateway {
+func newTestGateway(t *testing.T, url string, opts ...Options) *Gateway {
 	t.Helper()
 	t.Setenv("SALAD_CLI_AI_GATEWAY_BASE_URL", url)
-	g, cerr := NewGateway(config.Resolved{GatewayAPIKey: "gw-key"}, os.Getenv)
+	o := testOptions()
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	g, cerr := NewGateway(config.Resolved{GatewayAPIKey: "gw-key"}, o)
 	if cerr != nil {
 		t.Fatalf("NewGateway: %v", cerr)
 	}
@@ -24,7 +27,7 @@ func newTestGateway(t *testing.T, url string) *Gateway {
 }
 
 func TestNewGatewayNeedsItsOwnKey(t *testing.T) {
-	_, cerr := NewGateway(config.Resolved{APIKey: "salad-api-key"}, os.Getenv)
+	_, cerr := NewGateway(config.Resolved{APIKey: "salad-api-key"}, testOptions())
 	if cerr == nil || cerr.Code != clierr.CodeAuth {
 		t.Fatalf("NewGateway without a gateway key = %v, want an auth error", cerr)
 	}

@@ -45,7 +45,7 @@ func complete(f completer) func(*cobra.Command, []string, string) ([]string, cob
 		if err != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		client, cerr := api.New(res, procEnv.Getenv)
+		client, cerr := api.New(res, apiOptions())
 		if cerr != nil {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}

@@ -408,7 +408,7 @@ func listOrganizations(ctx context.Context, key string) ([]api.Organization, *cl
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
-		procEnv.Getenv,
+		apiOptions(),
 	)
 	if cerr != nil {
 		return nil, cerr
@@ -449,7 +449,7 @@ func (l *login) checkOrganization(org string) (bool, *clierr.Error) {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
-		procEnv.Getenv,
+		apiOptions(),
 	)
 	if cerr != nil {
 		return false, cerr
@@ -685,7 +685,7 @@ func (l *login) checkProject(org, project string) (bool, *clierr.Error) {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
-		procEnv.Getenv,
+		apiOptions(),
 	)
 	if cerr != nil {
 		return false, cerr

@@ -115,7 +115,7 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 					SkippedProject:      "",
 					SkippedProjectOrg:   "",
 				},
-				procEnv.Getenv,
+				apiOptions(),
 			)
 			if cerr != nil {
 				return cerr

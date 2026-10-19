@@ -97,8 +97,8 @@ func TestRejectUnknownsGetResponseTellLeads(t *testing.T) {
 	}
 
 	// --debug adds the per-field list on stderr.
-	api.SetDebug(api.DebugRequests)
-	t.Cleanup(func() { api.SetDebug(api.DebugOff) })
+	debugLevel = api.DebugRequests
+	t.Cleanup(func() { debugLevel = api.DebugOff })
 	stderr := captureStderr(t, func() {
 		if rejectUnknowns(us) == nil {
 			t.Error("the unknown fields were not rejected")

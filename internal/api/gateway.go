@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
@@ -37,23 +38,36 @@ const GatewayPricingURL = "https://docs.salad.com/ai-gateway/reference/pricing"
 type Gateway struct {
 	key     string
 	baseURL string
+	http    *http.Client
+	dbg     debugger
+	now     func() time.Time
 }
 
 // NewGateway builds a Gateway from resolved configuration. It needs the
 // gateway key (not the SaladCloud API key). SALAD_CLI_AI_GATEWAY_BASE_URL overrides
 // the base URL (for tests).
-func NewGateway(res config.Resolved, getenv func(string) string) (*Gateway, *clierr.Error) {
+func NewGateway(res config.Resolved, opts Options) (*Gateway, *clierr.Error) {
 	if res.GatewayAPIKey == "" {
 		return nil, clierr.New(clierr.CodeAuth, clierr.KindAuth, "no AI Gateway key set").
 			WithHint("run saladcloud ai-gateway login in a terminal, or set SALAD_AI_GATEWAY_API_KEY")
 	}
-	return &Gateway{key: res.GatewayAPIKey, baseURL: gatewayBaseURL(getenv)}, nil
+	return newGateway(res.GatewayAPIKey, opts), nil
 }
 
 // NewPublicGateway builds a Gateway with no key, for the one public route:
 // the model list answers anyone the same.
-func NewPublicGateway(getenv func(string) string) *Gateway {
-	return &Gateway{baseURL: gatewayBaseURL(getenv), key: ""}
+func NewPublicGateway(opts Options) *Gateway { return newGateway("", opts) }
+
+// newGateway is a Gateway for key ("" for none) built with opts.
+func newGateway(key string, opts Options) *Gateway {
+	dbg := opts.debugger()
+	return &Gateway{
+		key:     key,
+		baseURL: gatewayBaseURL(opts.Getenv),
+		http:    newHTTPClient(restTimeout, dbg),
+		dbg:     dbg,
+		now:     opts.clock(),
+	}
 }
 
 // gatewayBaseURL is the gateway base URL in effect: the default, or
@@ -223,11 +237,11 @@ func gatewayJSON[T any](ctx context.Context, g *Gateway, method, path string, bo
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := restHTTPClient.Do(req)
+	resp, err := g.http.Do(req)
 	if err != nil {
-		return nil, transportErr(ctx, "network error", err)
+		return nil, transportErr(ctx, "network error", err, g.now)
 	}
-	defer closeBody(resp.Body)
+	defer g.dbg.closeBody(resp.Body)
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, readErr(ctx, "response", err)

@@ -26,31 +26,27 @@ import (
 // restTimeout bounds each API request.
 const restTimeout = 60 * time.Second
 
-// restRetries429 is the number of retries after a 429, with restBackoff sleeps.
-var restBackoff = []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second}
-
-var restHTTPClient = &http.Client{Timeout: restTimeout, Transport: debugTransport{http.DefaultTransport}}
-
 // Probe makes one unauthenticated GET and returns its status, through the
 // same transport as every other request (so --debug shows it and it carries
 // the User-Agent). doctor uses it to tell "unreachable" from "rejected".
-func Probe(ctx context.Context, target string) (int, error) {
+func Probe(ctx context.Context, target string, opts Options) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
 	if err != nil {
 		return 0, fmt.Errorf("building the probe: %w", err)
 	}
 	req.Header.Set("User-Agent", UserAgent)
-	resp, err := restHTTPClient.Do(req)
+	dbg := opts.debugger()
+	resp, err := newHTTPClient(restTimeout, dbg).Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("probing the API: %w", err)
 	}
-	closeFailed(resp.Body.Close())
+	dbg.closeFailed(resp.Body.Close())
 	return resp.StatusCode, nil
 }
 
 // restJSON performs one API request and decodes the JSON response into T.
 // contentType is used when body != nil ("" means application/json). 429s are
-// retried up to len(restBackoff) times, context-aware. Empty 2xx bodies
+// retried up to len(c.backoff) times, context-aware. Empty 2xx bodies
 // decode to the zero T (mutating verbs return 202 with no body). A 404 under
 // an assumed project that does not exist becomes AssumedProjectMissing.
 func restJSON[T any](ctx context.Context, c *Client, method, path, contentType string, body any) (*T, *clierr.Error) {
@@ -113,12 +109,12 @@ func doRestJSON[T any](ctx context.Context, c *Client, method, path, contentType
 			req.Header.Set("Content-Type", contentType)
 		}
 
-		resp, err := restHTTPClient.Do(req)
+		resp, err := c.http.Do(req)
 		if err != nil {
-			return nil, transportErr(ctx, "network error", err)
+			return nil, transportErr(ctx, "network error", err, c.now)
 		}
 		respBody, err := io.ReadAll(resp.Body)
-		closeFailed(resp.Body.Close())
+		c.dbg.closeFailed(resp.Body.Close())
 		if err != nil {
 			return nil, readErr(ctx, "response", err)
 		}
@@ -143,13 +139,13 @@ func doRestJSON[T any](ctx context.Context, c *Client, method, path, contentType
 		}
 
 		lastErr = errorFromBody(resp.StatusCode, respBody)
-		if resp.StatusCode != http.StatusTooManyRequests || attempt >= len(restBackoff) {
+		if resp.StatusCode != http.StatusTooManyRequests || attempt >= len(c.backoff) {
 			return nil, lastErr
 		}
 		select {
 		case <-ctx.Done():
 			return nil, clierr.Canceled() // Ctrl-C while waiting to retry
-		case <-time.After(restBackoff[attempt]):
+		case <-time.After(c.backoff[attempt]):
 		}
 	}
 }

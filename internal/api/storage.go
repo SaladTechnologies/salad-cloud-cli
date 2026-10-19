@@ -26,10 +26,6 @@ const DefaultStorageBaseURL = "https://storage-api.salad.com"
 // restTimeout — audio/video files are big.
 const storageTimeout = 10 * time.Minute
 
-// storageHTTPClient is dedicated to S4 so the upload timeout does not leak
-// into ordinary API requests.
-var storageHTTPClient = &http.Client{Timeout: storageTimeout, Transport: debugTransport{http.DefaultTransport}}
-
 // storageBaseURL resolves the S4 base URL, honoring the test override.
 func storageBaseURL(getenv func(string) string) string {
 	if override := getenv("SALAD_CLI_STORAGE_BASE_URL"); override != "" {
@@ -81,12 +77,12 @@ func (c *Client) UploadFile(
 	req.Header.Set("User-Agent", UserAgent)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 
-	resp, err := storageHTTPClient.Do(req)
+	resp, err := c.storageHTTP.Do(req)
 	if err != nil {
-		return "", transportErr(ctx, "network error uploading to storage", err)
+		return "", transportErr(ctx, "network error uploading to storage", err, c.now)
 	}
 	respBody, err := io.ReadAll(resp.Body)
-	closeFailed(resp.Body.Close())
+	c.dbg.closeFailed(resp.Body.Close())
 	if err != nil {
 		return "", readErr(ctx, "storage response", err)
 	}
@@ -124,15 +120,15 @@ func (c *Client) DeleteFile(ctx context.Context, remoteName string) *clierr.Erro
 	}
 	req.Header.Set("Salad-Api-Key", c.apiKey)
 	req.Header.Set("User-Agent", UserAgent)
-	resp, err := storageHTTPClient.Do(req)
+	resp, err := c.storageHTTP.Do(req)
 	if err != nil {
-		return transportErr(ctx, "network error deleting from storage", err)
+		return transportErr(ctx, "network error deleting from storage", err, c.now)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		body = nil // a body that cannot be read is no body: the status still decides
 	}
-	closeFailed(resp.Body.Close())
+	c.dbg.closeFailed(resp.Body.Close())
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return errorFromBody(resp.StatusCode, body)
 	}

@@ -16,6 +16,12 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 )
 
+// testOptions builds a test's clients from the process environment (the
+// tests point the base URLs at their servers with t.Setenv).
+func testOptions() Options {
+	return Options{Getenv: os.Getenv, Debug: DebugOff, DebugOut: nil, Backoff: nil, Now: nil}
+}
+
 // newRestTestClient points a Client (with org and project set) at an
 // httptest server via the same SALAD_CLI_API_BASE_URL override the CLI honors.
 func newRestTestClient(t *testing.T, baseURL string) *Client {
@@ -25,7 +31,7 @@ func newRestTestClient(t *testing.T, baseURL string) *Client {
 		APIKey:       "test-key",
 		Organization: "my-org",
 		Project:      "default",
-	}, os.Getenv)
+	}, testOptions())
 	if cerr != nil {
 		t.Fatalf("New: %v", cerr)
 	}
@@ -198,11 +204,6 @@ func TestDeleteGroupEmpty202Body(t *testing.T) {
 }
 
 func TestRetryOn429ThenSuccess(t *testing.T) {
-	// Shrink the package-level backoff schedule so the test is instant.
-	savedBackoff := restBackoff
-	restBackoff = []time.Duration{time.Microsecond, time.Microsecond, time.Microsecond}
-	defer func() { restBackoff = savedBackoff }()
-
 	var calls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
@@ -218,6 +219,7 @@ func TestRetryOn429ThenSuccess(t *testing.T) {
 	defer srv.Close()
 
 	c := newRestTestClient(t, srv.URL)
+	c.backoff = []time.Duration{time.Microsecond, time.Microsecond, time.Microsecond}
 	group, cerr := c.GetGroup(t.Context(), "my-app")
 	if cerr != nil {
 		t.Fatalf("GetGroup after 429: %v", cerr)
@@ -231,10 +233,6 @@ func TestRetryOn429ThenSuccess(t *testing.T) {
 }
 
 func TestRetriesExhaustedOn429(t *testing.T) {
-	savedBackoff := restBackoff
-	restBackoff = []time.Duration{time.Microsecond}
-	defer func() { restBackoff = savedBackoff }()
-
 	var calls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
@@ -243,6 +241,7 @@ func TestRetriesExhaustedOn429(t *testing.T) {
 	defer srv.Close()
 
 	c := newRestTestClient(t, srv.URL)
+	c.backoff = []time.Duration{time.Microsecond}
 	_, cerr := c.GetGroup(t.Context(), "my-app")
 	if cerr == nil {
 		t.Fatal("GetGroup = nil error, want rate_limited")

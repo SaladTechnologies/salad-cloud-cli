@@ -72,7 +72,7 @@ func newGateway() (*api.Gateway, *gatewayKey, *clierr.Error) {
 		res.GatewayAPIKey = key
 	}
 	saved := savedConfig()
-	g, cerr := api.NewGateway(res, procEnv.Getenv)
+	g, cerr := api.NewGateway(res, apiOptions())
 	return g, &gatewayKey{res.GatewayAPIKey, from, saved.GatewayAPIKey}, cerr
 }
 
@@ -176,7 +176,7 @@ every key, so no AI Gateway key is needed; with one set, it is sent.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			g, _, cerr := newGateway()
 			if cerr != nil && cerr.Code == clierr.CodeAuth {
-				g, cerr = api.NewPublicGateway(procEnv.Getenv), nil
+				g, cerr = api.NewPublicGateway(apiOptions()), nil
 			}
 			if cerr != nil {
 				return cerr

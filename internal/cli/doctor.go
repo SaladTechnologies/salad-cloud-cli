@@ -229,7 +229,7 @@ func (d *doctorRun) reachableRow() checkResult {
 	}
 	ctx, cancel := context.WithTimeout(d.ctx, 10*time.Second)
 	defer cancel()
-	if _, err := api.Probe(ctx, base+"/organizations/doctor-probe/gpu-classes"); err != nil {
+	if _, err := api.Probe(ctx, base+"/organizations/doctor-probe/gpu-classes", apiOptions()); err != nil {
 		var verr *tls.CertificateVerificationError
 		if errors.As(err, &verr) && len(verr.UnverifiedCertificates) > 0 &&
 			time.Now().Before(verr.UnverifiedCertificates[0].NotBefore) {
@@ -314,7 +314,7 @@ func (d *doctorRun) apiKeyRow() checkResult {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
-		procEnv.Getenv,
+		apiOptions(),
 	)
 	if cerr != nil {
 		return row(name, checkFail, cerr.Message, "")
@@ -381,7 +381,7 @@ func (d *doctorRun) checkOrg() *clierr.Error {
 				SkippedProject:      "",
 				SkippedProjectOrg:   "",
 			},
-			procEnv.Getenv,
+			apiOptions(),
 		)
 		if cerr == nil {
 			cerr = client.CheckOrg(d.ctx)
@@ -475,7 +475,7 @@ func (d *doctorRun) projectRow() checkResult {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
-		procEnv.Getenv,
+		apiOptions(),
 	)
 	if cerr == nil {
 		cerr = client.CheckProject(d.ctx)

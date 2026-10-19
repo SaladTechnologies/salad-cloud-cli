@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -34,12 +33,8 @@ func debugRun(t *testing.T, level DebugLevel) string {
 		respond(t, w, `{"secret_key":"s3cr3t"}`)
 	}))
 	defer srv.Close()
-	var buf bytes.Buffer
-	oldOut, oldLevel := debugOut, debugLevel
-	debugOut = &buf
-	SetDebug(level)
-	t.Cleanup(func() { debugOut, debugLevel = oldOut, oldLevel })
-	c := newTestClient(t, srv.URL)
+	buf, opts := debugCapture(t, level)
+	c := newTestClient(t, srv.URL, opts)
 	if _, cerr := c.GetWebhookSecret(t.Context()); cerr != nil {
 		t.Fatal(cerr)
 	}
@@ -74,15 +69,14 @@ func TestDebugOffLogsNothing(t *testing.T) {
 	}
 }
 
-// debugCapture sends --debug output at level to a buffer for one test.
-func debugCapture(t *testing.T, level DebugLevel) *bytes.Buffer {
+// debugCapture returns client options that send --debug output at level to
+// the returned buffer.
+func debugCapture(t *testing.T, level DebugLevel) (*bytes.Buffer, Options) {
 	t.Helper()
 	var buf bytes.Buffer
-	oldOut, oldLevel := debugOut, debugLevel
-	debugOut = &buf
-	SetDebug(level)
-	t.Cleanup(func() { debugOut, debugLevel = oldOut, oldLevel })
-	return &buf
+	opts := testOptions()
+	opts.Debug, opts.DebugOut = level, &buf
+	return &buf, opts
 }
 
 // A container group definition carries credentials in places no field name
@@ -95,9 +89,9 @@ func TestDebugBodiesRedactDefinitionSecrets(t *testing.T) {
 		respond(t, w, string(body))
 	}))
 	defer srv.Close()
-	buf := debugCapture(t, DebugBodies)
+	buf, opts := debugCapture(t, DebugBodies)
 	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
-	c, cerr := New(config.Resolved{APIKey: "test-key", Organization: "o", Project: "p"}, os.Getenv)
+	c, cerr := New(config.Resolved{APIKey: "test-key", Organization: "o", Project: "p"}, opts)
 	if cerr != nil {
 		t.Fatal(cerr)
 	}
@@ -128,8 +122,8 @@ func TestDebugBodiesRedactAuthorizationHeader(t *testing.T) {
 		respond(t, w, `{"object":"list","data":[]}`)
 	}))
 	defer srv.Close()
-	buf := debugCapture(t, DebugBodies)
-	if _, cerr := newTestGateway(t, srv.URL).ListModels(t.Context()); cerr != nil {
+	buf, opts := debugCapture(t, DebugBodies)
+	if _, cerr := newTestGateway(t, srv.URL, opts).ListModels(t.Context()); cerr != nil {
 		t.Fatal(cerr)
 	}
 	if out := buf.String(); !strings.Contains(out, "debug: > Authorization: REDACTED") ||
@@ -145,9 +139,9 @@ func TestDebugBodiesHideUploads(t *testing.T) {
 		respond(t, w, `{"url":"`+"http://"+r.Host+`/f.wav?token=t"}`)
 	}))
 	defer srv.Close()
-	buf := debugCapture(t, DebugBodies)
+	buf, opts := debugCapture(t, DebugBodies)
 	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
-	c := newTestClient(t, srv.URL)
+	c := newTestClient(t, srv.URL, opts)
 	_, cerr := c.UploadFile(
 		t.Context(),
 		"f.wav",
@@ -198,7 +192,7 @@ func TestUserAgentOnEveryClient(t *testing.T) {
 	if _, cerr := c.UploadFile(ctx, "f", strings.NewReader("x"), "text/plain", false, 0); cerr != nil {
 		t.Fatal(cerr)
 	}
-	must(Probe(ctx, srv.URL+"/probe"))(t)
+	must(Probe(ctx, srv.URL+"/probe", testOptions()))(t)
 	if len(got) != 4 {
 		t.Fatalf("saw %d requests, want 4", len(got))
 	}

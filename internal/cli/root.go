@@ -75,11 +75,11 @@ stderr as a single-line JSON document: {"error": {...}}, in yaml mode too.
 		}
 		switch d {
 		case "":
-			api.SetDebug(api.DebugOff)
+			debugLevel = api.DebugOff
 		case "requests":
-			api.SetDebug(api.DebugRequests)
+			debugLevel = api.DebugRequests
 		case "body":
-			api.SetDebug(api.DebugBodies)
+			debugLevel = api.DebugBodies
 		default:
 			return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --debug "%s"`, d).
 				WithHint("use --debug or --debug=body")
@@ -226,6 +226,14 @@ func noteTreeErr(err error) {
 	if err != nil {
 		treeErrs = append(treeErrs, err)
 	}
+}
+
+// debugLevel is the run's --debug level.
+var debugLevel api.DebugLevel
+
+// apiOptions is how the run's API clients are built.
+func apiOptions() api.Options {
+	return api.Options{Getenv: procEnv.Getenv, Debug: debugLevel, DebugOut: errw(), Backoff: nil, Now: nil}
 }
 
 // procEnv is the environment the run reads, the process's for now.
@@ -419,7 +427,7 @@ func NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *clierr.Error)
 		res.APIKey = key
 	}
 	assumedWarned.Store(false)
-	client, cerr := api.New(res, procEnv.Getenv)
+	client, cerr := api.New(res, apiOptions())
 	if cerr != nil {
 		return nil, res, cerr
 	}
@@ -487,7 +495,7 @@ func organizationGone(ctx context.Context, res config.Resolved) *clierr.Error {
 				SkippedProject:      "",
 				SkippedProjectOrg:   "",
 			},
-			procEnv.Getenv,
+			apiOptions(),
 		); cerr == nil {
 			if list, lerr := c.OrganizationListing(ctx); lerr == nil && list != nil {
 				names = list.OrgNames()

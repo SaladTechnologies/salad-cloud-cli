@@ -329,7 +329,7 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 		if fromProject != "" {
 			r.Project, r.ProjectSource = fromProject, "flag"
 		}
-		src, err := api.New(r, procEnv.Getenv)
+		src, err := api.New(r, apiOptions())
 		if err != nil {
 			return err
 		}

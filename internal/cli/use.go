@@ -107,7 +107,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
-		procEnv.Getenv,
+		apiOptions(),
 	)
 	if cerr != nil {
 		return cerr
@@ -148,7 +148,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 			SkippedProject:      "",
 			SkippedProjectOrg:   "",
 		},
-		procEnv.Getenv,
+		apiOptions(),
 	)
 	if cerr != nil {
 		return cerr

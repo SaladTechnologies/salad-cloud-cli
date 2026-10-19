@@ -232,7 +232,7 @@ func rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
 	// thing back as a patch, gets only its diagnosis and the command to start
 	// from; the per-field list goes to --debug.
 	if len(responseOnly) >= 3 {
-		if api.Debugging() {
+		if debugLevel != api.DebugOff {
 			fprintf(os.Stderr, "debug: %s; %s\n", full.Message, full.HintText())
 		}
 		return clierr.New(clierr.CodeInvalidInput, clierr.KindUnknownField,

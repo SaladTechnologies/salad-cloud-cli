@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
@@ -65,7 +64,7 @@ func TestRestJSONNumericEnumRetry(t *testing.T) {
 	}))
 	defer srv.Close()
 	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
-	client, cerr := New(config.Resolved{APIKey: "k", Organization: "o", Project: "p"}, os.Getenv)
+	client, cerr := New(config.Resolved{APIKey: "k", Organization: "o", Project: "p"}, testOptions())
 	if cerr != nil {
 		t.Fatalf("New: %v", cerr)
 	}

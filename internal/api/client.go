@@ -9,10 +9,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/logs"
@@ -40,6 +42,11 @@ type Client struct {
 	apiKey         string
 	baseURL        string
 	storageBaseURL string // S4's base URL, SALAD_CLI_STORAGE_BASE_URL or the default
+	http           *http.Client
+	storageHTTP    *http.Client // S4's own, so the upload timeout does not apply to API requests
+	dbg            debugger
+	backoff        []time.Duration
+	now            func() time.Time
 
 	// projectAssumed: the project is the "default" fallback, not set by a
 	// flag, the environment, or the config file.
@@ -67,13 +74,13 @@ type Client struct {
 // commands don't need them; use RequireOrg/RequireProject in those that do.
 // The base URL can be overridden via the SALAD_CLI_API_BASE_URL environment
 // variable (for testing).
-func New(res config.Resolved, getenv func(string) string) (*Client, *clierr.Error) {
+func New(res config.Resolved, opts Options) (*Client, *clierr.Error) {
 	if res.APIKey == "" {
 		return nil, clierr.New(clierr.CodeAuth, clierr.KindAuth, "no API key set").
 			WithHint("run saladcloud login in a terminal, or set SALAD_API_KEY")
 	}
 	baseURL := DefaultBaseURL
-	if override := getenv("SALAD_CLI_API_BASE_URL"); override != "" {
+	if override := opts.Getenv("SALAD_CLI_API_BASE_URL"); override != "" {
 		baseURL = override
 	}
 	return &Client{
@@ -81,7 +88,12 @@ func New(res config.Resolved, getenv func(string) string) (*Client, *clierr.Erro
 		project:          res.Project,
 		apiKey:           res.APIKey,
 		baseURL:          baseURL,
-		storageBaseURL:   storageBaseURL(getenv),
+		storageBaseURL:   storageBaseURL(opts.Getenv),
+		http:             newHTTPClient(restTimeout, opts.debugger()),
+		storageHTTP:      newHTTPClient(storageTimeout, opts.debugger()),
+		dbg:              opts.debugger(),
+		backoff:          opts.backoff(),
+		now:              opts.clock(),
 		projectAssumed:   res.ProjectSource == config.SourceDefault && res.Project == config.DefaultProject,
 		OnAssumedProject: nil,
 		assumedNoted:     sync.Once{},
