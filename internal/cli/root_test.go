@@ -63,31 +63,38 @@ func TestCommandLineErrorsHonourJSONMode(t *testing.T) {
 			if stdout != "" {
 				t.Errorf("stdout must be empty on error, got %q", stdout)
 			}
-			lines := strings.Split(strings.TrimRight(stderr, "\n"), "\n")
-			if len(lines) != 1 {
-				t.Fatalf("stderr = %q, want exactly one line", stderr)
-			}
-			var doc struct {
-				Error map[string]json.RawMessage `json:"error"`
-			}
-			if err := json.Unmarshal([]byte(lines[0]), &doc); err != nil {
-				t.Fatalf("stderr is not a JSON error document: %v\n%s", err, stderr)
-			}
-			for _, k := range []string{"exit_code", "kind", "message", "http_status"} {
-				if _, ok := doc.Error[k]; !ok {
-					t.Errorf("error key %q missing: %s", k, stderr)
-				}
-			}
-			if got := string(doc.Error["exit_code"]); got != "2" {
-				t.Errorf("exit_code = %s, want 2", got)
-			}
-			if got := string(doc.Error["kind"]); got != `"`+string(clierr.KindUsage)+`"` {
-				t.Errorf("kind = %s, want %q", got, clierr.KindUsage)
-			}
-			if got := string(doc.Error["http_status"]); got != "null" {
-				t.Errorf("http_status = %s, want null", got)
-			}
+			checkUsageErrorDocument(t, stderr)
 		})
+	}
+}
+
+// checkUsageErrorDocument checks that stderr is exactly one line, the JSON error document of a usage error that no
+// HTTP response caused.
+func checkUsageErrorDocument(t *testing.T, stderr string) {
+	t.Helper()
+	lines := strings.Split(strings.TrimRight(stderr, "\n"), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("stderr = %q, want exactly one line", stderr)
+	}
+	var doc struct {
+		Error map[string]json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &doc); err != nil {
+		t.Fatalf("stderr is not a JSON error document: %v\n%s", err, stderr)
+	}
+	for _, k := range []string{"exit_code", "kind", "message", "http_status"} {
+		if _, ok := doc.Error[k]; !ok {
+			t.Errorf("error key %q missing: %s", k, stderr)
+		}
+	}
+	if got := string(doc.Error["exit_code"]); got != "2" {
+		t.Errorf("exit_code = %s, want 2", got)
+	}
+	if got := string(doc.Error["kind"]); got != `"`+string(clierr.KindUsage)+`"` {
+		t.Errorf("kind = %s, want %q", got, clierr.KindUsage)
+	}
+	if got := string(doc.Error["http_status"]); got != "null" {
+		t.Errorf("http_status = %s, want null", got)
 	}
 }
 

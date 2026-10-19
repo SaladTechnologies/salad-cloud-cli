@@ -305,36 +305,45 @@ func (app *App) adoptOutputArg(args []string) {
 	if app.printer.Machine() {
 		return
 	}
-	mode := ""
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		var v string
-		switch {
-		case a == "--":
-			i = len(args)
-			continue
-		case a == "-o" || a == "--output":
-			if i+1 >= len(args) {
-				continue
-			}
-			i++
-			v = args[i]
-		case strings.HasPrefix(a, "--output="):
-			v = strings.TrimPrefix(a, "--output=")
-		case strings.HasPrefix(a, "-o") && !strings.HasPrefix(a, "--"):
-			v = strings.TrimPrefix(strings.TrimPrefix(a, "-o"), "=")
-		default:
-			continue
-		}
-		if v == "json" || v == "yaml" || v == "table" {
-			mode = v
-		}
-	}
-	if mode != "" {
+	if mode := lastOutputArg(args); mode != "" {
 		if cerr := app.printer.SetMode(mode); cerr != nil {
 			return // not reached: mode is one of the three modes
 		}
 	}
+}
+
+// lastOutputArg is the last valid -o/--output value on the raw command line args, ignoring the words after "--",
+// or "" when there is none.
+func lastOutputArg(args []string) string {
+	mode := ""
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--" {
+			break
+		}
+		v, consumed := outputArgValue(args[i], args[i+1:])
+		i += consumed
+		if v == "json" || v == "yaml" || v == "table" {
+			mode = v
+		}
+	}
+	return mode
+}
+
+// outputArgValue is the -o/--output value the argument a carries, or for a bare -o or --output, the next argument,
+// the first of rest, with 1 for the one argument it consumed (0 otherwise). An argument that is not -o carries "".
+func outputArgValue(a string, rest []string) (string, int) {
+	switch {
+	case a == "-o" || a == "--output":
+		if len(rest) == 0 {
+			return "", 0
+		}
+		return rest[0], 1
+	case strings.HasPrefix(a, "--output="):
+		return strings.TrimPrefix(a, "--output="), 0
+	case strings.HasPrefix(a, "-o") && !strings.HasPrefix(a, "--"):
+		return strings.TrimPrefix(strings.TrimPrefix(a, "-o"), "="), 0
+	}
+	return "", 0
 }
 
 func (app *App) printError(e *clierr.Error) {
@@ -375,25 +384,8 @@ func (app *App) NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *cl
 		return nil, config.Resolved{}, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
 			WithHint("fix or delete it")
 	}
-	// A name from a flag or variable that cannot be a URL name fails before
-	// any request, and so does a saved one that looks like a key; each only
-	// where the command reads it.
-	for _, n := range []struct {
-		kind, name, source, flag, env string
-		reads                         bool
-	}{
-		{"organization", res.Organization, res.OrganizationSource, "--org", envOrganization, readsOrg(cmd)},
-		{"project", res.Project, res.ProjectSource, "--project", envProject, readsProject(cmd)},
-	} {
-		switch {
-		case !n.reads || n.name == "":
-		case n.source == "flag" || n.source == "env":
-			if cerr := app.checkName(n.kind, n.name, originOf(n.source, n.flag, n.env)); cerr != nil {
-				return nil, res, cerr
-			}
-		case n.source == "config" && app.looksLikeKey(n.name):
-			return nil, res, keyLikeName(n.kind, "config")
-		}
+	if cerr := app.newClientCheckNames(cmd, &res); cerr != nil {
+		return nil, res, cerr
 	}
 	keyFrom := originOf(res.APIKeySource, "", envAPIKey)
 	if res.APIKey != "" {
@@ -414,6 +406,30 @@ func (app *App) NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *cl
 	ctx := cmd.Context()
 	client.OnOrgGone = func() *clierr.Error { return app.organizationGone(ctx, res) }
 	return client, res, nil
+}
+
+// newClientCheckNames is NewClient's check of the resolved names: a name from a flag or variable that cannot be a URL
+// name fails before any request, and so does a saved one that looks like a key; each only where the command reads
+// it.
+func (app *App) newClientCheckNames(cmd *cobra.Command, res *config.Resolved) *clierr.Error {
+	for _, n := range []struct {
+		kind, name, source, flag, env string
+		reads                         bool
+	}{
+		{"organization", res.Organization, res.OrganizationSource, "--org", envOrganization, readsOrg(cmd)},
+		{"project", res.Project, res.ProjectSource, "--project", envProject, readsProject(cmd)},
+	} {
+		switch {
+		case !n.reads || n.name == "":
+		case n.source == "flag" || n.source == "env":
+			if cerr := app.checkName(n.kind, n.name, originOf(n.source, n.flag, n.env)); cerr != nil {
+				return cerr
+			}
+		case n.source == "config" && app.looksLikeKey(n.name):
+			return keyLikeName(n.kind, "config")
+		}
+	}
+	return nil
 }
 
 // readsProject reports whether cmd uses the project: organization-scoped
