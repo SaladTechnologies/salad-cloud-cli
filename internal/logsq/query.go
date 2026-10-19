@@ -48,7 +48,7 @@ type Filters struct {
 // query-language syntax and passes through verbatim inside parentheses.
 func Compile(f Filters) (string, *clierr.Error) {
 	var b strings.Builder
-	if !writeScope(&b, f) {
+	if !writeScope(&b, &f) {
 		return "", clierr.New(
 			clierr.CodeUsage,
 			clierr.KindUsage,
@@ -62,8 +62,12 @@ func Compile(f Filters) (string, *clierr.Error) {
 	if f.MinSeverity != "" {
 		sev := strings.ToLower(f.MinSeverity)
 		if !validSeverity(sev) {
-			return "", clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, `invalid severity "%s"`, f.MinSeverity).
-				WithHint("use one of %s", strings.Join(Severities(), ", "))
+			return "", clierr.New(
+				clierr.CodeInvalidInput,
+				clierr.KindInvalidInput,
+				`invalid severity "%s"`,
+				f.MinSeverity,
+			).WithHint("use one of %s", strings.Join(Severities(), ", "))
 		}
 		b.WriteString(" and severity >= ")
 		b.WriteString(quoteValue(sev))
@@ -82,7 +86,7 @@ func Compile(f Filters) (string, *clierr.Error) {
 
 // writeScope writes the clause for f's scope, the narrowest of its group (within its project when that is set too),
 // project and organization, and reports false, writing nothing, when none is set.
-func writeScope(b *strings.Builder, f Filters) bool {
+func writeScope(b *strings.Builder, f *Filters) bool {
 	switch {
 	case f.Group != "":
 		b.WriteString("resource.labels.container_group_name = ")
@@ -112,7 +116,7 @@ func validSeverity(s string) bool {
 // everything else (newlines, unicode, ...) stays as-is inside the quotes.
 func quoteValue(s string) string {
 	var b strings.Builder
-	b.Grow(len(s) + 2)
+	b.Grow(len(s) + len(`""`))
 	b.WriteByte('"')
 	for i := range len(s) {
 		switch s[i] {

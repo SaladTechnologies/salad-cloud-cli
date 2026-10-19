@@ -92,7 +92,7 @@ func TestCompileEscaping(t *testing.T) {
 		{"only quotes", `"""`, `"\"\"\""`},
 		{"injection attempt", `x" or severity >= "default`, `"x\" or severity >= \"default"`},
 		{"sql-ish injection", `"; drop`, `"\"; drop"`},
-		{"unicode untouched", `héllo→世界`, `"héllo→世界"`},
+		{"unicode untouched", `héllo→世界`, `"héllo→世界"`}, //nolint:gosmopolitan // non-Latin text on purpose
 		{"newline kept as-is", "a\nb", "\"a\nb\""},
 		{"tab kept as-is", "a\tb", "\"a\tb\""},
 	}

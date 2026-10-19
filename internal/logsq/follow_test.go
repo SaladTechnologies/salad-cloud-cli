@@ -48,24 +48,34 @@ func staticQuery(t *testing.T) string {
 	return q
 }
 
-// runFollower wires a Follower with fakes and runs it to completion,
-// returning the follower itself so tests can inspect its seen map.
+// followRun is what runFollower saw: the entries emitted, the fetches made, the sleeps taken, and the follower
+// itself, so tests can inspect its seen map.
+type followRun struct {
+	emitted []Entry
+	calls   []fetchCall
+	sleeps  []time.Duration
+	f       *Follower
+}
+
+// runFollower wires a Follower with fakes and runs it to completion.
 func runFollower(
 	t *testing.T,
 	results []scriptedResult,
 	allowedSleeps int,
 	poll, maxBackoff, lookback time.Duration,
-) (emitted []Entry, calls []fetchCall, sleeps []time.Duration, f *Follower) {
+) followRun {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
+	var run followRun
 	clock := &fakeClock{now: followNow(), allowed: allowedSleeps, cancel: cancel}
-	fetch := scriptFetcher(results, &calls)
-	f = &Follower{Poll: poll, MaxBackoff: maxBackoff, Lookback: lookback, Clock: clock}
-	if err := f.Run(ctx, staticQuery(t), fetch, followSince(), 100, collectEmit(&emitted)); err != nil {
+	fetch := scriptFetcher(results, &run.calls)
+	run.f = &Follower{Poll: poll, MaxBackoff: maxBackoff, Lookback: lookback, Clock: clock}
+	if err := run.f.Run(ctx, staticQuery(t), fetch, followSince(), 100, collectEmit(&run.emitted)); err != nil {
 		t.Fatalf("Run returned %v, want nil on cancellation", err)
 	}
-	return emitted, calls, clock.sleeps, f
+	run.sleeps = clock.sleeps
+	return run
 }
 
 func page(items ...Entry) scriptedResult {
@@ -83,11 +93,12 @@ func TestFollowBacklogThenPolls(t *testing.T) {
 	e2 := ent("2026-03-01T09:55:00Z", "2026-03-01T09:55:30Z", "i1", "e2")
 	e3 := ent("2026-03-01T09:59:00Z", "2026-03-01T10:00:02Z", "i1", "e3")
 	e4 := ent("2026-03-01T10:00:06Z", "2026-03-01T10:00:07Z", "i1", "e4")
-	emitted, calls, _, _ := runFollower(t, []scriptedResult{
+	run := runFollower(t, []scriptedResult{
 		page(e1, e2), // backlog
 		page(e3),     // poll 1
 		page(e4),     // poll 2
 	}, 2, 5*time.Second, 0, 0)
+	emitted, calls := run.emitted, run.calls
 	assertTexts(t, emitted, "e1", "e2", "e3", "e4")
 	if len(calls) != 3 {
 		t.Fatalf("fetch called %d times, want 3", len(calls))
@@ -127,11 +138,12 @@ func TestFollowLookbackRescanSkipsSeen(t *testing.T) {
 	// keep coming back; the seen set must swallow them.
 	e1 := ent("2026-03-01T09:59:00Z", "2026-03-01T09:59:10Z", "i1", "e1")
 	e2 := ent("2026-03-01T09:59:30Z", "2026-03-01T09:59:40Z", "i1", "e2")
-	emitted, calls, _, _ := runFollower(t, []scriptedResult{
+	run := runFollower(t, []scriptedResult{
 		page(e1),     // backlog
 		page(e1, e2), // poll 1: e1 re-scanned, e2 new
 		page(e1, e2), // poll 2: both old news
 	}, 2, 5*time.Second, 0, 0)
+	emitted, calls := run.emitted, run.calls
 	assertTexts(t, emitted, "e1", "e2")
 	if len(calls) != 3 {
 		t.Fatalf("fetch called %d times, want 3", len(calls))
@@ -147,11 +159,12 @@ func TestFollowLateArrivalWithinLookbackEmitted(t *testing.T) {
 	// horizon's edge.
 	eNew := ent("2026-03-01T09:59:00Z", "2026-03-01T09:59:10Z", "i1", "eNew")
 	eLate := ent("2026-03-01T09:57:30Z", "2026-03-01T10:00:04Z", "i2", "eLate")
-	emitted, calls, _, _ := runFollower(t, []scriptedResult{
+	run := runFollower(t, []scriptedResult{
 		page(eNew),        // backlog
 		page(eLate, eNew), // poll 1: eLate arrived late, emission time within lookback
 		page(eLate, eNew), // poll 2
 	}, 2, 5*time.Second, 0, 0)
+	emitted, calls := run.emitted, run.calls
 	assertTexts(t, emitted, "eNew", "eLate")
 	for i := 1; i <= 2; i++ {
 		if want := "2026-03-01T09:57:00.000Z"; calls[i].start != want {
@@ -165,10 +178,11 @@ func TestFollowWindowStartNeverBeforeSince(t *testing.T) {
 	// With a lookback reaching further back than --since, the poll window
 	// clamps to since.
 	e1 := ent("2026-03-01T09:55:00Z", "2026-03-01T09:55:10Z", "i1", "e1")
-	_, calls, _, _ := runFollower(t, []scriptedResult{
+	run := runFollower(t, []scriptedResult{
 		page(e1), // backlog
 		page(),   // poll 1
 	}, 1, 5*time.Second, 0, 30*time.Minute)
+	calls := run.calls
 	if want := "2026-03-01T09:50:00.000Z"; calls[1].start != want {
 		t.Errorf("poll window start = %s, want %s (clamped to since)", calls[1].start, want)
 	}
@@ -179,11 +193,12 @@ func TestFollowEmptyPollsKeepWindow(t *testing.T) {
 	// Empty polls advance nothing: the window keeps sliding from the same
 	// max seen emission time, and the seen set is retained.
 	e1 := ent("2026-03-01T09:59:00Z", "2026-03-01T09:59:10Z", "i1", "e1")
-	emitted, calls, _, f := runFollower(t, []scriptedResult{
+	run := runFollower(t, []scriptedResult{
 		page(e1), // backlog
 		page(),   // poll 1: nothing new
 		page(),   // poll 2: nothing new
 	}, 2, 5*time.Second, 0, 0)
+	emitted, calls, f := run.emitted, run.calls, run.f
 	assertTexts(t, emitted, "e1")
 	for i := 1; i <= 2; i++ {
 		if want := "2026-03-01T09:57:00.000Z"; calls[i].start != want {
@@ -206,11 +221,12 @@ func TestFollowSeenMapPruned(t *testing.T) {
 	// map so memory stays bounded.
 	eOld := ent("2026-03-01T09:51:00Z", "2026-03-01T09:51:10Z", "i1", "eOld")
 	eNew := ent("2026-03-01T09:59:00Z", "2026-03-01T09:59:10Z", "i1", "eNew")
-	emitted, _, _, f := runFollower(t, []scriptedResult{
+	run := runFollower(t, []scriptedResult{
 		page(eOld), // backlog; max seen 09:51 → poll 1 window clamps to since
 		page(eNew), // poll 1: max seen 09:59 → poll 2 window starts 09:57
 		page(),     // poll 2: prune drops eOld (09:51 < 09:57 - 1s)
 	}, 2, 5*time.Second, 0, 0)
+	emitted, f := run.emitted, run.f
 	assertTexts(t, emitted, "eOld", "eNew")
 	if len(f.seen) != 1 {
 		t.Fatalf("seen map has %d keys after pruning, want 1: %v", len(f.seen), f.seen)
@@ -225,13 +241,14 @@ func TestFollowRateLimitBacksOffThenRecovers(t *testing.T) {
 	e1 := ent("2026-03-01T09:59:00Z", "2026-03-01T09:59:10Z", "i1", "e1")
 	e2 := ent("2026-03-01T10:00:20Z", "2026-03-01T10:00:21Z", "i1", "e2")
 	rl := scriptedResult{err: clierr.New(clierr.CodeRateLimited, clierr.KindRateLimited, "429")}
-	emitted, calls, sleeps, _ := runFollower(t, []scriptedResult{
+	run := runFollower(t, []scriptedResult{
 		page(e1), // backlog
 		rl,       // poll 1: rate limited -> poll doubles to 8s
 		rl,       // poll 2: rate limited again -> 16s capped at 10s
 		page(e2), // poll 3: success -> poll restores to 4s
 		page(),   // poll 4: empty
 	}, 4, 4*time.Second, 10*time.Second, 0)
+	emitted, calls, sleeps := run.emitted, run.calls, run.sleeps
 	assertTexts(t, emitted, "e1", "e2")
 	if len(calls) != 5 {
 		t.Fatalf("fetch called %d times, want 5 (rate limiting must not exit the loop)", len(calls))
@@ -251,7 +268,8 @@ func TestFollowCancelReturnsNil(t *testing.T) {
 	t.Parallel()
 	e1 := ent("2026-03-01T09:59:00Z", "2026-03-01T09:59:10Z", "i1", "e1")
 	// allowed = 0: the very first sleep after the backlog is canceled.
-	emitted, calls, _, _ := runFollower(t, []scriptedResult{page(e1)}, 0, 5*time.Second, 0, 0)
+	run := runFollower(t, []scriptedResult{page(e1)}, 0, 5*time.Second, 0, 0)
+	emitted, calls := run.emitted, run.calls
 	assertTexts(t, emitted, "e1")
 	if len(calls) != 1 {
 		t.Fatalf("fetch called %d times, want 1 (backlog only)", len(calls))

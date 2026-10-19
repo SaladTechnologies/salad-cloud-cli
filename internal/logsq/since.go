@@ -25,7 +25,10 @@ func ParseTimeRef(s string, now time.Time) (time.Time, *clierr.Error) {
 		}
 	}
 	return time.Time{}, clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid time reference "%s"`, s).
-		WithHint("use a duration like 15m, 2h or 3d, an RFC3339 timestamp like 2026-01-02T15:04:05Z, or a date like 2026-01-02")
+		WithHint(
+			"use a duration like 15m, 2h or 3d, an RFC3339 timestamp like 2026-01-02T15:04:05Z, " +
+				"or a date like 2026-01-02",
+		)
 }
 
 // matchTimeRef is ParseTimeRef for a non-empty s, trying each accepted form in turn; ok is false when none fits.
@@ -42,6 +45,9 @@ func matchTimeRef(s string, now time.Time) (time.Time, bool) {
 	return time.Time{}, false
 }
 
+// hoursPerDay is how many hours a day ("d") in a duration stands for.
+const hoursPerDay = 24
+
 // expandDays rewrites a leading whole-day component of a duration as hours ("1d12h" is "24h12h"), leaving
 // anything else as it is.
 func expandDays(s string) string {
@@ -53,5 +59,5 @@ func expandDays(s string) string {
 	if _, err := fmt.Sscanf(m[1], "%d", &days); err != nil {
 		return s
 	}
-	return fmt.Sprintf("%dh%s", days*24, m[2])
+	return fmt.Sprintf("%dh%s", days*hoursPerDay, m[2])
 }

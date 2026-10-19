@@ -50,8 +50,8 @@ func collectEmit(got *[]Entry) func(Entry) error {
 
 func texts(entries []Entry) []string {
 	out := make([]string, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, e.Text)
+	for i := range entries {
+		out = append(out, entries[i].Text)
 	}
 	return out
 }
@@ -347,7 +347,8 @@ func realisticFetcher(t *testing.T, all []Entry) Fetcher {
 			return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "bad start %q: %v", start, err)
 		}
 		page := &Page{}
-		for _, e := range all {
+		for i := range all {
+			e := &all[i]
 			emitted, err := time.Parse(time.RFC3339Nano, e.Time)
 			if err != nil {
 				t.Error(err)
@@ -356,7 +357,7 @@ func realisticFetcher(t *testing.T, all []Entry) Fetcher {
 			if emitted.Before(from) {
 				continue
 			}
-			page.Items = append(page.Items, e)
+			page.Items = append(page.Items, *e)
 			if len(page.Items) == pageSize {
 				break
 			}

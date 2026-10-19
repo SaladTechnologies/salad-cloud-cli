@@ -2,7 +2,7 @@ package logsq
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -51,7 +51,7 @@ func DedupKey(e Entry) string {
 			jsonPart = fmt.Sprintf("%v", e.JSON)
 		}
 	}
-	h := sha1.Sum([]byte(e.Time + "\x00" + e.ReceiveTime + "\x00" + e.InstanceID + "\x00" + e.Text + jsonPart))
+	h := sha256.Sum256([]byte(e.Time + "\x00" + e.ReceiveTime + "\x00" + e.InstanceID + "\x00" + e.Text + jsonPart))
 	return hex.EncodeToString(h[:])
 }
 
@@ -160,7 +160,8 @@ func skipStalledMillisecond(
 	warnLine func(string),
 ) time.Time {
 	warn(warnLine, fmt.Sprintf(
-		"warning: more than %d log entries share the millisecond at %s; skipping ahead 1ms (some entries in that millisecond may be missed)",
+		"warning: more than %d log entries share the millisecond at %s; "+
+			"skipping ahead 1ms (some entries in that millisecond may be missed)",
 		pageSize,
 		FormatRequestTime(cur),
 	))
@@ -174,8 +175,10 @@ func skipStalledMillisecond(
 }
 
 // newestEntryTime returns the latest parseable emission Time among items,
-// in UTC; ok is false when none parses.
-func newestEntryTime(items []Entry) (newest time.Time, ok bool) {
+// in UTC; the second result is false when none parses.
+func newestEntryTime(items []Entry) (time.Time, bool) {
+	var newest time.Time
+	ok := false
 	for i := range items {
 		t, err := time.Parse(time.RFC3339Nano, items[i].Time)
 		if err != nil {
