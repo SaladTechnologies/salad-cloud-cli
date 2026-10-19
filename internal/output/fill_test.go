@@ -48,6 +48,7 @@ func fill(t *testing.T, v any) string {
 }
 
 func TestFillZeroValue(t *testing.T) {
+	t.Parallel()
 	got := fill(t, fillOuter{})
 	want := `{"base":null,"name":null,"count":null,"list":[],"labels":{},"nested":null,"ByKey":null,` +
 		`"any":null,"custom":null,"bytes":null,"null":null,"shady":null}`
@@ -57,6 +58,7 @@ func TestFillZeroValue(t *testing.T) {
 }
 
 func TestFillRecursesAndKeepsWrittenKeys(t *testing.T) {
+	t.Parallel()
 	s := "x"
 	v := fillOuter{
 		Name:   &s,
@@ -78,6 +80,7 @@ func TestFillRecursesAndKeepsWrittenKeys(t *testing.T) {
 
 // A null or empty value the CLI wrote on purpose is not replaced.
 func TestFillLeavesExplicitValues(t *testing.T) {
+	t.Parallel()
 	type own struct {
 		Unknown []string          `json:"unknown"`
 		Empty   []string          `json:"empty"`
@@ -90,6 +93,7 @@ func TestFillLeavesExplicitValues(t *testing.T) {
 }
 
 func TestFillPreservesNumbersAndEscapes(t *testing.T) {
+	t.Parallel()
 	type nums struct {
 		Big  int64   `json:"big"`
 		F    float64 `json:"f"`
@@ -107,6 +111,7 @@ func TestFillPreservesNumbersAndEscapes(t *testing.T) {
 }
 
 func TestFillTopLevelSlice(t *testing.T) {
+	t.Parallel()
 	got := fill(t, []fillInner{{}})
 	if want := `[{"id":null,"tags":[]}]`; got != want {
 		t.Errorf("got %s, want %s", got, want)
@@ -117,6 +122,7 @@ func TestFillTopLevelSlice(t *testing.T) {
 }
 
 func TestEmitAndStreamFill(t *testing.T) {
+	t.Parallel()
 	p, buf := capture(t)
 	if err := p.SetMode("json"); err != nil {
 		t.Fatal(err)
@@ -154,6 +160,7 @@ func (n *nullable[T]) MarshalJSON() ([]byte, error) {
 }
 
 func TestFillReachesThroughNullable(t *testing.T) {
+	t.Parallel()
 	type probe struct {
 		Probe *nullable[fillInner] `json:"probe,omitempty"`
 		Null  *nullable[fillInner] `json:"null,omitempty"`
@@ -168,6 +175,7 @@ func TestFillReachesThroughNullable(t *testing.T) {
 // MarshalRequest keeps the empty lists and maps a value set, which omitempty
 // drops, and adds nothing the value did not hold.
 func TestMarshalRequestKeepsSetEmpties(t *testing.T) {
+	t.Parallel()
 	enc := func(v any) string {
 		t.Helper()
 		data, err := MarshalRequest(v)

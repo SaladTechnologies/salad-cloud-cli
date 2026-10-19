@@ -20,6 +20,7 @@ import (
 // that were silently accepted before strict.go existed (the SDK structs'
 // custom Unmarshaler bypasses yaml.UnmarshalStrict's field checking).
 func TestCheckUnknownFields(t *testing.T) {
+	t.Parallel()
 	createT := reflect.TypeFor[containergroups.ContainerGroupCreationRequest]()
 	patchT := reflect.TypeFor[containergroups.ContainerGroupPatch]()
 	jobT := reflect.TypeFor[inferenceendpoints.InferenceEndpointJobPrototype]()
@@ -83,6 +84,7 @@ func TestCheckUnknownFields(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			cerr := CheckUnknownFields([]byte(tc.doc), tc.t)
 			if tc.wantErr == "" {
 				if cerr != nil {
@@ -103,6 +105,7 @@ func TestCheckUnknownFields(t *testing.T) {
 // TestUnknownFieldList covers lenient mode: all unknowns collected, array
 // membership flagged (create cannot graft those; update can).
 func TestUnknownFieldList(t *testing.T) {
+	t.Parallel()
 	createT := reflect.TypeFor[containergroups.ContainerGroupCreationRequest]()
 	doc := `{
 		"name": "a",
@@ -137,6 +140,7 @@ func TestUnknownFieldList(t *testing.T) {
 // request (overlay) wins per key, the user's unknown fields (base) survive,
 // arrays replace wholesale.
 func TestMergeJSON(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, base, overlay, want string
 	}{
@@ -167,6 +171,7 @@ func TestMergeJSON(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got, cerr := MergeJSON([]byte(tc.base), []byte(tc.overlay))
 			if cerr != nil {
 				t.Fatalf("MergeJSON: %v", cerr)
@@ -189,6 +194,7 @@ func TestMergeJSON(t *testing.T) {
 // TestLoadLenient: unknown fields are returned rather than rejected, and
 // the raw document still carries them.
 func TestLoadLenient(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "def.json")
 	doc := `{"name":"demo","future_field":1,"container":{"image":"busybox"}}`
@@ -217,6 +223,7 @@ func TestLoadLenient(t *testing.T) {
 // their values, arrays and maps are walked against their element types,
 // and free-form fields pass through.
 func TestFilterTree(t *testing.T) {
+	t.Parallel()
 	patchT := reflect.TypeFor[containergroups.ContainerGroupPatch]()
 	doc := map[string]any{
 		"replicas":        float64(2),
@@ -265,6 +272,7 @@ func TestFilterTree(t *testing.T) {
 // candidates yields no hint (an unconfident hint would withhold the escape
 // hatch from a field that might be real).
 func TestSuggestField(t *testing.T) {
+	t.Parallel()
 	fields := map[string]reflect.Type{
 		"replicas": nil, "name": nil, "scaling-actions": nil, "cpu": nil, "gpu": nil, "memory": nil,
 	}
@@ -287,6 +295,7 @@ func TestSuggestField(t *testing.T) {
 }
 
 func TestEditDistance(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		a, b string
 		want int

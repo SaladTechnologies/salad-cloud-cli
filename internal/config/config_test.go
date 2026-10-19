@@ -9,49 +9,53 @@ import (
 	"testing"
 )
 
-// clearEnv blanks every env var Resolve reads so ambient values on the
-// machine running the tests cannot leak in.
-func clearEnv(t *testing.T) {
+// testEnv is an Env that reads only vars, with the config file in a fresh
+// temp dir unless vars names one, so nothing on the machine running the
+// tests leaks in. A test changes a variable by setting it in vars.
+func testEnv(t *testing.T, vars map[string]string) Env {
 	t.Helper()
-	t.Setenv("SALAD_API_KEY", "")
-	t.Setenv("SALAD_ORGANIZATION", "")
-	t.Setenv("SALAD_PROJECT", "")
-	t.Setenv("SALAD_AI_GATEWAY_API_KEY", "")
+	if _, ok := vars["SALAD_CLI_CONFIG_DIR"]; !ok {
+		vars["SALAD_CLI_CONFIG_DIR"] = t.TempDir()
+	}
+	return Env{Getenv: func(k string) string { return vars[k] }, GOOS: runtime.GOOS}
 }
 
 func TestPathHonorsConfigDirOverride(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SALAD_CLI_CONFIG_DIR", dir)
-	p, err := Path(ProcessEnv())
+	env := testEnv(t, map[string]string{"SALAD_CLI_CONFIG_DIR": dir})
+	p, err := Path(env)
 	if err != nil {
-		t.Fatalf("Path(ProcessEnv()) error: %v", err)
+		t.Fatalf("Path(env) error: %v", err)
 	}
 	want := filepath.Join(dir, "config.json")
 	if p != want {
-		t.Errorf("Path(ProcessEnv()) = %q, want %q", p, want)
+		t.Errorf("Path(env) = %q, want %q", p, want)
 	}
 }
 
 func TestLoadMissingFile(t *testing.T) {
-	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	f, err := Load(ProcessEnv())
+	t.Parallel()
+	env := testEnv(t, map[string]string{})
+	f, err := Load(env)
 	if err != nil {
-		t.Fatalf("Load(ProcessEnv()) on missing file: %v", err)
+		t.Fatalf("Load(env) on missing file: %v", err)
 	}
 	if f != (File{}) {
-		t.Errorf("Load(ProcessEnv()) = %+v, want zero File", f)
+		t.Errorf("Load(env) = %+v, want zero File", f)
 	}
 }
 
 func TestLoadCorruptFile(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SALAD_CLI_CONFIG_DIR", dir)
+	env := testEnv(t, map[string]string{"SALAD_CLI_CONFIG_DIR": dir})
 	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Load(ProcessEnv())
+	_, err := Load(env)
 	if err == nil {
-		t.Fatal("Load(ProcessEnv()) on corrupt file: want error, got nil")
+		t.Fatal("Load(env) on corrupt file: want error, got nil")
 	}
 	// The message names the file and the reason; each command adds the fix
 	// (every command loads the config, so a corrupt file blocks even
@@ -64,14 +68,15 @@ func TestLoadCorruptFile(t *testing.T) {
 }
 
 func TestSaveThenLoadRoundTrip(t *testing.T) {
-	t.Setenv("SALAD_CLI_CONFIG_DIR", filepath.Join(t.TempDir(), "nested"))
+	t.Parallel()
+	env := testEnv(t, map[string]string{"SALAD_CLI_CONFIG_DIR": filepath.Join(t.TempDir(), "nested")})
 	want := File{APIKey: "salad_cloud_key", Organization: "my-org", Project: "my-project"}
-	if err := Save(ProcessEnv(), want); err != nil {
-		t.Fatalf("Save(ProcessEnv(), ) error: %v", err)
+	if err := Save(env, want); err != nil {
+		t.Fatalf("Save(env) error: %v", err)
 	}
-	got, err := Load(ProcessEnv())
+	got, err := Load(env)
 	if err != nil {
-		t.Fatalf("Load(ProcessEnv()) error: %v", err)
+		t.Fatalf("Load(env) error: %v", err)
 	}
 	if got != want {
 		t.Errorf("round trip = %+v, want %+v", got, want)
@@ -79,6 +84,7 @@ func TestSaveThenLoadRoundTrip(t *testing.T) {
 }
 
 func TestResolvePrecedence(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                string
 		fileOrg, envOrg     string
@@ -100,19 +106,20 @@ func TestResolvePrecedence(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clearEnv(t)
-			t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
+			t.Parallel()
+			vars := map[string]string{}
+			env := testEnv(t, vars)
 			if tt.fileOrg != "" {
-				if err := Save(ProcessEnv(), File{Organization: tt.fileOrg}); err != nil {
+				if err := Save(env, File{Organization: tt.fileOrg}); err != nil {
 					t.Fatal(err)
 				}
 			}
 			if tt.envOrg != "" {
-				t.Setenv("SALAD_ORGANIZATION", tt.envOrg)
+				vars["SALAD_ORGANIZATION"] = tt.envOrg
 			}
-			r, err := Resolve(ProcessEnv(), tt.flagOrg, "")
+			r, err := Resolve(env, tt.flagOrg, "")
 			if err != nil {
-				t.Fatalf("Resolve(ProcessEnv(), ) error: %v", err)
+				t.Fatalf("Resolve(env) error: %v", err)
 			}
 			if r.Organization != tt.wantOrg {
 				t.Errorf("Organization = %q, want %q", r.Organization, tt.wantOrg)
@@ -125,20 +132,21 @@ func TestResolvePrecedence(t *testing.T) {
 }
 
 func TestResolveAllFields(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
+	t.Parallel()
+	vars := map[string]string{}
+	env := testEnv(t, vars)
 	if err := Save(
-		ProcessEnv(),
+		env,
 		File{APIKey: "file-key", Organization: "file-org", Project: "file-project"},
 	); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("SALAD_API_KEY", "env-key")
-	t.Setenv("SALAD_PROJECT", "env-project")
+	vars["SALAD_API_KEY"] = "env-key"
+	vars["SALAD_PROJECT"] = "env-project"
 
-	r, err := Resolve(ProcessEnv(), "flag-org", "")
+	r, err := Resolve(env, "flag-org", "")
 	if err != nil {
-		t.Fatalf("Resolve(ProcessEnv(), ) error: %v", err)
+		t.Fatalf("Resolve(env) error: %v", err)
 	}
 	// API key has no flag: env beats config.
 	if r.APIKey != "env-key" || r.APIKeySource != "env" {
@@ -153,45 +161,47 @@ func TestResolveAllFields(t *testing.T) {
 }
 
 func TestResolveMissingEverything(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
+	t.Parallel()
+	vars := map[string]string{}
+	env := testEnv(t, vars)
 
-	r, err := Resolve(ProcessEnv(), "", "")
+	r, err := Resolve(env, "", "")
 	if err != nil {
-		t.Fatalf("Resolve(ProcessEnv(), ) error: %v", err)
+		t.Fatalf("Resolve(env) error: %v", err)
 	}
 	// Everything empty — except the project, which falls back to "default"
 	// and says so in its source.
 	want := Resolved{Project: DefaultProject, ProjectSource: SourceDefault}
 	if r != want {
-		t.Errorf("Resolve(ProcessEnv(), ) = %+v, want %+v", r, want)
+		t.Errorf("Resolve(env) = %+v, want %+v", r, want)
 	}
 }
 
 // TestResolveProjectFallback: the "default" fallback is the lowest tier —
 // any flag, env, or file value beats it, and the source names it.
 func TestResolveProjectFallback(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
+	t.Parallel()
+	vars := map[string]string{}
+	env := testEnv(t, vars)
 
-	r := must(Resolve(ProcessEnv(), "", ""))(t)
+	r := must(Resolve(env, "", ""))(t)
 	if r.Project != "default" || r.ProjectSource != SourceDefault {
 		t.Errorf("no project anywhere: %q (%q), want default (default)", r.Project, r.ProjectSource)
 	}
-	t.Setenv("SALAD_PROJECT", "env-project")
-	r = must(Resolve(ProcessEnv(), "", ""))(t)
+	vars["SALAD_PROJECT"] = "env-project"
+	r = must(Resolve(env, "", ""))(t)
 	if r.Project != "env-project" || r.ProjectSource != "env" {
 		t.Errorf("env should beat the fallback: %q (%q)", r.Project, r.ProjectSource)
 	}
-	r = must(Resolve(ProcessEnv(), "", "flag-project"))(t)
+	r = must(Resolve(env, "", "flag-project"))(t)
 	if r.Project != "flag-project" || r.ProjectSource != "flag" {
 		t.Errorf("flag should beat everything: %q (%q)", r.Project, r.ProjectSource)
 	}
-	t.Setenv("SALAD_PROJECT", "")
-	if err := Save(ProcessEnv(), File{Project: "file-project"}); err != nil {
+	vars["SALAD_PROJECT"] = ""
+	if err := Save(env, File{Project: "file-project"}); err != nil {
 		t.Fatal(err)
 	}
-	r = must(Resolve(ProcessEnv(), "", ""))(t)
+	r = must(Resolve(env, "", ""))(t)
 	if r.Project != "file-project" || r.ProjectSource != "config" {
 		t.Errorf("config should beat the fallback: %q (%q)", r.Project, r.ProjectSource)
 	}
@@ -204,20 +214,21 @@ func TestResolveProjectFallback(t *testing.T) {
 // TestGatewayKey: the AI Gateway key is its own credential — round-trips
 // through the file, honors the docs' env var name, env beats config.
 func TestGatewayKey(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	if err := Save(ProcessEnv(), File{GatewayAPIKey: "file-gw"}); err != nil {
+	t.Parallel()
+	vars := map[string]string{}
+	env := testEnv(t, vars)
+	if err := Save(env, File{GatewayAPIKey: "file-gw"}); err != nil {
 		t.Fatal(err)
 	}
-	r, err := Resolve(ProcessEnv(), "", "")
+	r, err := Resolve(env, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if r.GatewayAPIKey != "file-gw" || r.GatewayAPIKeySource != "config" {
 		t.Errorf("from file: %q (%q)", r.GatewayAPIKey, r.GatewayAPIKeySource)
 	}
-	t.Setenv("SALAD_AI_GATEWAY_API_KEY", "env-gw")
-	r = must(Resolve(ProcessEnv(), "", ""))(t)
+	vars["SALAD_AI_GATEWAY_API_KEY"] = "env-gw"
+	r = must(Resolve(env, "", ""))(t)
 	if r.GatewayAPIKey != "env-gw" || r.GatewayAPIKeySource != "env" {
 		t.Errorf("env should win: %q (%q)", r.GatewayAPIKey, r.GatewayAPIKeySource)
 	}
@@ -231,8 +242,9 @@ func TestGatewayKey(t *testing.T) {
 // content is replaced whole, the file stays 0600, and no temp file is left
 // behind.
 func TestSaveReplacesAtomically(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
-	t.Setenv("SALAD_CLI_CONFIG_DIR", dir)
+	env := testEnv(t, map[string]string{"SALAD_CLI_CONFIG_DIR": dir})
 	p := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(
 		p,
@@ -246,7 +258,7 @@ func TestSaveReplacesAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := File{Organization: "new-org"}
-	if err := Save(ProcessEnv(), want); err != nil {
+	if err := Save(env, want); err != nil {
 		t.Fatal(err)
 	}
 	// A rename puts a new file in place; an in-place write keeps the old
@@ -256,7 +268,7 @@ func TestSaveReplacesAtomically(t *testing.T) {
 	if after, err := os.Stat(p); runtime.GOOS != "windows" && (err != nil || os.SameFile(before, after)) {
 		t.Error("Save rewrote the file in place (same file before and after); want a temp file renamed over it")
 	}
-	if got, err := Load(ProcessEnv()); err != nil || got != want {
+	if got, err := Load(env); err != nil || got != want {
 		t.Errorf("Load after Save = %+v, %v; want %+v", got, err, want)
 	}
 	data := must(os.ReadFile(p))(t)
@@ -278,9 +290,12 @@ func TestSaveReplacesAtomically(t *testing.T) {
 // flag or the environment gets the fallback, and the skipped project is
 // reported. An explicit project still wins either way.
 func TestResolveSavedProjectBelongsToItsOrg(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	if err := Save(ProcessEnv(), File{Organization: "org-a", Project: "prod"}); err != nil {
+	t.Parallel()
+	dir := t.TempDir()
+	if err := Save(
+		testEnv(t, map[string]string{"SALAD_CLI_CONFIG_DIR": dir}),
+		File{Organization: "org-a", Project: "prod"},
+	); err != nil {
 		t.Fatal(err)
 	}
 	cases := []struct {
@@ -295,8 +310,9 @@ func TestResolveSavedProjectBelongsToItsOrg(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("SALAD_ORGANIZATION", tc.orgEnv)
-			r, err := Resolve(ProcessEnv(), tc.orgFlag, tc.projectFlag)
+			t.Parallel()
+			env := testEnv(t, map[string]string{"SALAD_CLI_CONFIG_DIR": dir, "SALAD_ORGANIZATION": tc.orgEnv})
+			r, err := Resolve(env, tc.orgFlag, tc.projectFlag)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -309,13 +325,17 @@ func TestResolveSavedProjectBelongsToItsOrg(t *testing.T) {
 			}
 		})
 	}
+}
 
-	// A saved project with no saved organization still applies.
-	if err := Save(ProcessEnv(), File{Project: "prod"}); err != nil {
+// TestResolveSavedProjectWithoutOrg: a saved project with no saved
+// organization still applies, whatever the organization.
+func TestResolveSavedProjectWithoutOrg(t *testing.T) {
+	t.Parallel()
+	env := testEnv(t, map[string]string{"SALAD_ORGANIZATION": "org-b"})
+	if err := Save(env, File{Project: "prod"}); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("SALAD_ORGANIZATION", "org-b")
-	if r := must(Resolve(ProcessEnv(), "", ""))(t); r.Project != "prod" {
+	if r := must(Resolve(env, "", ""))(t); r.Project != "prod" {
 		t.Errorf("project = %q, want prod when the file names no organization", r.Project)
 	}
 }

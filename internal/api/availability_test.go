@@ -17,11 +17,11 @@ import (
 // SALAD_CLI_API_BASE_URL override New honors.
 func newTestClient(t *testing.T, baseURL string, opts ...Options) *Client {
 	t.Helper()
-	t.Setenv("SALAD_CLI_API_BASE_URL", baseURL)
-	o := testOptions()
+	o := testOptions(nil)
 	if len(opts) > 0 {
 		o = opts[0]
 	}
+	o.Getenv = getenvOf(baseURLs(baseURL))
 	c, cerr := New(config.Resolved{APIKey: "test-key", Organization: "test org"}, o)
 	if cerr != nil {
 		t.Fatalf("New: %v", cerr)
@@ -30,6 +30,7 @@ func newTestClient(t *testing.T, baseURL string, opts ...Options) *Client {
 }
 
 func TestGetGpuAvailabilityRequest(t *testing.T) {
+	t.Parallel()
 	var gotMethod, gotPath, gotKey string
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +38,7 @@ func TestGetGpuAvailabilityRequest(t *testing.T) {
 		gotBody = should(io.ReadAll(r.Body))(t)
 		respond(t, w, `{"available_gpu_high":9,"available_gpu_low":30,"unknown_field":true}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newTestClient(t, srv.URL)
 	avail, cerr := c.GetGpuAvailability(t.Context(), AvailabilityRequest{
@@ -69,6 +70,7 @@ func TestGetGpuAvailabilityRequest(t *testing.T) {
 }
 
 func TestGetCPUAvailabilityDropsGpuClasses(t *testing.T) {
+	t.Parallel()
 	var gotPath string
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +78,7 @@ func TestGetCPUAvailabilityDropsGpuClasses(t *testing.T) {
 		reportErr(t, json.NewDecoder(r.Body).Decode(&body))
 		respond(t, w, `{"available_cpu_batch":120,"on_call_cpu":40}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newTestClient(t, srv.URL)
 	avail, cerr := c.GetCPUAvailability(
@@ -100,13 +102,14 @@ func TestGetCPUAvailabilityDropsGpuClasses(t *testing.T) {
 // The availability calls share the API transport, so a 429 is retried
 // before it is reported.
 func TestGetGpuAvailabilityRetries429(t *testing.T) {
+	t.Parallel()
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusTooManyRequests)
 		respond(t, w, `{"title":"slow down"}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newTestClient(t, srv.URL)
 	c.backoff = []time.Duration{time.Millisecond}

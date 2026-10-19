@@ -31,10 +31,11 @@ func (c *fakeClock) Sleep(ctx context.Context, d time.Duration) error {
 	return nil
 }
 
-var (
-	followNow   = time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC)
-	followSince = followNow.Add(-10 * time.Minute)
-)
+// followNow is the fake clock's start in the follow tests.
+func followNow() time.Time { return time.Date(2026, time.March, 1, 10, 0, 0, 0, time.UTC) }
+
+// followSince is where the follow tests' backlog starts.
+func followSince() time.Time { return followNow().Add(-10 * time.Minute) }
 
 // staticQuery is the single compiled query the follow loop uses for the
 // backlog and every poll — there is no per-poll recompilation any more.
@@ -58,10 +59,10 @@ func runFollower(
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	clock := &fakeClock{now: followNow, allowed: allowedSleeps, cancel: cancel}
+	clock := &fakeClock{now: followNow(), allowed: allowedSleeps, cancel: cancel}
 	fetch := scriptFetcher(results, &calls)
 	f = &Follower{Poll: poll, MaxBackoff: maxBackoff, Lookback: lookback, Clock: clock}
-	if err := f.Run(ctx, staticQuery(t), fetch, followSince, 100, collectEmit(&emitted)); err != nil {
+	if err := f.Run(ctx, staticQuery(t), fetch, followSince(), 100, collectEmit(&emitted)); err != nil {
 		t.Fatalf("Run returned %v, want nil on cancellation", err)
 	}
 	return emitted, calls, clock.sleeps, f
@@ -77,6 +78,7 @@ func page(items ...Entry) scriptedResult {
 }
 
 func TestFollowBacklogThenPolls(t *testing.T) {
+	t.Parallel()
 	e1 := ent("2026-03-01T09:51:00Z", "2026-03-01T09:51:30Z", "i1", "e1")
 	e2 := ent("2026-03-01T09:55:00Z", "2026-03-01T09:55:30Z", "i1", "e2")
 	e3 := ent("2026-03-01T09:59:00Z", "2026-03-01T10:00:02Z", "i1", "e3")
@@ -120,6 +122,7 @@ func TestFollowBacklogThenPolls(t *testing.T) {
 }
 
 func TestFollowLookbackRescanSkipsSeen(t *testing.T) {
+	t.Parallel()
 	// Every poll re-scans the lookback window, so already-emitted entries
 	// keep coming back; the seen set must swallow them.
 	e1 := ent("2026-03-01T09:59:00Z", "2026-03-01T09:59:10Z", "i1", "e1")
@@ -136,6 +139,7 @@ func TestFollowLookbackRescanSkipsSeen(t *testing.T) {
 }
 
 func TestFollowLateArrivalWithinLookbackEmitted(t *testing.T) {
+	t.Parallel()
 	// An entry ingested late but whose emission time is still inside the
 	// lookback window shows up in a later re-scan and must be emitted.
 	// Anything older than the window start is outside the request — the
@@ -157,6 +161,7 @@ func TestFollowLateArrivalWithinLookbackEmitted(t *testing.T) {
 }
 
 func TestFollowWindowStartNeverBeforeSince(t *testing.T) {
+	t.Parallel()
 	// With a lookback reaching further back than --since, the poll window
 	// clamps to since.
 	e1 := ent("2026-03-01T09:55:00Z", "2026-03-01T09:55:10Z", "i1", "e1")
@@ -170,6 +175,7 @@ func TestFollowWindowStartNeverBeforeSince(t *testing.T) {
 }
 
 func TestFollowEmptyPollsKeepWindow(t *testing.T) {
+	t.Parallel()
 	// Empty polls advance nothing: the window keeps sliding from the same
 	// max seen emission time, and the seen set is retained.
 	e1 := ent("2026-03-01T09:59:00Z", "2026-03-01T09:59:10Z", "i1", "e1")
@@ -195,6 +201,7 @@ func TestFollowEmptyPollsKeepWindow(t *testing.T) {
 }
 
 func TestFollowSeenMapPruned(t *testing.T) {
+	t.Parallel()
 	// Entries falling behind the lookback horizon are pruned from the seen
 	// map so memory stays bounded.
 	eOld := ent("2026-03-01T09:51:00Z", "2026-03-01T09:51:10Z", "i1", "eOld")
@@ -214,6 +221,7 @@ func TestFollowSeenMapPruned(t *testing.T) {
 }
 
 func TestFollowRateLimitBacksOffThenRecovers(t *testing.T) {
+	t.Parallel()
 	e1 := ent("2026-03-01T09:59:00Z", "2026-03-01T09:59:10Z", "i1", "e1")
 	e2 := ent("2026-03-01T10:00:20Z", "2026-03-01T10:00:21Z", "i1", "e2")
 	rl := scriptedResult{err: clierr.New(clierr.CodeRateLimited, clierr.KindRateLimited, "429")}
@@ -240,6 +248,7 @@ func TestFollowRateLimitBacksOffThenRecovers(t *testing.T) {
 }
 
 func TestFollowCancelReturnsNil(t *testing.T) {
+	t.Parallel()
 	e1 := ent("2026-03-01T09:59:00Z", "2026-03-01T09:59:10Z", "i1", "e1")
 	// allowed = 0: the very first sleep after the backlog is canceled.
 	emitted, calls, _, _ := runFollower(t, []scriptedResult{page(e1)}, 0, 5*time.Second, 0, 0)
@@ -250,15 +259,16 @@ func TestFollowCancelReturnsNil(t *testing.T) {
 }
 
 func TestFollowBacklogErrorIsFatal(t *testing.T) {
+	t.Parallel()
 	boom := clierr.New(clierr.CodeAuth, clierr.KindAuth, "key revoked")
 	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	clock := &fakeClock{now: followNow, allowed: 10, cancel: cancel}
+	t.Cleanup(cancel)
+	clock := &fakeClock{now: followNow(), allowed: 10, cancel: cancel}
 	var calls []fetchCall
 	fetch := scriptFetcher([]scriptedResult{{err: boom}}, &calls)
 	f := &Follower{Poll: 5 * time.Second, Clock: clock}
 	var emitted []Entry
-	err := f.Run(ctx, staticQuery(t), fetch, followSince, 100, collectEmit(&emitted))
+	err := f.Run(ctx, staticQuery(t), fetch, followSince(), 100, collectEmit(&emitted))
 	if err != boom {
 		t.Fatalf("Run error = %v, want the backlog fetch error", err)
 	}
@@ -268,16 +278,17 @@ func TestFollowBacklogErrorIsFatal(t *testing.T) {
 }
 
 func TestFollowNonRateLimitErrorExits(t *testing.T) {
+	t.Parallel()
 	e1 := ent("2026-03-01T09:59:00Z", "2026-03-01T09:59:10Z", "i1", "e1")
 	boom := clierr.New(clierr.CodeAuth, clierr.KindAuth, "key revoked")
 	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	clock := &fakeClock{now: followNow, allowed: 10, cancel: cancel}
+	t.Cleanup(cancel)
+	clock := &fakeClock{now: followNow(), allowed: 10, cancel: cancel}
 	var calls []fetchCall
 	fetch := scriptFetcher([]scriptedResult{page(e1), {err: boom}}, &calls)
 	f := &Follower{Poll: 5 * time.Second, Clock: clock}
 	var emitted []Entry
-	err := f.Run(ctx, staticQuery(t), fetch, followSince, 100, collectEmit(&emitted))
+	err := f.Run(ctx, staticQuery(t), fetch, followSince(), 100, collectEmit(&emitted))
 	if err != boom {
 		t.Fatalf("Run error = %v, want the fetch error", err)
 	}

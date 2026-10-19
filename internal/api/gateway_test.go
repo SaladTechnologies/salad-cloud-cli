@@ -14,11 +14,11 @@ import (
 
 func newTestGateway(t *testing.T, url string, opts ...Options) *Gateway {
 	t.Helper()
-	t.Setenv("SALAD_CLI_AI_GATEWAY_BASE_URL", url)
-	o := testOptions()
+	o := testOptions(nil)
 	if len(opts) > 0 {
 		o = opts[0]
 	}
+	o.Getenv = getenvOf(map[string]string{"SALAD_CLI_AI_GATEWAY_BASE_URL": url})
 	g, cerr := NewGateway(config.Resolved{GatewayAPIKey: "gw-key"}, o)
 	if cerr != nil {
 		t.Fatalf("NewGateway: %v", cerr)
@@ -27,7 +27,8 @@ func newTestGateway(t *testing.T, url string, opts ...Options) *Gateway {
 }
 
 func TestNewGatewayNeedsItsOwnKey(t *testing.T) {
-	_, cerr := NewGateway(config.Resolved{APIKey: "salad-api-key"}, testOptions())
+	t.Parallel()
+	_, cerr := NewGateway(config.Resolved{APIKey: "salad-api-key"}, testOptions(nil))
 	if cerr == nil || cerr.Code != clierr.CodeAuth {
 		t.Fatalf("NewGateway without a gateway key = %v, want an auth error", cerr)
 	}
@@ -38,6 +39,7 @@ func TestNewGatewayNeedsItsOwnKey(t *testing.T) {
 }
 
 func TestGatewayListModelsAndComplete(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer gw-key" {
 			t.Errorf("Authorization = %q, want bearer gateway key", got)
@@ -72,7 +74,7 @@ func TestGatewayListModelsAndComplete(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	g := newTestGateway(t, srv.URL)
 
 	models, cerr := g.ListModels(t.Context())
@@ -95,6 +97,7 @@ func TestGatewayListModelsAndComplete(t *testing.T) {
 // that stops there accepts any string. CheckKey must go on to a completion
 // and surface its 401.
 func TestGatewayCheckKeyUsesACompletion(t *testing.T) {
+	t.Parallel()
 	var sawCompletion bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -115,7 +118,7 @@ func TestGatewayCheckKeyUsesACompletion(t *testing.T) {
 			respond(t, w, `{"error":{"message":"invalid api key"}}`)
 		}
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	g := newTestGateway(t, srv.URL)
 	_, cerr := g.CheckKey(t.Context())
 	if !sawCompletion {
@@ -127,6 +130,7 @@ func TestGatewayCheckKeyUsesACompletion(t *testing.T) {
 }
 
 func TestGatewayCompletionReasoningFields(t *testing.T) {
+	t.Parallel()
 	var c GatewayCompletion
 	err := json.Unmarshal(
 		[]byte(
@@ -144,6 +148,7 @@ func TestGatewayCompletionReasoningFields(t *testing.T) {
 }
 
 func TestGatewayErrorMapping(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		status   int
 		body     string

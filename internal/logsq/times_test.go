@@ -6,6 +6,7 @@ import (
 )
 
 func TestFormatRequestTimeFloors(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		in   time.Time
@@ -35,6 +36,7 @@ func TestFormatRequestTimeFloors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := FormatRequestTime(tt.in); got != tt.want {
 				t.Errorf("FormatRequestTime(%v) = %s, want %s", tt.in, got, tt.want)
 			}
@@ -43,6 +45,7 @@ func TestFormatRequestTimeFloors(t *testing.T) {
 }
 
 func TestCeilRequestTime(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		in   time.Time
@@ -72,6 +75,7 @@ func TestCeilRequestTime(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got := CeilRequestTime(tt.in); got != tt.want {
 				t.Errorf("CeilRequestTime(%v) = %s, want %s", tt.in, got, tt.want)
 			}
@@ -80,6 +84,7 @@ func TestCeilRequestTime(t *testing.T) {
 }
 
 func TestRequestTimeFromAPIResponseTimestamps(t *testing.T) {
+	t.Parallel()
 	// Response timestamps carry 7 fractional digits and a +00:00 offset
 	// (page_min_time/page_max_time included). Feeding one back raw would
 	// 400 with invalid_time_range; the parse-then-FormatRequestTime round
@@ -97,6 +102,7 @@ func TestRequestTimeFromAPIResponseTimestamps(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
+			t.Parallel()
 			parsed, err := time.Parse(time.RFC3339Nano, tt.in)
 			if err != nil {
 				t.Fatalf("parse(%q) error: %v", tt.in, err)

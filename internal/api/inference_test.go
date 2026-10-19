@@ -13,6 +13,7 @@ import (
 )
 
 func TestListInferenceEndpointsWirePath(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
@@ -33,7 +34,7 @@ func TestListInferenceEndpointsWirePath(t *testing.T) {
 		  "page": 1, "page_size": 100, "total_size": 1
 		}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
 	coll, cerr := c.ListInferenceEndpoints(t.Context())
@@ -49,6 +50,7 @@ func TestListInferenceEndpointsWirePath(t *testing.T) {
 // POST to the org-scoped (no project) jobs path, the prototype as the JSON
 // body, and the response job decoded through our transport.
 func TestCreateInferenceJobRoundTrip(t *testing.T) {
+	t.Parallel()
 	var gotMethod, gotPath string
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +70,7 @@ func TestCreateInferenceJobRoundTrip(t *testing.T) {
 		  "update_time": "2026-09-02T00:00:00Z"
 		}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
 	proto := inferenceendpoints.InferenceEndpointJobPrototype{
@@ -101,6 +103,7 @@ func TestCreateInferenceJobRoundTrip(t *testing.T) {
 }
 
 func TestGetAndCancelInferenceJobPaths(t *testing.T) {
+	t.Parallel()
 	var gotMethods, gotPaths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethods = append(gotMethods, r.Method)
@@ -112,7 +115,7 @@ func TestGetAndCancelInferenceJobPaths(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		respond(t, w, `{"id": "job-1", "status": "running"}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
 	if _, cerr := c.GetInferenceJob(t.Context(), "transcribe", "job-1"); cerr != nil {
@@ -131,12 +134,13 @@ func TestGetAndCancelInferenceJobPaths(t *testing.T) {
 }
 
 func TestInferenceEndpoint404Maps(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusNotFound)
 		respond(t, w, `{"title": "Not Found"}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
 	_, cerr := c.GetInferenceEndpoint(t.Context(), "no-such")

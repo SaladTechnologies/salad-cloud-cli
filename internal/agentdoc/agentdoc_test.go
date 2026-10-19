@@ -9,6 +9,7 @@ import (
 )
 
 func TestBlockShape(t *testing.T) {
+	t.Parallel()
 	b := Block("1.2.3")
 	if !strings.HasPrefix(b, "<!-- SALADCLOUD START (saladcloud agent init 1.2.3) -->\n") {
 		t.Errorf("start marker wrong:\n%s", b)
@@ -54,6 +55,7 @@ func TestBlockShape(t *testing.T) {
 }
 
 func TestApplyEmptyFile(t *testing.T) {
+	t.Parallel()
 	out, changed, err := Apply("", "1.0.0")
 	if err != nil {
 		t.Fatal(err)
@@ -67,6 +69,7 @@ func TestApplyEmptyFile(t *testing.T) {
 }
 
 func TestApplyAppendsAfterBlankLine(t *testing.T) {
+	t.Parallel()
 	existing := "# My project\n\nRun `make test`.\n"
 	out, changed, err := Apply(existing, "1.0.0")
 	if err != nil {
@@ -82,6 +85,7 @@ func TestApplyAppendsAfterBlankLine(t *testing.T) {
 }
 
 func TestApplyAppendsNewlineWhenFileLacksOne(t *testing.T) {
+	t.Parallel()
 	existing := "# My project" // no trailing newline
 	out, _, err := Apply(existing, "1.0.0")
 	if err != nil {
@@ -93,6 +97,7 @@ func TestApplyAppendsNewlineWhenFileLacksOne(t *testing.T) {
 }
 
 func TestApplyIsIdempotent(t *testing.T) {
+	t.Parallel()
 	first, _, err := Apply("# Repo\n", "1.0.0")
 	if err != nil {
 		t.Fatal(err)
@@ -110,6 +115,7 @@ func TestApplyIsIdempotent(t *testing.T) {
 }
 
 func TestApplyReplacesInPlacePreservingSurroundings(t *testing.T) {
+	t.Parallel()
 	before := "# Repo\n\nintro text\n\n"
 	after := "\n## Other section\nkept.\n"
 	old := before + StartMarker("0.9.0") + "\nold body that must disappear\n<!-- SALADCLOUD END -->\n" + after
@@ -133,6 +139,7 @@ func TestApplyReplacesInPlacePreservingSurroundings(t *testing.T) {
 }
 
 func TestApplyPreservesCRLF(t *testing.T) {
+	t.Parallel()
 	existing := "# Repo\r\n\r\nWindows file.\r\n"
 	out, _, err := Apply(existing, "1.0.0")
 	if err != nil {
@@ -152,6 +159,7 @@ func TestApplyPreservesCRLF(t *testing.T) {
 }
 
 func TestApplyMalformed(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"start only":     "x\n<!-- SALADCLOUD START (saladcloud agent init 1.0.0) -->\nbody\n",
 		"end only":       "x\n<!-- SALADCLOUD END -->\n",
@@ -169,6 +177,7 @@ func TestApplyMalformed(t *testing.T) {
 }
 
 func TestPickFile(t *testing.T) {
+	t.Parallel()
 	noEnv := func(string) string { return "" }
 	claude := func(k string) string {
 		if k == EnvClaudeCode {
@@ -178,6 +187,7 @@ func TestPickFile(t *testing.T) {
 	}
 
 	t.Run("default is AGENTS.md", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		got := PickFile(dir, "", noEnv)
 		if got.Name != FileAgents || got.Reason != "default" || got.Path != filepath.Join(dir, FileAgents) {
@@ -185,6 +195,7 @@ func TestPickFile(t *testing.T) {
 		}
 	})
 	t.Run("CLAUDECODE selects CLAUDE.md even when AGENTS.md exists", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		touch(t, filepath.Join(dir, FileAgents))
 		got := PickFile(dir, "", claude)
@@ -193,6 +204,7 @@ func TestPickFile(t *testing.T) {
 		}
 	})
 	t.Run("existing CLAUDE.md alone selects CLAUDE.md", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		touch(t, filepath.Join(dir, FileClaude))
 		got := PickFile(dir, "", noEnv)
@@ -201,6 +213,7 @@ func TestPickFile(t *testing.T) {
 		}
 	})
 	t.Run("both present selects AGENTS.md", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		touch(t, filepath.Join(dir, FileClaude))
 		touch(t, filepath.Join(dir, FileAgents))
@@ -210,6 +223,7 @@ func TestPickFile(t *testing.T) {
 		}
 	})
 	t.Run("override relative", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		got := PickFile(dir, "docs/AGENTS.md", noEnv)
 		if got.Path != filepath.Join(dir, "docs", "AGENTS.md") || got.Reason != "--file" {
@@ -217,6 +231,7 @@ func TestPickFile(t *testing.T) {
 		}
 	})
 	t.Run("override absolute", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		abs := filepath.Join(t.TempDir(), "X.md")
 		got := PickFile(dir, abs, noEnv)
@@ -225,6 +240,7 @@ func TestPickFile(t *testing.T) {
 		}
 	})
 	t.Run("a directory named CLAUDE.md does not count", func(t *testing.T) {
+		t.Parallel()
 		dir := t.TempDir()
 		if err := os.Mkdir(filepath.Join(dir, FileClaude), 0o750); err != nil {
 			t.Fatal(err)

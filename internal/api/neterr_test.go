@@ -67,6 +67,7 @@ func tlsGetWithCert(t *testing.T, notBefore, notAfter time.Time) error {
 }
 
 func TestNetworkErrExpiredCert(t *testing.T) {
+	t.Parallel()
 	expired := time.Date(2026, time.September, 28, 16, 55, 34, 0, time.UTC)
 	err := tlsGetWithCert(t, expired.Add(-90*24*time.Hour), expired)
 
@@ -89,6 +90,7 @@ func TestNetworkErrExpiredCert(t *testing.T) {
 }
 
 func TestNetworkErrNotYetValidCert(t *testing.T) {
+	t.Parallel()
 	start := time.Now().Add(48 * time.Hour).Truncate(time.Second)
 	err := tlsGetWithCert(t, start, start.Add(90*24*time.Hour))
 	got := networkErr("network error", err, time.Now)
@@ -101,6 +103,7 @@ func TestNetworkErrNotYetValidCert(t *testing.T) {
 }
 
 func TestNetworkErrOtherFailuresUnchanged(t *testing.T) {
+	t.Parallel()
 	got := networkErr("network error", errors.New("dial tcp: connection refused"), time.Now)
 	if got.Message != "network error: dial tcp: connection refused" {
 		t.Errorf("got %q", got.Message)

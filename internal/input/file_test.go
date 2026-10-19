@@ -27,6 +27,7 @@ func writeTemp(t *testing.T, name, content string) string {
 }
 
 func TestLoadYAML(t *testing.T) {
+	t.Parallel()
 	p := writeTemp(t, "demo.yaml", "name: hello\nreplicas: 3\n")
 	var d demo
 	if err := Load(p, nil, &d); err != nil {
@@ -38,6 +39,7 @@ func TestLoadYAML(t *testing.T) {
 }
 
 func TestLoadJSON(t *testing.T) {
+	t.Parallel()
 	p := writeTemp(t, "demo.json", `{"name": "hello", "replicas": 3}`)
 	var d demo
 	if err := Load(p, nil, &d); err != nil {
@@ -49,6 +51,7 @@ func TestLoadJSON(t *testing.T) {
 }
 
 func TestLoadStdin(t *testing.T) {
+	t.Parallel()
 	f, err := os.CreateTemp(t.TempDir(), "stdin")
 	if err != nil {
 		t.Fatal(err)
@@ -59,11 +62,11 @@ func TestLoadStdin(t *testing.T) {
 	if _, err := f.Seek(0, 0); err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
+	t.Cleanup(func() {
 		if err := f.Close(); err != nil {
 			t.Error(err)
 		}
-	}()
+	})
 
 	var d demo
 	if cerr := Load("-", f, &d); cerr != nil {
@@ -75,6 +78,7 @@ func TestLoadStdin(t *testing.T) {
 }
 
 func TestLoadMissingFile(t *testing.T) {
+	t.Parallel()
 	var d demo
 	err := Load(filepath.Join(t.TempDir(), "no-such-file.yaml"), nil, &d)
 	if err == nil {
@@ -89,6 +93,7 @@ func TestLoadMissingFile(t *testing.T) {
 }
 
 func TestLoadMalformedYAML(t *testing.T) {
+	t.Parallel()
 	p := writeTemp(t, "bad.yaml", "name: [unclosed\n")
 	var d demo
 	err := Load(p, nil, &d)
@@ -108,6 +113,7 @@ func TestLoadMalformedYAML(t *testing.T) {
 // this field") must survive into the returned JSON document, in both YAML
 // and JSON forms. Re-marshaling the struct would drop it via omitempty.
 func TestLoadRawPreservesEmptyArray(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, file, content string
 	}{
@@ -116,6 +122,7 @@ func TestLoadRawPreservesEmptyArray(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			p := writeTemp(t, tt.file, tt.content)
 			var patch containergroups.ContainerGroupPatch
 			raw, cerr := LoadRaw(p, nil, &patch)
@@ -134,6 +141,7 @@ func TestLoadRawPreservesEmptyArray(t *testing.T) {
 }
 
 func TestLoadRawMissingFile(t *testing.T) {
+	t.Parallel()
 	var d demo
 	raw, err := LoadRaw(filepath.Join(t.TempDir(), "no-such-file.yaml"), nil, &d)
 	if err == nil {
@@ -151,6 +159,7 @@ func TestLoadRawMissingFile(t *testing.T) {
 // both kebab-case fields must parse into the creation request AND survive
 // LoadRaw's raw output with their kebab-case spelling intact.
 func TestLoadScheduledScalingExampleRoundTrip(t *testing.T) {
+	t.Parallel()
 	path := filepath.Join("..", "..", "examples", "scheduled-scaling.yaml")
 	var req containergroups.ContainerGroupCreationRequest
 	raw, cerr := LoadRaw(path, nil, &req)
@@ -183,6 +192,7 @@ func TestLoadScheduledScalingExampleRoundTrip(t *testing.T) {
 // TestLoadExampleRoundTrip pins examples/hello-cpu.yaml: it must unmarshal
 // into a ContainerGroupCreationRequest with every demo-critical field set.
 func TestLoadExampleRoundTrip(t *testing.T) {
+	t.Parallel()
 	var req containergroups.ContainerGroupCreationRequest
 	if err := Load(filepath.Join("..", "..", "examples", "hello-cpu.yaml"), nil, &req); err != nil {
 		t.Fatalf("Load returned error: %v", err)
@@ -244,6 +254,7 @@ func TestLoadExampleRoundTrip(t *testing.T) {
 // it doubles as the "definition files are just the API create payload"
 // exhibit in the README and docs/guide.md).
 func TestLoadSleepExampleRoundTrip(t *testing.T) {
+	t.Parallel()
 	var req containergroups.ContainerGroupCreationRequest
 	if err := Load(filepath.Join("..", "..", "examples", "sleep-cpu.json"), nil, &req); err != nil {
 		t.Fatalf("Load returned error: %v", err)
@@ -291,6 +302,7 @@ func TestLoadSleepExampleRoundTrip(t *testing.T) {
 
 // TestLoadGpuExampleRoundTrip pins examples/gpu-small.yaml.
 func TestLoadGpuExampleRoundTrip(t *testing.T) {
+	t.Parallel()
 	var req containergroups.ContainerGroupCreationRequest
 	if err := Load(filepath.Join("..", "..", "examples", "gpu-small.yaml"), nil, &req); err != nil {
 		t.Fatalf("Load returned error: %v", err)

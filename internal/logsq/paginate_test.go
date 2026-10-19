@@ -69,12 +69,13 @@ func assertTexts(t *testing.T, got []Entry, want ...string) {
 	}
 }
 
-var (
-	winStart = time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
-	winEnd   = time.Date(2026, time.March, 1, 1, 0, 0, 0, time.UTC)
-)
+// winStart and winEnd bound the pagination tests' window.
+func winStart() time.Time { return time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC) }
+
+func winEnd() time.Time { return time.Date(2026, time.March, 1, 1, 0, 0, 0, time.UTC) }
 
 func TestFetchWindowSinglePartialPage(t *testing.T) {
+	t.Parallel()
 	var calls []fetchCall
 	var got []Entry
 	fetch := scriptFetcher([]scriptedResult{
@@ -87,7 +88,7 @@ func TestFetchWindowSinglePartialPage(t *testing.T) {
 			PageMaxTime: "2026-03-01T00:00:03Z",
 		}},
 	}, &calls)
-	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 3, collectEmit(&got), nil); err != nil {
+	if err := FetchWindow(t.Context(), fetch, "q", winStart(), winEnd(), 3, collectEmit(&got), nil); err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
 	assertTexts(t, got, "a", "b")
@@ -105,10 +106,11 @@ func TestFetchWindowSinglePartialPage(t *testing.T) {
 }
 
 func TestFetchWindowEmptyFirstPage(t *testing.T) {
+	t.Parallel()
 	var calls []fetchCall
 	var got []Entry
 	fetch := scriptFetcher(nil, &calls)
-	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 100, collectEmit(&got), nil); err != nil {
+	if err := FetchWindow(t.Context(), fetch, "q", winStart(), winEnd(), 100, collectEmit(&got), nil); err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
 	if len(got) != 0 || len(calls) != 1 {
@@ -117,6 +119,7 @@ func TestFetchWindowEmptyFirstPage(t *testing.T) {
 }
 
 func TestFetchWindowExactFullPageThenEmpty(t *testing.T) {
+	t.Parallel()
 	var calls []fetchCall
 	var got []Entry
 	fetch := scriptFetcher([]scriptedResult{
@@ -131,7 +134,7 @@ func TestFetchWindowExactFullPageThenEmpty(t *testing.T) {
 		}},
 		{page: &Page{}},
 	}, &calls)
-	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 3, collectEmit(&got), nil); err != nil {
+	if err := FetchWindow(t.Context(), fetch, "q", winStart(), winEnd(), 3, collectEmit(&got), nil); err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
 	assertTexts(t, got, "a", "b", "c")
@@ -144,6 +147,7 @@ func TestFetchWindowExactFullPageThenEmpty(t *testing.T) {
 }
 
 func TestFetchWindowBoundaryDuplicates(t *testing.T) {
+	t.Parallel()
 	// Entries sitting exactly on PageMaxTime reappear at the start of the
 	// next page and must be emitted exactly once.
 	c1 := ent("2026-03-01T00:00:03Z", "2026-03-01T00:00:03.5Z", "i1", "c")
@@ -174,13 +178,14 @@ func TestFetchWindowBoundaryDuplicates(t *testing.T) {
 			PageMaxTime: "2026-03-01T00:00:04Z",
 		}},
 	}, &calls)
-	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 3, collectEmit(&got), nil); err != nil {
+	if err := FetchWindow(t.Context(), fetch, "q", winStart(), winEnd(), 3, collectEmit(&got), nil); err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
 	assertTexts(t, got, "a", "b", "c", "d", "e")
 }
 
 func TestFetchWindowBoundaryMillisecondCarry(t *testing.T) {
+	t.Parallel()
 	// The API rejects sub-millisecond request times, so the next page's
 	// start is PageMaxTime FLOORED to the millisecond. Every entry inside
 	// that boundary millisecond — not just the ones exactly at PageMaxTime
@@ -199,7 +204,7 @@ func TestFetchWindowBoundaryMillisecondCarry(t *testing.T) {
 		{page: &Page{Items: []Entry{a, b, c, d, e}, PageMinTime: a.Time, PageMaxTime: e.Time}},
 		{page: &Page{Items: []Entry{e, f}, PageMinTime: e.Time, PageMaxTime: f.Time}},
 	}, &calls)
-	if err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 3, collectEmit(&got), nil); err != nil {
+	if err := FetchWindow(t.Context(), fetch, "q", winStart(), winEnd(), 3, collectEmit(&got), nil); err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
 	assertTexts(t, got, "a", "b", "c", "d", "e", "f")
@@ -215,6 +220,7 @@ func TestFetchWindowBoundaryMillisecondCarry(t *testing.T) {
 }
 
 func TestFetchWindowRoundsRequestTimesOutward(t *testing.T) {
+	t.Parallel()
 	// A sub-millisecond caller window must floor its start and ceil its
 	// end, so no boundary entry is excluded by the forced ms precision.
 	var calls []fetchCall
@@ -234,6 +240,7 @@ func TestFetchWindowRoundsRequestTimesOutward(t *testing.T) {
 }
 
 func TestFetchWindowSameTimestampLoopGuard(t *testing.T) {
+	t.Parallel()
 	// More entries share one timestamp than fit in a page: the boundary
 	// cannot advance, so after one stuck re-fetch the window skips 1ms
 	// instead of looping forever.
@@ -249,7 +256,7 @@ func TestFetchWindowSameTimestampLoopGuard(t *testing.T) {
 		{page: &Page{}},
 	}, &calls)
 	err := FetchWindow(t.Context(), fetch, "q",
-		time.Date(2026, time.March, 1, 0, 0, 1, 0, time.UTC), winEnd, 2, collectEmit(&got), nil)
+		time.Date(2026, time.March, 1, 0, 0, 1, 0, time.UTC), winEnd(), 2, collectEmit(&got), nil)
 	if err != nil {
 		t.Fatalf("FetchWindow error: %v", err)
 	}
@@ -263,6 +270,7 @@ func TestFetchWindowSameTimestampLoopGuard(t *testing.T) {
 }
 
 func TestFetchWindowEmitErrorPropagates(t *testing.T) {
+	t.Parallel()
 	var calls []fetchCall
 	fetch := scriptFetcher([]scriptedResult{
 		{page: &Page{
@@ -272,7 +280,7 @@ func TestFetchWindowEmitErrorPropagates(t *testing.T) {
 		}},
 	}, &calls)
 	want := clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "pipe closed")
-	err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 100, func(Entry) error {
+	err := FetchWindow(t.Context(), fetch, "q", winStart(), winEnd(), 100, func(Entry) error {
 		return want
 	}, nil)
 	if err != want {
@@ -281,16 +289,18 @@ func TestFetchWindowEmitErrorPropagates(t *testing.T) {
 }
 
 func TestFetchWindowFetchErrorPropagates(t *testing.T) {
+	t.Parallel()
 	var calls []fetchCall
 	want := clierr.New(clierr.CodeRateLimited, clierr.KindRateLimited, "slow down")
 	fetch := scriptFetcher([]scriptedResult{{err: want}}, &calls)
-	err := FetchWindow(t.Context(), fetch, "q", winStart, winEnd, 100, func(Entry) error { return nil }, nil)
+	err := FetchWindow(t.Context(), fetch, "q", winStart(), winEnd(), 100, func(Entry) error { return nil }, nil)
 	if err != want {
 		t.Fatalf("FetchWindow error = %v, want the fetch error", err)
 	}
 }
 
 func TestDedupKeyDistinguishesEntries(t *testing.T) {
+	t.Parallel()
 	base := Entry{Time: "t", ReceiveTime: "r", InstanceID: "i", Text: "x"}
 	variants := []Entry{
 		{Time: "t2", ReceiveTime: "r", InstanceID: "i", Text: "x"},
@@ -315,6 +325,7 @@ func TestDedupKeyDistinguishesEntries(t *testing.T) {
 }
 
 func TestDedupKeyUsesRawTimestampStrings(t *testing.T) {
+	t.Parallel()
 	// The same instant in two spellings must produce two different keys —
 	// keys must never parse-and-reformat timestamps.
 	a := Entry{Time: "2026-03-01T00:00:01.1200000Z", ReceiveTime: "r", InstanceID: "i", Text: "x"}
@@ -333,7 +344,7 @@ func realisticFetcher(t *testing.T, all []Entry) Fetcher {
 	return func(_ context.Context, _, start, _ string, pageSize int) (*Page, *clierr.Error) {
 		from, err := time.Parse(time.RFC3339Nano, start)
 		if err != nil {
-			panic(err)
+			return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "bad start %q: %v", start, err)
 		}
 		page := &Page{}
 		for _, e := range all {
@@ -363,10 +374,11 @@ func realisticFetcher(t *testing.T, all []Entry) Fetcher {
 // skipped the entries emitted in between, so the total depended on the page
 // size. Every page size must now return every entry exactly once, in order.
 func TestFetchWindowResumesFromEmissionTimeNotPageMaxTime(t *testing.T) {
+	t.Parallel()
 	const total = 47
 	all := make([]Entry, 0, total)
 	for i := range total {
-		emitted := winStart.Add(time.Duration(i) * 400 * time.Millisecond)
+		emitted := winStart().Add(time.Duration(i) * 400 * time.Millisecond)
 		received := emitted.Add(1500 * time.Millisecond)
 		all = append(
 			all,
@@ -384,8 +396,8 @@ func TestFetchWindowResumesFromEmissionTimeNotPageMaxTime(t *testing.T) {
 			t.Context(),
 			realisticFetcher(t, all),
 			"q",
-			winStart,
-			winEnd,
+			winStart(),
+			winEnd(),
 			size,
 			collectEmit(&got),
 			nil,

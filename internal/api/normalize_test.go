@@ -12,6 +12,7 @@ import (
 )
 
 func TestNormalizeNumericEnums(t *testing.T) {
+	t.Parallel()
 	raw := []byte(
 		`{"items":[{"name":"legacy","restart_policy":1},{"name":"ok","restart_policy":"never"},{"nested":{"restart_policy":3}}]}`,
 	)
@@ -58,13 +59,13 @@ func TestNormalizeNumericEnums(t *testing.T) {
 // TestRestJSONNumericEnumRetry: a group list whose
 // legacy entry carries restart_policy as an integer must still decode.
 func TestRestJSONNumericEnumRetry(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		respond(t, w, `{"items":[{"name":"legacy","restart_policy":2}]}`)
 	}))
-	defer srv.Close()
-	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
-	client, cerr := New(config.Resolved{APIKey: "k", Organization: "o", Project: "p"}, testOptions())
+	t.Cleanup(srv.Close)
+	client, cerr := New(config.Resolved{APIKey: "k", Organization: "o", Project: "p"}, testOptions(baseURLs(srv.URL)))
 	if cerr != nil {
 		t.Fatalf("New: %v", cerr)
 	}

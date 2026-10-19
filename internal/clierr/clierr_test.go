@@ -9,6 +9,7 @@ import (
 // present by tag: hint is null without a fix, http_status without an HTTP
 // response.
 func TestErrorDocumentKeys(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		err  *Error
@@ -29,6 +30,7 @@ func TestErrorDocumentKeys(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			data, err := json.Marshal(tc.err)
 			if err != nil {
 				t.Fatal(err)
@@ -43,6 +45,7 @@ func TestErrorDocumentKeys(t *testing.T) {
 // TestCanceled: the error a canceled request returns is interrupted, exit
 // 1, and recognizable; a copy keeps the mark, a new error does not have it.
 func TestCanceled(t *testing.T) {
+	t.Parallel()
 	c := Canceled()
 	if c.Code != CodeGeneric || c.Kind != KindInterrupted || !c.IsCancel() {
 		t.Errorf("Canceled() = %+v", c)

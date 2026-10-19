@@ -38,6 +38,7 @@ func pagedServer(t *testing.T, total int, key string, requests *int32) *httptest
 
 // A null total_size never ends or breaks a listing: the short page does.
 func TestListInferenceEndpointsPagesWithNullTotal(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ total, pages int }{{60, 3}, {50, 3}, {3, 1}, {0, 1}} {
 		var n int32
 		c := newRestTestClient(t, pagedServer(t, tc.total, "name", &n).URL)
@@ -107,6 +108,7 @@ func newestN(total, want int) []int {
 // Inference jobs come oldest first; the listing reads from the end, newest
 // first, and a long listing costs a search, not every page.
 func TestListInferenceJobsNewestFirst(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		total, limit, want, maxRequests int
 		more                            bool
@@ -140,6 +142,7 @@ func TestListInferenceJobsNewestFirst(t *testing.T) {
 // Queue jobs come in job ID order; the listing reads every page and sorts
 // by creation, newest first.
 func TestListQueueJobsNewestFirst(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		total, limit, want, requests int
 		more                         bool
@@ -168,6 +171,7 @@ func TestListQueueJobsNewestFirst(t *testing.T) {
 }
 
 func TestJobsWanted(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ limit, want int }{{0, 10000}, {100, 100}, {20000, 10000}, {10000, 10000}} {
 		if got := jobsWanted(tc.limit, 10000); got != tc.want {
 			t.Errorf("jobsWanted(%d) = %d, want %d", tc.limit, got, tc.want)
@@ -179,6 +183,7 @@ func TestJobsWanted(t *testing.T) {
 // QueueJobsBudget jobs and says the result is partial; --limit 0 reads
 // every page.
 func TestListQueueJobsReadBudget(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		total, limit, requests int
 		partial                bool

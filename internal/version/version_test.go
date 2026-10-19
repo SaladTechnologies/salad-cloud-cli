@@ -3,6 +3,7 @@ package version
 import "testing"
 
 func TestModuleVersion(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		main, want string
 	}{

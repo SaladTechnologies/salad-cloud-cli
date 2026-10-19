@@ -13,11 +13,13 @@ import (
 // sharedEnv are the variables the platform, its docs and SDKs share; every
 // other variable this CLI reads is SALAD_CLI_-prefixed, and no other SALAD
 // spelling exists (no SALADCLOUD_, no SALAD_CONFIG_DIR).
-var sharedEnv = map[string]bool{
-	"SALAD_API_KEY":            true,
-	"SALAD_ORGANIZATION":       true,
-	"SALAD_PROJECT":            true,
-	"SALAD_AI_GATEWAY_API_KEY": true,
+func sharedEnv() map[string]bool {
+	return map[string]bool{
+		"SALAD_API_KEY":            true,
+		"SALAD_ORGANIZATION":       true,
+		"SALAD_PROJECT":            true,
+		"SALAD_AI_GATEWAY_API_KEY": true,
+	}
 }
 
 // saladVar matches any SALAD-prefixed variable name as code, scripts,
@@ -30,6 +32,7 @@ var saladVar = regexp.MustCompile(`\bSALAD(CLOUD)?_[A-Z0-9_]+\b`)
 // containers (SALAD_ORGANIZATION_NAME, ...) are not read by the CLI and
 // fail here: the rule has no tier for them.
 func TestEnvironmentVariableRule(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join("..", "..")
 	checked := 0
 	for _, path := range ruleFiles(t, root) {
@@ -48,7 +51,7 @@ func TestEnvironmentVariableRule(t *testing.T) {
 		}
 		checked++
 		for _, v := range saladVar.FindAllString(string(data), -1) {
-			if !sharedEnv[v] && !strings.HasPrefix(v, "SALAD_CLI_") {
+			if !sharedEnv()[v] && !strings.HasPrefix(v, "SALAD_CLI_") {
 				t.Errorf("%s: %s breaks the rule (SALAD_ for the four shared names, SALAD_CLI_ for the rest)", path, v)
 			}
 		}
@@ -109,9 +112,11 @@ var envCall = regexp.MustCompile(`(?:os\.Getenv|os\.LookupEnv|os\.Setenv|t\.Sete
 // WAYLAND_DISPLAY when Linux has a display: the CLI reads them to offer a
 // browser page only where it could be seen. WSL_DISTRO_NAME is set under WSL,
 // where the page opens in Windows' own browser.
-var systemEnv = map[string]bool{
-	"HOME": true, "USERPROFILE": true, "MSYSTEM": true, "CI": true,
-	"SSH_CONNECTION": true, "SSH_TTY": true, "DISPLAY": true, "WAYLAND_DISPLAY": true, "WSL_DISTRO_NAME": true,
+func systemEnv() map[string]bool {
+	return map[string]bool{
+		"HOME": true, "USERPROFILE": true, "MSYSTEM": true, "CI": true,
+		"SSH_CONNECTION": true, "SSH_TTY": true, "DISPLAY": true, "WAYLAND_DISPLAY": true, "WSL_DISTRO_NAME": true,
+	}
 }
 
 // TestEveryVariableTheCodeNamesFollowsTheRule: a variable the Go code reads
@@ -119,6 +124,7 @@ var systemEnv = map[string]bool{
 // CLI-only knob spelled any other way (CLI_TEST_..., SALADCLOUD_...) fails
 // here, which the SALAD-prefix scan above cannot see.
 func TestEveryVariableTheCodeNamesFollowsTheRule(t *testing.T) {
+	t.Parallel()
 	root := filepath.Join("..", "..")
 	for _, path := range ruleFiles(t, root) {
 		if filepath.Ext(path) != ".go" || filepath.Base(path) == "envrule_test.go" {
@@ -130,7 +136,7 @@ func TestEveryVariableTheCodeNamesFollowsTheRule(t *testing.T) {
 		}
 		for _, m := range envCall.FindAllStringSubmatch(string(data), -1) {
 			name := m[1]
-			if systemEnv[name] || sharedEnv[name] || strings.HasPrefix(name, "SALAD_CLI_") {
+			if systemEnv()[name] || sharedEnv()[name] || strings.HasPrefix(name, "SALAD_CLI_") {
 				continue
 			}
 			t.Errorf("%s: %s is neither a shared SALAD_ name, SALAD_CLI_-prefixed, nor a system variable", path, name)

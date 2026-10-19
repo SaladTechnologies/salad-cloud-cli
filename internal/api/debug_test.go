@@ -13,6 +13,7 @@ import (
 )
 
 func TestRedactText(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		`{"secret_key":"abc123=="}`:                                                     `{"secret_key":"REDACTED"}`,
 		`{"api_key": "salad_cloud_user_x", "name":"a"}`:                                 `{"api_key":"REDACTED", "name":"a"}`,
@@ -42,6 +43,7 @@ func debugRun(t *testing.T, level DebugLevel) string {
 }
 
 func TestDebugRequestsLogsOneLinePerRequest(t *testing.T) {
+	t.Parallel()
 	out := debugRun(t, DebugRequests)
 	if !strings.Contains(out, "debug: GET http") || !strings.Contains(out, "/webhook-secret-key -> 200 (") {
 		t.Errorf("debug output = %q", out)
@@ -52,6 +54,7 @@ func TestDebugRequestsLogsOneLinePerRequest(t *testing.T) {
 }
 
 func TestDebugBodiesRedactCredentials(t *testing.T) {
+	t.Parallel()
 	out := debugRun(t, DebugBodies)
 	for _, want := range []string{"debug: > Salad-Api-Key: REDACTED", `debug: < {"secret_key":"REDACTED"}`} {
 		if !strings.Contains(out, want) {
@@ -64,6 +67,7 @@ func TestDebugBodiesRedactCredentials(t *testing.T) {
 }
 
 func TestDebugOffLogsNothing(t *testing.T) {
+	t.Parallel()
 	if out := debugRun(t, DebugOff); out != "" {
 		t.Errorf("debug off printed %q", out)
 	}
@@ -74,7 +78,7 @@ func TestDebugOffLogsNothing(t *testing.T) {
 func debugCapture(t *testing.T, level DebugLevel) (*bytes.Buffer, Options) {
 	t.Helper()
 	var buf bytes.Buffer
-	opts := testOptions()
+	opts := testOptions(nil)
 	opts.Debug, opts.DebugOut = level, &buf
 	return &buf, opts
 }
@@ -84,13 +88,14 @@ func debugCapture(t *testing.T, level DebugLevel) (*bytes.Buffer, Options) {
 // variable values. None reaches --debug=body, in the request or the echoed
 // response; the names around them still do.
 func TestDebugBodiesRedactDefinitionSecrets(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body := should(io.ReadAll(r.Body))(t)
 		respond(t, w, string(body))
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	buf, opts := debugCapture(t, DebugBodies)
-	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
+	opts.Getenv = getenvOf(baseURLs(srv.URL))
 	c, cerr := New(config.Resolved{APIKey: "test-key", Organization: "o", Project: "p"}, opts)
 	if cerr != nil {
 		t.Fatal(cerr)
@@ -118,10 +123,11 @@ func TestDebugBodiesRedactDefinitionSecrets(t *testing.T) {
 
 // The gateway's bearer token is a header, and is redacted like the API key.
 func TestDebugBodiesRedactAuthorizationHeader(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		respond(t, w, `{"object":"list","data":[]}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	buf, opts := debugCapture(t, DebugBodies)
 	if _, cerr := newTestGateway(t, srv.URL, opts).ListModels(t.Context()); cerr != nil {
 		t.Fatal(cerr)
@@ -134,13 +140,13 @@ func TestDebugBodiesRedactAuthorizationHeader(t *testing.T) {
 
 // A file upload's body is never shown.
 func TestDebugBodiesHideUploads(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		should(io.Copy(io.Discard, r.Body))(t)
 		respond(t, w, `{"url":"`+"http://"+r.Host+`/f.wav?token=t"}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	buf, opts := debugCapture(t, DebugBodies)
-	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newTestClient(t, srv.URL, opts)
 	_, cerr := c.UploadFile(
 		t.Context(),
@@ -159,6 +165,7 @@ func TestDebugBodiesHideUploads(t *testing.T) {
 }
 
 func TestRedactBody(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		`{"headers":{"Authorization":"Bearer x"}}`: `{"headers":{"Authorization":"REDACTED"}}`,
 		`{"b":1,"a":[true,null,"<s>"]}`:            `{"a":[true,null,"<s>"],"b":1}`,
@@ -173,14 +180,14 @@ func TestRedactBody(t *testing.T) {
 // Every client the CLI has sends its User-Agent: the API, the AI Gateway,
 // S4, and doctor's reachability probe.
 func TestUserAgentOnEveryClient(t *testing.T) {
+	t.Parallel()
 	var got []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got = append(got, r.Header.Get("User-Agent"))
 		should(io.Copy(io.Discard, r.Body))(t)
 		respond(t, w, `{"url":"u","object":"list","data":[]}`)
 	}))
-	defer srv.Close()
-	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
+	t.Cleanup(srv.Close)
 	ctx := t.Context()
 	c := newTestClient(t, srv.URL)
 	if _, cerr := c.GetWebhookSecret(ctx); cerr != nil {
@@ -192,7 +199,7 @@ func TestUserAgentOnEveryClient(t *testing.T) {
 	if _, cerr := c.UploadFile(ctx, "f", strings.NewReader("x"), "text/plain", false, 0); cerr != nil {
 		t.Fatal(cerr)
 	}
-	must(Probe(ctx, srv.URL+"/probe", testOptions()))(t)
+	must(Probe(ctx, srv.URL+"/probe", testOptions(nil)))(t)
 	if len(got) != 4 {
 		t.Fatalf("saw %d requests, want 4", len(got))
 	}

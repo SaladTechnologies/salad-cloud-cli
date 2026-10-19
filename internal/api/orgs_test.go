@@ -15,8 +15,7 @@ func orgsClient(t *testing.T, h http.HandlerFunc) *Client {
 	t.Helper()
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
-	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
-	c, err := New(config.Resolved{APIKey: "k"}, testOptions())
+	c, err := New(config.Resolved{APIKey: "k"}, testOptions(baseURLs(srv.URL)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,6 +25,7 @@ func orgsClient(t *testing.T, h http.HandlerFunc) *Client {
 // TestOrganizationsListingPages: the listing asks for 100 a page and
 // follows next_page_token until it is empty.
 func TestOrganizationsListingPages(t *testing.T) {
+	t.Parallel()
 	var asked []string
 	c := orgsClient(t, func(w http.ResponseWriter, r *http.Request) {
 		asked = append(asked, r.URL.RawQuery)
@@ -57,6 +57,7 @@ func TestOrganizationsListingPages(t *testing.T) {
 // TestOrganizationsListingStopsOnARepeatedToken: a token seen before ends
 // the listing rather than looping.
 func TestOrganizationsListingStopsOnARepeatedToken(t *testing.T) {
+	t.Parallel()
 	calls := 0
 	c := orgsClient(t, func(w http.ResponseWriter, _ *http.Request) {
 		calls++
@@ -71,6 +72,7 @@ func TestOrganizationsListingStopsOnARepeatedToken(t *testing.T) {
 // 403, a 404 or rows without names mean no list; rate limiting, a server
 // error or the network is that error.
 func TestOrganizationListingByStatus(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		status int
@@ -90,6 +92,7 @@ func TestOrganizationListingByStatus(t *testing.T) {
 		{"500", 500, ``, false, clierr.CodeGeneric},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			c := orgsClient(t, func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tc.status)
 				respond(t, w, tc.body)
@@ -111,8 +114,8 @@ func TestOrganizationListingByStatus(t *testing.T) {
 		})
 	}
 	t.Run("network", func(t *testing.T) {
-		t.Setenv("SALAD_CLI_API_BASE_URL", "http://127.0.0.1:1")
-		c, cerr := New(config.Resolved{APIKey: "k"}, testOptions())
+		t.Parallel()
+		c, cerr := New(config.Resolved{APIKey: "k"}, testOptions(baseURLs("http://127.0.0.1:1")))
 		if cerr != nil {
 			t.Fatal(cerr)
 		}

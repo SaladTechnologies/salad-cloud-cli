@@ -51,6 +51,7 @@ func declared(t *testing.T, prefix string) map[string]string {
 }
 
 func TestKindsListsEveryConstant(t *testing.T) {
+	t.Parallel()
 	consts := declared(t, "Kind")
 	if len(Kinds()) != len(consts) {
 		t.Errorf("Kinds has %d entries, clierr.go declares %d Kind constants", len(Kinds()), len(consts))
@@ -80,6 +81,7 @@ type pair struct{ code, kind, pos string }
 // Kind-returning functions, and comparisons and assignments to a Kind
 // field. The constant code/kind pairs are then checked against the guide.
 func TestKindCallSites(t *testing.T) {
+	t.Parallel()
 	kindConsts := declared(t, "Kind")
 	var pairs []pair
 	fset := token.NewFileSet()

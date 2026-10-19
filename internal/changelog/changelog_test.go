@@ -31,6 +31,7 @@ Preamble that is not part of any release.
 `
 
 func TestParse(t *testing.T) {
+	t.Parallel()
 	rs := Parse(sample)
 	if len(rs) != 4 {
 		t.Fatalf("got %d releases, want 4: %+v", len(rs), rs)
@@ -53,6 +54,7 @@ func TestParse(t *testing.T) {
 }
 
 func TestParseCRLF(t *testing.T) {
+	t.Parallel()
 	rs := Parse(strings.ReplaceAll(sample, "\n", "\r\n"))
 	if len(rs) != 4 || strings.Contains(rs[3].Body, "\r") {
 		t.Errorf("CRLF parse: %+v", rs)
@@ -68,6 +70,7 @@ func versions(rs []Release) string {
 }
 
 func TestSince(t *testing.T) {
+	t.Parallel()
 	rs := Parse(sample)
 	cases := []struct{ since, want string }{
 		{"", "Unreleased,1.2.0,1.1.0,1.0.0"},
@@ -95,6 +98,7 @@ func TestSince(t *testing.T) {
 }
 
 func TestRenderRoundTrips(t *testing.T) {
+	t.Parallel()
 	rs := Parse(sample)
 	again := Parse(Render(rs))
 	if versions(again) != versions(rs) {
@@ -110,6 +114,7 @@ func TestRenderRoundTrips(t *testing.T) {
 // The embedded changelog must parse and must always have an Unreleased or a
 // dated release at the top — otherwise `saladcloud changelog` is useless.
 func TestEmbeddedChangelogParses(t *testing.T) {
+	t.Parallel()
 	rs := Parse(saladcloudcli.Changelog)
 	if len(rs) == 0 {
 		t.Fatal("embedded CHANGELOG.md has no release headings")

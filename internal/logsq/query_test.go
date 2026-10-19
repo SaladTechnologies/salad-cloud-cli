@@ -8,6 +8,7 @@ import (
 )
 
 func TestCompile(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		f    Filters
@@ -62,6 +63,7 @@ func TestCompile(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := Compile(tt.f)
 			if err != nil {
 				t.Fatalf("Compile(%+v) error: %v", tt.f, err)
@@ -74,6 +76,7 @@ func TestCompile(t *testing.T) {
 }
 
 func TestCompileEscaping(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		in   string
@@ -95,6 +98,7 @@ func TestCompileEscaping(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := Compile(Filters{Group: tt.in})
 			if err != nil {
 				t.Fatalf("Compile error: %v", err)
@@ -108,6 +112,7 @@ func TestCompileEscaping(t *testing.T) {
 }
 
 func TestCompileEscapingAppliesToAllQuotedFields(t *testing.T) {
+	t.Parallel()
 	got, err := Compile(Filters{
 		Group:    `g"1`,
 		Project:  `p\2`,
@@ -125,6 +130,7 @@ func TestCompileEscapingAppliesToAllQuotedFields(t *testing.T) {
 }
 
 func TestCompileRawQueryNotEscaped(t *testing.T) {
+	t.Parallel()
 	raw := `text_log contains "a\"b" and json_log.n > 3`
 	got, err := Compile(Filters{Group: "g", RawQuery: raw})
 	if err != nil {
@@ -136,6 +142,7 @@ func TestCompileRawQueryNotEscaped(t *testing.T) {
 }
 
 func TestCompileAllSeveritiesAccepted(t *testing.T) {
+	t.Parallel()
 	for _, sev := range Severities() {
 		if _, err := Compile(Filters{Group: "g", MinSeverity: sev}); err != nil {
 			t.Errorf("severity %q rejected: %v", sev, err)
@@ -144,6 +151,7 @@ func TestCompileAllSeveritiesAccepted(t *testing.T) {
 }
 
 func TestCompileInvalidSeverity(t *testing.T) {
+	t.Parallel()
 	_, err := Compile(Filters{Group: "g", MinSeverity: "bogus"})
 	if err == nil {
 		t.Fatal("expected an error for invalid severity")
@@ -162,6 +170,7 @@ func TestCompileInvalidSeverity(t *testing.T) {
 }
 
 func TestCompileNeverEmitsReceiveTime(t *testing.T) {
+	t.Parallel()
 	// receive_time is not a queryable field (the API rejects it with
 	// invalid_query_syntax), so no filter combination may compile it in.
 	got, err := Compile(Filters{
@@ -176,6 +185,7 @@ func TestCompileNeverEmitsReceiveTime(t *testing.T) {
 }
 
 func TestCompileNoScope(t *testing.T) {
+	t.Parallel()
 	_, err := Compile(Filters{MinSeverity: "error"})
 	if err == nil {
 		t.Fatal("expected an error with no organization, project, or group")
@@ -188,6 +198,7 @@ func TestCompileNoScope(t *testing.T) {
 // TestCompileScopes: the narrowest scope given wins. The API rejects an
 // empty query, so the organization scope is an explicit label match.
 func TestCompileScopes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		f    Filters
@@ -208,6 +219,7 @@ func TestCompileScopes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := Compile(tt.f)
 			if err != nil {
 				t.Fatalf("Compile: %v", err)

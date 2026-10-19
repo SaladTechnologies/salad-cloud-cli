@@ -8,6 +8,7 @@ import (
 )
 
 func TestCodeForStatus(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		status   int
 		wantCode int
@@ -33,6 +34,7 @@ func TestCodeForStatus(t *testing.T) {
 }
 
 func TestMessageFromBody(t *testing.T) {
+	t.Parallel()
 	htmlPage := "<!DOCTYPE html>\n<html><head><title>502 Bad Gateway</title></head><body>bad gateway</body></html>"
 
 	tests := []struct {
@@ -194,6 +196,7 @@ func TestMessageFromBody(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got, _ := messageFromBody(tt.status, []byte(tt.body)); got != tt.want {
 				t.Errorf("messageFromBody(%d, %q) = %q, want %q", tt.status, tt.body, got, tt.want)
 			}
@@ -202,6 +205,7 @@ func TestMessageFromBody(t *testing.T) {
 }
 
 func TestMessageFromBodyValidationErrors(t *testing.T) {
+	t.Parallel()
 	// The exact payload observed live from `create` with a bad name.
 	livePayload := `{"type":"https://tools.ietf.org/html/rfc9110#section-15.5.1","title":"One or more validation ` +
 		`errors occurred.","status":400,"errors":{"Name":["The field Name must match the regular expression ` +
@@ -257,6 +261,7 @@ func TestMessageFromBodyValidationErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			if got, _ := messageFromBody(tt.status, []byte(tt.body)); got != tt.want {
 				t.Errorf("messageFromBody(%d, %q) = %q, want %q", tt.status, tt.body, got, tt.want)
 			}
@@ -265,6 +270,7 @@ func TestMessageFromBodyValidationErrors(t *testing.T) {
 }
 
 func TestMessageFromBodyValidationErrorsCapped(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("y", 2000)
 	body := `{"title":"One or more validation errors occurred.","errors":{"Name":["` + long + `"]}}`
 	got, _ := messageFromBody(400, []byte(body))
@@ -282,6 +288,7 @@ func TestMessageFromBodyValidationErrorsCapped(t *testing.T) {
 // TestKnownProblemTypesCarryTheirFix: a known problem type's fix is the
 // error's hint, whether or not the API sent a detail.
 func TestKnownProblemTypesCarryTheirFix(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ body, hint string }{
 		{`{"type":"created_replicas_quota_exceeded","title":"Bad ` +
 			`Request"}`, "to see the quota, run saladcloud quotas get"},

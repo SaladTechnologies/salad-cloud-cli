@@ -9,6 +9,7 @@ import (
 )
 
 func TestParseTimeRef(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
 		in   string
@@ -27,6 +28,7 @@ func TestParseTimeRef(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
+			t.Parallel()
 			got, err := ParseTimeRef(tt.in, now)
 			if err != nil {
 				t.Fatalf("ParseTimeRef(%q) error: %v", tt.in, err)
@@ -42,9 +44,11 @@ func TestParseTimeRef(t *testing.T) {
 }
 
 func TestParseTimeRefGarbage(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
 	for _, in := range []string{"", "yesterday", "12x", "d", "2026-13-45", "15", "one hour"} {
 		t.Run("garbage_"+in, func(t *testing.T) {
+			t.Parallel()
 			_, err := ParseTimeRef(in, now)
 			if err == nil {
 				t.Fatalf("ParseTimeRef(%q) should fail", in)

@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -16,22 +15,32 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 )
 
-// testOptions builds a test's clients from the process environment (the
-// tests point the base URLs at their servers with t.Setenv).
-func testOptions() Options {
-	return Options{Getenv: os.Getenv, Debug: DebugOff, DebugOut: nil, Backoff: nil, Now: nil}
+// testOptions builds a test's client options with an environment of only
+// vars, so nothing on the machine running the tests leaks in.
+func testOptions(vars map[string]string) Options {
+	return Options{Getenv: getenvOf(vars), Debug: DebugOff, DebugOut: nil, Backoff: nil, Now: nil}
+}
+
+// getenvOf reads the variables in vars.
+func getenvOf(vars map[string]string) func(string) string {
+	return func(k string) string { return vars[k] }
+}
+
+// baseURLs points the API and S4 storage base URLs at url, the overrides
+// the CLI honors.
+func baseURLs(url string) map[string]string {
+	return map[string]string{"SALAD_CLI_API_BASE_URL": url, "SALAD_CLI_STORAGE_BASE_URL": url}
 }
 
 // newRestTestClient points a Client (with org and project set) at an
-// httptest server via the same SALAD_CLI_API_BASE_URL override the CLI honors.
+// httptest server via the same base URL overrides the CLI honors.
 func newRestTestClient(t *testing.T, baseURL string) *Client {
 	t.Helper()
-	t.Setenv("SALAD_CLI_API_BASE_URL", baseURL)
 	c, cerr := New(config.Resolved{
 		APIKey:       "test-key",
 		Organization: "my-org",
 		Project:      "default",
-	}, testOptions())
+	}, testOptions(baseURLs(baseURL)))
 	if cerr != nil {
 		t.Fatalf("New: %v", cerr)
 	}
@@ -68,6 +77,7 @@ const liveGroupBody = `{
 }`
 
 func TestGetGroupDecodesLiveWireFormat(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
@@ -82,7 +92,7 @@ func TestGetGroupDecodesLiveWireFormat(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		respond(t, w, liveGroupBody)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
 	group, cerr := c.GetGroup(t.Context(), "my-app")
@@ -106,6 +116,7 @@ func TestGetGroupDecodesLiveWireFormat(t *testing.T) {
 }
 
 func TestUpdateGroupSendsMergePatchContentType(t *testing.T) {
+	t.Parallel()
 	var gotContentType, gotMethod string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
@@ -113,7 +124,7 @@ func TestUpdateGroupSendsMergePatchContentType(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		respond(t, w, liveGroupBody)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
 	if _, cerr := c.UpdateGroup(t.Context(), "my-app", containergroups.ContainerGroupPatch{}); cerr != nil {
@@ -132,6 +143,7 @@ func TestUpdateGroupSendsMergePatchContentType(t *testing.T) {
 // nothing is re-marshaled through the SDK struct, so merge-patch clears
 // (explicit empty arrays etc.) survive — with the merge-patch Content-Type.
 func TestUpdateGroupRawSendsBodyVerbatim(t *testing.T) {
+	t.Parallel()
 	doc := json.RawMessage(`{"scaling-actions": [], "replicas": 3}`)
 	var gotBody []byte
 	var gotMethod, gotContentType string
@@ -142,7 +154,7 @@ func TestUpdateGroupRawSendsBodyVerbatim(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		respond(t, w, liveGroupBody)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
 	if _, cerr := c.UpdateGroupRaw(t.Context(), "my-app", doc); cerr != nil {
@@ -163,10 +175,11 @@ func TestUpdateGroupRawSendsBodyVerbatim(t *testing.T) {
 // document (a typed nil RawMessage marshals to "null"; an empty YAML file
 // converts to "null") must fail fast client-side, before any request.
 func TestUpdateGroupRawRejectsEmptyPatch(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("an empty patch must not reach the server")
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
 	// "{}" is included: a keyless object is a merge patch that changes
@@ -189,13 +202,14 @@ func TestUpdateGroupRawRejectsEmptyPatch(t *testing.T) {
 }
 
 func TestDeleteGroupEmpty202Body(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodDelete {
 			t.Errorf("method = %s, want DELETE", r.Method)
 		}
 		w.WriteHeader(http.StatusAccepted) // 202, no body — the live shape
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
 	if cerr := c.DeleteGroup(t.Context(), "my-app"); cerr != nil {
@@ -204,6 +218,7 @@ func TestDeleteGroupEmpty202Body(t *testing.T) {
 }
 
 func TestRetryOn429ThenSuccess(t *testing.T) {
+	t.Parallel()
 	var calls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
@@ -216,7 +231,7 @@ func TestRetryOn429ThenSuccess(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		respond(t, w, liveGroupBody)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
 	c.backoff = []time.Duration{time.Microsecond, time.Microsecond, time.Microsecond}
@@ -233,12 +248,13 @@ func TestRetryOn429ThenSuccess(t *testing.T) {
 }
 
 func TestRetriesExhaustedOn429(t *testing.T) {
+	t.Parallel()
 	var calls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusTooManyRequests)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
 	c.backoff = []time.Duration{time.Microsecond}
@@ -266,6 +282,7 @@ func TestRetriesExhaustedOn429(t *testing.T) {
 // would fire and blame the server for the client's bug. This test keeps the
 // warning honest.
 func TestCreateGroupPreservesExplicitFalseOnTheWire(t *testing.T) {
+	t.Parallel()
 	var gotBody []byte
 	var gotMethod, gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -274,7 +291,7 @@ func TestCreateGroupPreservesExplicitFalseOnTheWire(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		respond(t, w, liveGroupBody)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	falseVal := false
 	req := containergroups.ContainerGroupCreationRequest{
@@ -326,6 +343,7 @@ func TestCreateGroupPreservesExplicitFalseOnTheWire(t *testing.T) {
 // result. Those bytes must go out untouched, or a tolerated unknown field
 // would be silently dropped after the CLI promised to send it.
 func TestCreateGroupRawSendsBodyVerbatim(t *testing.T) {
+	t.Parallel()
 	doc := json.RawMessage(
 		`{"name":"my-app","replicas":1,"future_field":{"nested":[1,2]},"container":{"image":"x","image_caching":false}}`,
 	)
@@ -337,7 +355,7 @@ func TestCreateGroupRawSendsBodyVerbatim(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		respond(t, w, liveGroupBody)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
 	if _, cerr := c.CreateGroupRaw(t.Context(), doc); cerr != nil {

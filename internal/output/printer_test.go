@@ -24,6 +24,7 @@ func capture(t *testing.T) (*Printer, *bytes.Buffer) {
 }
 
 func TestSetMode(t *testing.T) {
+	t.Parallel()
 	p, _ := capture(t)
 
 	if err := p.SetMode("json"); err != nil {
@@ -57,6 +58,7 @@ func TestSetMode(t *testing.T) {
 }
 
 func TestEmitJSON(t *testing.T) {
+	t.Parallel()
 	p, buf := capture(t)
 	if err := p.SetMode("json"); err != nil {
 		t.Fatal(err)
@@ -80,6 +82,7 @@ func TestEmitJSON(t *testing.T) {
 }
 
 func TestEmitTable(t *testing.T) {
+	t.Parallel()
 	p, buf := capture(t)
 	// Default mode is table (capture's cleanup guarantees the reset).
 	v := row{Name: "my-group", State: "running"}
@@ -105,6 +108,7 @@ func TestEmitTable(t *testing.T) {
 }
 
 func TestStreamJSON(t *testing.T) {
+	t.Parallel()
 	p, buf := capture(t)
 	if err := p.SetMode("json"); err != nil {
 		t.Fatal(err)
@@ -131,6 +135,7 @@ func TestStreamJSON(t *testing.T) {
 }
 
 func TestStreamTable(t *testing.T) {
+	t.Parallel()
 	p, buf := capture(t)
 	if err := p.Stream(row{"a", "running"}, "2026-01-01 my log line"); err != nil {
 		t.Fatalf("Stream error: %v", err)
@@ -141,6 +146,7 @@ func TestStreamTable(t *testing.T) {
 }
 
 func TestEmitYAML(t *testing.T) {
+	t.Parallel()
 	p, buf := capture(t)
 	if err := p.SetMode("yaml"); err != nil {
 		t.Fatal(err)
@@ -156,6 +162,7 @@ func TestEmitYAML(t *testing.T) {
 // Stream in yaml mode is a YAML stream: each record its own document,
 // opened with ---.
 func TestStreamYAML(t *testing.T) {
+	t.Parallel()
 	p, buf := capture(t)
 	if err := p.SetMode("yaml"); err != nil {
 		t.Fatal(err)
@@ -174,6 +181,7 @@ func TestStreamYAML(t *testing.T) {
 // character, in keys and values, and decodes to the same document; yaml
 // keeps the characters as they are.
 func TestJSONIsASCII(t *testing.T) {
+	t.Parallel()
 	doc := map[string]any{"name": "Café 東京", "emoji": "🎉 ok", "Größe": "ü", "plain": "<a&b>"}
 	check := func(t *testing.T, out []byte) {
 		t.Helper()

@@ -17,6 +17,7 @@ import (
 // mimeType/sign/signatureExp fields, the Salad-Api-Key header, and the
 // {"url": ...} response parsed.
 func TestUploadFile(t *testing.T) {
+	t.Parallel()
 	fileBytes := []byte("fake-mp3-bytes")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
@@ -59,9 +60,8 @@ func TestUploadFile(t *testing.T) {
 			`{"url": "https://storage-api.salad.com/organizations/my-org/files/saladcloud-cli/transcribe/meeting-123.mp3?token=abc"}`,
 		)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
-	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newRestTestClient(t, srv.URL) // API base URL is irrelevant here
 	url, cerr := c.UploadFile(t.Context(),
 		"saladcloud-cli/transcribe/meeting-123.mp3", bytes.NewReader(fileBytes), "audio/mpeg", true, 86400)
@@ -76,6 +76,7 @@ func TestUploadFile(t *testing.T) {
 // TestUploadFileUnsigned: without sign, the sign/signatureExp fields must be
 // absent entirely (not sent as "false"/"0").
 func TestUploadFileUnsigned(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseMultipartForm(1 << 20); err != nil {
 			t.Fatalf("ParseMultipartForm: %v", err)
@@ -89,9 +90,8 @@ func TestUploadFileUnsigned(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		respond(t, w, `{"url": "https://storage-api.salad.com/x"}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
-	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newRestTestClient(t, srv.URL)
 	_, cerr := c.UploadFile(
 		t.Context(),
@@ -107,14 +107,14 @@ func TestUploadFileUnsigned(t *testing.T) {
 }
 
 func TestUploadFileNon2xxMapsStatus(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		respond(t, w, `{"title": "Forbidden"}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
-	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newRestTestClient(t, srv.URL)
 	_, cerr := c.UploadFile(t.Context(), "a.mp3", strings.NewReader("x"), "audio/mpeg", true, 60)
 	if cerr == nil {
