@@ -20,9 +20,18 @@
 # As in install.ps1: everything runs inside a function, and errors are thrown
 # rather than calling exit, which would close the window when piped into iex.
 function Uninstall-Saladcloud {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+        Justification = 'Run under irm | iex, it talks to the person at the console.')]
+    param()
+
     $ErrorActionPreference = 'Stop'
 
-    $installDir = if ($env:SALAD_CLI_INSTALL_DIR) { $env:SALAD_CLI_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\saladcloud' }
+    $installDir = if ($env:SALAD_CLI_INSTALL_DIR) {
+        $env:SALAD_CLI_INSTALL_DIR
+    }
+    else {
+        Join-Path $env:LOCALAPPDATA 'Programs\saladcloud'
+    }
     $exe = Join-Path $installDir 'saladcloud.exe'
 
     # The binary knows where its config is (the OS's folder, or
@@ -30,24 +39,39 @@ function Uninstall-Saladcloud {
     # folder it would have used.
     $config = $null
     if (Test-Path $exe) {
-        try { $config = (& $exe config path 2>$null | Select-Object -First 1) } catch { $config = $null }
+        try {
+            $config = (& $exe config path 2>$null | Select-Object -First 1)
+        }
+        catch {
+            $config = $null
+        }
     }
     if (-not $config) {
-        $dir = if ($env:SALAD_CLI_CONFIG_DIR) { $env:SALAD_CLI_CONFIG_DIR } else { Join-Path $env:APPDATA 'saladcloud' }
+        $dir = if ($env:SALAD_CLI_CONFIG_DIR) {
+            $env:SALAD_CLI_CONFIG_DIR
+        }
+        else {
+            Join-Path $env:APPDATA 'saladcloud'
+        }
         $config = Join-Path $dir 'config.json'
     }
 
     if (Test-Path $exe) {
         foreach ($f in @($exe, "$exe.old")) {
-            if (-not (Test-Path $f)) { continue }
+            if (-not (Test-Path $f)) {
+                continue
+            }
             try {
                 Remove-Item -Force $f
-            } catch {
-                throw "saladcloud uninstall: cannot remove ${f}: $($_.Exception.Message) (close any running saladcloud and run this again)"
+            }
+            catch {
+                throw ("saladcloud uninstall: cannot remove ${f}: $($_.Exception.Message) " +
+                    '(close any running saladcloud and run this again)')
             }
         }
         Write-Host "saladcloud uninstall: removed $exe"
-    } else {
+    }
+    else {
         Remove-Item -Force "$exe.old" -ErrorAction SilentlyContinue
         Write-Host "saladcloud uninstall: no saladcloud.exe in $installDir; nothing to remove there"
     }
@@ -62,13 +86,17 @@ function Uninstall-Saladcloud {
         $target = $installDir.TrimEnd('\')
         $envKey = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
         try {
-            $userPath = [string]$envKey.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            $noExpand = [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames
+            $userPath = [string]$envKey.GetValue('Path', '', $noExpand)
             $entries = @($userPath -split ';' | Where-Object { $_ -ne '' })
-            $kept = @($entries | Where-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -ine $target })
+            $kept = @($entries | Where-Object {
+                    [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\') -ine $target
+                })
             if ($kept.Count -ne $entries.Count) {
                 if ($kept.Count -eq 0) {
                     $envKey.DeleteValue('Path')
-                } else {
+                }
+                else {
                     $envKey.SetValue('Path', ($kept -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
                 }
                 # Setting and clearing a variable broadcasts WM_SETTINGCHANGE, so
@@ -78,7 +106,8 @@ function Uninstall-Saladcloud {
                 $env:Path = (@($env:Path -split ';' | Where-Object { $_.TrimEnd('\') -ine $target }) -join ';')
                 Write-Host "saladcloud uninstall: removed $installDir from your user PATH"
             }
-        } finally {
+        }
+        finally {
             $envKey.Close()
         }
     }
@@ -90,24 +119,37 @@ function Uninstall-Saladcloud {
         # SALAD_CLI_CONFIG_DIR can point at a folder that holds other things.
         if ((Test-Path $config) -or (Test-Path $knownHosts)) {
             Remove-Item -Force $config, $knownHosts -ErrorAction SilentlyContinue
-            if ((Test-Path $configDir) -and -not (Get-ChildItem -Force $configDir)) { Remove-Item -Force $configDir }
+            if ((Test-Path $configDir) -and -not (Get-ChildItem -Force $configDir)) {
+                Remove-Item -Force $configDir
+            }
             Write-Host "saladcloud uninstall: removed the config file $config and the CLI's known_hosts"
         }
-    } elseif (Test-Path $config) {
-        Write-Host "saladcloud uninstall: kept the config file $config (it holds your saved API keys); delete it, or rerun with SALAD_CLI_PURGE=1"
+    }
+    elseif (Test-Path $config) {
+        Write-Host ("saladcloud uninstall: kept the config file $config (it holds your saved API keys); " +
+            'delete it, or rerun with SALAD_CLI_PURGE=1')
     }
     if (Test-Path (Join-Path $HOME '.ssh\saladcloud_ed25519')) {
-        Write-Host "saladcloud uninstall: kept the SSH key ~\.ssh\saladcloud_ed25519 (saladcloud ssh-key setup made it, and it may be registered in the portal)"
+        Write-Host ('saladcloud uninstall: kept the SSH key ~\.ssh\saladcloud_ed25519 ' +
+            '(saladcloud ssh-key setup made it, and it may be registered in the portal)')
     }
 
     # Another copy still on PATH came from somewhere else.
     $other = Get-Command saladcloud -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($other) {
         $path = $other.Source
-        $how = if ($path -match '\\scoop\\') { 'scoop uninstall saladcloud' }
-        elseif ($path -match '\\WinGet\\') { 'winget uninstall SaladTechnologies.SaladCloudCLI' }
-        elseif ($path -match '\\go\\bin\\') { "delete $path (go install put it there)" }
-        else { 'remove it the way it was installed' }
+        $how = if ($path -match '\\scoop\\') {
+            'scoop uninstall saladcloud'
+        }
+        elseif ($path -match '\\WinGet\\') {
+            'winget uninstall SaladTechnologies.SaladCloudCLI'
+        }
+        elseif ($path -match '\\go\\bin\\') {
+            "delete $path (go install put it there)"
+        }
+        else {
+            'remove it the way it was installed'
+        }
         Write-Host "saladcloud uninstall: another saladcloud is still on your PATH: $path; to remove it, $how"
     }
 }

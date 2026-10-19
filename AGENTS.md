@@ -393,6 +393,10 @@ silently. Platform asks, evidence and internal locations stay out of this reposi
 
 ### PowerShell
 
+- These rules are for scripts run with pwsh. The two installers, `install.ps1` and `uninstall.ps1`, are exempt from
+  the shebang, `#Requires -Version 7.4` and top-level `param()`/settings rules below: they must run on Windows
+  PowerShell 5.1 under `irm | iex`, where anything set at the top level leaks into the user's session, so they keep
+  their settings inside their one function. Formatting, PSScriptAnalyzer and the suppression rule still apply.
 - Run `just fmt-powershell` after editing a PowerShell script, and `just fmt-check-powershell` and `just lint-powershell` before calling the work done. Never run the formatting and linting tools directly with settings that override our configuration.
 - Fix every PSScriptAnalyzer finding. A suppression is a `[Diagnostics.CodeAnalysis.SuppressMessageAttribute('<rule>', '<target>', Justification = '<reason>')]` on the narrowest function or `param` block it covers, never on the whole script, and never a `PSScriptAnalyzerSettings.psd1` exclusion.
 - A script that is run directly starts with `#!/usr/bin/env pwsh` and is committed as executable: `git update-index --chmod=+x -- <file>`, which also works on Windows.
