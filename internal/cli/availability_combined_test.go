@@ -130,16 +130,9 @@ func TestAvailabilityOnCallColumn(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
 	app.stubAvailability(t) // on-call counts 7 and 99
-	if out, err := app.runRoot(
-		t,
-		"availability",
-		"--gpu",
-		classA,
-		"--gpu",
-		classB,
-	); err != nil ||
-		!strings.Contains(out, "ON-CALL") {
-		t.Errorf("non-zero on-call counts: err %v, table lacks ON-CALL:\n%s", err, out)
+	both, bothErr := app.runRoot(t, "availability", "--gpu", classA, "--gpu", classB)
+	if bothErr != nil || !strings.Contains(both, "ON-CALL") {
+		t.Errorf("non-zero on-call counts: err %v, table lacks ON-CALL:\n%s", bothErr, both)
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

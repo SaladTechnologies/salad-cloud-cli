@@ -24,6 +24,9 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
+// availabilityCombinedMinClasses is the number of GPU classes from which availability adds the combined query.
+const availabilityCombinedMinClasses = 2
+
 // bytesPerGB converts --storage (GB) to the API's storage_amount (bytes).
 const bytesPerGB = int64(1) << 30
 
@@ -34,6 +37,7 @@ var countryCodeRe = regexp.MustCompile(`^[a-z]{2}$`)
 type gpuAvailabilityRow struct {
 	GpuClass     string `json:"gpu_class"`
 	GpuClassName string `json:"gpu_class_name"`
+	//nolint:embeddedstructfieldcheck // after the class fields, which JSON lists first
 	organizations.GpuAvailability
 }
 
@@ -42,6 +46,7 @@ type gpuAvailabilityRow struct {
 // listing several classes can draw on.
 type gpuCombinedRow struct {
 	GpuClasses []string `json:"gpu_classes"`
+	//nolint:embeddedstructfieldcheck // after gpu_classes, which JSON lists first
 	organizations.GpuAvailability
 }
 
@@ -59,8 +64,11 @@ type gpuAvailabilityResult struct {
 // same keys.
 type cpuAvailabilityResult struct {
 	Items    []organizations.CpuAvailability `json:"items"`
-	Combined *struct{}                       `json:"combined"`
+	Combined *cpuCombinedNone                `json:"combined"`
 }
+
+// cpuCombinedNone is the combined answer of a CPU-only query, which never has one: its Combined is always nil.
+type cpuCombinedNone struct{}
 
 // availabilityFlags are the requirement flags, shared in name and meaning
 // with container-groups create.
@@ -77,7 +85,7 @@ type availabilityFlags struct {
 }
 
 // validateAvailabilityFlags checks the values before any API work.
-func validateAvailabilityFlags(f availabilityFlags) *clierr.Error {
+func validateAvailabilityFlags(f *availabilityFlags) *clierr.Error {
 	if f.CPUSet && f.CPU < 1 {
 		return clierr.New(
 			clierr.CodeInvalidInput,
@@ -121,7 +129,8 @@ func normalizeCountries(in []string) ([]string, *clierr.Error) {
 }
 
 // requirementsOf reads the availability requirements of an existing group.
-func requirementsOf(g *shared.ContainerGroup) (req api.AvailabilityRequest) {
+func requirementsOf(g *shared.ContainerGroup) api.AvailabilityRequest {
+	var req api.AvailabilityRequest
 	if g.Container != nil && g.Container.Resources != nil {
 		r := g.Container.Resources
 		req.GpuClasses = append([]string(nil), r.GpuClasses...)
@@ -137,7 +146,7 @@ func requirementsOf(g *shared.ContainerGroup) (req api.AvailabilityRequest) {
 // requirements, or empty). gpuIDs replaces base's classes when non-empty.
 func applyAvailabilityFlags(
 	base api.AvailabilityRequest,
-	f availabilityFlags,
+	f *availabilityFlags,
 	gpuIDs []string,
 ) api.AvailabilityRequest {
 	req := base
@@ -197,15 +206,12 @@ func askTwiceIfZero[T any](ask func() (*T, *clierr.Error), zero func(*T) bool) (
 	return ask()
 }
 
-// overloadWarning is the stderr warning for an answer whose every count is
-// zero after the retry: that can be an empty class or an overloaded
-// availability service, and the answer cannot say which. "" otherwise.
-func overloadWarning(label string, zero bool) string {
-	if !zero {
-		return ""
-	}
+// overloadWarning is the stderr warning for an answer labeled label whose every count is zero after the retry: that
+// can be an empty class or an overloaded availability service, and the answer cannot say which.
+func overloadWarning(label string) string {
 	return fmt.Sprintf(
-		"warning: %s reports 0 nodes in every priority tier, which could mean the availability API is overloaded; treat this row as unknown and run the command again",
+		"warning: %s reports 0 nodes in every priority tier, which could mean the availability API is overloaded; "+
+			"treat this row as unknown and run the command again",
 		label,
 	)
 }
@@ -264,7 +270,8 @@ are all zero is asked once more before it is shown.
 Counts are estimates of currently online nodes, one per priority tier
 (BATCH, LOW, MEDIUM, HIGH). The API's on-call count (on_call_gpu,
 on_call_cpu) is an ON-CALL column only when a row reports one: today the API
-reports 0 for every row, and -o json keeps the field either way. A zero is not proof of no capacity: an overloaded availability
+reports 0 for every row, and -o json keeps the field either way. ` +
+			`A zero is not proof of no capacity: an overloaded availability
 service answers 200 with every count 0, so a row that is all zeros after the
 retry gets a stderr warning that the availability API may be overloaded (one
 class can be all zeros while others answer).`,
@@ -280,7 +287,7 @@ class can be all zeros while others answer).`,
   # CPU-only nodes
   saladcloud availability --cpu 4 --memory 8192`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error { return app.runAvailability(cmd, args, af) },
+		RunE: func(cmd *cobra.Command, args []string) error { return app.runAvailability(cmd, args, &af) },
 	}
 	f := cmd.Flags()
 	f.StringArrayVar(
@@ -294,12 +301,13 @@ class can be all zeros while others answer).`,
 	f.Int64Var(&af.Storage, "storage", 0, "storage per replica in GB")
 	f.StringArrayVar(&af.Countries, "country", nil, "country code the replica may run in, repeatable (for example us)")
 	f.StringVar(&af.From, "from", "", "take the requirements of an existing group: <group> or <project>/<group>")
-	cmd.Flags().
-		StringVar(&app.flags.project, "project", "", "the project --from <group> looks in (overrides SALAD_PROJECT and the config file; --from <project>/<group> also names it)")
+	cmd.Flags().StringVar(&app.flags.project, globalFlagProject, "",
+		"the project --from <group> looks in "+
+			"(overrides SALAD_PROJECT and the config file; --from <project>/<group> also names it)")
 	root.AddCommand(cmd)
 }
 
-func (app *App) runAvailability(cmd *cobra.Command, _ []string, af availabilityFlags) error {
+func (app *App) runAvailability(cmd *cobra.Command, _ []string, af *availabilityFlags) error {
 	fl := cmd.Flags()
 	af.CPUSet, af.MemorySet, af.StorageOK = fl.Changed("cpu"), fl.Changed("memory"), fl.Changed("storage")
 	if cerr := validateAvailabilityFlags(af); cerr != nil {
@@ -317,7 +325,8 @@ func (app *App) runAvailability(cmd *cobra.Command, _ []string, af availabilityF
 	if cerr != nil {
 		return cerr
 	}
-	if cerr = client.RequireOrg(); cerr != nil {
+	cerr = client.RequireOrg()
+	if cerr != nil {
 		return cerr
 	}
 
@@ -347,7 +356,7 @@ func (app *App) availabilityFrom(
 ) (api.AvailabilityRequest, *clierr.Error) {
 	r := *res
 	if fromProject != "" {
-		r.Project, r.ProjectSource = fromProject, "flag"
+		r.Project, r.ProjectSource = fromProject, resolveSourceFlag
 	}
 	src, err := api.New(r, app.apiOptions())
 	if err != nil {
@@ -409,8 +418,8 @@ func (app *App) availabilityCPU(ctx context.Context, client *api.Client, req api
 	if cerr != nil {
 		return cerr
 	}
-	if w := overloadWarning("CPU", allZeroCPU(avail)); w != "" {
-		fprintln(app.errw(), w)
+	if allZeroCPU(avail) {
+		fprintln(app.errw(), overloadWarning("CPU"))
 	}
 	result := cpuAvailabilityResult{Items: []organizations.CpuAvailability{*avail}, Combined: nil}
 	return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
@@ -432,7 +441,7 @@ func (app *App) availabilityGPU(
 	req api.AvailabilityRequest,
 	classes []organizationdata.GpuClass,
 ) error {
-	result := gpuAvailabilityResult{Items: []gpuAvailabilityRow{}, Combined: nil}
+	result := gpuAvailabilityResult{Items: make([]gpuAvailabilityRow, 0, len(req.GpuClasses)), Combined: nil}
 	for _, id := range req.GpuClasses {
 		one := req
 		one.GpuClasses = []string{id}
@@ -443,7 +452,7 @@ func (app *App) availabilityGPU(
 		row := gpuAvailabilityRow{GpuClass: id, GpuClassName: gpuClassDisplayName(classes, id), GpuAvailability: *avail}
 		result.Items = append(result.Items, row)
 	}
-	if len(req.GpuClasses) >= 2 {
+	if len(req.GpuClasses) >= availabilityCombinedMinClasses {
 		avail, cerr := app.askGpuAvailability(ctx, client, req, "the combined query")
 		if cerr != nil {
 			return cerr
@@ -467,8 +476,8 @@ func (app *App) askGpuAvailability(
 	if cerr != nil {
 		return nil, cerr
 	}
-	if w := overloadWarning(name, allZeroGpu(avail)); w != "" {
-		fprintln(app.errw(), w)
+	if allZeroGpu(avail) {
+		fprintln(app.errw(), overloadWarning(name))
 	}
 	return avail, nil
 }
@@ -476,7 +485,7 @@ func (app *App) askGpuAvailability(
 // writeGpuAvailabilityTable is the table form of a GPU availability result; the ON-CALL column shows only when an
 // answer reports it.
 func writeGpuAvailabilityTable(w *output.Writer, result *gpuAvailabilityResult) {
-	onCall := []*int64{}
+	onCall := make([]*int64, 0, len(result.Items)+1)
 	for i := range result.Items {
 		onCall = append(onCall, result.Items[i].OnCallGpu)
 	}

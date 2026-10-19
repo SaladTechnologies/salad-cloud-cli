@@ -28,7 +28,7 @@ func TestValidateAvailabilityFlags(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			cerr := validateAvailabilityFlags(tc.f)
+			cerr := validateAvailabilityFlags(&tc.f)
 			switch {
 			case tc.code == 0 && cerr != nil:
 				t.Errorf("unexpected error %v", cerr)
@@ -53,7 +53,7 @@ func TestApplyAvailabilityFlagsOverFrom(t *testing.T) {
 	base := requirementsOf(g)
 	got := applyAvailabilityFlags(
 		base,
-		availabilityFlags{CPU: 8, CPUSet: true, Storage: 5, StorageOK: true, Countries: []string{"US"}},
+		&availabilityFlags{CPU: 8, CPUSet: true, Storage: 5, StorageOK: true, Countries: []string{"US"}},
 		[]string{"b"},
 	)
 	want := api.AvailabilityRequest{
@@ -64,23 +64,17 @@ func TestApplyAvailabilityFlagsOverFrom(t *testing.T) {
 		*got.StorageAmount != *want.StorageAmount || strings.Join(got.CountryCodes, ",") != "us" {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
-	if kept := applyAvailabilityFlags(base, availabilityFlags{}, nil); strings.Join(kept.GpuClasses, ",") != "a" ||
-		strings.Join(kept.CountryCodes, ",") != "de" {
+	kept := applyAvailabilityFlags(base, &availabilityFlags{}, nil)
+	if strings.Join(kept.GpuClasses, ",") != "a" || strings.Join(kept.CountryCodes, ",") != "de" {
 		t.Errorf("without flags the group's requirements stay: %+v", kept)
 	}
 }
 
 func TestOverloadWarning(t *testing.T) {
 	t.Parallel()
-	if w := overloadWarning(
-		"RTX 4090",
-		true,
-	); !strings.HasPrefix(w, "warning:") || !strings.Contains(w, "RTX 4090") ||
-		!strings.Contains(w, "overloaded") {
+	w := overloadWarning("RTX 4090")
+	if !strings.HasPrefix(w, "warning:") || !strings.Contains(w, "RTX 4090") || !strings.Contains(w, "overloaded") {
 		t.Errorf("warning = %q", w)
-	}
-	if w := overloadWarning("x", false); w != "" {
-		t.Errorf("overloadWarning(false) = %q, want none", w)
 	}
 }
 
