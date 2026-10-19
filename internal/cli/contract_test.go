@@ -30,7 +30,7 @@ func TestCpErrorDocument(t *testing.T) {
 				}.run(t)
 				checkMachineStderr(t, o)
 				if fake != "ok" {
-					checkCpChildExit(t, src+" "+mode, &o)
+					checkCpChildExit(t, src+" "+mode, o)
 				} else if o.code != 0 {
 					t.Errorf("%s %s: exit %d\n%s", src, mode, o.code, o.stderr)
 				}
@@ -143,7 +143,7 @@ func TestKeyLikeSavedNames(t *testing.T) {
 		{"cg", "list", "--org", "my-org"},
 		{"doctor", "--org", "my-org"},
 	}
-	outs := make([]outcome, 0, len(commands))
+	outs := make([]*outcome, 0, len(commands))
 	for _, args := range commands {
 		o := session{args: args, saved: saved}.run(t)
 		outs = append(outs, o)

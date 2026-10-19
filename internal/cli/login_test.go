@@ -700,7 +700,7 @@ func TestLoginBranches(t *testing.T) {
 			t.Parallel()
 			want := tc.configAfter()
 			o := withMode(tc.s, "table").run(t)
-			checkLoginTableRun(t, &tc, &o, want)
+			checkLoginTableRun(t, &tc, o, want)
 
 			j := withMode(tc.s, "json").run(t)
 			if j.code != tc.code || j.device != tc.device {
@@ -708,10 +708,10 @@ func TestLoginBranches(t *testing.T) {
 			}
 			checkMachineStderr(t, j)
 			if tc.code != 0 {
-				checkLoginErrorDocument(t, &tc, &o, &j)
+				checkLoginErrorDocument(t, &tc, o, j)
 				return
 			}
-			checkLoginDocument(t, &tc, &j, want)
+			checkLoginDocument(t, &tc, j, want)
 		})
 	}
 }
@@ -760,7 +760,8 @@ func checkLoginErrorDocument(t *testing.T, tc *loginCase, o, j *outcome) {
 	if err != nil {
 		t.Fatalf("json: %v\n%s", err, j.stderr)
 	}
-	msg, hint := tableError(strings.ReplaceAll(o.stderr, o.configPath, "<path>"))
+	te := tableError(strings.ReplaceAll(o.stderr, o.configPath, "<path>"))
+	msg, hint := te.message, te.hint
 	atJ := func(s string) string { return strings.ReplaceAll(s, j.configPath, "<path>") }
 	if doc["kind"] != tc.kind || atJ(fmt.Sprint(doc["message"])) != msg ||
 		atJ(fmt.Sprint(doc["hint"])) != hint {
@@ -809,23 +810,28 @@ func checkLoginDocument(t *testing.T, tc *loginCase, j *outcome, want config.Fil
 }
 
 // withMode is s with -o mode on its command line.
-func withMode(s session, mode string) session {
+func withMode(s session, mode string) session { //nolint:gocritic // a session is a value: this is a changed copy
 	s.args = append(append([]string(nil), s.args...), "-o", mode)
 	return s
 }
 
+// tableErrorLines are the error and its hint read from table-mode stderr.
+type tableErrorLines struct {
+	message, hint string
+}
+
 // tableError reads the error and its hint from table-mode stderr; the hint
 // is "<nil>" when there is none, as the error document prints null.
-func tableError(stderr string) (msg, hint string) {
-	hint = "<nil>"
+func tableError(stderr string) tableErrorLines {
+	e := tableErrorLines{message: "", hint: "<nil>"}
 	for _, l := range lines(stderr) {
 		if m, ok := strings.CutPrefix(l, "saladcloud: error: "); ok {
-			msg = m
-		} else if h, ok := strings.CutPrefix(l, "hint: "); ok && msg != "" {
-			hint = h
+			e.message = m
+		} else if h, ok := strings.CutPrefix(l, "hint: "); ok && e.message != "" {
+			e.hint = h
 		}
 	}
-	return msg, hint
+	return e
 }
 
 // TestLoginWholeSessions checks whole login sessions line for line: what a

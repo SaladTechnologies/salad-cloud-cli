@@ -89,7 +89,7 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 		t.Errorf("whoami json: organization %v, organization_found %v", doc["organization"], doc["organization_found"])
 	}
 	d := session{args: []string{"doctor", "-o", "json"}, saved: saved, env: env}.run(t)
-	if !doctorFailsKeyLikeOrganization(t, &d) {
+	if !doctorFailsKeyLikeOrganization(t, d) {
 		t.Errorf("doctor: %s", d.stdout)
 	}
 	// A variable warning after a config write hides it too.
@@ -97,8 +97,8 @@ func TestKeyLikeNamesAreNeverShown(t *testing.T) {
 	if !strings.Contains(u.stderr, "commands will use SALAD_ORGANIZATION (hidden, looks like an API key)") {
 		t.Errorf("use: stderr\n%s", u.stderr)
 	}
-	for _, r := range []outcome{o, j, d, u} {
-		checkKeyNeitherShownNorSent(t, k, &r)
+	for _, r := range []*outcome{o, j, d, u} {
+		checkKeyNeitherShownNorSent(t, k, r)
 	}
 }
 

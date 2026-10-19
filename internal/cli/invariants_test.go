@@ -148,9 +148,9 @@ func TestErrorDocumentInvariant(t *testing.T) {
 				s := tc.s
 				s.args = append(append([]string(nil), s.args...), "-o", mode)
 				o := s.run(t)
-				checkNoPasteInHints(t, &o)
+				checkNoPasteInHints(t, o)
 				if mode == "table" {
-					checkTableError(t, &o)
+					checkTableError(t, o)
 					return
 				}
 				checkMachineStderr(t, o)
@@ -189,9 +189,9 @@ func checkTableError(t *testing.T, o *outcome) {
 
 // checkMachineStderr: json/yaml stderr is warning: and note: lines, plus the
 // error document as the last line when the command failed.
-func checkMachineStderr(t *testing.T, o outcome) {
+func checkMachineStderr(t *testing.T, o *outcome) {
 	t.Helper()
-	checkMachineStderrLines(t, &o)
+	checkMachineStderrLines(t, o)
 	if o.code == 0 {
 		return
 	}
@@ -199,7 +199,7 @@ func checkMachineStderr(t *testing.T, o outcome) {
 	if err != nil {
 		t.Fatalf("exit %d, but the last stderr line is not the error document (%v):\n%s", o.code, err, o.stderr)
 	}
-	checkErrorDocumentValues(t, &o, doc)
+	checkErrorDocumentValues(t, o, doc)
 	t.Run("five keys", func(t *testing.T) {
 		t.Parallel()
 		keys := make([]string, 0, len(doc))
@@ -420,7 +420,7 @@ func TestCredentialsNeverPrinted(t *testing.T) {
 				o := s.run(t)
 				all := o.all()
 				checkNoCredentialIn(t, all)
-				checkNoPasteInHints(t, &o)
+				checkNoPasteInHints(t, o)
 				t.Run("mask", func(t *testing.T) {
 					t.Parallel()
 					if strings.Contains(all, "****\u2026") {
@@ -562,7 +562,7 @@ func TestConfigWritesNameOverridingVariables(t *testing.T) {
 				want := slices.Clone(tc.overrides)
 				slices.Sort(want)
 				if mode == "json" {
-					checkEnvOverridesDocument(t, &o, want)
+					checkEnvOverridesDocument(t, o, want)
 				}
 				checkOverrideWarning(t, o.stderr, want)
 			})

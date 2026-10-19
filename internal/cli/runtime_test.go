@@ -301,7 +301,7 @@ func TestVanishedOrganization(t *testing.T) {
 	}.run(
 		t,
 	)
-	if e, _ := tableError(o.stderr); e != `container group "missing" not found in my-org/default` {
+	if e := tableError(o.stderr).message; e != `container group "missing" not found in my-org/default` {
 		t.Errorf("a group that does not exist: %q", e)
 	}
 }

@@ -361,7 +361,7 @@ type outcome struct {
 	configPath, apiURL, home string
 }
 
-func (s session) run(t *testing.T) outcome {
+func (s session) run(t *testing.T) *outcome { //nolint:gocritic // tests build a session inline and run it once
 	t.Helper()
 	api := newFakeAPI()
 	if s.api != nil {
@@ -431,7 +431,7 @@ func (s session) run(t *testing.T) outcome {
 	if err != nil && s.rawConfig == "" {
 		t.Fatalf("the config file after the run: %v", err)
 	}
-	return outcome{
+	return &outcome{
 		code: code, stdout: stdout.String(), stderr: string(errBytes), device: fc.device.String(),
 		opened: opened, config: after, api: api, hung: hung, transcript: transcript.String(), configPath: configPath,
 		apiURL: srv.URL, home: home,
@@ -512,14 +512,14 @@ func tempFile(t *testing.T, dir, name, content string) *os.File {
 
 // placeholders replaces the run's config path, fake API address and home
 // folder with <path>, <api> and <home>.
-func (o outcome) placeholders(s string) string {
+func (o *outcome) placeholders(s string) string {
 	s = strings.ReplaceAll(s, o.configPath, "<path>")
 	s = strings.ReplaceAll(s, o.apiURL, "<api>")
 	return strings.ReplaceAll(s, o.home, "<home>")
 }
 
 // all is everything a person or a log could see from the run.
-func (o outcome) all() string { return o.stdout + "\n" + o.stderr + "\n" + o.device }
+func (o *outcome) all() string { return o.stdout + "\n" + o.stderr + "\n" + o.device }
 
 // lines splits text into its non-empty lines.
 func lines(s string) []string {
@@ -533,7 +533,7 @@ func lines(s string) []string {
 }
 
 // errorDocument decodes the error document on the last stderr line.
-func (o outcome) errorDocument() (map[string]any, error) {
+func (o *outcome) errorDocument() (map[string]any, error) {
 	ls := lines(o.stderr)
 	if len(ls) == 0 {
 		return nil, errors.New("stderr is empty")
@@ -550,7 +550,7 @@ func (o outcome) errorDocument() (map[string]any, error) {
 }
 
 // document decodes stdout as one JSON document.
-func (o outcome) document(t *testing.T) map[string]any {
+func (o *outcome) document(t *testing.T) map[string]any {
 	t.Helper()
 	var doc map[string]any
 	if err := json.Unmarshal([]byte(o.stdout), &doc); err != nil {
