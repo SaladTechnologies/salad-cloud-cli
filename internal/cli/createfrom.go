@@ -18,6 +18,7 @@ import (
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/input"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
@@ -98,14 +99,7 @@ func copyDocument(g *shared.ContainerGroup, newName string, displayNameSet bool)
 	if !ok {
 		return nil, errUnexpectedGroupDocument
 	}
-	for reqPath, respPath := range requestToResponsePath() {
-		if v, present := lookupPath(obj, respPath); present {
-			if _, already := lookupPath(obj, reqPath); !already {
-				setPath(obj, reqPath, v)
-			}
-			deletePath(obj, respPath)
-		}
-	}
+	copyRelocateResponseFields(obj)
 	delete(obj, "autostart_policy")
 	var dropped []string
 	filtered, ok := input.FilterTree(obj, reflect.TypeFor[containergroups.ContainerGroupCreationRequest](), "", &dropped).(map[string]any)
@@ -120,6 +114,22 @@ func copyDocument(g *shared.ContainerGroup, newName string, displayNameSet bool)
 		return nil, fmt.Errorf("encoding the copy: %w", err)
 	}
 	return doc, nil
+}
+
+// copyRelocateResponseFields moves each field a group response holds at a
+// different path from the creation request (priority) to the request's
+// path, unless obj already has a value there.
+func copyRelocateResponseFields(obj map[string]any) {
+	for reqPath, respPath := range requestToResponsePath() {
+		v, present := lookupPath(obj, respPath)
+		if !present {
+			continue
+		}
+		if _, already := lookupPath(obj, reqPath); !already {
+			setPath(obj, reqPath, v)
+		}
+		deletePath(obj, respPath)
+	}
 }
 
 // publicRegistries are the hosts whose images pull without credentials as
@@ -177,22 +187,8 @@ func (app *App) loadFromBase(
 ) (
 	base containergroups.ContainerGroupCreationRequest, baseRaw []byte, unknowns []input.Unknown, cerr *clierr.Error,
 ) {
-	project, group, cerr := parseFromRef(ref)
+	source, group, cerr := app.fromSourceProject(cmd, ref, name)
 	if cerr != nil {
-		return base, nil, nil, cerr
-	}
-	client, res, cerr := app.NewClient(cmd)
-	if cerr != nil {
-		return base, nil, nil, cerr
-	}
-	if cerr = client.RequireOrg(); cerr != nil {
-		return base, nil, nil, cerr
-	}
-	explicitProject := project != ""
-	if !explicitProject {
-		project = client.Project()
-	}
-	if cerr = checkCopyTarget(project == client.Project(), name, group); cerr != nil {
 		return base, nil, nil, cerr
 	}
 
@@ -211,45 +207,114 @@ func (app *App) loadFromBase(
 		fileRaw, unknowns = raw, u
 	}
 
-	r := res
-	r.Project = project
-	if explicitProject {
-		r.ProjectSource = "flag"
-	}
-	src, cerr := api.New(r, app.apiOptions())
+	g, cerr := app.fromFetchSource(cmd, &source, group)
 	if cerr != nil {
 		return base, nil, nil, cerr
 	}
-	app.warnOnAssumedProject(src, r)
-	g, cerr := src.GetGroup(cmd.Context(), group)
+	base, merged, cerr := fromCopyBase(cmd, g, name, fileRaw)
 	if cerr != nil {
-		return base, nil, nil, groupNotFound(cerr, group, src.Org(), src.Project())
+		return base, nil, nil, cerr
 	}
-	doc, err := copyDocument(g, name, cmd.Flags().Changed("display-name"))
-	if err != nil {
-		return base, nil, nil, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot copy group: %v", err)
-	}
-	merged := doc
-	if len(fileRaw) > 0 {
-		if merged, cerr = input.MergeJSON(doc, fileRaw); cerr != nil {
-			return base, nil, nil, cerr
-		}
-	}
-	if err := json.Unmarshal(merged, &base); err != nil {
-		return base, nil, nil, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot copy group: %v", err)
-	}
-	image := ""
-	if base.Container != nil {
-		image = ptr.Deref(base.Container.Image)
-	}
-	if cmd.Flags().Changed("image") {
-		image = imageFlag
-	}
-	noteRegistryCredentials(notes, fileRaw, image)
+	noteRegistryCredentials(notes, fileRaw, fromCopyImage(cmd, &base, imageFlag))
 	if allowUnknown && len(unknowns) > 0 {
 		baseRaw = merged
 	} else {
 		unknowns = nil
 	}
 	return base, baseRaw, unknowns, nil
+}
+
+// fromSourceProject resolves --from's reference to the source group and the
+// configuration for its project (the current one unless the reference
+// names one), after checking that the copy can get a name of its own.
+func (app *App) fromSourceProject(
+	cmd *cobra.Command,
+	ref, name string,
+) (config.Resolved, string, *clierr.Error) {
+	project, group, cerr := parseFromRef(ref)
+	if cerr != nil {
+		return config.Resolved{}, "", cerr
+	}
+	client, res, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return config.Resolved{}, "", cerr
+	}
+	if cerr = client.RequireOrg(); cerr != nil {
+		return config.Resolved{}, "", cerr
+	}
+	explicitProject := project != ""
+	if !explicitProject {
+		project = client.Project()
+	}
+	if cerr = checkCopyTarget(project == client.Project(), name, group); cerr != nil {
+		return config.Resolved{}, "", cerr
+	}
+	r := res
+	r.Project = project
+	if explicitProject {
+		r.ProjectSource = "flag"
+	}
+	return r, group, nil
+}
+
+// fromFetchSource gets the source group from its project, warning first
+// when that project was assumed.
+func (app *App) fromFetchSource(
+	cmd *cobra.Command,
+	source *config.Resolved,
+	group string,
+) (*shared.ContainerGroup, *clierr.Error) {
+	src, cerr := api.New(*source, app.apiOptions())
+	if cerr != nil {
+		return nil, cerr
+	}
+	app.warnOnAssumedProject(src, *source)
+	g, cerr := src.GetGroup(cmd.Context(), group)
+	if cerr != nil {
+		return nil, groupNotFound(cerr, group, src.Org(), src.Project())
+	}
+	return g, nil
+}
+
+// fromCopyBase is the copy of g as create's base request, with the -f
+// document (fileRaw, may be empty) deep-merged over it, and the merged
+// document it was decoded from.
+func fromCopyBase(
+	cmd *cobra.Command,
+	g *shared.ContainerGroup,
+	name string,
+	fileRaw json.RawMessage,
+) (containergroups.ContainerGroupCreationRequest, json.RawMessage, *clierr.Error) {
+	var base containergroups.ContainerGroupCreationRequest
+	doc, err := copyDocument(g, name, cmd.Flags().Changed("display-name"))
+	if err != nil {
+		return base, nil, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot copy group: %v", err)
+	}
+	merged := doc
+	if len(fileRaw) > 0 {
+		var cerr *clierr.Error
+		if merged, cerr = input.MergeJSON(doc, fileRaw); cerr != nil {
+			return base, nil, cerr
+		}
+	}
+	if err = json.Unmarshal(merged, &base); err != nil {
+		return base, nil, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot copy group: %v", err)
+	}
+	return base, merged, nil
+}
+
+// fromCopyImage is the image the copy will run: --image when given, else
+// the base's.
+func fromCopyImage(
+	cmd *cobra.Command,
+	base *containergroups.ContainerGroupCreationRequest,
+	imageFlag string,
+) string {
+	if cmd.Flags().Changed("image") {
+		return imageFlag
+	}
+	if base.Container != nil {
+		return ptr.Deref(base.Container.Image)
+	}
+	return ""
 }
