@@ -241,7 +241,7 @@ func TestFollowRateLimitBacksOffThenRecovers(t *testing.T) {
 
 func TestFollowCancelReturnsNil(t *testing.T) {
 	e1 := ent("2026-03-01T09:59:00Z", "2026-03-01T09:59:10Z", "i1", "e1")
-	// allowed = 0: the very first sleep after the backlog is cancelled.
+	// allowed = 0: the very first sleep after the backlog is canceled.
 	emitted, calls, _, _ := runFollower(t, []scriptedResult{page(e1)}, 0, 5*time.Second, 0, 0)
 	assertTexts(t, emitted, "e1")
 	if len(calls) != 1 {

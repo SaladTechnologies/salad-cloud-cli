@@ -345,7 +345,7 @@ Each of these was argued out; reopen one only with a reason the original did not
 - **Error kinds are a closed set.** Scripts switch on `kind`, so it is a contract like the exit codes: a `clierr.Kind`
   constant, never a literal or a kind derived from a status string, and a new failure mode maps onto an existing kind.
   `internal/clierr/kinds_test.go` walks every call site and checks the guide's table. `interrupted` is Ctrl-C during a
-  wait, a prompt or a request; a cancelled request reads `<command> cancelled` (`Execute` names it), while
+  wait, a prompt or a request; a canceled request reads `<command> canceled` (`Execute` names it), while
   `logs --follow` and `--watch` end with exit 0.
 
 ## How to add or change a verb

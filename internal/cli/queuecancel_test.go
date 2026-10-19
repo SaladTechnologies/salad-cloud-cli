@@ -10,7 +10,7 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 )
 
-// Cancelling a finished job: the API answers a bare 409 Conflict; the CLI
+// Canceling a finished job: the API answers a bare 409 Conflict; the CLI
 // says the job has finished and in what status, keeping the 409's exit code
 // and kind.
 func TestQueueJobCancelFinishedSaysWhy(t *testing.T) {
@@ -40,7 +40,7 @@ func TestQueueJobCancelFinishedSaysWhy(t *testing.T) {
 	if !ok {
 		t.Fatalf("err = %v, want a *clierr.Error", err)
 	}
-	if !strings.Contains(cerr.Message, `cannot be cancelled: its status is already succeeded`) ||
+	if !strings.Contains(cerr.Message, `cannot be canceled: its status is already succeeded`) ||
 		cerr.Code != clierr.CodeGeneric ||
 		cerr.HTTPStatus == nil ||
 		*cerr.HTTPStatus != http.StatusConflict {

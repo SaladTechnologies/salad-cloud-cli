@@ -110,7 +110,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 			if list, lerr := client.OrganizationListing(cmd.Context()); lerr == nil && list != nil {
 				names = list.OrgNames()
 			} else if lerr != nil && lerr.IsCancel() {
-				return u.cancelled()
+				return u.canceled()
 			}
 		}
 		if h := orgsClause(names); h != "" {
@@ -180,17 +180,17 @@ type useRun struct {
 	saved   config.File
 }
 
-func (*useRun) cancelled() *clierr.Error {
-	return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "use cancelled, nothing changed")
+func (*useRun) canceled() *clierr.Error {
+	return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "use canceled, nothing changed")
 }
 
 // failed is a check that failed for another reason than not found: Ctrl-C
-// reads as cancelled, a rejected key names its source and the fix there,
+// reads as canceled, a rejected key names its source and the fix there,
 // anything else says nothing was changed.
 func (u *useRun) failed(cerr *clierr.Error) *clierr.Error {
 	switch {
 	case cerr.IsCancel():
-		return u.cancelled()
+		return u.canceled()
 	case rejected(cerr):
 		e := clierr.New(clierr.CodeAuth, clierr.KindAuth, "API key %s%s is invalid", maskAPIKey(u.key), fromTag(u.keyFrom)).
 			WithStatus(401)

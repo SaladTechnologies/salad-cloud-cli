@@ -42,7 +42,7 @@ const (
 	KindGroupFailed         Kind = "group_failed"         // 1: a waited-for group failed
 	KindGroupSucceeded      Kind = "group_succeeded"      // 1: a waited-for group exited instead of running
 	KindJobFailed           Kind = "job_failed"           // 1: a waited-for job failed
-	KindJobCancelled        Kind = "job_cancelled"        // 1: a waited-for job was cancelled
+	KindJobCanceled         Kind = "job_canceled"         // 1: a waited-for job was canceled
 	KindTranscriptionFailed Kind = "transcription_failed" // 1: a transcription job failed or reported an error
 	KindChildExit           Kind = "child_exit"           // the child's code: ssh, cp or sftp exited nonzero
 )
@@ -51,7 +51,7 @@ const (
 var Kinds = []Kind{
 	KindUsage, KindInvalidInput, KindUnknownField, KindAuth, KindNotFound, KindRateLimited, KindNetwork,
 	KindNotAvailable, KindAPIError, KindInternal, KindInterrupted, KindWaitTimeout, KindGroupStopped,
-	KindGroupFailed, KindGroupSucceeded, KindJobFailed, KindJobCancelled, KindTranscriptionFailed, KindChildExit,
+	KindGroupFailed, KindGroupSucceeded, KindJobFailed, KindJobCanceled, KindTranscriptionFailed, KindChildExit,
 }
 
 // Error is the CLI's structured error. It marshals directly into the
@@ -67,7 +67,7 @@ type Error struct {
 	HTTPStatus *int    `json:"http_status"`
 
 	// cancel marks the error a request returns when Ctrl-C stopped it; the
-	// CLI names the command in its message (Cancelled).
+	// CLI names the command in its message (Canceled).
 	cancel bool
 	// final marks an error that already says what was not found (Final).
 	final bool
@@ -110,13 +110,13 @@ func (e *Error) HintText() string {
 	return *e.Hint
 }
 
-// Cancelled is the error for a request that Ctrl-C stopped. Its message is
-// a placeholder: the CLI reports it as "<command> cancelled".
-func Cancelled() *Error {
-	return &Error{Code: CodeGeneric, Kind: KindInterrupted, Message: "cancelled", cancel: true}
+// Canceled is the error for a request that Ctrl-C stopped. Its message is
+// a placeholder: the CLI reports it as "<command> canceled".
+func Canceled() *Error {
+	return &Error{Code: CodeGeneric, Kind: KindInterrupted, Message: "canceled", cancel: true}
 }
 
-// IsCancel reports whether e is a request that Ctrl-C stopped (Cancelled).
+// IsCancel reports whether e is a request that Ctrl-C stopped (Canceled).
 func (e *Error) IsCancel() bool { return e != nil && e.cancel }
 
 // New builds an *Error with a formatted message.

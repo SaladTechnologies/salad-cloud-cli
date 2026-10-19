@@ -195,7 +195,7 @@ config set says so.`,
 						return clierr.New(
 							clierr.CodeGeneric,
 							clierr.KindInterrupted,
-							"config set cancelled, nothing changed",
+							"config set canceled, nothing changed",
 						)
 					}
 				} else {

@@ -16,11 +16,11 @@ import (
 var now = time.Now
 
 // transportErr is the error for a request that got no response: the
-// cancelled-request error when Ctrl-C cancelled ctx (it is not a network
+// canceled-request error when Ctrl-C canceled ctx (it is not a network
 // failure), otherwise a network error.
 func transportErr(ctx context.Context, prefix string, err error) *clierr.Error {
 	if errors.Is(ctx.Err(), context.Canceled) {
-		return clierr.Cancelled()
+		return clierr.Canceled()
 	}
 	return networkErr(prefix, err)
 }
@@ -28,7 +28,7 @@ func transportErr(ctx context.Context, prefix string, err error) *clierr.Error {
 // readErr is transportErr for a response body that could not be read.
 func readErr(ctx context.Context, what string, err error) *clierr.Error {
 	if errors.Is(ctx.Err(), context.Canceled) {
-		return clierr.Cancelled()
+		return clierr.Canceled()
 	}
 	return clierr.New(clierr.CodeNetwork, clierr.KindNetwork, "network error reading %s: %v", what, err)
 }

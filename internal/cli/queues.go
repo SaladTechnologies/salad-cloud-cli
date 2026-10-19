@@ -54,11 +54,11 @@ func queueJobNotFound(cerr *clierr.Error, queue, id string) *clierr.Error {
 		`job "%s" not found in queue "%s"`, id, queue)
 }
 
-// queueJobNotCancellable turns the API's bare 409 to a cancel into what
+// queueJobNotCancelable turns the API's bare 409 to a cancel into what
 // happened: the job has already finished. It reads the job for its status;
 // only the message changes, so the exit code, kind and HTTP status stay the
 // 409's.
-func queueJobNotCancellable(
+func queueJobNotCancelable(
 	ctx context.Context,
 	client *api.Client,
 	cerr *clierr.Error,
@@ -69,7 +69,7 @@ func queueJobNotCancellable(
 		why = fmt.Sprintf("its status is already %s", *j.Status)
 	}
 	out := *cerr
-	out.Message = fmt.Sprintf("job %s in queue %s cannot be cancelled: %s", id, queue, why)
+	out.Message = fmt.Sprintf("job %s in queue %s cannot be canceled: %s", id, queue, why)
 	return &out
 }
 
@@ -449,7 +449,7 @@ webhook-secret get shows it).
 
 With --wait the command polls the job every 5s until it reaches a terminal
 status: succeeded emits the final job document and exits 0; failed or
-cancelled exits 1 with the job's status and last event. --timeout (default
+canceled exits 1 with the job's status and last event. --timeout (default
 10m) caps the wait; the job stays queued or running on timeout.`,
 		Example: `  # Inline input, wait for the result (bash, zsh, PowerShell 7.3 or later; older PowerShell drops the inner quotes, so use -f)
   saladcloud queues jobs create --queue my-queue --input '{"prompt": "hello"}' --wait
@@ -471,9 +471,9 @@ cancelled exits 1 with the job's status and last event. --timeout (default
 		Use:   "cancel <id> --queue <queue>",
 		Short: "Cancel a pending or running queue job",
 		Long: `Cancel a queue job. A pending job never runs. A running job is marked
-cancelled and its output is discarded, but the instance working on it runs
+canceled and its output is discarded, but the instance working on it runs
 it to the end, so a handler with side effects should be idempotent. A job
-that has finished cannot be cancelled (exit 1).`,
+that has finished cannot be canceled (exit 1).`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			queue := queueFlag(cmd)
@@ -486,13 +486,13 @@ that has finished cannot be cancelled (exit 1).`,
 			}
 			if cerr := client.CancelQueueJob(cmd.Context(), queue, args[0]); cerr != nil {
 				if cerr.HTTPStatus != nil && *cerr.HTTPStatus == http.StatusConflict {
-					return queueJobNotCancellable(cmd.Context(), client, cerr, queue, args[0])
+					return queueJobNotCancelable(cmd.Context(), client, cerr, queue, args[0])
 				}
 				return queueJobNotFound(cerr, queue, args[0])
 			}
-			v := queueJobActionResult{Queue: queue, ID: args[0], Action: "cancelled", OK: true}
+			v := queueJobActionResult{Queue: queue, ID: args[0], Action: "canceled", OK: true}
 			return wrapErr(output.Emit(v, func(w io.Writer) {
-				fmt.Fprintf(w, "Job %s in queue %s cancelled\n", v.ID, v.Queue)
+				fmt.Fprintf(w, "Job %s in queue %s canceled\n", v.ID, v.Queue)
 			}))
 		},
 	}
@@ -561,7 +561,7 @@ func runQueueJobCreate(cmd *cobra.Command, _ []string) error {
 	if !wait {
 		return wrapErr(output.Emit(job, func(w io.Writer) { writeQueueJobDetail(w, job) }))
 	}
-	ctx := cmd.Context() // cancelled by the one signal handler in Execute
+	ctx := cmd.Context() // canceled by the one signal handler in Execute
 	id := ptr.Deref(job.Id)
 	d := jobWaitDeps[queues.QueueJob]{
 		get: func(ctx context.Context) (*queues.QueueJob, *clierr.Error) {

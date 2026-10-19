@@ -106,7 +106,7 @@ func runGatewayLogin(cmd *cobra.Command, _ []string) error {
 		if con.Terminal() { // hidden whenever stdin is a terminal, prompts or not
 			answer, err := con.ReadHidden()
 			if err != nil {
-				return g.cancelled()
+				return g.canceled()
 			}
 			line = answer
 		} else {
@@ -154,27 +154,27 @@ func runGatewayLogin(cmd *cobra.Command, _ []string) error {
 	return g.save()
 }
 
-// cancelled is the error for Ctrl-C or end of input at the prompt, or
+// canceled is the error for Ctrl-C or end of input at the prompt, or
 // Ctrl-C during the check.
-func (g *gatewayLogin) cancelled() *clierr.Error {
+func (g *gatewayLogin) canceled() *clierr.Error {
 	if g.saved.GatewayAPIKey != "" {
 		return clierr.New(
 			clierr.CodeGeneric,
 			clierr.KindInterrupted,
-			"ai-gateway login cancelled, your saved AI Gateway key (%s) is unchanged",
+			"ai-gateway login canceled, your saved AI Gateway key (%s) is unchanged",
 			maskAPIKey(g.saved.GatewayAPIKey),
 		)
 	}
-	return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "ai-gateway login cancelled, nothing changed")
+	return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "ai-gateway login canceled, nothing changed")
 }
 
 // failed is a check that failed for another reason than the key: Ctrl-C
-// reads as cancelled, a 403 is the key's missing access, anything else says
+// reads as canceled, a 403 is the key's missing access, anything else says
 // nothing was saved.
 func (g *gatewayLogin) failed(cerr *clierr.Error) *clierr.Error {
 	switch {
 	case cerr.IsCancel():
-		return g.cancelled()
+		return g.canceled()
 	case cerr.HTTPStatus != nil && *cerr.HTTPStatus == http.StatusForbidden:
 		return clierr.New(clierr.CodeAuth, clierr.KindAuth, "AI Gateway key %s%s has no AI Gateway access", maskAPIKey(g.key), fromTag(g.keyFrom)).
 			WithStatus(http.StatusForbidden).
@@ -237,7 +237,7 @@ func (g *gatewayLogin) askForKey() *clierr.Error {
 	for {
 		answer, err := ask(keyPrompt(), true)
 		if err != nil {
-			return g.cancelled()
+			return g.canceled()
 		}
 		if answer == "" {
 			if browserVisible() {

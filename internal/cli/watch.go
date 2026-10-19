@@ -85,7 +85,7 @@ type watchDeps struct {
 	refresh     time.Duration
 }
 
-// watchLoop renders every d.refresh until ctx is cancelled (nil: Ctrl-C is
+// watchLoop renders every d.refresh until ctx is canceled (nil: Ctrl-C is
 // the normal way to stop). On a terminal each render clears the screen, like
 // watch(1), which Windows lacks; otherwise renders are separated by a blank
 // line and no control codes are written. Transient errors are reported and

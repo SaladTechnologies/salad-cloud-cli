@@ -226,7 +226,7 @@ func (l *login) keyFromStdin() *clierr.Error {
 	if con.Terminal() { // hidden whenever stdin is a terminal, prompts or not
 		answer, err := con.ReadHidden()
 		if err != nil {
-			return l.cancelled()
+			return l.canceled()
 		}
 		line = answer
 	} else {
@@ -240,26 +240,26 @@ func (l *login) keyFromStdin() *clierr.Error {
 	return nil
 }
 
-// cancelled is the error for Ctrl-C or end of input at a prompt, or Ctrl-C
+// canceled is the error for Ctrl-C or end of input at a prompt, or Ctrl-C
 // during a request: it says what did not change.
-func (l *login) cancelled() *clierr.Error {
+func (l *login) canceled() *clierr.Error {
 	if l.saved.APIKey != "" {
 		return clierr.New(
 			clierr.CodeGeneric,
 			clierr.KindInterrupted,
-			"login cancelled, your saved API key (%s) is unchanged",
+			"login canceled, your saved API key (%s) is unchanged",
 			maskAPIKey(l.saved.APIKey),
 		)
 	}
-	return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "login cancelled, nothing changed")
+	return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "login canceled, nothing changed")
 }
 
-// failed is an API failure after the key step: Ctrl-C reads as cancelled;
+// failed is an API failure after the key step: Ctrl-C reads as canceled;
 // any other error says nothing was saved, unless it carries its own fix.
 func (l *login) failed(cerr *clierr.Error) *clierr.Error {
 	switch {
 	case cerr.IsCancel():
-		return l.cancelled()
+		return l.canceled()
 	case cerr.Hint != nil:
 		return cerr
 	case cerr.Code == clierr.CodeRateLimited:
@@ -297,7 +297,7 @@ func (l *login) askForKey(first bool) *clierr.Error {
 	for {
 		answer, err := ask(keyPrompt(), true)
 		if err != nil {
-			return l.cancelled()
+			return l.canceled()
 		}
 		if answer == "" {
 			if browserVisible() {
@@ -587,7 +587,7 @@ func (l *login) endedAt(err error) *clierr.Error {
 	if errors.As(err, &cerr) {
 		return cerr
 	}
-	return l.cancelled()
+	return l.canceled()
 }
 
 // orgMenu is the numbered list of organizations, with the display name

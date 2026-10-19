@@ -115,7 +115,7 @@ func TestConfigSetKeyFromStdinAtATerminal(t *testing.T) {
 		t.Errorf("exit %d, saved %q, terminal %q", o.code, o.config.APIKey, o.device)
 	}
 	o = session{args: []string{"config", "set", "api-key", "-"}, tty: []string{keyCtrlC}}.run(t)
-	if o.code != 1 || !strings.Contains(o.stderr, "config set cancelled, nothing changed") || o.config.APIKey != "" {
+	if o.code != 1 || !strings.Contains(o.stderr, "config set canceled, nothing changed") || o.config.APIKey != "" {
 		t.Errorf("Ctrl-C: exit %d, saved %q\n%s", o.code, o.config.APIKey, o.stderr)
 	}
 }

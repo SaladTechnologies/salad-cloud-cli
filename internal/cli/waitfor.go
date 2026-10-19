@@ -104,7 +104,7 @@ func waitFlagValues(cmd *cobra.Command) (bool, time.Duration, *clierr.Error) {
 type waitDeps struct {
 	get   func(ctx context.Context) (*shared.ContainerGroup, *clierr.Error)
 	now   func() time.Time
-	sleep func(ctx context.Context, d time.Duration) error // returns ctx.Err() when cancelled
+	sleep func(ctx context.Context, d time.Duration) error // returns ctx.Err() when canceled
 	// progress receives the table-mode progress lines and transient-error
 	// warnings; nil means os.Stderr.
 	progress io.Writer
@@ -115,7 +115,7 @@ type waitDeps struct {
 const progressRepeat = time.Minute
 
 // waitForGroup polls d.get until done(group) reports true, abort(group)
-// returns an error, the context is cancelled, or timeout elapses; on
+// returns an error, the context is canceled, or timeout elapses; on
 // success it returns the group document that satisfied the goal (the
 // settled state — this is what --wait callers emit). goal is the human
 // phrasing for progress and timeout messages, e.g. `be "running"` or
@@ -323,7 +323,7 @@ func runGroupWait(
 	abort func(*shared.ContainerGroup) *clierr.Error,
 	timeout time.Duration,
 ) (*shared.ContainerGroup, error) {
-	ctx := cmd.Context() // cancelled by the one signal handler in Execute
+	ctx := cmd.Context() // canceled by the one signal handler in Execute
 	start := time.Now()
 	final, cerr := waitForGroup(ctx, liveWaitDeps(client, group), group, goal, done, abort, timeout, waitPoll)
 	if cerr != nil {

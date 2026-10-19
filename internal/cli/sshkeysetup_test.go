@@ -47,7 +47,7 @@ func TestSSHKeySetupBranches(t *testing.T) {
 		"saladcloud-cli\n\n" + register
 	shown := "Public key (" + found + ".pub):\n  ssh-ed25519 AAAA test@host\n\n" + register
 	ask := "No SSH key found. Generate one at " + own + "? [Y/n]: "
-	cancelled := "saladcloud: error: ssh-key setup cancelled, no key generated\n"
+	canceled := "saladcloud: error: ssh-key setup canceled, no key generated\n"
 	docGen := map[string]any{
 		"path":           own + ".pub",
 		"public_key":     "ssh-ed25519 AAAAgenerated saladcloud-cli",
@@ -81,7 +81,7 @@ func TestSSHKeySetupBranches(t *testing.T) {
 				code:   1,
 				kind:   "interrupted",
 				device: ask + "n\n",
-				stderr: cancelled,
+				stderr: canceled,
 			},
 			{
 				id:     "no key, Ctrl-C",
@@ -89,7 +89,7 @@ func TestSSHKeySetupBranches(t *testing.T) {
 				code:   1,
 				kind:   "interrupted",
 				device: ask + "\n",
-				stderr: cancelled,
+				stderr: canceled,
 			},
 			{
 				id:     "no key, end of input",
@@ -97,7 +97,7 @@ func TestSSHKeySetupBranches(t *testing.T) {
 				code:   1,
 				kind:   "interrupted",
 				device: ask + "\n",
-				stderr: cancelled,
+				stderr: canceled,
 			},
 			{
 				id:   "no key, no terminal",
@@ -165,7 +165,7 @@ func TestSSHKeySetupBranches(t *testing.T) {
 				code:   1,
 				kind:   "interrupted",
 				device: offer + "\n",
-				stderr: warn + cancelled,
+				stderr: warn + canceled,
 			},
 			{
 				id:     "no terminal",

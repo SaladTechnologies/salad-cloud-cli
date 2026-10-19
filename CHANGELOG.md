@@ -9,6 +9,10 @@ may change, and every such change is listed here.
 ### Changed
 
 - Building from source with `go install` now needs Go 1.25 or later (was 1.24).
+- The CLI spells "canceled" the US way everywhere it owns the word. **Breaking for scripts:** the error kind
+  `job_cancelled` is now `job_canceled`, and `inference jobs cancel` and `queues jobs cancel` emit
+  `"action": "canceled"`. Messages change too (`login canceled, nothing changed`, `<command> canceled` after Ctrl-C). A
+  job's `status` and event `action` still read `cancelled`, as the API sends them.
 
 ## [0.1.0-beta.1] - 2026-10-08
 

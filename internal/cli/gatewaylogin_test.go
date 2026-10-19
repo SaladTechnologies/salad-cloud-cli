@@ -139,7 +139,7 @@ func TestGatewayLoginBranches(t *testing.T) {
 		},
 		{
 			id: "Ctrl-C", s: session{args: gw(), tty: []string{keyCtrlC}}, code: 1, kind: "interrupted",
-			device: dGet + dPaste, stderr: "saladcloud: error: ai-gateway login cancelled, nothing changed\n",
+			device: dGet + dPaste, stderr: "saladcloud: error: ai-gateway login canceled, nothing changed\n",
 		},
 		{
 			id:     "end of input, a key saved",
@@ -147,7 +147,7 @@ func TestGatewayLoginBranches(t *testing.T) {
 			code:   1,
 			kind:   "interrupted",
 			device: "Saved AI Gateway key: ****...WXYZ (Ctrl-C to keep it)\n" + dGet + dPaste,
-			stderr: "saladcloud: error: ai-gateway login cancelled, your saved AI Gateway key (****...WXYZ) is " +
+			stderr: "saladcloud: error: ai-gateway login canceled, your saved AI Gateway key (****...WXYZ) is " +
 				"unchanged\n",
 		},
 		{
@@ -277,7 +277,7 @@ func TestGatewayLoginBranches(t *testing.T) {
 			s:      session{args: piped, stdin: k, api: cancelAtCheck},
 			code:   1,
 			kind:   "interrupted",
-			stderr: "saladcloud: error: ai-gateway login cancelled, nothing changed\n",
+			stderr: "saladcloud: error: ai-gateway login canceled, nothing changed\n",
 		},
 	})
 }

@@ -1291,7 +1291,7 @@ func TestAvailability(t *testing.T) {
 
 // TestQueues drives the queue plumbing without a worker: a job submitted to
 // a queue with no container group stays pending, so it can be read back and
-// cancelled. Queues cost nothing.
+// canceled. Queues cost nothing.
 func TestQueues(t *testing.T) {
 	q := name("q")
 	r := run(t, "queues", "create", q, "--display-name", "Live test queue", "-o", "json")

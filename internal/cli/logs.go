@@ -310,7 +310,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	ctx := cmd.Context() // cancelled by the one signal handler in Execute
+	ctx := cmd.Context() // canceled by the one signal handler in Execute
 	if group != "" {
 		if note := followGroupNote(ctx, client, group); note != "" {
 			fmt.Fprintln(os.Stderr, note)

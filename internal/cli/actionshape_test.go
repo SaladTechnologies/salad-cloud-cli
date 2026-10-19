@@ -39,7 +39,7 @@ func TestActionResultsShareActionAndOK(t *testing.T) {
 		},
 		{
 			name:     "inference job cancel",
-			payload:  jobActionResult{Endpoint: "transcribe", ID: "abc", Action: "cancelled", OK: true},
+			payload:  jobActionResult{Endpoint: "transcribe", ID: "abc", Action: "canceled", OK: true},
 			identity: []string{"endpoint", "id"},
 		},
 		{
@@ -49,7 +49,7 @@ func TestActionResultsShareActionAndOK(t *testing.T) {
 		},
 		{
 			name:     "queue job cancel",
-			payload:  queueJobActionResult{Queue: "q", ID: "abc", Action: "cancelled", OK: true},
+			payload:  queueJobActionResult{Queue: "q", ID: "abc", Action: "canceled", OK: true},
 			identity: []string{"queue", "id"},
 		},
 		{

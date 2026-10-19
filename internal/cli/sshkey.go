@@ -197,7 +197,7 @@ func runSSHKeySetup(cmd *cobra.Command, _ []string) error {
 						false,
 					)
 					if err != nil {
-						return setupCancelled()
+						return setupCanceled()
 					}
 					if yes(answer) {
 						return k.generate()
@@ -214,7 +214,7 @@ func runSSHKeySetup(cmd *cobra.Command, _ []string) error {
 		}
 		answer, err := ask(fmt.Sprintf("No SSH key found. Generate one at %s? [Y/n]:", k.keyPath), false)
 		if err != nil || answer != "" && !yes(answer) {
-			return setupCancelled()
+			return setupCanceled()
 		}
 	}
 	return k.generate()
@@ -225,10 +225,10 @@ func yes(answer string) bool {
 	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes")
 }
 
-// setupCancelled is the error for "n", Ctrl-C or end of input at the
+// setupCanceled is the error for "n", Ctrl-C or end of input at the
 // generate prompt.
-func setupCancelled() *clierr.Error {
-	return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "ssh-key setup cancelled, no key generated")
+func setupCanceled() *clierr.Error {
+	return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "ssh-key setup canceled, no key generated")
 }
 
 // generate creates the CLI's own key and shows it.

@@ -143,7 +143,7 @@ func (c *Client) GetQueueJob(ctx context.Context, queue, id string) (*queues.Que
 }
 
 // CancelQueueJob cancels a queue job; only a job not yet handed to an
-// instance can be cancelled.
+// instance can be canceled.
 func (c *Client) CancelQueueJob(ctx context.Context, queue, id string) *clierr.Error {
 	if err := c.requireOrgProject(); err != nil {
 		return err

@@ -75,7 +75,7 @@ type Follower struct {
 	seen map[string]time.Time
 }
 
-// Run tails logs from since until ctx is cancelled (which returns nil — a
+// Run tails logs from since until ctx is canceled (which returns nil — a
 // clean exit). It first drains the backlog [since, now+lookahead) emitting
 // everything, then polls [maxSeenTime-Lookback, now+lookahead) with the
 // same static query, emitting only entries not already seen. Backlog
@@ -138,7 +138,7 @@ func (f *Follower) Run(
 		return emit(e)
 	}); werr != nil {
 		if ctx.Err() != nil {
-			return nil //nolint:nilerr // cancelled: --follow ends with exit 0
+			return nil //nolint:nilerr // canceled: --follow ends with exit 0
 		}
 		return werr
 	}
@@ -146,7 +146,7 @@ func (f *Follower) Run(
 	effective := poll
 	for {
 		if err := clock.Sleep(ctx, effective); err != nil {
-			return nil //nolint:nilerr // cancelled: --follow ends with exit 0
+			return nil //nolint:nilerr // canceled: --follow ends with exit 0
 		}
 		windowStart := sinceU
 		if hasSeen {
@@ -164,7 +164,7 @@ func (f *Follower) Run(
 		})
 		if werr != nil {
 			if ctx.Err() != nil {
-				return nil //nolint:nilerr // cancelled: --follow ends with exit 0
+				return nil //nolint:nilerr // canceled: --follow ends with exit 0
 			}
 			if werr.Code == clierr.CodeRateLimited {
 				effective *= 2

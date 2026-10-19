@@ -66,7 +66,7 @@ func TestTranscriptionKind(t *testing.T) {
 	if got := transcriptionKind(failed); got.Kind != clierr.KindTranscriptionFailed || got.Code != clierr.CodeGeneric {
 		t.Errorf("failed job = %s/%d, want transcription_failed/1", got.Kind, got.Code)
 	}
-	for _, k := range []clierr.Kind{clierr.KindJobCancelled, clierr.KindWaitTimeout, clierr.KindInterrupted} {
+	for _, k := range []clierr.Kind{clierr.KindJobCanceled, clierr.KindWaitTimeout, clierr.KindInterrupted} {
 		if got := transcriptionKind(clierr.New(clierr.CodeGeneric, k, "x")); got.Kind != k {
 			t.Errorf("%s became %s", k, got.Kind)
 		}

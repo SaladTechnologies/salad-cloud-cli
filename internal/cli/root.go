@@ -169,7 +169,7 @@ func Execute() int {
 	registerCompletions(rootCmd)
 	// One signal handler for the whole run: Ctrl-C cancels the root
 	// context. A wait sees that and fails with kind interrupted; a request
-	// in flight ends as "<command> cancelled", also interrupted; an
+	// in flight ends as "<command> canceled", also interrupted; an
 	// open-ended command (logs --follow, --watch) stops cleanly with exit 0.
 	// After the first signal the default handler is back, so a second
 	// Ctrl-C kills the process.
@@ -182,7 +182,7 @@ func Execute() int {
 	rootCmd.SetArgs(commandLine)
 	cmd, err := rootCmd.ExecuteContextC(ctx)
 	// cobra keeps the context on every command it ran; clear it so a later
-	// in-process run (tests) does not inherit this run's cancelled one.
+	// in-process run (tests) does not inherit this run's canceled one.
 	for c := cmd; c != nil; c = c.Parent() {
 		c.SetContext(nil) //nolint:staticcheck // nil is what cobra checks for
 	}
@@ -199,8 +199,8 @@ func Execute() int {
 		// because command RunE funcs always return *clierr.Error.
 		ce = suggestUnknownCommand(rootCmd, err.Error(), commandLine)
 	}
-	if cancelledByCtrlC(ctx, ce) {
-		ce = clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "%s cancelled", commandPath(cmd))
+	if canceledByCtrlC(ctx, ce) {
+		ce = clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "%s canceled", commandPath(cmd))
 	}
 	printError(ce)
 	return ce.Code
@@ -210,12 +210,12 @@ func Execute() int {
 // run the way Ctrl-C does.
 var baseContext = context.Background
 
-// cancelledByCtrlC reports whether ce is a request Ctrl-C stopped, or any
-// failure that followed Ctrl-C: either way the command was cancelled. A
+// canceledByCtrlC reports whether ce is a request Ctrl-C stopped, or any
+// failure that followed Ctrl-C: either way the command was canceled. A
 // command's own interrupted error (a wait, a prompt, a config writer saying
 // nothing changed) keeps its message, and an ssh, sftp or cp child keeps its
 // exit code.
-func cancelledByCtrlC(ctx context.Context, ce *clierr.Error) bool {
+func canceledByCtrlC(ctx context.Context, ce *clierr.Error) bool {
 	if ce.IsCancel() {
 		return true
 	}

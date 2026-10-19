@@ -233,7 +233,7 @@ func loginCases() []loginCase {
 			code:   1,
 			kind:   "interrupted",
 			device: dGet + dPaste,
-			stderr: noHint("login cancelled, nothing changed"),
+			stderr: noHint("login canceled, nothing changed"),
 		},
 		{
 			id:     "end of input at the key prompt, a key saved",
@@ -241,7 +241,7 @@ func loginCases() []loginCase {
 			code:   1,
 			kind:   "interrupted",
 			device: dSavedKey + dGet + dPaste,
-			stderr: noHint("login cancelled, your saved API key (****...ABCD) is unchanged"),
+			stderr: noHint("login canceled, your saved API key (****...ABCD) is unchanged"),
 		},
 
 		// Step 3: is the key good?
@@ -341,7 +341,7 @@ func loginCases() []loginCase {
 			s:      session{args: pipedOrg, stdin: stdinK, api: cancelAtOrg},
 			code:   1,
 			kind:   "interrupted",
-			stderr: eKeyH13m + noHint("login cancelled, nothing changed"),
+			stderr: eKeyH13m + noHint("login canceled, nothing changed"),
 		},
 
 		// Step 4: which organization?
@@ -684,7 +684,7 @@ func loginCases() []loginCase {
 			code:   1,
 			kind:   "interrupted",
 			device: dSavedKey + dGet + dPaste + dMenu + "Select an organization by number or name: \n",
-			stderr: eKeyH13m + noHint("login cancelled, your saved API key (****...ABCD) is unchanged"),
+			stderr: eKeyH13m + noHint("login canceled, your saved API key (****...ABCD) is unchanged"),
 		},
 	}
 }

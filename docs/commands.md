@@ -99,7 +99,7 @@ Under `saladcloud container-groups`; `saladcloud cg list` works too.
 | `queues delete <name>` | Delete a queue and its pending jobs; groups connected to it lose the connection for good |
 | `queues jobs create --queue <q> (-f <file> \| --input '<json>') [--webhook <url>]` | Submit a job; `--wait` blocks until it finishes |
 | `queues jobs list --queue <q> [--limit <n>]` / `get <id> --queue <q>` | List a queue's jobs, newest first (`--limit`, 100 by default, reads at most 1,000 jobs and says when the queue may hold more; `0` reads all, up to 10,000) / show one (the full job UUID) |
-| `queues jobs cancel <id> --queue <q>` | Cancel a pending or running job; a running job is marked cancelled, but its instance still runs it to the end |
+| `queues jobs cancel <id> --queue <q>` | Cancel a pending or running job; a running job is marked canceled, but its instance still runs it to the end |
 
 ## Inference and AI Gateway
 

@@ -148,7 +148,7 @@ func doRestJSON[T any](ctx context.Context, c *Client, method, path, contentType
 		}
 		select {
 		case <-ctx.Done():
-			return nil, clierr.Cancelled() // Ctrl-C while waiting to retry
+			return nil, clierr.Canceled() // Ctrl-C while waiting to retry
 		case <-time.After(restBackoff[attempt]):
 		}
 	}

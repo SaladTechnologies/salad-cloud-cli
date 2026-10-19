@@ -40,19 +40,19 @@ func TestErrorDocumentKeys(t *testing.T) {
 	}
 }
 
-// TestCancelled: the error a cancelled request returns is interrupted, exit
+// TestCanceled: the error a canceled request returns is interrupted, exit
 // 1, and recognizable; a copy keeps the mark, a new error does not have it.
-func TestCancelled(t *testing.T) {
-	c := Cancelled()
+func TestCanceled(t *testing.T) {
+	c := Canceled()
 	if c.Code != CodeGeneric || c.Kind != KindInterrupted || !c.IsCancel() {
-		t.Errorf("Cancelled() = %+v", c)
+		t.Errorf("Canceled() = %+v", c)
 	}
 	copied := *c
 	if !copied.IsCancel() {
 		t.Error("a copy lost the mark")
 	}
 	if New(CodeGeneric, KindInterrupted, "wait interrupted").IsCancel() {
-		t.Error("an ordinary interrupted error reads as a cancelled request")
+		t.Error("an ordinary interrupted error reads as a canceled request")
 	}
 	var none *Error
 	if none.IsCancel() || New(CodeUsage, KindUsage, "x").HintText() != "" {

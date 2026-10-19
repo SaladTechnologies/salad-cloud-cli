@@ -32,7 +32,7 @@ func statusStep(status shared.ContainerGroupStatus) waitStep {
 
 // waitHarness scripts get responses and drives a fake clock: each sleep
 // advances now by the requested duration; after allowedSleeps the context is
-// cancelled, the way a SIGINT would.
+// canceled, the way a SIGINT would.
 type waitHarness struct {
 	t             *testing.T
 	steps         []waitStep

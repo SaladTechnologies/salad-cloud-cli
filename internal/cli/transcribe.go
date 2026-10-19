@@ -519,7 +519,7 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		}))
 	}
 
-	ctx := cmd.Context() // cancelled by the one signal handler in Execute
+	ctx := cmd.Context() // canceled by the one signal handler in Execute
 	d := liveJobWaitDeps(client, endpoint, id, "transcribing")
 	final, cerr := waitForJobTerminal(ctx, d, id, timeout, waitPoll)
 	if cerr != nil {

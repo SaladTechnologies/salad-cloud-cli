@@ -16,7 +16,7 @@ func errLines(msg, hint string) string { return "saladcloud: error: " + msg + "\
 
 // TestUseBranches covers use: a malformed target, the organization and
 // project checks, rejected keys, a variable that overrides what was saved,
-// and failed or cancelled requests.
+// and failed or canceled requests.
 func TestUseBranches(t *testing.T) {
 	k := testAPIKey
 	saved := &config.File{APIKey: k, Organization: "my-org", Project: "default"}
@@ -205,7 +205,7 @@ func TestUseBranches(t *testing.T) {
 			s:      session{args: use("my-org"), saved: saved, api: cancelAtOrg},
 			code:   1,
 			kind:   "interrupted",
-			stderr: "saladcloud: error: use cancelled, nothing changed\n",
+			stderr: "saladcloud: error: use canceled, nothing changed\n",
 		},
 	})
 }

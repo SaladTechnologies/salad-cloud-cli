@@ -142,7 +142,7 @@ const jobWaitDefaultTimeout = 10 * time.Minute
 // read via the shared waitFlagValues (waitfor.go).
 func addJobWaitFlags(cmd *cobra.Command) {
 	cmd.Flags().
-		Bool("wait", false, "block until the job reaches a terminal status (succeeded exits 0; failed/cancelled exit 1)")
+		Bool("wait", false, "block until the job reaches a terminal status (succeeded exits 0; failed/canceled exit 1)")
 	cmd.Flags().Duration("timeout", jobWaitDefaultTimeout, "give up on --wait after this long")
 }
 
@@ -154,7 +154,7 @@ type jobWaitDeps[J any] struct {
 	// view reads the job's status and its last event ("" when none).
 	view  func(*J) (status, lastEvent string)
 	now   func() time.Time
-	sleep func(ctx context.Context, d time.Duration) error // returns ctx.Err() when cancelled
+	sleep func(ctx context.Context, d time.Duration) error // returns ctx.Err() when canceled
 	// progress receives the table-mode progress lines and transient-error
 	// warnings; nil means os.Stderr.
 	progress io.Writer
@@ -173,9 +173,9 @@ func inferenceJobView(j *inferenceendpoints.InferenceEndpointJob) (string, strin
 }
 
 // waitForJobTerminal polls d.get until the job's status is terminal, the
-// context is cancelled, or timeout elapses. The first poll is immediate,
+// context is canceled, or timeout elapses. The first poll is immediate,
 // then one every poll interval. succeeded returns (job, nil); failed and
-// cancelled return the job AND an exit-1 error naming the status and last
+// canceled return the job AND an exit-1 error naming the status and last
 // event. Transient API errors warn on stderr and keep polling (same policy
 // as waitForGroupStatus); in table mode a progress line is written whenever
 // the observed status changes, and repeated every progressRepeat while it
@@ -214,7 +214,7 @@ func waitForJobTerminal[J any](
 			switch inferenceendpoints.Status(status) {
 			case inferenceendpoints.STATUS_SUCCEEDED:
 				return job, nil
-			case inferenceendpoints.STATUS_FAILED, inferenceendpoints.STATUS_CANCELLED:
+			case inferenceendpoints.STATUS_FAILED, jobStatusCanceled:
 				return job, clierr.New(clierr.CodeGeneric, jobEndKind(status),
 					"job %s %s %s%s", id, d.where, status, lastEvent)
 			}
@@ -239,14 +239,18 @@ func waitForJobTerminal[J any](
 	}
 }
 
+// jobStatusCanceled is the status of a canceled job. The API spells it with two l's, for inference endpoint jobs and
+// queue jobs alike (the queues package's constant has the same value); the CLI says "canceled" everywhere else.
+const jobStatusCanceled = inferenceendpoints.STATUS_CANCELLED //nolint:misspell // the API's spelling
+
 // jobEndKind is the error kind for a job that reached a terminal status
 // other than succeeded.
 func jobEndKind(status string) clierr.Kind {
 	switch inferenceendpoints.Status(status) {
 	case inferenceendpoints.STATUS_FAILED:
 		return clierr.KindJobFailed
-	case inferenceendpoints.STATUS_CANCELLED:
-		return clierr.KindJobCancelled
+	case jobStatusCanceled:
+		return clierr.KindJobCanceled
 	}
 	return clierr.KindAPIError
 }
@@ -257,7 +261,7 @@ func jobWaitInterrupted() *clierr.Error {
 	return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "wait interrupted; the job continues server-side")
 }
 
-// ctxSleep sleeps for d or until ctx is cancelled (returning ctx.Err()).
+// ctxSleep sleeps for d or until ctx is canceled (returning ctx.Err()).
 func ctxSleep(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
 	defer t.Stop()
@@ -515,7 +519,7 @@ Exactly one input source is required:
 
 With --wait the command polls the job every 5s until it reaches a terminal
 status: succeeded emits the final job document and exits 0; failed or
-cancelled exits 1 with the job's status and last event. --timeout (default
+canceled exits 1 with the job's status and last event. --timeout (default
 10m) caps the wait; the job keeps running server-side on timeout.`,
 		Example: `  # Inline input (bash, zsh, PowerShell 7.3 or later; older PowerShell drops the inner quotes, so use -f)
   saladcloud inference jobs create --endpoint transcribe --input '{"url": "https://example.com/meeting.mp3", "language_code": "en"}' --wait
@@ -565,7 +569,7 @@ cancelled exits 1 with the job's status and last event. --timeout (default
 			if !wait {
 				return wrapErr(output.Emit(job, func(w io.Writer) { writeJobDetail(w, job) }))
 			}
-			ctx := cmd.Context() // cancelled by the one signal handler in Execute
+			ctx := cmd.Context() // canceled by the one signal handler in Execute
 			id := ptr.Deref(job.Id)
 			d := liveJobWaitDeps(client, endpoint, id, "waiting for job "+id)
 			final, cerr := waitForJobTerminal(ctx, d, id, timeout, waitPoll)
@@ -601,9 +605,9 @@ saladcloud inference jobs get <id> --endpoint <endpoint>.`,
 			if cerr := client.CancelInferenceJob(cmd.Context(), endpoint, args[0]); cerr != nil {
 				return jobNotFound(cerr, endpoint, args[0])
 			}
-			v := jobActionResult{Endpoint: endpoint, ID: args[0], Action: "cancelled", OK: true}
+			v := jobActionResult{Endpoint: endpoint, ID: args[0], Action: "canceled", OK: true}
 			return wrapErr(output.Emit(v, func(w io.Writer) {
-				fmt.Fprintf(w, "Job %s on endpoint %s cancelled\n", v.ID, v.Endpoint)
+				fmt.Fprintf(w, "Job %s on endpoint %s canceled\n", v.ID, v.Endpoint)
 			}))
 		},
 	}

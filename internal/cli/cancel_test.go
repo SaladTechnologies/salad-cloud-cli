@@ -6,7 +6,7 @@ import (
 )
 
 // TestCtrlCDuringARequest: Ctrl-C while a request is in flight ends the
-// command as "<command> cancelled", exit 1, kind interrupted, never a
+// command as "<command> canceled", exit 1, kind interrupted, never a
 // network error; the command is named by its full path even when an alias
 // ran it.
 func TestCtrlCDuringARequest(t *testing.T) {
@@ -15,9 +15,9 @@ func TestCtrlCDuringARequest(t *testing.T) {
 		cancelOn string
 		want     string
 	}{
-		{[]string{"quotas", "get"}, "/quotas", "quotas get cancelled"},
-		{[]string{"cg", "list"}, "/containers", "container-groups list cancelled"},
-		{[]string{"ai-gateway", "test"}, "/models", "ai-gateway test cancelled"},
+		{[]string{"quotas", "get"}, "/quotas", "quotas get canceled"},
+		{[]string{"cg", "list"}, "/containers", "container-groups list canceled"},
+		{[]string{"ai-gateway", "test"}, "/models", "ai-gateway test canceled"},
 	} {
 		for _, mode := range []string{"table", "json"} {
 			t.Run(strings.Join(tc.args, " ")+"/"+mode, func(t *testing.T) {
@@ -67,7 +67,7 @@ func TestCtrlCEndsOpenEndedCommandsCleanly(t *testing.T) {
 			if o.code != 0 {
 				t.Errorf("exit %d, want 0:\n%s", o.code, o.stderr)
 			}
-			if strings.Contains(o.stderr, "cancelled") || strings.Contains(o.stderr, "error") {
+			if strings.Contains(o.stderr, "canceled") || strings.Contains(o.stderr, "error") {
 				t.Errorf("stderr reports an error:\n%s", o.stderr)
 			}
 		})
