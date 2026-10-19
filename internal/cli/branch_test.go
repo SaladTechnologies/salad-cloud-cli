@@ -42,11 +42,12 @@ func withDeps(set func(d *Deps), cases []branchCase) []branchCase {
 // against what the case expects.
 func runBranches(t *testing.T, cases []branchCase) {
 	t.Helper()
-	for _, tc := range cases {
+	for i := range cases {
+		tc := &cases[i]
 		t.Run(tc.id, func(t *testing.T) {
 			t.Parallel()
 			o := withMode(tc.s, "table").run(t)
-			checkBranchTable(t, &tc, &o)
+			checkBranchTable(t, tc, &o)
 
 			j := withMode(tc.s, "json").run(t)
 			if j.code != tc.code || j.placeholders(j.device) != tc.device {
@@ -54,10 +55,10 @@ func runBranches(t *testing.T, cases []branchCase) {
 			}
 			checkMachineStderr(t, j)
 			if tc.code != 0 {
-				checkBranchErrorDocument(t, &tc, &o, &j)
+				checkBranchErrorDocument(t, tc, &o, &j)
 				return
 			}
-			checkBranchDocument(t, &tc, &j)
+			checkBranchDocument(t, tc, &j)
 		})
 	}
 }

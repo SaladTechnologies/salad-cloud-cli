@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 // variables on): SALAD_CLI_TEST_FAKE_SFTP prints sftp's batch echo and
 // exits, failing when it is "fail"; SALAD_CLI_TEST_HELPER_EXIT exits 255, as
 // ssh does when it cannot open the session.
-func fakeChild() (code int, ok bool) {
+func fakeChild() (int, bool) {
 	if os.Getenv("SALAD_CLI_TEST_HELPER_EXIT") != "" {
 		return 255, true
 	}

@@ -24,9 +24,18 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
-// emitJSON renders v through output.Emit (or Stream) in mode (json or
+// shapeRender is how emitJSON renders a value: shapeEmit or shapeStream.
+type shapeRender func(p *output.Printer, v any) error
+
+// shapeEmit renders v as a command's one document, through Emit.
+func shapeEmit(p *output.Printer, v any) error { return p.Emit(v, nil) }
+
+// shapeStream renders v as one record of a stream, through Stream.
+func shapeStream(p *output.Printer, v any) error { return p.Stream(v, "") }
+
+// emitJSON renders v through render (output.Emit or Stream) in mode (json or
 // yaml) and returns the decoded document.
-func (app *testRun) emitJSON(t *testing.T, v any, stream bool, mode string) any {
+func (app *testRun) emitJSON(t *testing.T, v any, render shapeRender, mode string) any {
 	t.Helper()
 	var buf bytes.Buffer
 	old := app.printer
@@ -38,12 +47,7 @@ func (app *testRun) emitJSON(t *testing.T, v any, stream bool, mode string) any 
 	if err := app.printer.SetMode(mode); err != nil {
 		t.Fatal(err)
 	}
-	var err error
-	if stream {
-		err = app.printer.Stream(v, "")
-	} else {
-		err = app.printer.Emit(v, nil)
-	}
+	err := render(app.printer, v)
 	if err != nil {
 		t.Fatalf("emit: %v", err)
 	}
@@ -74,7 +78,7 @@ func assertShape(t *testing.T, path string, typ reflect.Type, doc any) {
 		reflect.PointerTo(typ).Implements(reflect.TypeFor[json.Marshaler]()) {
 		return // encodes itself
 	}
-	switch typ.Kind() {
+	switch typ.Kind() { //nolint:exhaustive // every reflect.Kind not named is a leaf
 	case reflect.Struct:
 		obj, ok := doc.(map[string]any)
 		if !ok {
@@ -204,8 +208,12 @@ func TestSDKBackedJSONShape(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			app := newTestRun(t)
+			render := shapeRender(shapeEmit)
+			if tc.stream {
+				render = shapeStream
+			}
 			for _, mode := range []string{"json", "yaml"} {
-				doc := app.emitJSON(t, tc.v, tc.stream, mode)
+				doc := app.emitJSON(t, tc.v, render, mode)
 				assertShape(t, tc.name+" ("+mode+")", reflect.TypeOf(tc.v), doc)
 			}
 		})
@@ -292,7 +300,7 @@ func TestCLIResultsSameInYAML(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			app := newTestRun(t)
-			j, y := app.emitJSON(t, v, false, "json"), app.emitJSON(t, v, false, "yaml")
+			j, y := app.emitJSON(t, v, shapeEmit, "json"), app.emitJSON(t, v, shapeEmit, "yaml")
 			if !reflect.DeepEqual(j, y) {
 				t.Errorf("yaml differs from json:\njson %v\nyaml %v", j, y)
 			}

@@ -76,15 +76,6 @@ func newFakeAPI() *fakeAPI {
 	}
 }
 
-// clone is f's setup with no requests received yet. The maps are shared:
-// a run only reads them.
-func (f *fakeAPI) clone() *fakeAPI {
-	return &fakeAPI{
-		keys: f.keys, orgs: f.orgs, orgOrder: f.orgOrder, display: f.display, listing: f.listing, status: f.status,
-		gatewayKeys: f.gatewayKeys, cancelOn: f.cancelOn, cancel: nil, t: nil, mu: sync.Mutex{}, requests: nil,
-	}
-}
-
 // Requests returns the requests the fake received, as "METHOD path".
 func (f *fakeAPI) Requests() []string {
 	f.mu.Lock()
@@ -123,6 +114,15 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.serveOrganization(w, r, parts)
 	default:
 		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+// clone is f's setup with no requests received yet. The maps are shared:
+// a run only reads them.
+func (f *fakeAPI) clone() *fakeAPI {
+	return &fakeAPI{
+		keys: f.keys, orgs: f.orgs, orgOrder: f.orgOrder, display: f.display, listing: f.listing, status: f.status,
+		gatewayKeys: f.gatewayKeys, cancelOn: f.cancelOn, cancel: nil, t: nil, mu: sync.Mutex{}, requests: nil,
 	}
 }
 
@@ -200,7 +200,8 @@ func (f *fakeAPI) serveContainers(w http.ResponseWriter, r *http.Request, projec
 		respond(
 			f.t,
 			w,
-			`{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","state":"running","ssh_ip":"203.0.113.7","ssh_port":30123}]}`,
+			`{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","state":"running",`+
+				`"ssh_ip":"203.0.113.7","ssh_port":30123}]}`,
 		)
 	case len(parts) == 5 && r.Method == http.MethodGet:
 		if !slices.Contains(projects, parts[3]) {
@@ -275,8 +276,23 @@ func (c *fakeConsole) Device() io.Writer {
 	}
 	return &c.device
 }
-func (c *fakeConsole) ReadHidden() (string, error) { return c.next(true) }
-func (c *fakeConsole) ReadLine() (string, error)   { return c.next(false) }
+
+// ReadHidden gives the next answer without echoing it, then ends the line.
+func (c *fakeConsole) ReadHidden() (string, error) {
+	defer c.echo("\n")
+	return c.next()
+}
+
+// ReadLine gives the next answer, echoed as a terminal shows a visible answer, then ends the line.
+func (c *fakeConsole) ReadLine() (string, error) {
+	defer c.echo("\n")
+	a, err := c.next()
+	if err != nil {
+		return "", err
+	}
+	c.echo(a)
+	return a, nil
+}
 
 // echo writes s to the device and the transcript, as Device does; a write to
 // a bytes.Buffer does not fail.
@@ -287,10 +303,8 @@ func (c *fakeConsole) echo(s string) {
 	}
 }
 
-// next gives the next answer and leaves the device as a terminal would: a
-// visible answer echoed, then the line ended.
-func (c *fakeConsole) next(hidden bool) (string, error) {
-	defer c.echo("\n")
+// next takes the next answer; ReadHidden and ReadLine leave the device as a terminal would.
+func (c *fakeConsole) next() (string, error) {
 	if len(c.answers) == 0 {
 		return "", io.EOF
 	}
@@ -301,9 +315,6 @@ func (c *fakeConsole) next(hidden bool) (string, error) {
 		return "", errInterrupt
 	case keyEOF:
 		return "", io.EOF
-	}
-	if !hidden {
-		c.echo(a)
 	}
 	return a, nil
 }
@@ -441,11 +452,8 @@ func setUpSessionHome(t *testing.T, s *session, home string) {
 	if name == "" {
 		name = "id_ed25519.pub"
 	}
-	if err := os.WriteFile(
-		filepath.Join(home, ".ssh", name),
-		[]byte("ssh-ed25519 AAAA test@host\n"),
-		0o600,
-	); err != nil {
+	err := os.WriteFile(filepath.Join(home, ".ssh", name), []byte("ssh-ed25519 AAAA test@host\n"), 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
 }
@@ -489,7 +497,7 @@ func waitForRun(t *testing.T, done <-chan int, hold *os.File) (int, bool) {
 // tempFile creates dir/name holding content, open for reading and writing.
 func tempFile(t *testing.T, dir, name, content string) *os.File {
 	t.Helper()
-	f, err := os.Create(filepath.Join(dir, name))
+	f, err := os.Create(filepath.Join(dir, name)) //nolint:gosec // G304: dir is the run's temp folder, name a fixed one
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -601,7 +609,7 @@ func reportErr(t *testing.T, err error) {
 }
 
 // assertAs returns v as a T and fails the test when it holds something else.
-func assertAs[T any](t *testing.T, v any) T {
+func assertAs[T any](t *testing.T, v any) T { //nolint:ireturn // T is the concrete type the caller names
 	t.Helper()
 	x, ok := v.(T)
 	if !ok {
