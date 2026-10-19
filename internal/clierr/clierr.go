@@ -26,17 +26,18 @@ type Kind string
 
 // The kinds, each with the exit code it goes with.
 const (
-	KindUsage               Kind = "usage"                // 2: the command line is wrong
-	KindInvalidInput        Kind = "invalid_input"        // 6: a value breaks a platform rule
-	KindUnknownField        Kind = "unknown_field"        // 6: a definition file has a field the API does not take
-	KindAuth                Kind = "auth"                 // 3: no credential, or the API rejected it
-	KindNotFound            Kind = "not_found"            // 4
-	KindRateLimited         Kind = "rate_limited"         // 5
-	KindNetwork             Kind = "network"              // 7
-	KindNotAvailable        Kind = "not_available"        // 10: the platform cannot serve it right now
-	KindAPIError            Kind = "api_error"            // 1: any other API failure, and local I/O
-	KindInternal            Kind = "internal"             // 1: a CLI bug
-	KindInterrupted         Kind = "interrupted"          // 1: Ctrl-C during a wait, a prompt or a request, or end of input at a prompt
+	KindUsage        Kind = "usage"         // 2: the command line is wrong
+	KindInvalidInput Kind = "invalid_input" // 6: a value breaks a platform rule
+	KindUnknownField Kind = "unknown_field" // 6: a definition file has a field the API does not take
+	KindAuth         Kind = "auth"          // 3: no credential, or the API rejected it
+	KindNotFound     Kind = "not_found"     // 4
+	KindRateLimited  Kind = "rate_limited"  // 5
+	KindNetwork      Kind = "network"       // 7
+	KindNotAvailable Kind = "not_available" // 10: the platform cannot serve it right now
+	KindAPIError     Kind = "api_error"     // 1: any other API failure, and local I/O
+	KindInternal     Kind = "internal"      // 1: a CLI bug
+	// KindInterrupted is Ctrl-C during a wait, a prompt or a request, or end of input at a prompt.
+	KindInterrupted         Kind = "interrupted"          // 1
 	KindWaitTimeout         Kind = "wait_timeout"         // 1: a wait ran out of time
 	KindGroupStopped        Kind = "group_stopped"        // 1: a waited-for group stopped instead
 	KindGroupFailed         Kind = "group_failed"         // 1: a waited-for group failed

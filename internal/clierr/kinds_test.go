@@ -346,7 +346,7 @@ func must[T any](v T, err error) func(*testing.T) T {
 }
 
 // assertAs returns v as a T and fails the test when it holds something else.
-func assertAs[T any](t *testing.T, v any) T {
+func assertAs[T any](t *testing.T, v any) T { //nolint:ireturn // returns the caller's type parameter
 	t.Helper()
 	x, ok := v.(T)
 	if !ok {
