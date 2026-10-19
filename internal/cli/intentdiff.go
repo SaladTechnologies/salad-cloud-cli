@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"reflect"
 	"slices"
@@ -197,11 +198,11 @@ func lookupPath(tree any, path string) (any, bool) {
 func toTree(g *shared.ContainerGroup) (any, error) {
 	b, err := json.Marshal(g)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("encoding the group: %w", err)
 	}
 	var t any
 	if err := json.Unmarshal(b, &t); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decoding the group: %w", err)
 	}
 	return t, nil
 }

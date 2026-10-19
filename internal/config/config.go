@@ -111,10 +111,10 @@ func Writable() error {
 	}
 	if f, openErr := os.OpenFile(p, os.O_WRONLY, 0); openErr == nil {
 		if closeErr := f.Close(); closeErr != nil {
-			return closeErr
+			return fmt.Errorf("closing the config file: %w", closeErr)
 		}
 	} else if !errors.Is(openErr, os.ErrNotExist) {
-		return openErr
+		return fmt.Errorf("opening the config file: %w", openErr)
 	}
 	dir := filepath.Dir(p)
 	for {
@@ -133,13 +133,16 @@ func Writable() error {
 	}
 	tmp, err := os.CreateTemp(dir, ".saladcloud-check-*")
 	if err != nil {
-		return err
+		return fmt.Errorf("creating a check file: %w", err)
 	}
 	name := tmp.Name()
 	if err := tmp.Close(); err != nil {
-		return errors.Join(err, os.Remove(name))
+		return errors.Join(fmt.Errorf("closing the check file: %w", err), os.Remove(name))
 	}
-	return os.Remove(name)
+	if err := os.Remove(name); err != nil {
+		return fmt.Errorf("removing the check file: %w", err)
+	}
+	return nil
 }
 
 // Save writes the config file, creating its directory (0700) if needed.
@@ -150,7 +153,7 @@ func Save(f File) error {
 		return err
 	}
 	if err = os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
-		return err
+		return fmt.Errorf("creating the config folder: %w", err)
 	}
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
@@ -162,19 +165,19 @@ func Save(f File) error {
 	// which would block every command.
 	tmp, err := os.CreateTemp(filepath.Dir(p), ".config-*.json")
 	if err != nil {
-		return err
+		return fmt.Errorf("creating a temp file: %w", err)
 	}
 	// On any failure the temp file goes; errors.Join keeps the failure's
 	// message as it is unless the removal fails too.
 	name := tmp.Name()
 	if err := tmp.Chmod(0o600); err != nil && !errors.Is(err, errors.ErrUnsupported) {
-		return errors.Join(err, tmp.Close(), os.Remove(name))
+		return errors.Join(fmt.Errorf("setting the temp file's mode: %w", err), tmp.Close(), os.Remove(name))
 	}
 	if _, err := tmp.Write(data); err != nil {
-		return errors.Join(err, tmp.Close(), os.Remove(name))
+		return errors.Join(fmt.Errorf("writing the temp file: %w", err), tmp.Close(), os.Remove(name))
 	}
 	if err := tmp.Close(); err != nil {
-		return errors.Join(err, os.Remove(name))
+		return errors.Join(fmt.Errorf("closing the temp file: %w", err), os.Remove(name))
 	}
 	if err := os.Rename(name, p); err != nil {
 		return errors.Join(err, os.Remove(name))
