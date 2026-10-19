@@ -96,13 +96,19 @@ func TestParseRemoteSpecGitBashRewrite(t *testing.T) {
 	}
 }
 
+// cpRunOutput is how one cp run ended: the CLI's stdout, the process's stderr (sftp's and the CLI's), and the error.
+type cpRunOutput struct {
+	out, stderr string
+	err         error
+}
+
 // runCp runs cp against a stub API with the test binary as sftp (fake
-// says how it behaves) and returns the CLI's stdout, the process's stderr
-// (sftp's and the CLI's), and the error.
-func (app *testRun) runCp(t *testing.T, fake string, mode ...string) (out, stderr string, err error) {
+// says how it behaves) and returns how it ended.
+func (app *testRun) runCp(t *testing.T, fake string, mode ...string) cpRunOutput {
 	t.Helper()
 	app.stubAPI(t, map[string]string{
-		"/containers/my-app/instances": `{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","state":"running","ssh_ip":"203.0.113.7","ssh_port":30123}]}`,
+		"/containers/my-app/instances": `{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37",` +
+			`"state":"running","ssh_ip":"203.0.113.7","ssh_port":30123}]}`,
 	})
 	old := app.SFTPProgram
 	app.SFTPProgram = os.Args[0]
@@ -112,12 +118,12 @@ func (app *testRun) runCp(t *testing.T, fake string, mode ...string) (out, stder
 	var childOut, childErr bytes.Buffer
 	realOut, realErr := app.Stdout, app.Stderr
 	app.Stdout, app.Stderr = &childOut, &childErr
-	out, err = app.runRoot(t, append([]string{"cg", "cp", "my-app/8a2f:/etc/hostname", "./h"}, mode...)...)
+	out, err := app.runRoot(t, append([]string{"cg", "cp", "my-app/8a2f:/etc/hostname", "./h"}, mode...)...)
 	app.Stdout, app.Stderr = realOut, realErr
 	if childOut.Len() != 0 {
 		t.Errorf("sftp wrote %q to stdout; stdout carries only the result", childOut.String())
 	}
-	return out, childErr.String(), err
+	return cpRunOutput{out: out, stderr: childErr.String(), err: err}
 }
 
 // TestCpStdoutCarriesOnlyTheResult: stdout holds the one result document;
@@ -126,23 +132,24 @@ func (app *testRun) runCp(t *testing.T, fake string, mode ...string) (out, stder
 func TestCpStdoutCarriesOnlyTheResult(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
-	out, stderr, err := app.runCp(t, "ok", "-o", "json")
-	if err != nil {
-		t.Fatalf("cp: %v", err)
+	got := app.runCp(t, "ok", "-o", "json")
+	if got.err != nil {
+		t.Fatalf("cp: %v", got.err)
 	}
-	if stderr != "" {
-		t.Errorf("json mode: stderr = %q, want nothing", stderr)
+	if got.stderr != "" {
+		t.Errorf("json mode: stderr = %q, want nothing", got.stderr)
 	}
-	want := `{"group":"my-app","instance":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","action":"copied","ok":true,"src":"my-app/8a2f:/etc/hostname","dst":"./h"}`
+	want := `{"group":"my-app","instance":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","action":"copied","ok":true,` +
+		`"src":"my-app/8a2f:/etc/hostname","dst":"./h"}`
 	var compact bytes.Buffer
-	if err := json.Compact(&compact, []byte(out)); err != nil || compact.String() != want {
-		t.Errorf("stdout = %s, want %s", out, want)
+	if err := json.Compact(&compact, []byte(got.out)); err != nil || compact.String() != want {
+		t.Errorf("stdout = %s, want %s", got.out, want)
 	}
-	if _, stderr, err := app.runCp(t, "ok", "-o", "yaml"); err != nil || stderr != "" {
-		t.Errorf("yaml mode: err %v, stderr = %q, want nothing", err, stderr)
+	if y := app.runCp(t, "ok", "-o", "yaml"); y.err != nil || y.stderr != "" {
+		t.Errorf("yaml mode: err %v, stderr = %q, want nothing", y.err, y.stderr)
 	}
-	if _, stderr, err := app.runCp(t, "ok", "-o", "table"); err != nil || !strings.Contains(stderr, "sftp> get") {
-		t.Errorf("table mode: err %v, stderr = %q, want sftp's batch echo", err, stderr)
+	if tb := app.runCp(t, "ok", "-o", "table"); tb.err != nil || !strings.Contains(tb.stderr, "sftp> get") {
+		t.Errorf("table mode: err %v, stderr = %q, want sftp's batch echo", tb.err, tb.stderr)
 	}
 }
 
@@ -151,13 +158,13 @@ func TestCpStdoutCarriesOnlyTheResult(t *testing.T) {
 func TestCpFailureInJSON(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
-	_, stderr, err := app.runCp(t, "fail", "-o", "json")
+	got := app.runCp(t, "fail", "-o", "json")
 	var cerr *clierr.Error
-	if !errors.As(err, &cerr) {
-		t.Fatalf("cp: %v, want a child_exit error", err)
+	if !errors.As(got.err, &cerr) {
+		t.Fatalf("cp: %v, want a child_exit error", got.err)
 	}
-	if stderr != "" {
-		t.Errorf("stderr = %q, want nothing before the error document", stderr)
+	if got.stderr != "" {
+		t.Errorf("stderr = %q, want nothing before the error document", got.stderr)
 	}
 	if !strings.HasSuffix(cerr.Message, `exited with status 1; remote open("/etc/hostname"): Permission denied`) ||
 		cerr.Kind != clierr.KindChildExit ||
@@ -182,7 +189,8 @@ func TestCpResultShape(t *testing.T) {
 
 func TestBuildSFTPBatchPut(t *testing.T) {
 	t.Parallel()
-	got := buildSFTPBatch(true, false, `C:\Users\me\model.bin`, "/models/model.bin")
+	plan := cpPlan{spec: &remoteSpec{Path: "/models/model.bin"}, local: `C:\Users\me\model.bin`, upload: true}
+	got := plan.sftpBatch()
 	want := "put \"C:/Users/me/model.bin\" \"/models/model.bin\"\n"
 	if got != want {
 		t.Errorf("batch = %q, want %q", got, want)
@@ -191,7 +199,8 @@ func TestBuildSFTPBatchPut(t *testing.T) {
 
 func TestBuildSFTPBatchGetRecursive(t *testing.T) {
 	t.Parallel()
-	got := buildSFTPBatch(false, true, "./outputs", "/outputs")
+	plan := cpPlan{spec: &remoteSpec{Path: "/outputs"}, local: "./outputs", recursive: true}
+	got := plan.sftpBatch()
 	want := "get -r \"/outputs\" \"./outputs\"\n"
 	if got != want {
 		t.Errorf("batch = %q, want %q", got, want)
@@ -200,7 +209,8 @@ func TestBuildSFTPBatchGetRecursive(t *testing.T) {
 
 func TestBuildSFTPBatchQuoting(t *testing.T) {
 	t.Parallel()
-	got := buildSFTPBatch(true, false, `my "quoted" file`, `/data/back\slash`)
+	plan := cpPlan{spec: &remoteSpec{Path: `/data/back\slash`}, local: `my "quoted" file`, upload: true}
+	got := plan.sftpBatch()
 	want := "put \"my \\\"quoted\\\" file\" \"/data/back\\\\slash\"\n"
 	if got != want {
 		t.Errorf("batch = %q, want %q", got, want)

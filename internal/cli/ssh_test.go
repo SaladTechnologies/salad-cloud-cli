@@ -326,8 +326,8 @@ func TestSessionFailedHintNamesTheKeyLocation(t *testing.T) {
 	hint := sessionFailedHint
 	for _, want := range []string{
 		"permission denied", "must be registered", "https://portal.salad.com/ssh-keys", "owns the API key",
-		"ssh-key setup", "this machine", "passphrase", "ssh-add", "closed or refused", "still starting", "try again in a " +
-			"minute",
+		"ssh-key setup", "this machine", "passphrase", "ssh-add", "closed or refused", "still starting",
+		"try again in a minute",
 	} {
 		if !strings.Contains(hint, want) {
 			t.Errorf("hint missing %q; got: %s", want, hint)

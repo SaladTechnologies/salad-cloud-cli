@@ -28,6 +28,9 @@ type remoteSpec struct {
 
 const remoteSpecSyntax = "<group>[/<instance-prefix>]:<path>"
 
+// cpArgCount is cp's positional count: the source and the destination.
+const cpArgCount = 2
+
 // cpResult is cp's output: what was copied, from or to which instance, and
 // that it happened.
 type cpResult struct {
@@ -86,18 +89,14 @@ func cpLocalHead(head string) bool {
 // remoteSpecOf splits the remote cp argument arg, head:path with neither part empty, into its group, instance prefix
 // and path.
 func remoteSpecOf(arg, head, path string) (*remoteSpec, *clierr.Error) {
-	parts := strings.Split(head, "/")
-	switch len(parts) {
-	case 1:
-		return &remoteSpec{Group: parts[0], Path: path, InstancePrefix: ""}, nil
-	case 2:
-		if parts[0] == "" || parts[1] == "" {
-			return nil, badRemotePath(arg)
-		}
-		return &remoteSpec{Group: parts[0], InstancePrefix: parts[1], Path: path}, nil
-	default:
+	group, prefix, hasPrefix := strings.Cut(head, "/")
+	if !hasPrefix {
+		return &remoteSpec{Group: group, Path: path, InstancePrefix: ""}, nil
+	}
+	if group == "" || prefix == "" || strings.Contains(prefix, "/") {
 		return nil, badRemotePath(arg)
 	}
+	return &remoteSpec{Group: group, InstancePrefix: prefix, Path: path}, nil
 }
 
 // badRemotePath is the error for a remote argument of the wrong shape.
@@ -125,19 +124,6 @@ func sftpQuoteRemote(p string) string {
 	return `"` + strings.ReplaceAll(p, `"`, `\"`) + `"`
 }
 
-// buildSFTPBatch renders the one-command sftp batch file: put (upload)
-// when the destination is remote, get (download) when the source is.
-func buildSFTPBatch(upload, recursive bool, localPath, remotePath string) string {
-	flag := ""
-	if recursive {
-		flag = " -r"
-	}
-	if upload {
-		return fmt.Sprintf("put%s %s %s\n", flag, sftpQuoteLocal(localPath), sftpQuoteRemote(remotePath))
-	}
-	return fmt.Sprintf("get%s %s %s\n", flag, sftpQuoteRemote(remotePath), sftpQuoteLocal(localPath))
-}
-
 // buildSFTPArgs builds the argv (after the "sftp" program name). An empty
 // batchPath means an interactive session (no -b flag) — 'saladcloud container-groups sftp';
 // cp always passes its one-command batch file.
@@ -162,8 +148,8 @@ type cpOptions struct {
 func (app *App) addCpCommands(cg *cobra.Command) {
 	var o cpOptions
 	cpCmd := app.newCpCmd(&o)
-	cpCmd.Flags().
-		StringVar(&o.user, "user", "root", "SSH username; selects the container user, which the image must define (root always exists)")
+	cpCmd.Flags().StringVar(&o.user, "user", "root",
+		"SSH username; selects the container user, which the image must define (root always exists)")
 	cpCmd.Flags().StringVarP(&o.identity, "identity", "i", "", "identity (private key) file, passed through to sftp -i")
 	cpCmd.Flags().BoolVarP(&o.recursive, "recursive", "r", false, "copy directories recursively")
 	app.addHiddenGroupFlag(cpCmd)
@@ -209,7 +195,7 @@ set it up, run saladcloud ssh-key setup.`,
 
   # Download a directory's contents into ./results
   saladcloud container-groups cp -r my-app:/outputs/. ./results`,
-		Args: cobra.ExactArgs(2),
+		Args: cobra.ExactArgs(cpArgCount),
 		RunE: func(cmd *cobra.Command, args []string) error { return app.runCp(cmd, args, o) },
 	}
 }
@@ -224,7 +210,8 @@ func (app *App) runCp(cmd *cobra.Command, args []string, o *cpOptions) error {
 	if cerr != nil {
 		return cerr
 	}
-	batch, cerr := app.cpWriteBatch(buildSFTPBatch(plan.upload, o.recursive, plan.local, plan.spec.Path))
+	plan.recursive = o.recursive
+	batch, cerr := app.cpWriteBatch(plan.sftpBatch())
 	if cerr != nil {
 		return cerr
 	}
@@ -258,11 +245,26 @@ func (app *App) runCp(cmd *cobra.Command, args []string, o *cpOptions) error {
 	}))
 }
 
-// cpPlan is what a cp command line asks for: the remote side, the local path, and the direction.
+// cpPlan is what a cp command line asks for: the remote side, the local path, the direction, and whether the copy
+// is recursive (-r).
 type cpPlan struct {
-	spec   *remoteSpec
-	local  string
-	upload bool
+	spec      *remoteSpec
+	local     string
+	upload    bool
+	recursive bool
+}
+
+// sftpBatch renders the plan as the one-command sftp batch file: put (upload)
+// when the destination is remote, get (download) when the source is.
+func (p *cpPlan) sftpBatch() string {
+	flag := ""
+	if p.recursive {
+		flag = " -r"
+	}
+	if p.upload {
+		return fmt.Sprintf("put%s %s %s\n", flag, sftpQuoteLocal(p.local), sftpQuoteRemote(p.spec.Path))
+	}
+	return fmt.Sprintf("get%s %s %s\n", flag, sftpQuoteRemote(p.spec.Path), sftpQuoteLocal(p.local))
 }
 
 // cpPlanOf parses cp's two arguments, of which exactly one must be remote.
@@ -284,9 +286,9 @@ func (app *App) cpPlanOf(args []string) (cpPlan, *clierr.Error) {
 			WithHint("give exactly one remote side, written as %s", remoteSpecSyntax)
 	}
 	if dstSpec != nil {
-		return cpPlan{spec: dstSpec, local: args[0], upload: true}, nil
+		return cpPlan{spec: dstSpec, local: args[0], upload: true, recursive: false}, nil
 	}
-	return cpPlan{spec: srcSpec, local: args[1], upload: false}, nil
+	return cpPlan{spec: srcSpec, local: args[1], upload: false, recursive: false}, nil
 }
 
 // cpTarget finds the SSH endpoint of the instance spec names (the group's first running one without a prefix).

@@ -64,12 +64,12 @@ ssh-key setup.`,
 			return nil
 		},
 	}
-	sftpCmd.Flags().
-		StringVar(&instance, "instance", "", "the instance to open: its ID or a unique prefix (default: the first running instance)")
-	sftpCmd.Flags().
-		StringVar(&user, "user", "root", "SSH username; selects the container user, which the image must define (root always exists)")
+	sftpCmd.Flags().StringVar(&instance, ancestorFlagInstance, "",
+		"the instance to open: its ID or a unique prefix (default: the first running instance)")
+	sftpCmd.Flags().StringVar(&user, "user", "root",
+		"SSH username; selects the container user, which the image must define (root always exists)")
 	sftpCmd.Flags().StringVarP(&identity, "identity", "i", "", "identity (private key) file, passed through to sftp -i")
 	app.addHiddenGroupFlag(sftpCmd)
-	annotate(sftpCmd, annotationFlagForArg, "instance")
+	annotate(sftpCmd, annotationFlagForArg, ancestorFlagInstance)
 	cg.AddCommand(sftpCmd)
 }

@@ -46,9 +46,16 @@ const relayExitCodeNote = "note: the relay does not propagate command exit codes
 // two causes, told apart by what ssh printed. (It never says "publickey",
 // so a check for ssh's own denial is not fooled by it.)
 const sessionFailedHint = "if ssh said permission denied, the key must be registered at " + sshKeysPage +
-	" on the account that owns the API key in use, and be on this machine (WSL and containers have their own ~/.ssh), and a key with a passphrase needs ssh-add first; " +
+	" on the account that owns the API key in use, and be on this machine " +
+	"(WSL and containers have their own ~/.ssh), and a key with a passphrase needs ssh-add first; " +
 	"to see the key and where to register it, run saladcloud ssh-key setup; " +
 	"if ssh said the connection was closed or refused, the instance is still starting, so try again in a minute"
+
+// sshSessionFailedExit is the exit code of an ssh or sftp whose own transport or authentication failed.
+const sshSessionFailedExit = 255
+
+// sshConfigAliasIDLen is how many characters of the instance ID an ssh_config Host alias keeps.
+const sshConfigAliasIDLen = 8
 
 // oneShotExitNote selects the stderr note printed after a one-shot
 // command, keyed on the ssh child's exit code: 0 and 1 get the relay
@@ -156,8 +163,12 @@ func pickInstance(
 func sshTargetOf(inst *containergroups.ContainerGroupInstance, group string) (sshTarget, *clierr.Error) {
 	if inst.SshIp == nil || inst.SshPort == nil || *inst.SshIp == "" {
 		return sshTarget{}, clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
-			"the platform has not assigned an SSH endpoint to instance %s of container group %s yet", ptr.Deref(inst.Id), group).
-			WithHint("retry in a minute, or to check its SSH column, run saladcloud container-groups instances list -c %s", group)
+			"the platform has not assigned an SSH endpoint to instance %s of container group %s yet",
+			ptr.Deref(inst.Id), group).
+			WithHint(
+				"retry in a minute, or to check its SSH column, run saladcloud container-groups instances list -c %s",
+				group,
+			)
 	}
 	return sshTarget{InstanceID: ptr.Deref(inst.Id), IP: *inst.SshIp, Port: *inst.SshPort}, nil
 }
@@ -220,8 +231,8 @@ func (app *App) buildSSHArgs(t sshTarget, user, identity string, command []strin
 // the first 8 characters of the instance ID.
 func sshConfigAlias(group, instanceID string) string {
 	short := instanceID
-	if len(short) > 8 {
-		short = short[:8]
+	if len(short) > sshConfigAliasIDLen {
+		short = short[:sshConfigAliasIDLen]
 	}
 	return fmt.Sprintf("saladcloud-%s-%s", group, short)
 }
@@ -321,7 +332,7 @@ func lastLine(s string) string {
 }
 
 func (app *App) runChildWith(stdout, stderr io.Writer, name string, args []string) *clierr.Error {
-	child := exec.Command(name, args...)
+	child := exec.Command(name, args...) //nolint:gosec,noctx // ssh/sftp by design; a ctx would kill it on Ctrl-C
 	child.Env = app.Environ()
 	child.Stdin = app.Stdin
 	child.Stdout = stdout
@@ -337,7 +348,7 @@ func (app *App) runChildWith(stdout, stderr io.Writer, name string, args []strin
 			code = clierr.CodeGeneric
 		}
 		e := clierr.New(code, clierr.KindChildExit, "%s exited with status %d", name, ee.ExitCode())
-		if ee.ExitCode() == 255 {
+		if ee.ExitCode() == sshSessionFailedExit {
 			e = e.WithHint("%s", sessionFailedHint)
 		}
 		return e
@@ -359,16 +370,16 @@ type sshOptions struct {
 func (app *App) addSSHCommands(cg *cobra.Command) {
 	var o sshOptions
 	sshCmd := app.newSSHCmd(&o)
-	sshCmd.Flags().
-		StringVar(&o.instance, "instance", "", "the instance to connect to: its ID or a unique prefix (default: the first running instance)")
-	sshCmd.Flags().
-		StringVar(&o.user, "user", "root", "SSH username; selects the container user, which the image must define (root always exists)")
-	sshCmd.Flags().
-		StringVarP(&o.identity, "identity", "i", "", "identity (private key) file for ssh -i (default: ~/.ssh/saladcloud_ed25519 when present)")
-	sshCmd.Flags().
-		BoolVar(&o.useConfig, "config", false, "print ssh_config Host blocks for the group's running instances (or only --instance) instead of connecting")
+	sshCmd.Flags().StringVar(&o.instance, ancestorFlagInstance, "",
+		"the instance to connect to: its ID or a unique prefix (default: the first running instance)")
+	sshCmd.Flags().StringVar(&o.user, "user", "root",
+		"SSH username; selects the container user, which the image must define (root always exists)")
+	sshCmd.Flags().StringVarP(&o.identity, "identity", "i", "",
+		"identity (private key) file for ssh -i (default: ~/.ssh/saladcloud_ed25519 when present)")
+	sshCmd.Flags().BoolVar(&o.useConfig, "config", false,
+		"print ssh_config Host blocks for the group's running instances (or only --instance) instead of connecting")
 	app.addHiddenGroupFlag(sshCmd)
-	annotate(sshCmd, annotationFlagForArg, "instance")
+	annotate(sshCmd, annotationFlagForArg, ancestorFlagInstance)
 	cg.AddCommand(sshCmd)
 }
 
