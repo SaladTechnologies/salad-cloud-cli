@@ -41,7 +41,7 @@ func followSince() time.Time { return followNow().Add(-10 * time.Minute) }
 // backlog and every poll — there is no per-poll recompilation any more.
 func staticQuery(t *testing.T) string {
 	t.Helper()
-	q, err := Compile(Filters{Group: "g"})
+	q, err := Compile(&Filters{Group: "g"})
 	if err != nil {
 		t.Fatalf("Compile error: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestFollowEmptyPollsKeepWindow(t *testing.T) {
 			)
 		}
 	}
-	if _, ok := f.seen[DedupKey(e1)]; !ok {
+	if _, ok := f.seen[DedupKey(&e1)]; !ok {
 		t.Error("seen set lost e1 across empty polls")
 	}
 }
@@ -231,7 +231,7 @@ func TestFollowSeenMapPruned(t *testing.T) {
 	if len(f.seen) != 1 {
 		t.Fatalf("seen map has %d keys after pruning, want 1: %v", len(f.seen), f.seen)
 	}
-	if _, ok := f.seen[DedupKey(eNew)]; !ok {
+	if _, ok := f.seen[DedupKey(&eNew)]; !ok {
 		t.Error("seen map pruned the wrong key: eNew should survive")
 	}
 }

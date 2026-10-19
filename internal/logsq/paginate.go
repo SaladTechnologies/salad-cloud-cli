@@ -42,7 +42,7 @@ type Fetcher func(ctx context.Context, query, startRFC3339, endRFC3339 string, p
 // so pagination and follow dedup hash the fields that together identify an
 // entry. RAW STRINGS ONLY: timestamps are never parsed and reformatted for
 // the key, because a format round-trip can lose sub-second precision.
-func DedupKey(e Entry) string {
+func DedupKey(e *Entry) string {
 	jsonPart := ""
 	if e.JSON != nil {
 		if b, err := json.Marshal(e.JSON); err == nil {
@@ -53,6 +53,13 @@ func DedupKey(e Entry) string {
 	}
 	h := sha256.Sum256([]byte(e.Time + "\x00" + e.ReceiveTime + "\x00" + e.InstanceID + "\x00" + e.Text + jsonPart))
 	return hex.EncodeToString(h[:])
+}
+
+// Window is one query over one time range, read pageSize entries at a time.
+type Window struct {
+	Query      string
+	Start, End time.Time
+	PageSize   int
 }
 
 // FetchWindow streams every entry in [start, end) to emit, in ascending
@@ -73,14 +80,13 @@ func DedupKey(e Entry) string {
 func FetchWindow(
 	ctx context.Context,
 	fetch Fetcher,
-	query string,
-	start, end time.Time,
-	pageSize int,
+	w Window,
 	emit func(Entry) error,
 	warnLine func(string),
 ) *clierr.Error {
-	cur := start.UTC().Truncate(time.Millisecond)
-	endStr := CeilRequestTime(end)
+	query, pageSize := w.Query, w.PageSize
+	cur := w.Start.UTC().Truncate(time.Millisecond)
+	endStr := CeilRequestTime(w.End)
 	boundary := make(map[string]time.Time) // already-emitted entries with parsed Time >= cur
 	for {
 		page, cerr := fetch(ctx, query, FormatRequestTime(cur), endStr, pageSize)
@@ -117,7 +123,7 @@ func emitNew(items []Entry, boundary map[string]time.Time, emit func(Entry) erro
 	dups := 0
 	for i := range items {
 		e := items[i]
-		if _, seen := boundary[DedupKey(e)]; seen {
+		if _, seen := boundary[DedupKey(&e)]; seen {
 			dups++
 			continue
 		}
@@ -139,7 +145,7 @@ func carryBoundary(items []Entry, boundary map[string]time.Time, next time.Time)
 			continue // unparseable Time cannot be placed on the boundary
 		}
 		if t = t.UTC(); !t.Before(next) {
-			newBoundary[DedupKey(items[i])] = t
+			newBoundary[DedupKey(&items[i])] = t
 		}
 	}
 	for k, t := range boundary {

@@ -12,9 +12,9 @@ import (
 func TestDirsMatchTheStandardLibrary(t *testing.T) {
 	t.Parallel()
 	wantConfig, wantConfigErr := os.UserConfigDir()
-	gotConfig, gotConfigErr := ConfigDir(ProcessEnv())
+	gotConfig, gotConfigErr := Dir(ProcessEnv())
 	if gotConfig != wantConfig || (gotConfigErr == nil) != (wantConfigErr == nil) {
-		t.Errorf("ConfigDir = %q, %v; os.UserConfigDir = %q, %v", gotConfig, gotConfigErr, wantConfig, wantConfigErr)
+		t.Errorf("Dir = %q, %v; os.UserConfigDir = %q, %v", gotConfig, gotConfigErr, wantConfig, wantConfigErr)
 	}
 	wantHome, wantHomeErr := os.UserHomeDir()
 	gotHome, gotHomeErr := HomeDir(ProcessEnv())
@@ -76,8 +76,8 @@ func TestDirsPerOS(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			env := envOf(tt.goos, tt.extra)
-			if got, err := ConfigDir(env); got != tt.wantConfig || !errors.Is(err, tt.wantConfigErr) {
-				t.Errorf("ConfigDir = %q, %v; want %q, %v", got, err, tt.wantConfig, tt.wantConfigErr)
+			if got, err := Dir(env); got != tt.wantConfig || !errors.Is(err, tt.wantConfigErr) {
+				t.Errorf("Dir = %q, %v; want %q, %v", got, err, tt.wantConfig, tt.wantConfigErr)
 			}
 			if got, err := HomeDir(env); got != tt.wantHome || !errors.Is(err, tt.wantHomeErr) {
 				t.Errorf("HomeDir = %q, %v; want %q, %v", got, err, tt.wantHome, tt.wantHomeErr)

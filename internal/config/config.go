@@ -23,17 +23,17 @@ type File struct {
 }
 
 // Path returns the config file location:
-// [filepath.Join]([ConfigDir](env), "saladcloud", "config.json").
+// [filepath.Join]([Dir](env), "saladcloud", "config.json").
 //
 // If the SALAD_CLI_CONFIG_DIR environment variable is set, that directory is
-// used instead of [ConfigDir](env)/saladcloud. This exists primarily so
+// used instead of [Dir](env)/saladcloud. This exists primarily so
 // tests (and sandboxed environments) can redirect config I/O without
 // touching the real user config.
 func Path(env Env) (string, error) {
 	if dir := env.Getenv("SALAD_CLI_CONFIG_DIR"); dir != "" {
 		return filepath.Join(dir, "config.json"), nil
 	}
-	base, err := ConfigDir(env)
+	base, err := Dir(env)
 	if err != nil {
 		return "", fmt.Errorf("finding the user config folder: %w", err)
 	}

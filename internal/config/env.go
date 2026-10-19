@@ -29,10 +29,10 @@ var (
 	errRelativeXDGHome = errors.New("path in $XDG_CONFIG_HOME is relative")
 )
 
-// ConfigDir is [os.UserConfigDir] computed from e: %AppData% on Windows,
+// Dir is [os.UserConfigDir] computed from e: %AppData% on Windows,
 // $HOME/Library/Application Support on macOS, $home/lib on Plan 9, and
 // $XDG_CONFIG_HOME or $HOME/.config elsewhere.
-func ConfigDir(e Env) (string, error) {
+func Dir(e Env) (string, error) {
 	switch e.GOOS {
 	case "windows":
 		dir := e.Getenv("AppData")
@@ -57,7 +57,7 @@ func ConfigDir(e Env) (string, error) {
 	}
 }
 
-// xdgConfigDir is ConfigDir on the systems that follow the XDG layout: $XDG_CONFIG_HOME, which must be absolute,
+// xdgConfigDir is Dir on the systems that follow the XDG layout: $XDG_CONFIG_HOME, which must be absolute,
 // or $HOME/.config.
 func xdgConfigDir(e Env) (string, error) {
 	dir := e.Getenv("XDG_CONFIG_HOME")

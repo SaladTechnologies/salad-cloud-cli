@@ -46,9 +46,9 @@ type Filters struct {
 // the organization_name label, which every entry carries. All values
 // except RawQuery are quoted and escaped; RawQuery is the user's own
 // query-language syntax and passes through verbatim inside parentheses.
-func Compile(f Filters) (string, *clierr.Error) {
+func Compile(f *Filters) (string, *clierr.Error) {
 	var b strings.Builder
-	if !writeScope(&b, &f) {
+	if !writeScope(&b, f) {
 		return "", clierr.New(
 			clierr.CodeUsage,
 			clierr.KindUsage,

@@ -180,7 +180,7 @@ func (app *App) runLogs(cmd *cobra.Command, args []string, o *logsOptions) error
 	// resolved the organization, so a placeholder stands in for it here.
 	preflight := baseFilters
 	preflight.Org = "-"
-	if _, cerr = logsq.Compile(preflight); cerr != nil {
+	if _, cerr = logsq.Compile(&preflight); cerr != nil {
 		return cerr
 	}
 
@@ -393,7 +393,7 @@ func (app *App) logsOnce(
 	filters *logsq.Filters,
 	window logsWindow,
 ) *clierr.Error {
-	query, cerr := logsq.Compile(*filters)
+	query, cerr := logsq.Compile(filters)
 	if cerr != nil {
 		return cerr
 	}
@@ -406,10 +406,7 @@ func (app *App) logsOnce(
 	cerr = logsq.FetchWindow(
 		ctx,
 		logsFetcher(client),
-		query,
-		window.since,
-		window.until,
-		o.pageSize,
+		logsq.Window{Query: query, Start: window.since, End: window.until, PageSize: o.pageSize},
 		countingEmit,
 		app.stderrLine,
 	)
@@ -442,7 +439,7 @@ func (app *App) logsFollow(
 	if app.printer.Mode() == globalOutputTable {
 		fprintln(app.errw(), "waiting for log entries (Ctrl-C to stop)")
 	}
-	query, cerr := logsq.Compile(*filters)
+	query, cerr := logsq.Compile(filters)
 	if cerr != nil {
 		return cerr
 	}

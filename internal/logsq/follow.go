@@ -96,7 +96,13 @@ func (f *Follower) Run(
 
 	// Backlog: everything already in [since, now+lookahead).
 	backlogEnd := cfg.clock.Now().UTC().Add(followLookahead)
-	werr := FetchWindow(ctx, fetch, query, sinceU, backlogEnd, pageSize, st.emitAll(emit, backlogEnd), f.Warn)
+	werr := FetchWindow(
+		ctx,
+		fetch,
+		Window{Query: query, Start: sinceU, End: backlogEnd, PageSize: pageSize},
+		st.emitAll(emit, backlogEnd),
+		f.Warn,
+	)
 	if werr != nil {
 		if ctx.Err() != nil {
 			return nil //nolint:nilerr // canceled: --follow ends with exit 0
@@ -111,7 +117,13 @@ func (f *Follower) Run(
 		}
 		windowStart := st.windowStart(sinceU, cfg.lookback)
 		windowEnd := cfg.clock.Now().UTC().Add(followLookahead)
-		werr = FetchWindow(ctx, fetch, query, windowStart, windowEnd, pageSize, st.emitUnseen(emit, windowEnd), f.Warn)
+		werr = FetchWindow(
+			ctx,
+			fetch,
+			Window{Query: query, Start: windowStart, End: windowEnd, PageSize: pageSize},
+			st.emitUnseen(emit, windowEnd),
+			f.Warn,
+		)
 		if werr != nil {
 			if ctx.Err() != nil {
 				return nil //nolint:nilerr // canceled: --follow ends with exit 0
@@ -177,7 +189,7 @@ type followState struct {
 // record remembers an emitted entry. fallback stands in for an unparseable emission time (the window's end:
 // retained a full horizon, but never allowed to drag maxSeen forward).
 func (s *followState) record(e *Entry, fallback time.Time) {
-	key := DedupKey(*e)
+	key := DedupKey(e)
 	t, err := time.Parse(time.RFC3339Nano, e.Time)
 	if err != nil {
 		s.seen[key] = fallback
@@ -202,7 +214,7 @@ func (s *followState) emitAll(emit func(Entry) error, end time.Time) func(Entry)
 // emitted.
 func (s *followState) emitUnseen(emit func(Entry) error, end time.Time) func(Entry) error {
 	return func(e Entry) error {
-		if _, dup := s.seen[DedupKey(e)]; dup {
+		if _, dup := s.seen[DedupKey(&e)]; dup {
 			return nil // already emitted in an earlier scan
 		}
 		s.record(&e, end)
