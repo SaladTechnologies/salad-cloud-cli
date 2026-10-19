@@ -222,83 +222,14 @@ positional argument (its ID, or a unique prefix of it) and the group is
     saladcloud container-groups instances restart 8a2f13ba -c my-app`,
 	}
 
-	var listWatch watchOptions
-	instancesListCmd := &cobra.Command{
-		Use:   "list -c <group>",
-		Short: "List the instances of a container group",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			group := app.flags.group
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			return app.runMaybeWatch(cmd, listWatch, func(ctx context.Context) *clierr.Error {
-				instances, cerr := client.ListInstances(ctx, group)
-				if cerr != nil {
-					return cerr
-				}
-				payload := struct {
-					Items []containergroups.ContainerGroupInstance `json:"items"`
-				}{instances.Instances}
-				if payload.Items == nil {
-					payload.Items = []containergroups.ContainerGroupInstance{}
-				}
-				err := app.printer.Emit(payload, func(w *output.Writer) {
-					w.Println("ID\tMACHINE\tSTATE\tREADY\tCPU\tMEMORY\tPULL%\tSSH\tUPDATED")
-					for i := range instances.Instances {
-						inst := &instances.Instances[i]
-						w.Printf("%s\t%s\t%s\t%t\t%s\t%s\t%s\t%s\t%s\n",
-							ptr.Deref(inst.Id), ptr.Deref(inst.MachineId), instanceState(inst),
-							ptr.Deref(inst.Ready), instanceCPU(inst), instanceMem(inst),
-							instancePull(inst), instanceSSH(inst), timeCell(inst.UpdateTime))
-					}
-				})
-				if err != nil {
-					return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)
-				}
-				// An empty table is ambiguous: allocating/creating instances
-				// have no machines yet, so the instances endpoint omits them
-				// entirely. Best-effort: fetch the group's status counts and
-				// explain on stderr (stdout stays a clean, parseable table).
-				if app.printer.Mode() == "table" && len(instances.Instances) == 0 {
-					if cg, gerr := client.GetGroup(ctx, group); gerr == nil {
-						var counts *shared.ContainerGroupInstanceStatusCount
-						if cg.CurrentState != nil {
-							counts = cg.CurrentState.InstanceStatusCounts
-						}
-						if note := emptyInstancesNote(counts); note != "" {
-							fprintln(app.errw(), note)
-						}
-					}
-				}
-				return nil
-			})
-		},
-	}
-	app.addGroupFlag(instancesListCmd)
-	app.addWatchFlags(instancesListCmd, &listWatch)
-	instancesCmd.AddCommand(instancesListCmd)
+	app.addInstancesListCommand(instancesCmd)
 
 	getCmd := &cobra.Command{
 		Use:   "get <id> -c <group>",
 		Short: "Show one container group instance (the ID may be a unique prefix)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			group := app.flags.group
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			id, cerr := resolveInstanceID(cmd.Context(), client, group, args[0])
-			if cerr != nil {
-				return cerr
-			}
-			inst, cerr := client.GetInstance(cmd.Context(), group, id)
-			if cerr != nil {
-				return instanceNotFound(cerr, group, id)
-			}
-			return wrapErr(app.printer.Emit(inst, func(w *output.Writer) { writeInstanceDetail(w, inst) }))
+			return app.runInstancesGet(cmd, args[0])
 		},
 	}
 	app.addGroupFlag(getCmd)
@@ -315,31 +246,7 @@ so raising it protects an instance doing long work. 0-100000.`,
   saladcloud container-groups instances update 8a2f13ba -c my-app --deletion-cost 1000`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cost := deletionCost
-			if cost < 0 || cost > maxDeletionCost {
-				return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-					"invalid --deletion-cost %d: must be between 0 and %d", cost, maxDeletionCost)
-			}
-			group := app.flags.group
-			client, _, cerr := app.NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			id, cerr := resolveInstanceID(cmd.Context(), client, group, args[0])
-			if cerr != nil {
-				return cerr
-			}
-			patch := containergroups.ContainerGroupInstancePatch{DeletionCost: &util.Nullable[int64]{Value: cost}}
-			inst, cerr := client.UpdateInstance(cmd.Context(), group, id, patch)
-			if cerr != nil {
-				return instanceNotFound(cerr, group, id)
-			}
-			if inst.Id == nil { // an empty 2xx body: read the instance back
-				if inst, cerr = client.GetInstance(cmd.Context(), group, id); cerr != nil {
-					return instanceNotFound(cerr, group, id)
-				}
-			}
-			return wrapErr(app.printer.Emit(inst, func(w *output.Writer) { writeInstanceDetail(w, inst) }))
+			return app.runInstancesUpdate(cmd, args[0], deletionCost)
 		},
 	}
 	app.addGroupFlag(updateCmd)
@@ -368,4 +275,129 @@ so raising it protects an instance doing long work. 0-100000.`,
 		}))
 
 	cg.AddCommand(instancesCmd)
+}
+
+// addInstancesListCommand adds instances list to the instances noun.
+func (app *App) addInstancesListCommand(instancesCmd *cobra.Command) {
+	var listWatch watchOptions
+	instancesListCmd := &cobra.Command{
+		Use:   "list -c <group>",
+		Short: "List the instances of a container group",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			group := app.flags.group
+			client, _, cerr := app.NewClient(cmd)
+			if cerr != nil {
+				return cerr
+			}
+			return app.runMaybeWatch(cmd, listWatch, func(ctx context.Context) *clierr.Error {
+				return app.listInstancesOnce(ctx, client, group)
+			})
+		},
+	}
+	app.addGroupFlag(instancesListCmd)
+	app.addWatchFlags(instancesListCmd, &listWatch)
+	instancesCmd.AddCommand(instancesListCmd)
+}
+
+// listInstancesOnce lists and emits the group's instances once (each --watch
+// tick calls it again).
+func (app *App) listInstancesOnce(ctx context.Context, client *api.Client, group string) *clierr.Error {
+	instances, cerr := client.ListInstances(ctx, group)
+	if cerr != nil {
+		return cerr
+	}
+	payload := struct {
+		Items []containergroups.ContainerGroupInstance `json:"items"`
+	}{instances.Instances}
+	if payload.Items == nil {
+		payload.Items = []containergroups.ContainerGroupInstance{}
+	}
+	err := app.printer.Emit(payload, func(w *output.Writer) { writeInstanceList(w, instances.Instances) })
+	if err != nil {
+		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)
+	}
+	// An empty table is ambiguous: allocating/creating instances
+	// have no machines yet, so the instances endpoint omits them
+	// entirely. Best-effort: fetch the group's status counts and
+	// explain on stderr (stdout stays a clean, parseable table).
+	if app.printer.Mode() == "table" && len(instances.Instances) == 0 {
+		app.noteEmptyInstances(ctx, client, group)
+	}
+	return nil
+}
+
+// writeInstanceList writes instances list's table.
+func writeInstanceList(w *output.Writer, instances []containergroups.ContainerGroupInstance) {
+	w.Println("ID\tMACHINE\tSTATE\tREADY\tCPU\tMEMORY\tPULL%\tSSH\tUPDATED")
+	for i := range instances {
+		inst := &instances[i]
+		w.Printf("%s\t%s\t%s\t%t\t%s\t%s\t%s\t%s\t%s\n",
+			ptr.Deref(inst.Id), ptr.Deref(inst.MachineId), instanceState(inst),
+			ptr.Deref(inst.Ready), instanceCPU(inst), instanceMem(inst),
+			instancePull(inst), instanceSSH(inst), timeCell(inst.UpdateTime))
+	}
+}
+
+// noteEmptyInstances explains an empty instances table on stderr from the
+// group's instance status counts, when the group can be read.
+func (app *App) noteEmptyInstances(ctx context.Context, client *api.Client, group string) {
+	cg, gerr := client.GetGroup(ctx, group)
+	if gerr != nil {
+		return
+	}
+	var counts *shared.ContainerGroupInstanceStatusCount
+	if cg.CurrentState != nil {
+		counts = cg.CurrentState.InstanceStatusCounts
+	}
+	if note := emptyInstancesNote(counts); note != "" {
+		fprintln(app.errw(), note)
+	}
+}
+
+// runInstancesGet is instances get's RunE.
+func (app *App) runInstancesGet(cmd *cobra.Command, idArg string) error {
+	group := app.flags.group
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	id, cerr := resolveInstanceID(cmd.Context(), client, group, idArg)
+	if cerr != nil {
+		return cerr
+	}
+	inst, cerr := client.GetInstance(cmd.Context(), group, id)
+	if cerr != nil {
+		return instanceNotFound(cerr, group, id)
+	}
+	return wrapErr(app.printer.Emit(inst, func(w *output.Writer) { writeInstanceDetail(w, inst) }))
+}
+
+// runInstancesUpdate is instances update's RunE: check --deletion-cost, set
+// it, and emit the instance.
+func (app *App) runInstancesUpdate(cmd *cobra.Command, idArg string, cost int64) error {
+	if cost < 0 || cost > maxDeletionCost {
+		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+			"invalid --deletion-cost %d: must be between 0 and %d", cost, maxDeletionCost)
+	}
+	group := app.flags.group
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	id, cerr := resolveInstanceID(cmd.Context(), client, group, idArg)
+	if cerr != nil {
+		return cerr
+	}
+	patch := containergroups.ContainerGroupInstancePatch{DeletionCost: &util.Nullable[int64]{Value: cost}}
+	inst, cerr := client.UpdateInstance(cmd.Context(), group, id, patch)
+	if cerr != nil {
+		return instanceNotFound(cerr, group, id)
+	}
+	if inst.Id == nil { // an empty 2xx body: read the instance back
+		if inst, cerr = client.GetInstance(cmd.Context(), group, id); cerr != nil {
+			return instanceNotFound(cerr, group, id)
+		}
+	}
+	return wrapErr(app.printer.Emit(inst, func(w *output.Writer) { writeInstanceDetail(w, inst) }))
 }
