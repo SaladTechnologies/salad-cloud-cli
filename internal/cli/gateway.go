@@ -87,22 +87,7 @@ func (k *gatewayKey) failed(cerr *clierr.Error) *clierr.Error {
 	}
 	switch *cerr.HTTPStatus {
 	case http.StatusUnauthorized:
-		e := clierr.New(clierr.CodeAuth, clierr.KindAuth, "AI Gateway key %s%s was rejected", maskAPIKey(k.key), fromTag(k.from)).
-			WithStatus(http.StatusUnauthorized)
-		switch {
-		case quotedKey(k.key):
-			return e.WithHint("remove the quotes around it")
-		case k.from != envGatewayKey:
-			return e.WithHint("run saladcloud ai-gateway login to save a new key")
-		case k.saved != "" && k.saved != k.key:
-			return e.WithHint(
-				"remove SALAD_AI_GATEWAY_API_KEY to use the saved AI Gateway key (%s), or set it to a working key",
-				maskAPIKey(k.saved),
-			)
-		}
-		return e.WithHint(
-			"set SALAD_AI_GATEWAY_API_KEY to a working key, or remove it and run saladcloud ai-gateway login",
-		)
+		return k.rejected()
 	case http.StatusForbidden:
 		return clierr.New(clierr.CodeAuth, clierr.KindAuth, "AI Gateway key %s%s has no AI Gateway access", maskAPIKey(k.key), fromTag(k.from)).
 			WithStatus(http.StatusForbidden).
@@ -113,6 +98,26 @@ func (k *gatewayKey) failed(cerr *clierr.Error) *clierr.Error {
 			WithHint("add credits from the organization's AI Gateway page: %s", gatewayKeyPage)
 	}
 	return cerr
+}
+
+// rejected is the error for a key the gateway answered 401 to, with the fix for where the key came from.
+func (k *gatewayKey) rejected() *clierr.Error {
+	e := clierr.New(clierr.CodeAuth, clierr.KindAuth, "AI Gateway key %s%s was rejected", maskAPIKey(k.key), fromTag(k.from)).
+		WithStatus(http.StatusUnauthorized)
+	switch {
+	case quotedKey(k.key):
+		return e.WithHint("remove the quotes around it")
+	case k.from != envGatewayKey:
+		return e.WithHint("run saladcloud ai-gateway login to save a new key")
+	case k.saved != "" && k.saved != k.key:
+		return e.WithHint(
+			"remove SALAD_AI_GATEWAY_API_KEY to use the saved AI Gateway key (%s), or set it to a working key",
+			maskAPIKey(k.saved),
+		)
+	}
+	return e.WithHint(
+		"set SALAD_AI_GATEWAY_API_KEY to a working key, or remove it and run saladcloud ai-gateway login",
+	)
 }
 
 // pickModel chooses the model for `ai-gateway test`: the flag when given
@@ -162,6 +167,12 @@ could add to that call.
 To see which key is in effect and where it came from, run saladcloud whoami.`,
 	}
 
+	gatewayCmd.AddCommand(app.gatewayLoginCmd(), app.gatewayLogoutCmd(), app.gatewayModelsCmd(), app.gatewayTestCmd())
+	root.AddCommand(gatewayCmd)
+}
+
+// gatewayModelsCmd is ai-gateway models, with its list verb.
+func (app *App) gatewayModelsCmd() *cobra.Command {
 	modelsCmd := &cobra.Command{
 		Use:     "models",
 		Aliases: []string{"model"},
@@ -173,48 +184,59 @@ To see which key is in effect and where it came from, run saladcloud whoami.`,
 		Long: `List the models the AI Gateway serves. The list is public and the same for
 every key, so no AI Gateway key is needed; with one set, it is sent.`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			g, _, cerr := app.newGateway()
-			if cerr != nil && cerr.Code == clierr.CodeAuth {
-				g, cerr = api.NewPublicGateway(app.apiOptions()), nil
-			}
-			if cerr != nil {
-				return cerr
-			}
-			models, cerr := g.ListModels(cmd.Context())
-			if cerr != nil {
-				return cerr
-			}
-			if app.printer.Mode() == "table" {
-				fprintf(app.errw(), "pricing and the subscription tier: %s\n", api.GatewayPricingURL)
-			}
-			// The list envelope every list has; each model stays the
-			// gateway's own object.
-			result := gatewayModelsResult{Items: models.Data}
-			if result.Items == nil {
-				result.Items = []map[string]any{}
-			}
-			return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
-				w.Println("MODEL\tOWNED BY")
-				for _, m := range result.Items {
-					id := asType[string](m["id"])
-					owner := asType[string](m["owned_by"])
-					if owner == "" {
-						owner = "-"
-					}
-					w.Printf("%s\t%s\n", id, owner)
-				}
-			}))
-		},
+		RunE: func(cmd *cobra.Command, _ []string) error { return app.runGatewayModelsList(cmd) },
 	}
 	modelsCmd.AddCommand(modelsListCmd)
+	return modelsCmd
+}
 
-	var (
-		model     string
-		prompt    string
-		maxTokens int
-		thinking  bool
-	)
+// runGatewayModelsList is ai-gateway models list: the key is sent when one is set, and the public listing is read
+// without one.
+func (app *App) runGatewayModelsList(cmd *cobra.Command) error {
+	g, _, cerr := app.newGateway()
+	if cerr != nil && cerr.Code == clierr.CodeAuth {
+		g, cerr = api.NewPublicGateway(app.apiOptions()), nil
+	}
+	if cerr != nil {
+		return cerr
+	}
+	models, cerr := g.ListModels(cmd.Context())
+	if cerr != nil {
+		return cerr
+	}
+	if app.printer.Mode() == "table" {
+		fprintf(app.errw(), "pricing and the subscription tier: %s\n", api.GatewayPricingURL)
+	}
+	// The list envelope every list has; each model stays the
+	// gateway's own object.
+	result := gatewayModelsResult{Items: models.Data}
+	if result.Items == nil {
+		result.Items = []map[string]any{}
+	}
+	return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
+		w.Println("MODEL\tOWNED BY")
+		for _, m := range result.Items {
+			id := asType[string](m["id"])
+			owner := asType[string](m["owned_by"])
+			if owner == "" {
+				owner = "-"
+			}
+			w.Printf("%s\t%s\n", id, owner)
+		}
+	}))
+}
+
+// gatewayTestOptions is ai-gateway test's flags.
+type gatewayTestOptions struct {
+	model     string
+	prompt    string
+	maxTokens int
+	thinking  bool
+}
+
+// gatewayTestCmd is ai-gateway test.
+func (app *App) gatewayTestCmd() *cobra.Command {
+	o := &gatewayTestOptions{model: "", prompt: "", maxTokens: 0, thinking: false}
 	testCmd := &cobra.Command{
 		Use:   "test",
 		Short: "Send one short completion to verify the gateway key works (exit 0 on a reply)",
@@ -232,63 +254,75 @@ budget then defaults to 1024).`,
   saladcloud ai-gateway test --prompt "say hello in one sentence"
   saladcloud ai-gateway test --model <model-id> -o json   # ids: saladcloud ai-gateway models list`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			g, key, cerr := app.newGateway()
-			if cerr != nil {
-				return cerr
-			}
-			var ids []string
-			if models, merr := g.ListModels(cmd.Context()); merr == nil {
-				ids = models.IDs()
-			} else if model == "" {
-				return key.failed(merr) // no model to fall back to; surface the real error
-			}
-			chosen, cerr := pickModel(model, ids)
-			if cerr != nil {
-				return cerr
-			}
-			if prompt == "" {
-				prompt = gatewayTestDefaultPrompt
-			}
-			if !cmd.Flags().Changed("max-tokens") {
-				maxTokens = defaultMaxTokens(thinking)
-			}
-			c, cerr := g.Complete(cmd.Context(), chosen, prompt, maxTokens, thinking)
-			if cerr != nil {
-				return key.failed(cerr)
-			}
-			reply := c.Reply()
-			if reply == "" {
-				if c.FinishReason() == "length" || c.ReasoningLen() > 0 {
-					return clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
-						"the key works, but %s spent the whole %d-token budget reasoning (%s)",
-						chosen, maxTokens, usageSummary(c.Usage)).WithHint("raise --max-tokens or drop --thinking")
-				}
-				return clierr.New(
-					clierr.CodeGeneric,
-					clierr.KindAPIError,
-					"the gateway answered but the completion was empty (model %s)",
-					chosen,
-				)
-			}
-			v := gatewayTestResult{Model: chosen, Prompt: prompt, Reply: reply, Usage: c.Usage, OK: true}
-			return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
-				w.Printf("%s\n", reply)
-				fprintf(app.errw(), "AI Gateway key works: model %s answered (%s)\n", chosen, usageSummary(c.Usage))
-			}))
-		},
+		RunE: func(cmd *cobra.Command, _ []string) error { return app.runGatewayTest(cmd, o) },
 	}
-	testCmd.Flags().StringVar(&model, "model", "", "model id (default: the first model id in sorted order)")
-	testCmd.Flags().StringVar(&prompt, "prompt", "", "the one user message to send")
+	testCmd.Flags().StringVar(&o.model, "model", "", "model id (default: the first model id in sorted order)")
+	testCmd.Flags().StringVar(&o.prompt, "prompt", "", "the one user message to send")
 	// The default depends on --thinking, so the flag's own default is 0 and
 	// the help states both: cobra would otherwise print a second default.
 	testCmd.Flags().
-		IntVar(&maxTokens, "max-tokens", 0, fmt.Sprintf("completion token budget (default %d, or %d with --thinking)", gatewayTestMaxTokens, gatewayTestMaxTokensThinking))
+		IntVar(&o.maxTokens, "max-tokens", 0, fmt.Sprintf("completion token budget (default %d, or %d with --thinking)", gatewayTestMaxTokens, gatewayTestMaxTokensThinking))
 	testCmd.Flags().
-		BoolVar(&thinking, "thinking", false, "let the model reason before answering (hundreds of tokens; off by default)")
+		BoolVar(&o.thinking, "thinking", false, "let the model reason before answering (hundreds of tokens; off by default)")
+	return testCmd
+}
 
-	gatewayCmd.AddCommand(app.gatewayLoginCmd(), app.gatewayLogoutCmd(), modelsCmd, testCmd)
-	root.AddCommand(gatewayCmd)
+// runGatewayTest is ai-gateway test: one completion on the chosen model, its reply on stdout.
+func (app *App) runGatewayTest(cmd *cobra.Command, o *gatewayTestOptions) error {
+	g, key, cerr := app.newGateway()
+	if cerr != nil {
+		return cerr
+	}
+	chosen, cerr := gatewayTestModel(cmd, g, key, o.model)
+	if cerr != nil {
+		return cerr
+	}
+	if o.prompt == "" {
+		o.prompt = gatewayTestDefaultPrompt
+	}
+	if !cmd.Flags().Changed("max-tokens") {
+		o.maxTokens = defaultMaxTokens(o.thinking)
+	}
+	c, cerr := g.Complete(cmd.Context(), chosen, o.prompt, o.maxTokens, o.thinking)
+	if cerr != nil {
+		return key.failed(cerr)
+	}
+	reply := c.Reply()
+	if reply == "" {
+		return gatewayEmptyReply(c, chosen, o.maxTokens)
+	}
+	v := gatewayTestResult{Model: chosen, Prompt: o.prompt, Reply: reply, Usage: c.Usage, OK: true}
+	return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
+		w.Printf("%s\n", reply)
+		fprintf(app.errw(), "AI Gateway key works: model %s answered (%s)\n", chosen, usageSummary(c.Usage))
+	}))
+}
+
+// gatewayTestModel is the model ai-gateway test sends to: --model, checked against the listing when there is one,
+// else the listing's first. Without a listing and without --model, the listing's error is the answer.
+func gatewayTestModel(cmd *cobra.Command, g *api.Gateway, key *gatewayKey, model string) (string, *clierr.Error) {
+	var ids []string
+	if models, merr := g.ListModels(cmd.Context()); merr == nil {
+		ids = models.IDs()
+	} else if model == "" {
+		return "", key.failed(merr) // no model to fall back to; surface the real error
+	}
+	return pickModel(model, ids)
+}
+
+// gatewayEmptyReply is the error for a completion with no reply: the budget spent reasoning, or an empty answer.
+func gatewayEmptyReply(c *api.GatewayCompletion, chosen string, maxTokens int) *clierr.Error {
+	if c.FinishReason() == "length" || c.ReasoningLen() > 0 {
+		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
+			"the key works, but %s spent the whole %d-token budget reasoning (%s)",
+			chosen, maxTokens, usageSummary(c.Usage)).WithHint("raise --max-tokens or drop --thinking")
+	}
+	return clierr.New(
+		clierr.CodeGeneric,
+		clierr.KindAPIError,
+		"the gateway answered but the completion was empty (model %s)",
+		chosen,
+	)
 }
 
 // usageSummary renders token usage compactly, in a stable key order.

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"net/http"
 	"strings"
@@ -88,45 +87,15 @@ type gatewayLogin struct {
 }
 
 func (app *App) runGatewayLogin(cmd *cobra.Command, _ []string, keyFlag string) error {
-	if cmd.Flags().Changed("api-key") && keyFlag == "" {
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s is empty", "--api-key").
-			WithHint("check that the variable you passed is set")
-	}
-	if cerr := app.configReady("ai-gateway login"); cerr != nil {
+	g, cerr := app.newGatewayLogin(cmd, keyFlag)
+	if cerr != nil {
 		return cerr
 	}
-	g := &gatewayLogin{
-		ctx:      cmd.Context(),
-		terminal: app.atTerminal(),
-		credits:  true,
-		saved:    config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
-		key:      "",
-		keyFrom:  "",
-		models:   0,
-		app:      app,
-	}
-	g.saved = app.savedConfig() // configReady has read it
-
 	switch {
 	case keyFlag == "-":
-		var line string
-		if app.Console.Terminal() { // hidden whenever stdin is a terminal, prompts or not
-			answer, err := app.Console.ReadHidden()
-			if err != nil {
-				return g.canceled()
-			}
-			line = answer
-		} else {
-			var err error
-			if line, err = readLine(bufio.NewReader(app.Stdin)); err != nil {
-				line = "" // a failed read is no key; the check below says so
-			}
+		if cerr := g.keyFromStdin(); cerr != nil {
+			return cerr
 		}
-		if strings.TrimSpace(line) == "" {
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--api-key - got no key on stdin").
-				WithHint("pipe the key in, or set SALAD_AI_GATEWAY_API_KEY")
-		}
-		g.key, g.keyFrom = line, keyFromStdin
 	case keyFlag != "":
 		fprintln(app.errw(), "warning: --api-key exposes the key on the command line; pipe it instead")
 		g.key, g.keyFrom = keyFlag, keyFromFlag
@@ -141,7 +110,51 @@ func (app *App) runGatewayLogin(cmd *cobra.Command, _ []string, keyFlag string) 
 		return clierr.New(clierr.CodeAuth, clierr.KindAuth, "no AI Gateway key provided").
 			WithHint("run saladcloud ai-gateway login in a terminal, or set SALAD_AI_GATEWAY_API_KEY")
 	}
+	return g.checkNamedKey()
+}
 
+// newGatewayLogin starts a run of ai-gateway login: --api-key given empty is refused, and the config file is read
+// as it was before login.
+func (app *App) newGatewayLogin(cmd *cobra.Command, keyFlag string) (*gatewayLogin, *clierr.Error) {
+	if cmd.Flags().Changed("api-key") && keyFlag == "" {
+		return nil, clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s is empty", "--api-key").
+			WithHint("check that the variable you passed is set")
+	}
+	if cerr := app.configReady("ai-gateway login"); cerr != nil {
+		return nil, cerr
+	}
+	g := &gatewayLogin{
+		ctx:      cmd.Context(),
+		terminal: app.atTerminal(),
+		credits:  true,
+		saved:    config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
+		key:      "",
+		keyFrom:  "",
+		models:   0,
+		app:      app,
+	}
+	g.saved = app.savedConfig() // configReady has read it
+	return g, nil
+}
+
+// keyFromStdin reads --api-key -'s key: one line, hidden at a terminal.
+func (g *gatewayLogin) keyFromStdin() *clierr.Error {
+	line, ok := g.app.readKeyLineFromStdin()
+	if !ok {
+		return g.canceled()
+	}
+	if strings.TrimSpace(line) == "" {
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--api-key - got no key on stdin").
+			WithHint("pipe the key in, or set SALAD_AI_GATEWAY_API_KEY")
+	}
+	g.key, g.keyFrom = line, keyFromStdin
+	return nil
+}
+
+// checkNamedKey checks a key from a flag, stdin or SALAD_AI_GATEWAY_API_KEY, then reports one from the variable
+// unsaved and saves any other, read back with its source.
+func (g *gatewayLogin) checkNamedKey() error {
+	app := g.app
 	key, ok := normalizeKey(g.key)
 	if !ok {
 		return malformedKey(labelGatewayKey, key, g.keyFrom)
@@ -253,13 +266,7 @@ func (g *gatewayLogin) keyInvalid() *clierr.Error {
 // checked.
 func (g *gatewayLogin) askForKey() *clierr.Error {
 	app := g.app
-	if line := app.beforePrompt("ai-gateway login", app.stillSupplied(envGatewayKey)); line != "" {
-		app.tell("%s", line)
-	}
-	if g.saved.GatewayAPIKey != "" {
-		app.tell("Saved AI Gateway key: %s (Ctrl-C to keep it)", maskAPIKey(g.saved.GatewayAPIKey))
-	}
-	app.tell("Get your AI Gateway key at %s", gatewayKeyPage)
+	g.openKeyExchange()
 	for {
 		answer, err := app.ask(app.keyPrompt(), true)
 		if err != nil {
@@ -280,17 +287,36 @@ func (g *gatewayLogin) askForKey() *clierr.Error {
 		g.key, g.keyFrom = key, ""
 		cerr := g.check()
 		if rejected(cerr) {
-			if quotedKey(key) {
-				app.tell("%s", quotedPastedGatewayKey)
-			} else {
-				app.tell("%s", invalidPastedGatewayKey)
-			}
+			g.tellPastedKeyInvalid(key)
 			continue
 		}
 		if cerr != nil {
 			return g.failed(cerr)
 		}
 		return nil
+	}
+}
+
+// openKeyExchange prints the lines ahead of the key prompt: the variable that will still override what is saved,
+// the saved key, and where to get one.
+func (g *gatewayLogin) openKeyExchange() {
+	app := g.app
+	if line := app.beforePrompt("ai-gateway login", app.stillSupplied(envGatewayKey)); line != "" {
+		app.tell("%s", line)
+	}
+	if g.saved.GatewayAPIKey != "" {
+		app.tell("Saved AI Gateway key: %s (Ctrl-C to keep it)", maskAPIKey(g.saved.GatewayAPIKey))
+	}
+	app.tell("Get your AI Gateway key at %s", gatewayKeyPage)
+}
+
+// tellPastedKeyInvalid tells the person at the terminal that the key they pasted is invalid, and why when it can
+// tell.
+func (g *gatewayLogin) tellPastedKeyInvalid(key string) {
+	if quotedKey(key) {
+		g.app.tell("%s", quotedPastedGatewayKey)
+	} else {
+		g.app.tell("%s", invalidPastedGatewayKey)
 	}
 }
 
