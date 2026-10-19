@@ -236,7 +236,7 @@ func TestVanishedOrganization(t *testing.T) {
 		{
 			id:     "from config, at a terminal",
 			status: 404,
-			s:      session{args: list, saved: gone, tty: []string{}},
+			s:      session{args: list, saved: gone, tty: []string{}}, //nolint:revive // a terminal with no answers
 			code:   4,
 			kind:   "not_found",
 			stderr: errLines(
@@ -267,7 +267,7 @@ func TestVanishedOrganization(t *testing.T) {
 			s: session{
 				args:  []string{"cg", "get", "my-app", "--org", "old-org", "--project", "default"},
 				saved: &config.File{APIKey: k},
-				tty:   []string{},
+				tty:   []string{}, //nolint:revive // a non-nil tty is a terminal, here one with no answers
 			},
 			code:   4,
 			kind:   "not_found",
@@ -286,9 +286,8 @@ func TestVanishedOrganization(t *testing.T) {
 		},
 	})
 	o := session{args: list, saved: gone}.run(t)
-	if got := fmt.Sprint(
-		o.api.Requests(),
-	); got != "[GET /organizations/old-org/projects/default/containers GET /organizations/old-org/quotas]" {
+	want := "[GET /organizations/old-org/projects/default/containers GET /organizations/old-org/quotas]"
+	if got := fmt.Sprint(o.api.Requests()); got != want {
 		t.Errorf("requests %s, want the listing and one organization check", got)
 	}
 	o = session{args: []string{"quotas", "get"}, saved: gone}.run(t)
@@ -302,10 +301,7 @@ func TestVanishedOrganization(t *testing.T) {
 	}.run(
 		t,
 	)
-	if e, _ := o.errorDocumentOrTable(); e != `container group "missing" not found in my-org/default` {
+	if e, _ := tableError(o.stderr); e != `container group "missing" not found in my-org/default` {
 		t.Errorf("a group that does not exist: %q", e)
 	}
 }
-
-// errorDocumentOrTable is the error message from a table-mode run.
-func (o outcome) errorDocumentOrTable() (string, string) { return tableError(o.stderr) }

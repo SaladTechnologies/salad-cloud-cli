@@ -73,16 +73,14 @@ func TestFormatLogLineNamesItsSource(t *testing.T) {
 		{scopeOrg, "2026-10-01 12:00:00Z  INFO     [prod/api/8a2f13ba] hello"},
 	}
 	for _, tt := range tests {
-		if got := formatLogLine(e, tt.scope); got != tt.want {
+		if got := formatLogLine(&e, tt.scope); got != tt.want {
 			t.Errorf("formatLogLine(%s) = %q, want %q", tt.scope, got, tt.want)
 		}
 	}
 	// A system event has no instance; the missing parts render as "-".
 	sys := logsq.Entry{Time: "2026-10-01T12:00:00Z", Severity: "info", Text: "Instance Running", Project: "prod"}
-	if got, want := formatLogLine(
-		sys,
-		scopeOrg,
-	), "2026-10-01 12:00:00Z  INFO     [prod/-/-] Instance Running"; got != want {
+	got, want := formatLogLine(&sys, scopeOrg), "2026-10-01 12:00:00Z  INFO     [prod/-/-] Instance Running"
+	if got != want {
 		t.Errorf("system event line = %q, want %q", got, want)
 	}
 }
@@ -109,16 +107,13 @@ func TestFormatLogLineReadsSystemEvents(t *testing.T) {
 		Time: "2026-10-03T23:06:26.8559213+00:00", Severity: "info", InstanceID: "bd0f69f5-0000",
 		JSON: map[string]any{"gpu_class_name": "", "message": "Instance Allocated"},
 	}
-	if got, want := formatLogLine(
-		e,
-		scopeGroup,
-	), "2026-10-03 23:06:26Z  INFO     [bd0f69f5] Instance Allocated"; got != want {
+	got, want := formatLogLine(&e, scopeGroup), "2026-10-03 23:06:26Z  INFO     [bd0f69f5] Instance Allocated"
+	if got != want {
 		t.Errorf("line = %q, want %q", got, want)
 	}
-	if got, want := jsonLogText(
-		map[string]any{"message": "done", "code": 3.0, "who": "w"},
-	), "done code=3 who=w"; got != want {
-		t.Errorf("jsonLogText = %q, want %q", got, want)
+	text := jsonLogText(map[string]any{"message": "done", "code": 3.0, "who": "w"})
+	if want := "done code=3 who=w"; text != want {
+		t.Errorf("jsonLogText = %q, want %q", text, want)
 	}
 	if got, want := jsonLogText(map[string]any{"status": 500.0}), `{"status":500}`; got != want {
 		t.Errorf("jsonLogText without a message = %q, want %q", got, want)

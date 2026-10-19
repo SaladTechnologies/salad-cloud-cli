@@ -40,7 +40,7 @@ In JSON mode the result is {"version","since","items":[{"version",
 "date","body","title"}]}, one item per release; items is an empty list,
 never null.`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		RunE: func(_ *cobra.Command, _ []string) error {
 			all := changelog.Parse(saladcloudcli.Changelog)
 			releases, err := changelog.Since(all, since)
 			if err != nil {
@@ -50,7 +50,7 @@ never null.`,
 				return wrapErr(err)
 			}
 			if releases == nil {
-				releases = []changelog.Release{}
+				releases = []changelog.Release{} //nolint:revive // the JSON contract renders none as [], not null
 			}
 			res := changelogResult{Version: version.String(), Items: releases, Since: nil}
 			if since != "" {

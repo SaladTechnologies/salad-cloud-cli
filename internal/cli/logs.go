@@ -114,22 +114,28 @@ type logsOptions struct {
 
 // addLogsFlags binds the logs flags on c to o; both logs commands use it.
 func addLogsFlags(c *cobra.Command, o *logsOptions) {
-	c.Flags().
-		StringVar(&o.since, "since", "15m", "start of the time range: duration (15m, 2h, 3d), RFC3339 timestamp, or date")
-	c.Flags().
-		StringVar(&o.until, "until", "", "end of the time range (same forms as --since; default now; conflicts with --follow)")
-	c.Flags().
-		StringVar(&o.instance, "instance", "", "only logs from this instance (full ID; a unique prefix also works when a container group is given)")
+	c.Flags().StringVar(&o.since, "since", "15m",
+		"start of the time range: duration (15m, 2h, 3d), RFC3339 timestamp, or date")
+	c.Flags().StringVar(&o.until, "until", "",
+		"end of the time range (same forms as --since; default now; conflicts with --follow)")
+	c.Flags().StringVar(&o.instance, ancestorFlagInstance, "",
+		"only logs from this instance (full ID; a unique prefix also works when a container group is given)")
 	c.Flags().StringVar(&o.severity, "severity", "", "minimum severity: "+strings.Join(logsq.Severities(), "|"))
 	c.Flags().StringVar(&o.filter, "filter", "", "only logs containing this substring (text or JSON)")
 	c.Flags().StringVar(&o.query, "query", "", "raw log query-language expression, ANDed onto the generated query")
 	c.Flags().BoolVarP(&o.follow, "follow", "f", false, "stream new log entries until interrupted")
-	c.Flags().
-		DurationVar(&o.pollInterval, "poll-interval", logsq.DefaultPoll, "how often to poll for new entries with --follow (min 2s)")
-	c.Flags().
-		DurationVar(&o.lookback, "lookback", logsq.DefaultLookback, "with --follow, how far behind the newest seen log time each poll re-scans for late-arriving entries")
-	c.Flags().IntVar(&o.pageSize, "page-size", 100, "entries per API request (1-100)")
+	c.Flags().DurationVar(&o.pollInterval, "poll-interval", logsq.DefaultPoll,
+		"how often to poll for new entries with --follow (min 2s)")
+	c.Flags().DurationVar(&o.lookback, "lookback", logsq.DefaultLookback,
+		"with --follow, how far behind the newest seen log time each poll re-scans for late-arriving entries")
+	c.Flags().IntVar(&o.pageSize, "page-size", logsDefaultPageSize, "entries per API request (1-100)")
 }
+
+// logsDefaultPageSize is --page-size's default: the most entries one API request returns.
+const logsDefaultPageSize = 100
+
+// logsInstancePrefixLen is how many characters of the instance ID a table-mode log line shows.
+const logsInstancePrefixLen = 8
 
 // addLogsCommands adds logs.go's commands to the tree.
 func (app *App) addLogsCommands(root, cg *cobra.Command) {
@@ -137,14 +143,14 @@ func (app *App) addLogsCommands(root, cg *cobra.Command) {
 	logsCmd := app.newLogsCmd(&logsOpts)
 	containerGroupLogsCmd := app.newContainerGroupLogsCmd(&groupLogsOpts)
 	addLogsFlags(logsCmd, &logsOpts)
-	logsCmd.Flags().
-		StringVarP(&app.flags.group, "container-group", "c", "", "only this container group's logs (in the current project)")
-	logsCmd.Flags().
-		StringVar(&app.flags.project, "project", "", "only this project's logs; unlike other commands, the saved project and SALAD_PROJECT do not narrow logs")
-	annotate(logsCmd, annotationFlagForArg, "container-group")
+	logsCmd.Flags().StringVarP(&app.flags.group, ancestorFlagGroup, "c", "",
+		"only this container group's logs (in the current project)")
+	logsCmd.Flags().StringVar(&app.flags.project, globalFlagProject, "",
+		"only this project's logs; unlike other commands, the saved project and SALAD_PROJECT do not narrow logs")
+	annotate(logsCmd, annotationFlagForArg, ancestorFlagGroup)
 	addLogsFlags(containerGroupLogsCmd, &groupLogsOpts)
 	app.addHiddenGroupFlag(containerGroupLogsCmd)
-	annotate(containerGroupLogsCmd, annotationFlagForArg, "instance")
+	annotate(containerGroupLogsCmd, annotationFlagForArg, ancestorFlagInstance)
 	root.AddCommand(logsCmd)
 	cg.AddCommand(containerGroupLogsCmd)
 }
@@ -186,7 +192,7 @@ func (app *App) runLogs(cmd *cobra.Command, args []string, o *logsOptions) error
 	if cerr != nil {
 		return cerr
 	}
-	if app.printer.Mode() == "table" {
+	if app.printer.Mode() == globalOutputTable {
 		fprintln(app.errw(), scopeLine(scope, client.Org(), res.Project))
 	}
 	if baseFilters.Instance, cerr = logsInstanceID(cmd.Context(), client, group, o.instance); cerr != nil {
@@ -315,7 +321,7 @@ func logsScope(
 	case group != "":
 		filters.Project = res.Project
 		return logScope{kind: scopeGroup, name: group}, nil
-	case cmd.Flags().Changed("project"):
+	case cmd.Flags().Changed(globalFlagProject):
 		filters.Project = res.Project
 		return logScope{kind: scopeProject, name: res.Project}, nil
 	default:
@@ -374,7 +380,7 @@ func logsFetcher(client *api.Client) logsq.Fetcher {
 // logsEmitter prints one log entry: its full API entry as NDJSON, or its table line for a query of scope.
 func (app *App) logsEmitter(scope logScope) func(logsq.Entry) error {
 	return func(e logsq.Entry) error {
-		return app.printer.Stream(e.Raw, formatLogLine(e, scope.kind))
+		return app.printer.Stream(e.Raw, formatLogLine(&e, scope.kind))
 	}
 }
 
@@ -413,7 +419,7 @@ func (app *App) logsOnce(
 	// An empty one-shot result is easy to misread as a hang or a bug;
 	// say so on stderr in table mode. JSON/NDJSON stays machine-clean,
 	// and --follow's silence correctly means "waiting".
-	if emitted == 0 && app.printer.Mode() == "table" {
+	if emitted == 0 && app.printer.Mode() == globalOutputTable {
 		fprintln(app.errw(), noMatchNote(scope, o.since, o.instance, o.severity, o.filter))
 	}
 	return nil
@@ -433,7 +439,7 @@ func (app *App) logsFollow(
 			fprintln(app.errw(), note)
 		}
 	}
-	if app.printer.Mode() == "table" {
+	if app.printer.Mode() == globalOutputTable {
 		fprintln(app.errw(), "waiting for log entries (Ctrl-C to stop)")
 	}
 	query, cerr := logsq.Compile(*filters)
@@ -464,7 +470,8 @@ func followGroupNote(ctx context.Context, client *api.Client, group string) stri
 // groupSilentNote says why a group's follow will stay silent, or "".
 func groupSilentNote(g *shared.ContainerGroup) string {
 	status := groupStatus(g)
-	if status != "failed" && status != "stopped" {
+	if status != string(shared.CONTAINER_GROUP_STATUS_FAILED) &&
+		status != string(shared.CONTAINER_GROUP_STATUS_STOPPED) {
 		return ""
 	}
 	why := ""
@@ -502,14 +509,18 @@ func scopeLine(scope logScope, org, project string) string {
 // noMatchNote is the stderr note for a one-shot table-mode query that
 // emitted nothing. Optional filters appear only when set, compactly.
 func noMatchNote(scope logScope, since, instance, severity, filter string) string {
+	//nolint:gocritic // shows the name as typed; %q would escape it
 	msg := fmt.Sprintf(`no log entries matched (%s "%s", since %s`, scope.kind, scope.name, since)
 	if instance != "" {
+		//nolint:gocritic // shows the value as typed; %q would escape it
 		msg += fmt.Sprintf(`, instance "%s"`, instance)
 	}
 	if severity != "" {
+		//nolint:gocritic // shows the value as typed; %q would escape it
 		msg += fmt.Sprintf(`, severity "%s"`, severity)
 	}
 	if filter != "" {
+		//nolint:gocritic // shows the value as typed; %q would escape it
 		msg += fmt.Sprintf(`, filter "%s"`, filter)
 	}
 	return msg + ")"
@@ -558,12 +569,12 @@ func toLogsqEntry(le *logs.LogEntry) logsq.Entry {
 //	<time>  <SEVERITY>  [<project>/<group>/<instance prefix>] <message> organization
 //
 // so a wider query still says where each line came from.
-func formatLogLine(e logsq.Entry, scope string) string {
+func formatLogLine(e *logsq.Entry, scope string) string {
 	inst := "-"
 	if e.InstanceID != "" {
 		inst = e.InstanceID
-		if len(inst) > 8 {
-			inst = inst[:8]
+		if len(inst) > logsInstancePrefixLen {
+			inst = inst[:logsInstancePrefixLen]
 		}
 	}
 	switch scope {
