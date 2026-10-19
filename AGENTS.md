@@ -31,10 +31,13 @@ has been exercised live (or the pull request says it has not). Lint settings liv
 and `.prettierignore` (`AGENTS.md` and `docs/` keep their hand-wrapped compact tables), `.shellcheckrc`,
 `PSScriptAnalyzerSettings.psd1` and `cspell.json`; add a project term to `dictionaries/salad-cloud-cli.txt`, and a
 deliberate misspelling in a test to `dictionaries/test-fixtures.txt`.
-CI (`.github/workflows/test.yml`) installs the `mise.toml` tools and runs `just vet`, `just test` and `just build` on
-Linux, macOS, and Windows, and `just fmt-check lint` on Linux; it does not run the live suite by decision. It runs on
-every push and pull request, and by hand with `gh workflow run test.yml` (`--ref <branch>` for another branch).
-Actions are pinned by commit SHA and Dependabot bumps them.
+CI (`.github/workflows/test.yml`) installs the `mise.toml` tools through `.github/actions/setup-mise`, which fetches
+mise at a pinned, checksum-verified version (the organization's allowed-actions list does not include
+`jdx/mise-action`), and runs `just vet`, `just test` and `just build` on Linux, macOS, and Windows, and
+`just fmt-check lint` on Linux; it does not run the live suite by decision. It runs on every push and pull request,
+and by hand with `gh workflow run test.yml` (`--ref <branch>` for another branch). Actions are pinned by commit SHA
+and Dependabot bumps them; the mise version in `setup.sh` is bumped by hand, with each archive's sum from the
+release's `SHASUMS256.txt`.
 
 Releasing: run `just test-live` with `SALAD_CLI_TEST_REQUIRE_SSH=1`, using the Windows build from a machine whose SSH
 key is registered on the account (so ssh and cp really run), open one `sftp` session by hand, run `test.yml` on the

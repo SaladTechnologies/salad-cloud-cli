@@ -31,9 +31,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Go and just at the versions in mise.toml; formatting is the lint job's.
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: ./.github/actions/setup-mise
         with:
-          install_args: go just
+          tools: go just
       - name: vet
         run: just vet
       - name: test
@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: ./.github/actions/setup-mise
       - name: install prettier and cspell
         run: npm ci
       - name: check formatting and lint
@@ -76,9 +76,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: jdx/mise-action@9b200bcecbfd6303e69a4a261b2e09e3757440a7 # v5.2.0
+      - uses: ./.github/actions/setup-mise
         with:
-          install_args: go
+          tools: go
       - name: tag the commit v0.0.0-ci
         # The local tag makes goreleaser stamp and name everything v0.0.0-ci,
         # so the installed binary's version can be checked against its archive.
