@@ -93,55 +93,70 @@ func Block(cliVersion string) string {
 // follow the existing file: if it contains CRLF anywhere, the block is
 // written with CRLF too.
 func Apply(existing, cliVersion string) (result string, changed bool, err error) {
-	block := Block(cliVersion)
-	crlf := strings.Contains(existing, "\r\n")
-	if crlf {
-		block = strings.ReplaceAll(block, "\n", "\r\n")
+	block, nl := Block(cliVersion), "\n"
+	if strings.Contains(existing, "\r\n") {
+		block, nl = strings.ReplaceAll(block, "\n", "\r\n"), "\r\n"
 	}
 
 	start := strings.Index(existing, startPrefix)
 	end := strings.Index(existing, endMarker)
 
-	switch {
-	case start < 0 && end < 0:
+	if start < 0 && end < 0 {
 		// No block: append.
-		out := existing
-		if out != "" {
-			nl := "\n"
-			if crlf {
-				nl = "\r\n"
-			}
-			if !strings.HasSuffix(out, nl) {
-				out += nl
-			}
-			out += nl
-		}
-		out += block
+		out := appendBlock(existing, block, nl)
 		return out, out != existing, nil
-	case start < 0:
-		return "", false, fmt.Errorf("%w: end marker without a start marker", ErrMalformed)
-	case end < 0:
-		return "", false, fmt.Errorf("%w: start marker without an end marker", ErrMalformed)
-	case end < start:
-		return "", false, fmt.Errorf("%w: end marker appears before the start marker", ErrMalformed)
 	}
-	if strings.Contains(existing[start+len(startPrefix):], startPrefix) ||
-		strings.Contains(existing[end+len(endMarker):], endMarker) {
-		return "", false, fmt.Errorf("%w: more than one block; remove the extras and re-run", ErrMalformed)
+	if err := checkMarkers(existing, start, end); err != nil {
+		return "", false, err
 	}
 
 	// Replace [start, end+len(endMarker)] plus the line ending that follows
 	// the end marker, if any, so the block's own trailing newline is not
 	// doubled on every run.
-	tail := existing[end+len(endMarker):]
+	out := existing[:start] + block + trimLineEnding(existing[end+len(endMarker):])
+	return out, out != existing, nil
+}
+
+// appendBlock is existing with block after a blank line, existing's last line ended first, each line ending nl; an
+// empty existing becomes the block alone.
+func appendBlock(existing, block, nl string) string {
+	if existing == "" {
+		return block
+	}
+	out := existing
+	if !strings.HasSuffix(out, nl) {
+		out += nl
+	}
+	return out + nl + block
+}
+
+// checkMarkers returns ErrMalformed unless existing holds exactly one block, its start marker at start and its end
+// marker at end, at least one of them found.
+func checkMarkers(existing string, start, end int) error {
+	switch {
+	case start < 0:
+		return fmt.Errorf("%w: end marker without a start marker", ErrMalformed)
+	case end < 0:
+		return fmt.Errorf("%w: start marker without an end marker", ErrMalformed)
+	case end < start:
+		return fmt.Errorf("%w: end marker appears before the start marker", ErrMalformed)
+	}
+	if strings.Contains(existing[start+len(startPrefix):], startPrefix) ||
+		strings.Contains(existing[end+len(endMarker):], endMarker) {
+		return fmt.Errorf("%w: more than one block; remove the extras and re-run", ErrMalformed)
+	}
+	return nil
+}
+
+// trimLineEnding drops the one line ending, CRLF or LF, that tail starts with.
+func trimLineEnding(tail string) string {
 	switch {
 	case strings.HasPrefix(tail, "\r\n"):
-		tail = tail[2:]
+		return tail[2:]
 	case strings.HasPrefix(tail, "\n"):
-		tail = tail[1:]
+		return tail[1:]
 	}
-	out := existing[:start] + block + tail
-	return out, out != existing, nil
+	return tail
 }
 
 // Target names the file agent init will write and why.
