@@ -109,27 +109,12 @@ func Writable(env Env) error {
 	if err != nil {
 		return err
 	}
-	if f, openErr := os.OpenFile(p, os.O_WRONLY, 0); openErr == nil {
-		if closeErr := f.Close(); closeErr != nil {
-			return fmt.Errorf("closing the config file: %w", closeErr)
-		}
-	} else if !errors.Is(openErr, os.ErrNotExist) {
-		return fmt.Errorf("opening the config file: %w", openErr)
+	if err = opensForWriting(p); err != nil {
+		return err
 	}
-	dir := filepath.Dir(p)
-	for {
-		st, statErr := os.Stat(dir)
-		if statErr == nil {
-			if !st.IsDir() {
-				return fmt.Errorf("%s %w", dir, ErrNotFolder)
-			}
-			break
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-		dir = parent
+	dir, err := nearestFolder(filepath.Dir(p))
+	if err != nil {
+		return err
 	}
 	tmp, err := os.CreateTemp(dir, ".saladcloud-check-*")
 	if err != nil {
@@ -143,6 +128,40 @@ func Writable(env Env) error {
 		return fmt.Errorf("removing the check file: %w", err)
 	}
 	return nil
+}
+
+// opensForWriting reports why the config file at p, when it exists, does not open for writing, or nil.
+func opensForWriting(p string) error {
+	f, err := os.OpenFile(p, os.O_WRONLY, 0)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("opening the config file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("closing the config file: %w", err)
+	}
+	return nil
+}
+
+// nearestFolder is dir when it exists, else the nearest folder above it that does (the root when none does);
+// a path on the way that exists but is not a folder is ErrNotFolder.
+func nearestFolder(dir string) (string, error) {
+	for {
+		st, err := os.Stat(dir)
+		if err == nil {
+			if !st.IsDir() {
+				return "", fmt.Errorf("%s %w", dir, ErrNotFolder)
+			}
+			return dir, nil
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return dir, nil
+		}
+		dir = parent
+	}
 }
 
 // Save writes the config file, creating its directory (0700) if needed.
@@ -229,49 +248,26 @@ func Resolve(env Env, orgFlag, projectFlag string) (Resolved, error) {
 // ResolveFrom is Resolve with the config file already read (or, when it
 // cannot be read, an empty one: flags and the environment still resolve).
 func ResolveFrom(env Env, f File, orgFlag, projectFlag string) Resolved {
-	pick := func(flagVal, envName, fileVal string) (string, string) {
-		if flagVal != "" {
-			return flagVal, "flag"
-		}
-		if v := env.Getenv(envName); v != "" {
-			return v, "env"
-		}
-		if fileVal != "" {
-			return fileVal, "config"
-		}
-		return "", ""
-	}
 	var r Resolved
-	r.APIKey, r.APIKeySource = pick("", "SALAD_API_KEY", f.APIKey)
+	key := firstSet("", env.Getenv("SALAD_API_KEY"), f.APIKey)
+	r.APIKey, r.APIKeySource = key.value, key.source
 	// The gateway docs name the variable SALAD_AI_GATEWAY_API_KEY; keep it.
-	r.GatewayAPIKey, r.GatewayAPIKeySource = pick("", "SALAD_AI_GATEWAY_API_KEY", f.GatewayAPIKey)
+	gatewayKey := firstSet("", env.Getenv("SALAD_AI_GATEWAY_API_KEY"), f.GatewayAPIKey)
+	r.GatewayAPIKey, r.GatewayAPIKeySource = gatewayKey.value, gatewayKey.source
 	// Names are trimmed: a variable sourced from a Windows-saved file can
 	// end in a carriage return. Keys are trimmed where they are used.
-	name := func(flagVal, envName, fileVal string) (string, string) {
-		flagVal, envVal, fileVal := strings.TrimSpace(
-			flagVal,
-		), strings.TrimSpace(
-			env.Getenv(envName),
-		), strings.TrimSpace(
-			fileVal,
-		)
-		switch {
-		case flagVal != "":
-			return flagVal, "flag"
-		case envVal != "":
-			return envVal, "env"
-		case fileVal != "":
-			return fileVal, "config"
-		}
-		return "", ""
+	name := func(flagVal, envName, fileVal string) setting {
+		return firstSet(strings.TrimSpace(flagVal), strings.TrimSpace(env.Getenv(envName)), strings.TrimSpace(fileVal))
 	}
 	savedOrg := strings.TrimSpace(f.Organization)
-	r.Organization, r.OrganizationSource = name(orgFlag, "SALAD_ORGANIZATION", savedOrg)
+	org := name(orgFlag, "SALAD_ORGANIZATION", savedOrg)
+	r.Organization, r.OrganizationSource = org.value, org.source
 	fileProject := f.Project
 	if fileProject != "" && savedOrg != "" && r.Organization != savedOrg {
 		r.SkippedProject, r.SkippedProjectOrg, fileProject = fileProject, savedOrg, ""
 	}
-	r.Project, r.ProjectSource = name(projectFlag, "SALAD_PROJECT", fileProject)
+	project := name(projectFlag, "SALAD_PROJECT", fileProject)
+	r.Project, r.ProjectSource = project.value, project.source
 	if r.Project != "" {
 		r.SkippedProject, r.SkippedProjectOrg = "", ""
 	}
@@ -279,4 +275,20 @@ func ResolveFrom(env Env, f File, orgFlag, projectFlag string) Resolved {
 		r.Project, r.ProjectSource = DefaultProject, SourceDefault
 	}
 	return r
+}
+
+// setting is a resolved value and its source: "flag", "env" or "config", or "" when nothing set it.
+type setting struct{ value, source string }
+
+// firstSet is the first of a flag's value, the environment's and the config file's that is set.
+func firstSet(flagVal, envVal, fileVal string) setting {
+	switch {
+	case flagVal != "":
+		return setting{flagVal, "flag"}
+	case envVal != "":
+		return setting{envVal, "env"}
+	case fileVal != "":
+		return setting{fileVal, "config"}
+	}
+	return setting{"", ""}
 }

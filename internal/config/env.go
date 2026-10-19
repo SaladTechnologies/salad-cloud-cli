@@ -53,19 +53,25 @@ func ConfigDir(e Env) (string, error) {
 		}
 		return dir + "/lib", nil
 	default:
-		dir := e.Getenv("XDG_CONFIG_HOME")
-		if dir == "" {
-			home := e.Getenv("HOME")
-			if home == "" {
-				return "", errNoConfigHome
-			}
-			return home + "/.config", nil
-		}
-		if !path.IsAbs(dir) { // a Unix path, whatever the host (tests simulate other systems)
-			return "", errRelativeXDGHome
-		}
-		return dir, nil
+		return xdgConfigDir(e)
 	}
+}
+
+// xdgConfigDir is ConfigDir on the systems that follow the XDG layout: $XDG_CONFIG_HOME, which must be absolute,
+// or $HOME/.config.
+func xdgConfigDir(e Env) (string, error) {
+	dir := e.Getenv("XDG_CONFIG_HOME")
+	if dir == "" {
+		home := e.Getenv("HOME")
+		if home == "" {
+			return "", errNoConfigHome
+		}
+		return home + "/.config", nil
+	}
+	if !path.IsAbs(dir) { // a Unix path, whatever the host (tests simulate other systems)
+		return "", errRelativeXDGHome
+	}
+	return dir, nil
 }
 
 // HomeDir is [os.UserHomeDir] computed from e: %USERPROFILE% on Windows,
