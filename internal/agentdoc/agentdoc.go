@@ -56,24 +56,35 @@ func StartMarker(cliVersion string) string {
 const body = `## SaladCloud
 - Workloads run as container groups on interruptible consumer GPU nodes: local disk is ephemeral, any instance
   can be reallocated at any time, and inbound traffic reaches one port through the container gateway.
-- Use the ` + "`saladcloud`" + ` CLI, not raw HTTP: ` + "`saladcloud -o json <command>`" + `. An error is one JSON line on stderr whose
-  ` + "`hint`" + ` is the fix; ` + "`--help`" + ` is the reference. Exit codes: 1 error, 2 usage, 3 auth, 4 not found, 5 rate limited,
-  6 invalid input, 7 network, 10 not available, or the child's from ` + "`cg ssh/sftp/cp`" + ` (a one-shot ` + "`cg ssh -- <cmd>`" + ` exits 1 even on success).
-- Setup belongs to the user. When a hint says to run ` + "`saladcloud login`" + `, ` + "`ai-gateway login`" + ` or ` + "`ssh-key setup`" + `, ask the
+- Use the ` + "`saladcloud`" + ` CLI, not raw HTTP: ` + "`saladcloud -o json <command>`" + `. An error is one ` +
+	`JSON line on stderr whose
+  ` + "`hint`" + ` is the fix; ` + "`--help`" + ` is the reference. ` +
+	`Exit codes: 1 error, 2 usage, 3 auth, 4 not found, 5 rate limited,
+  6 invalid input, 7 network, 10 not available, or the child's from ` + "`cg ssh/sftp/cp`" + ` (a one-shot ` +
+	"`cg ssh -- <cmd>`" + ` exits 1 even on success).
+- Setup belongs to the user. When a hint says to run ` + "`saladcloud login`" + `, ` + "`ai-gateway login`" + ` or ` +
+	"`ssh-key setup`" + `, ask the
   user to run it in their own terminal; never ask for a key in the chat. Pass --org, and --project where a command
-  takes it, instead of running ` + "`use`" + ` or ` + "`config set`" + `. If a name is not found, ask the user which one; never pick from a list.
+  takes it, instead of running ` + "`use`" + ` or ` + "`config set`" + `. If a name is not found, ask the user ` +
+	`which one; never pick from a list.
 - Auth resolves flag > environment > config file: SALAD_API_KEY, SALAD_ORGANIZATION, SALAD_PROJECT (unset, the project
-  is "default", with a stderr warning; set it). Never print their values. ` + "`saladcloud whoami`" + ` shows what resolved and where from.
+  is "default", with a stderr warning; set it). Never print their values. ` +
+	"`saladcloud whoami`" + ` shows what resolved and where from.
 - Container groups live under ` + "`saladcloud container-groups`" + ` (alias ` + "`cg`" + `). A command's target is its
   one positional and its parents are flags (` + "`cg instances restart <id> -c <group>`" + `). One group's
   logs: ` + "`cg logs <group>`" + `; ` + "`saladcloud logs`" + ` alone searches the organization.
-  ` + "`saladcloud availability --gpu <class>`" + ` costs platform queries (one per class, one more for several): call it once before ` + "`cg create`" + `.
-- Writes verify themselves: read the ` + "`warning:`" + `/` + "`note:`" + ` stderr lines after ` + "`cg create/update/scale`" + `.
+  ` + "`saladcloud availability --gpu <class>`" + ` costs platform queries (one per class, one more for several): ` +
+	`call it once before ` + "`cg create`" + `.
+- Writes verify themselves: read the ` + "`warning:`" + `/` + "`note:`" + ` stderr lines after ` +
+	"`cg create/update/scale`" + `.
   ` + "`container-groups delete`" + ` is immediate and unconfirmed; confirm with the user first.
 - A local run to check ports, probes and auth is much faster than testing them on SaladCloud, where each try
-  pushes the image to a registry, allocates a node and pulls the whole image there before it starts. To debug startup, ` + "`cg create <group> --image <image> --wait -- sleep 2147483647`" + `
-  keeps the container up without its entrypoint; ` + "`cg ssh <group>`" + ` gets a shell; it runs until you delete it; ` + "`cg instances list -c <group>`" + ` shows pull progress.
-- Before non-trivial work, install the SaladCloud skills: ` + "`npx skills add https://docs.salad.com`" + ` (index: https://docs.salad.com/llms.txt).
+  pushes the image to a registry, allocates a node and pulls the whole image there before it starts. ` +
+	`To debug startup, ` + "`cg create <group> --image <image> --wait -- sleep 2147483647`" + `
+  keeps the container up without its entrypoint; ` + "`cg ssh <group>`" + ` gets a shell; it runs until you ` +
+	`delete it; ` + "`cg instances list -c <group>`" + ` shows pull progress.
+- Before non-trivial work, install the SaladCloud skills: ` +
+	"`npx skills add https://docs.salad.com`" + ` (index: https://docs.salad.com/llms.txt).
 - The CLI is a ` + version.Stage + ` release. When it misbehaves (a crash, a wrong exit code, output that
   contradicts its own --help), tell the user and offer to draft a report for ` + version.IssuesURL + `
   with ` + "`saladcloud version`" + ` output, the command, and the stderr error line. Never include credential values.`
@@ -92,7 +103,7 @@ func Block(cliVersion string) string {
 // in place; otherwise the block is appended after a blank line. Line endings
 // follow the existing file: if it contains CRLF anywhere, the block is
 // written with CRLF too.
-func Apply(existing, cliVersion string) (result string, changed bool, err error) {
+func Apply(existing, cliVersion string) (string, bool, error) {
 	block, nl := Block(cliVersion), "\n"
 	if strings.Contains(existing, "\r\n") {
 		block, nl = strings.ReplaceAll(block, "\n", "\r\n"), "\r\n"
