@@ -6,6 +6,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
@@ -321,133 +323,189 @@ func (app *App) runAvailability(cmd *cobra.Command, _ []string, af availabilityF
 
 	var base api.AvailabilityRequest
 	if af.From != "" {
-		r := res
-		if fromProject != "" {
-			r.Project, r.ProjectSource = fromProject, "flag"
+		if base, cerr = app.availabilityFrom(cmd.Context(), &res, fromProject, fromGroup); cerr != nil {
+			return cerr
 		}
-		src, err := api.New(r, app.apiOptions())
-		if err != nil {
-			return err
-		}
-		app.warnOnAssumedProject(src, r)
-		g, err := src.GetGroup(cmd.Context(), fromGroup)
-		if err != nil {
-			return groupNotFound(err, fromGroup, src.Org(), src.Project())
-		}
-		base = requirementsOf(g)
 	}
+	classes, gpuIDs, cerr := availabilityGpuClasses(cmd.Context(), client, af.Gpus, base)
+	if cerr != nil {
+		return cerr
+	}
+	req := applyAvailabilityFlags(base, af, gpuIDs)
+	if len(req.GpuClasses) == 0 {
+		return app.availabilityCPU(cmd.Context(), client, req)
+	}
+	return app.availabilityGPU(cmd.Context(), client, req, classes)
+}
 
-	// Resolve --gpu names, and name every class for the table.
-	var classes []organizationdata.GpuClass
-	className := func(id string) string {
-		for _, c := range classes {
-			if strings.EqualFold(ptr.Deref(c.Id), id) {
-				return strings.TrimSpace(ptr.Deref(c.Name))
-			}
-		}
-		return id
+// availabilityFrom is the requirements of the existing group --from names, read from fromProject when it is given
+// and from the resolved project otherwise.
+func (app *App) availabilityFrom(
+	ctx context.Context,
+	res *config.Resolved,
+	fromProject, fromGroup string,
+) (api.AvailabilityRequest, *clierr.Error) {
+	r := *res
+	if fromProject != "" {
+		r.Project, r.ProjectSource = fromProject, "flag"
 	}
-	if len(af.Gpus) > 0 || len(base.GpuClasses) > 0 {
-		list, err := client.ListGpuClasses(cmd.Context())
+	src, err := api.New(r, app.apiOptions())
+	if err != nil {
+		return api.AvailabilityRequest{}, err
+	}
+	app.warnOnAssumedProject(src, r)
+	g, err := src.GetGroup(ctx, fromGroup)
+	if err != nil {
+		return api.AvailabilityRequest{}, groupNotFound(err, fromGroup, src.Org(), src.Project())
+	}
+	return requirementsOf(g), nil
+}
+
+// availabilityGpuClasses lists the organization's GPU classes when any are asked about (by --gpu or the --from
+// group), so the table can name every class, and resolves the --gpu names to class IDs.
+func availabilityGpuClasses(
+	ctx context.Context,
+	client *api.Client,
+	gpus []string,
+	base api.AvailabilityRequest,
+) ([]organizationdata.GpuClass, []string, *clierr.Error) {
+	var classes []organizationdata.GpuClass
+	if len(gpus) > 0 || len(base.GpuClasses) > 0 {
+		list, err := client.ListGpuClasses(ctx)
 		if err != nil {
-			return err
+			return nil, nil, err
 		}
 		classes = list.Items
 	}
 	var gpuIDs []string
-	for _, g := range af.Gpus {
+	for _, g := range gpus {
 		id := g
 		if !isUUID(g) {
+			var cerr *clierr.Error
 			if id, cerr = resolveGpuClassName(g, classes); cerr != nil {
-				return cerr
+				return nil, nil, cerr
 			}
 		}
 		gpuIDs = append(gpuIDs, id)
 	}
-	req := applyAvailabilityFlags(base, af, gpuIDs)
+	return classes, gpuIDs, nil
+}
 
-	if len(req.GpuClasses) == 0 {
-		avail, cerr := askTwiceIfZero(func() (*organizations.CpuAvailability, *clierr.Error) {
-			return client.GetCPUAvailability(cmd.Context(), req)
-		}, allZeroCPU)
-		if cerr != nil {
-			return cerr
+// gpuClassDisplayName is the name of the GPU class id among classes, or id when it is not there.
+func gpuClassDisplayName(classes []organizationdata.GpuClass, id string) string {
+	for _, c := range classes {
+		if strings.EqualFold(ptr.Deref(c.Id), id) {
+			return strings.TrimSpace(ptr.Deref(c.Name))
 		}
-		if w := overloadWarning("CPU", allZeroCPU(avail)); w != "" {
-			fprintln(app.errw(), w)
-		}
-		result := cpuAvailabilityResult{Items: []organizations.CpuAvailability{*avail}, Combined: nil}
-		return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
-			if !reportsOnCall(avail.OnCallCpu) {
-				w.Println("CLASS\tBATCH")
-				w.Printf("CPU\t%s\n", countCell(avail.AvailableCpuBatch))
-				return
-			}
-			w.Println("CLASS\tBATCH\tON-CALL")
-			w.Printf("CPU\t%s\t%s\n", countCell(avail.AvailableCpuBatch), countCell(avail.OnCallCpu))
-		}))
 	}
+	return id
+}
 
+// availabilityCPU asks for, and emits, the CPU-only availability of req.
+func (app *App) availabilityCPU(ctx context.Context, client *api.Client, req api.AvailabilityRequest) error {
+	avail, cerr := askTwiceIfZero(func() (*organizations.CpuAvailability, *clierr.Error) {
+		return client.GetCPUAvailability(ctx, req)
+	}, allZeroCPU)
+	if cerr != nil {
+		return cerr
+	}
+	if w := overloadWarning("CPU", allZeroCPU(avail)); w != "" {
+		fprintln(app.errw(), w)
+	}
+	result := cpuAvailabilityResult{Items: []organizations.CpuAvailability{*avail}, Combined: nil}
+	return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
+		if !reportsOnCall(avail.OnCallCpu) {
+			w.Println("CLASS\tBATCH")
+			w.Printf("CPU\t%s\n", countCell(avail.AvailableCpuBatch))
+			return
+		}
+		w.Println("CLASS\tBATCH\tON-CALL")
+		w.Printf("CPU\t%s\t%s\n", countCell(avail.AvailableCpuBatch), countCell(avail.OnCallCpu))
+	}))
+}
+
+// availabilityGPU asks for, and emits, the availability of req once per GPU class, and once more for all of them
+// together when it names two or more.
+func (app *App) availabilityGPU(
+	ctx context.Context,
+	client *api.Client,
+	req api.AvailabilityRequest,
+	classes []organizationdata.GpuClass,
+) error {
 	result := gpuAvailabilityResult{Items: []gpuAvailabilityRow{}, Combined: nil}
 	for _, id := range req.GpuClasses {
 		one := req
 		one.GpuClasses = []string{id}
-		avail, cerr := askTwiceIfZero(func() (*organizations.GpuAvailability, *clierr.Error) {
-			return client.GetGpuAvailability(cmd.Context(), one)
-		}, allZeroGpu)
+		avail, cerr := app.askGpuAvailability(ctx, client, one, gpuClassDisplayName(classes, id))
 		if cerr != nil {
 			return cerr
 		}
-		row := gpuAvailabilityRow{GpuClass: id, GpuClassName: className(id), GpuAvailability: *avail}
-		if w := overloadWarning(row.GpuClassName, allZeroGpu(avail)); w != "" {
-			fprintln(app.errw(), w)
-		}
+		row := gpuAvailabilityRow{GpuClass: id, GpuClassName: gpuClassDisplayName(classes, id), GpuAvailability: *avail}
 		result.Items = append(result.Items, row)
 	}
 	if len(req.GpuClasses) >= 2 {
-		avail, cerr := askTwiceIfZero(func() (*organizations.GpuAvailability, *clierr.Error) {
-			return client.GetGpuAvailability(cmd.Context(), req)
-		}, allZeroGpu)
+		avail, cerr := app.askGpuAvailability(ctx, client, req, "the combined query")
 		if cerr != nil {
 			return cerr
 		}
-		if w := overloadWarning("the combined query", allZeroGpu(avail)); w != "" {
-			fprintln(app.errw(), w)
-		}
 		result.Combined = &gpuCombinedRow{GpuClasses: req.GpuClasses, GpuAvailability: *avail}
 	}
-	return wrapErr(app.printer.Emit(result, func(w *output.Writer) {
-		onCall := []*int64{}
-		for i := range result.Items {
-			onCall = append(onCall, result.Items[i].OnCallGpu)
+	return wrapErr(app.printer.Emit(result, func(w *output.Writer) { writeGpuAvailabilityTable(w, &result) }))
+}
+
+// askGpuAvailability asks for the GPU availability of req (twice when the first answer is all zeros) and warns,
+// naming the query as name, when the answer is all zeros still.
+func (app *App) askGpuAvailability(
+	ctx context.Context,
+	client *api.Client,
+	req api.AvailabilityRequest,
+	name string,
+) (*organizations.GpuAvailability, *clierr.Error) {
+	avail, cerr := askTwiceIfZero(func() (*organizations.GpuAvailability, *clierr.Error) {
+		return client.GetGpuAvailability(ctx, req)
+	}, allZeroGpu)
+	if cerr != nil {
+		return nil, cerr
+	}
+	if w := overloadWarning(name, allZeroGpu(avail)); w != "" {
+		fprintln(app.errw(), w)
+	}
+	return avail, nil
+}
+
+// writeGpuAvailabilityTable is the table form of a GPU availability result; the ON-CALL column shows only when an
+// answer reports it.
+func writeGpuAvailabilityTable(w *output.Writer, result *gpuAvailabilityResult) {
+	onCall := []*int64{}
+	for i := range result.Items {
+		onCall = append(onCall, result.Items[i].OnCallGpu)
+	}
+	if result.Combined != nil {
+		onCall = append(onCall, result.Combined.OnCallGpu)
+	}
+	showOnCall := reportsOnCall(onCall...)
+	header := "CLASS\tBATCH\tLOW\tMEDIUM\tHIGH"
+	if showOnCall {
+		header += "\tON-CALL"
+	}
+	w.Println(header)
+	line := func(name string, a *organizations.GpuAvailability) {
+		cells := []string{
+			name,
+			countCell(a.AvailableGpuBatch),
+			countCell(a.AvailableGpuLow),
+			countCell(a.AvailableGpuMedium),
+			countCell(a.AvailableGpuHigh),
 		}
-		if result.Combined != nil {
-			onCall = append(onCall, result.Combined.OnCallGpu)
-		}
-		showOnCall := reportsOnCall(onCall...)
-		header := "CLASS\tBATCH\tLOW\tMEDIUM\tHIGH"
 		if showOnCall {
-			header += "\tON-CALL"
+			cells = append(cells, countCell(a.OnCallGpu))
 		}
-		w.Println(header)
-		line := func(name string, a *organizations.GpuAvailability) {
-			cells := []string{
-				name,
-				countCell(a.AvailableGpuBatch),
-				countCell(a.AvailableGpuLow),
-				countCell(a.AvailableGpuMedium),
-				countCell(a.AvailableGpuHigh),
-			}
-			if showOnCall {
-				cells = append(cells, countCell(a.OnCallGpu))
-			}
-			w.Println(strings.Join(cells, "\t"))
-		}
-		for i := range result.Items {
-			line(result.Items[i].GpuClassName, &result.Items[i].GpuAvailability)
-		}
-		if result.Combined != nil {
-			line("any of the above (one platform query)", &result.Combined.GpuAvailability)
-		}
-	}))
+		w.Println(strings.Join(cells, "\t"))
+	}
+	for i := range result.Items {
+		line(result.Items[i].GpuClassName, &result.Items[i].GpuAvailability)
+	}
+	if result.Combined != nil {
+		line("any of the above (one platform query)", &result.Combined.GpuAvailability)
+	}
 }

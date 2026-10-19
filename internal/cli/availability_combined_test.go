@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -73,7 +74,7 @@ func TestAvailabilityCombinedIsThePlatformsAnswer(t *testing.T) {
 	if classes := asType[[]any](doc.Combined["gpu_classes"]); len(classes) != 2 {
 		t.Errorf("combined gpu_classes = %v, want both classes", doc.Combined["gpu_classes"])
 	}
-	if got := *counts; len(got) != 3 || got[0] != 1 || got[1] != 1 || got[2] != 2 {
+	if got := *counts; !slices.Equal(got, []int{1, 1, 2}) {
 		t.Errorf("queries asked for %v classes, want one per class then one for both", got)
 	}
 }
@@ -142,14 +143,7 @@ func TestAvailabilityOnCallColumn(t *testing.T) {
 	}
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case strings.HasSuffix(r.URL.Path, "/gpu-classes"):
-			respond(t, w, `{"items":[{"id":"`+classA+`","name":"RTX A (12 GB)"}]}`)
-		case strings.HasSuffix(r.URL.Path, "/sce-gpu-availability"):
-			respond(t, w, `{"available_gpu_high":5,"on_call_gpu":0}`)
-		case strings.HasSuffix(r.URL.Path, "/sce-cpu-availability"):
-			respond(t, w, `{"available_cpu_batch":4,"on_call_cpu":0}`)
-		}
+		serveZeroOnCallAvailability(t, w, r)
 	}))
 	t.Cleanup(srv.Close)
 	app.setenv("SALAD_CLI_API_BASE_URL", srv.URL)
@@ -162,5 +156,18 @@ func TestAvailabilityOnCallColumn(t *testing.T) {
 	out, err := app.runRoot(t, "availability", "--gpu", classA, "-o", "json")
 	if err != nil || !strings.Contains(out, `"on_call_gpu": 0`) {
 		t.Errorf("json drops on_call_gpu: err %v\n%s", err, out)
+	}
+}
+
+// serveZeroOnCallAvailability answers the GPU class list and the availability queries with on-call counts of 0.
+func serveZeroOnCallAvailability(t *testing.T, w http.ResponseWriter, r *http.Request) {
+	t.Helper()
+	switch {
+	case strings.HasSuffix(r.URL.Path, "/gpu-classes"):
+		respond(t, w, `{"items":[{"id":"`+classA+`","name":"RTX A (12 GB)"}]}`)
+	case strings.HasSuffix(r.URL.Path, "/sce-gpu-availability"):
+		respond(t, w, `{"available_gpu_high":5,"on_call_gpu":0}`)
+	case strings.HasSuffix(r.URL.Path, "/sce-cpu-availability"):
+		respond(t, w, `{"available_cpu_batch":4,"on_call_cpu":0}`)
 	}
 }
