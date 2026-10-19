@@ -218,7 +218,7 @@ func waitForJobTerminal[J any](
 				return job, clierr.New(clierr.CodeGeneric, jobEndKind(status),
 					"job %s %s %s%s", id, d.where, status, lastEvent)
 			}
-			if output.Mode() == "table" {
+			if printer.Mode() == "table" {
 				// The elapsed suffix is excluded from the change check;
 				// otherwise every poll would print.
 				line := fmt.Sprintf("%s: %s", d.label, status)
@@ -376,7 +376,7 @@ func init() {
 			if payload.Items == nil {
 				payload.Items = []inferenceendpoints.InferenceEndpoint{}
 			}
-			return wrapErr(output.Emit(payload, func(w *output.Writer) {
+			return wrapErr(printer.Emit(payload, func(w *output.Writer) {
 				w.Println("NAME\tDISPLAY NAME\tDESCRIPTION")
 				for i := range endpoints.Items {
 					e := &endpoints.Items[i]
@@ -401,7 +401,7 @@ func init() {
 			if cerr != nil {
 				return endpointNotFound(cerr, args[0], client.Org())
 			}
-			return wrapErr(output.Emit(endpoint, func(w *output.Writer) {
+			return wrapErr(printer.Emit(endpoint, func(w *output.Writer) {
 				row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
 				row("Name", ptr.Deref(endpoint.Name))
 				row("Display name", ptr.Deref(endpoint.DisplayName))
@@ -467,7 +467,7 @@ older jobs were left out.`,
 			payload := struct {
 				Items []inferenceendpoints.InferenceEndpointJob `json:"items"`
 			}{jobs}
-			err := wrapErr(output.Emit(payload, func(w *output.Writer) {
+			err := wrapErr(printer.Emit(payload, func(w *output.Writer) {
 				w.Println("ID\tSTATUS\tCREATED\tUPDATED")
 				for i := range jobs {
 					j := &jobs[i]
@@ -479,7 +479,7 @@ older jobs were left out.`,
 			if err != nil {
 				return err
 			}
-			if len(jobs) == 0 && output.Mode() == "table" {
+			if len(jobs) == 0 && printer.Mode() == "table" {
 				fprintf(os.Stderr, "no jobs on endpoint %s\n", endpoint)
 			}
 			jobsLimitNote(os.Stderr, len(jobs), limit, api.InferenceJobsCap, more)
@@ -511,7 +511,7 @@ older jobs were left out.`,
 			if cerr != nil {
 				return jobNotFound(cerr, endpoint, args[0])
 			}
-			return wrapErr(output.Emit(job, func(w *output.Writer) { writeJobDetail(w, job) }))
+			return wrapErr(printer.Emit(job, func(w *output.Writer) { writeJobDetail(w, job) }))
 		},
 	}
 	addEndpointFlag(jobsGetCmd)
@@ -586,7 +586,7 @@ canceled exits 1 with the job's status and last event. --timeout (default
 				return endpointNotFound(cerr, endpoint, client.Org())
 			}
 			if !wait {
-				return wrapErr(output.Emit(job, func(w *output.Writer) { writeJobDetail(w, job) }))
+				return wrapErr(printer.Emit(job, func(w *output.Writer) { writeJobDetail(w, job) }))
 			}
 			ctx := cmd.Context() // canceled by the one signal handler in Execute
 			id := ptr.Deref(job.Id)
@@ -595,7 +595,7 @@ canceled exits 1 with the job's status and last event. --timeout (default
 			if cerr != nil {
 				return cerr
 			}
-			return wrapErr(output.Emit(final, func(w *output.Writer) { writeJobDetail(w, final) }))
+			return wrapErr(printer.Emit(final, func(w *output.Writer) { writeJobDetail(w, final) }))
 		},
 	}
 	addEndpointFlag(jobsCreateCmd)
@@ -628,7 +628,7 @@ saladcloud inference jobs get <id> --endpoint <endpoint>.`,
 				return jobNotFound(cerr, endpoint, args[0])
 			}
 			v := jobActionResult{Endpoint: endpoint, ID: args[0], Action: "canceled", OK: true}
-			return wrapErr(output.Emit(v, func(w *output.Writer) {
+			return wrapErr(printer.Emit(v, func(w *output.Writer) {
 				w.Printf("Job %s on endpoint %s canceled\n", v.ID, v.Endpoint)
 			}))
 		},
@@ -654,7 +654,7 @@ func jobsLimitNote(w io.Writer, shown, limit, ceiling int, more bool) {
 			"note: showing the newest %d jobs, the most one listing returns; older jobs are not shown\n",
 			ceiling,
 		)
-	case output.Mode() == "table":
+	case printer.Mode() == "table":
 		fprintf(
 			w,
 			"note: showing the newest %d jobs; older ones exist\nhint: for more, raise --limit; 0 means all, up to %d\n",

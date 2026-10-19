@@ -16,10 +16,10 @@ import (
 func runExecute(t *testing.T, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	var out, errBuf bytes.Buffer
-	oldOut, oldErr := output.Stdout, errOut
-	output.Stdout, errOut = &out, &errBuf
+	oldOut, oldErr := printer, errOut
+	printer, errOut = output.NewPrinter(&out), &errBuf
 	t.Cleanup(func() {
-		output.Stdout, errOut = oldOut, oldErr
+		printer, errOut = oldOut, oldErr
 		resetRun(t)
 	})
 	commandLine = args

@@ -487,7 +487,7 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		if cerr != nil {
 			return cerr
 		}
-		if output.Mode() == "table" {
+		if printer.Mode() == "table" {
 			fprintf(os.Stderr, "uploaded %s (%s) to S4\n", source, humanSize(fileSize))
 		}
 	}
@@ -512,10 +512,10 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		redactUploadURL(job)
 	}
 	if noWait {
-		if remote != "" && output.Mode() == "table" {
+		if remote != "" && printer.Mode() == "table" {
 			fprintf(os.Stderr, "note: the upload stays in S4 as %s; the queued job reads it\n", remote)
 		}
-		return wrapErr(output.Emit(job, func(w *output.Writer) {
+		return wrapErr(printer.Emit(job, func(w *output.Writer) {
 			w.Printf("Job %s queued on endpoint %s (status: %s)\n", id, endpoint, jobStatusString(job))
 			if remote != "" {
 				fprintf(os.Stderr, "note: %s\n", signedLinkNote)
@@ -572,7 +572,7 @@ func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputFi
 		}
 	}
 	// Table mode prints the transcript itself; -o json emits the full job.
-	return wrapErr(output.Emit(final, func(w *output.Writer) {
+	return wrapErr(printer.Emit(final, func(w *output.Writer) {
 		w.Println(text)
 	}))
 }

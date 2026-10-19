@@ -16,7 +16,6 @@ import (
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
 // stderrTee, when set, is where errw writes instead of [os.Stderr]: the test
@@ -35,7 +34,7 @@ func errw() io.Writer {
 // json and yaml mode stderr carries only warnings, notes and the error
 // document, and the JSON document holds the fact.
 func say(format string, args ...any) {
-	if output.Mode() == "table" {
+	if printer.Mode() == "table" {
 		fprintf(errw(), format+"\n", args...)
 	}
 }

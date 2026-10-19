@@ -190,7 +190,7 @@ func groupAction(name, pastTense string, call func() *clierr.Error) error {
 		return err
 	}
 	v := groupActionResult{Name: name, Action: pastTense, OK: true}
-	return wrapErr(output.Emit(v, func(w *output.Writer) {
+	return wrapErr(printer.Emit(v, func(w *output.Writer) {
 		w.Printf("Container group %s %s\n", v.Name, v.Action)
 	}))
 }
@@ -226,7 +226,7 @@ func startStopRunE(
 			}
 		}
 		v := groupActionResult{Name: args[0], Action: pastTense, OK: true}
-		return wrapErr(output.Emit(v, func(w *output.Writer) {
+		return wrapErr(printer.Emit(v, func(w *output.Writer) {
 			w.Printf("Container group %s %s\n", v.Name, v.Action)
 		}))
 	}
@@ -312,7 +312,7 @@ the projects you want listed.`,
 				payload := struct {
 					Items []shared.ContainerGroup `json:"items"`
 				}{items}
-				if err := output.Emit(payload, func(w *output.Writer) {
+				if err := printer.Emit(payload, func(w *output.Writer) {
 					if multi {
 						w.Print("PROJECT\t")
 					}
@@ -333,7 +333,7 @@ the projects you want listed.`,
 				// A bare header is ambiguous for humans; disambiguate an
 				// empty listing on stderr so the stdout contract (and json
 				// mode) stays unchanged.
-				if len(items) == 0 && output.Mode() == "table" {
+				if len(items) == 0 && printer.Mode() == "table" {
 					switch {
 					case multi:
 						fprintln(os.Stderr, "no container groups in the listed projects")
@@ -427,7 +427,7 @@ group has scheduled scaling enabled.`,
 				if err != nil {
 					return clierr.New(clierr.CodeGeneric, clierr.KindInternal, "%v", err)
 				}
-				_, err = fmt.Fprintln(output.Stdout, string(output.ASCII(data)))
+				_, err = fmt.Fprintln(printer.Out(), string(output.ASCII(data)))
 				return wrapErr(err)
 			}
 			return runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
@@ -435,7 +435,7 @@ group has scheduled scaling enabled.`,
 				if cerr != nil {
 					return groupNotFound(cerr, args[0], client.Org(), client.Project())
 				}
-				if err := output.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }); err != nil {
+				if err := printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }); err != nil {
 					return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)
 				}
 				return nil
@@ -574,7 +574,7 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 			if err != nil {
 				return err
 			}
-			return wrapErr(output.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
+			return wrapErr(printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
 		},
 	}
 	updateCmd.Flags().StringP("file", "f", "", "container group patch file (.json/.yaml; \"-\" reads stdin)")

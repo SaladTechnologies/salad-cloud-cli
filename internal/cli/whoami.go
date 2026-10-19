@@ -165,7 +165,7 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 		Organizations:       orgs,
 		ConfigPath:          path,
 	}
-	return wrapErr(output.Emit(r, func(w *output.Writer) {
+	return wrapErr(printer.Emit(r, func(w *output.Writer) {
 		fprintf(
 			w,
 			"api-key\t%s\n",

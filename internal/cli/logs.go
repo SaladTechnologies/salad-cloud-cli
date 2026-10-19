@@ -15,7 +15,6 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/logsq"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
@@ -251,7 +250,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		scope = logScope{kind: scopeOrg, name: client.Org()}
 	}
 
-	if output.Mode() == "table" {
+	if printer.Mode() == "table" {
 		fprintln(os.Stderr, scopeLine(scope, client.Org(), res.Project))
 	}
 
@@ -292,7 +291,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		return page, nil
 	}
 	emit := func(e logsq.Entry) error {
-		return output.Stream(e.Raw, formatLogLine(e, scope.kind))
+		return printer.Stream(e.Raw, formatLogLine(e, scope.kind))
 	}
 
 	if !follow {
@@ -311,7 +310,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		// An empty one-shot result is easy to misread as a hang or a bug;
 		// say so on stderr in table mode. JSON/NDJSON stays machine-clean,
 		// and --follow's silence correctly means "waiting".
-		if emitted == 0 && output.Mode() == "table" {
+		if emitted == 0 && printer.Mode() == "table" {
 			fprintln(os.Stderr, noMatchNote(scope, sinceStr, instance, severity, filter))
 		}
 		return nil
@@ -323,7 +322,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 			fprintln(os.Stderr, note)
 		}
 	}
-	if output.Mode() == "table" {
+	if printer.Mode() == "table" {
 		fprintln(os.Stderr, "waiting for log entries (Ctrl-C to stop)")
 	}
 	query, cerr := logsq.Compile(baseFilters)

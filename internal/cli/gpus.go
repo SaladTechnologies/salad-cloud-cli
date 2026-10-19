@@ -89,7 +89,7 @@ func runGpusList(cmd *cobra.Command, _ []string) error {
 	payload := struct {
 		Items []organizationdata.GpuClass `json:"items"`
 	}{classes}
-	emitErr := output.Emit(payload, func(w *output.Writer) {
+	emitErr := printer.Emit(payload, func(w *output.Writer) {
 		header := "NAME\tTYPE\tHIGH DEMAND\tBATCH\tLOW\tMEDIUM\tHIGH"
 		if allPrices {
 			header += "\tPRICES"
@@ -112,7 +112,7 @@ func runGpusList(cmd *cobra.Command, _ []string) error {
 			w.Println(strings.Join(cells, "\t"))
 		}
 	})
-	if emitErr == nil && output.Mode() == "table" {
+	if emitErr == nil && printer.Mode() == "table" {
 		fprintln(os.Stderr, gpusLegend)
 	}
 	return wrapErr(emitErr)
@@ -143,7 +143,7 @@ func runGpusGet(cmd *cobra.Command, args []string) error {
 			args[0],
 		).WithHint("to list them, run saladcloud gpus list")
 	}
-	return wrapErr(output.Emit(class, func(w *output.Writer) {
+	return wrapErr(printer.Emit(class, func(w *output.Writer) {
 		row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
 		row("Name", gpuNameCell(class.Name))
 		row("ID", ptr.Deref(class.Id))

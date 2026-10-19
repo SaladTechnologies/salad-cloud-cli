@@ -22,7 +22,6 @@ import (
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
@@ -176,7 +175,7 @@ func waitForGroup(
 					return nil, aerr
 				}
 			}
-			if output.Mode() == "table" {
+			if printer.Mode() == "table" {
 				// The elapsed suffix is excluded from the change check;
 				// otherwise every poll would print.
 				line := fmt.Sprintf("waiting for %s to %s: %s%s", group, goal, status, instanceCountSummary(g))
@@ -338,7 +337,7 @@ func runGroupWait(
 	if cerr != nil {
 		return nil, cerr
 	}
-	if output.Mode() == "table" && doneMsg != "" {
+	if printer.Mode() == "table" && doneMsg != "" {
 		fprintf(os.Stderr, "%s %s (waited %s)\n", group, doneMsg, time.Since(start).Round(time.Second))
 	}
 	return final, nil

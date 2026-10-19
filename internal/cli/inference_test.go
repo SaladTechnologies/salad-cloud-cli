@@ -10,7 +10,6 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/inferenceendpoints"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
@@ -202,7 +201,7 @@ func TestJobsLimitNote(t *testing.T) {
 		{"table", 39, 100, false, ""},
 		{"table", 10000, 10000, false, ""},
 	} {
-		if err := output.SetMode(tc.mode); err != nil {
+		if err := printer.SetMode(tc.mode); err != nil {
 			t.Fatal(err)
 		}
 		var buf bytes.Buffer

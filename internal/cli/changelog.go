@@ -59,7 +59,7 @@ never null.`,
 			if since != "" {
 				res.Since = &since
 			}
-			return wrapErr(output.Emit(res, func(w *output.Writer) {
+			return wrapErr(printer.Emit(res, func(w *output.Writer) {
 				if len(releases) == 0 {
 					w.Printf("No releases newer than %s\n", since)
 					return

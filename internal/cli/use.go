@@ -181,7 +181,7 @@ func runUse(cmd *cobra.Command, args []string) error {
 		Action:       "switched",
 		OK:           true,
 	}
-	if err := output.Emit(result, func(w *output.Writer) {
+	if err := printer.Emit(result, func(w *output.Writer) {
 		if project == "" {
 			w.Printf("Switched to %s, no project set\n", org)
 			return

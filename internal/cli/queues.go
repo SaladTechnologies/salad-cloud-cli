@@ -207,7 +207,7 @@ is whatever your container returns.`,
 			if cerr != nil {
 				return cerr
 			}
-			return wrapErr(output.Emit(q, func(w *output.Writer) { writeQueueDetail(w, q) }))
+			return wrapErr(printer.Emit(q, func(w *output.Writer) { writeQueueDetail(w, q) }))
 		},
 	}
 	addQueueFieldFlags(createCmd)
@@ -232,7 +232,7 @@ is whatever your container returns.`,
 			if payload.Items == nil {
 				payload.Items = []queues.Queue{}
 			}
-			err := wrapErr(output.Emit(payload, func(w *output.Writer) {
+			err := wrapErr(printer.Emit(payload, func(w *output.Writer) {
 				w.Println("NAME\tDISPLAY NAME\tLENGTH\tGROUPS\tCREATED")
 				for i := range list.Items {
 					q := &list.Items[i]
@@ -243,7 +243,7 @@ is whatever your container returns.`,
 			if err != nil {
 				return err
 			}
-			if len(payload.Items) == 0 && output.Mode() == "table" {
+			if len(payload.Items) == 0 && printer.Mode() == "table" {
 				fprintf(
 					os.Stderr,
 					"no queues in %s/%s\nhint: to create one, run saladcloud queues create <name>\n",
@@ -268,7 +268,7 @@ is whatever your container returns.`,
 			if cerr != nil {
 				return queueNotFound(cerr, args[0], client)
 			}
-			return wrapErr(output.Emit(q, func(w *output.Writer) { writeQueueDetail(w, q) }))
+			return wrapErr(printer.Emit(q, func(w *output.Writer) { writeQueueDetail(w, q) }))
 		},
 	})
 
@@ -304,7 +304,7 @@ is whatever your container returns.`,
 			if cerr != nil {
 				return queueNotFound(cerr, args[0], client)
 			}
-			return wrapErr(output.Emit(q, func(w *output.Writer) { writeQueueDetail(w, q) }))
+			return wrapErr(printer.Emit(q, func(w *output.Writer) { writeQueueDetail(w, q) }))
 		},
 	}
 	addQueueFieldFlags(updateCmd)
@@ -323,7 +323,7 @@ is whatever your container returns.`,
 				return queueNotFound(cerr, args[0], client)
 			}
 			v := queueActionResult{Name: args[0], Action: "deleted", OK: true}
-			return wrapErr(output.Emit(v, func(w *output.Writer) {
+			return wrapErr(printer.Emit(v, func(w *output.Writer) {
 				w.Printf("Queue %s deleted\n", v.Name)
 			}))
 		},
@@ -387,7 +387,7 @@ every job, up to 10,000.`,
 			payload := struct {
 				Items []queues.QueueJob `json:"items"`
 			}{jobs}
-			err := wrapErr(output.Emit(payload, func(w *output.Writer) {
+			err := wrapErr(printer.Emit(payload, func(w *output.Writer) {
 				w.Println("ID\tSTATUS\tCREATED\tUPDATED")
 				for i := range jobs {
 					j := &jobs[i]
@@ -404,7 +404,7 @@ every job, up to 10,000.`,
 			if err != nil {
 				return err
 			}
-			if len(jobs) == 0 && output.Mode() == "table" {
+			if len(jobs) == 0 && printer.Mode() == "table" {
 				fprintf(os.Stderr, "no jobs in queue %s\n", queue)
 			}
 			jobsLimitNote(os.Stderr, len(jobs), limit, api.QueueJobsCap, more)
@@ -444,7 +444,7 @@ every job, up to 10,000.`,
 			if cerr != nil {
 				return queueJobNotFound(cerr, queue, args[0])
 			}
-			return wrapErr(output.Emit(job, func(w *output.Writer) { writeQueueJobDetail(w, job) }))
+			return wrapErr(printer.Emit(job, func(w *output.Writer) { writeQueueJobDetail(w, job) }))
 		},
 	}
 	addQueueFlag(getCmd)
@@ -512,7 +512,7 @@ that has finished cannot be canceled (exit 1).`,
 				return queueJobNotFound(cerr, queue, args[0])
 			}
 			v := queueJobActionResult{Queue: queue, ID: args[0], Action: "canceled", OK: true}
-			return wrapErr(output.Emit(v, func(w *output.Writer) {
+			return wrapErr(printer.Emit(v, func(w *output.Writer) {
 				w.Printf("Job %s in queue %s canceled\n", v.ID, v.Queue)
 			}))
 		},
@@ -587,7 +587,7 @@ func runQueueJobCreate(cmd *cobra.Command, _ []string) error {
 		return queueNotFound(cerr, queue, client)
 	}
 	if !wait {
-		return wrapErr(output.Emit(job, func(w *output.Writer) { writeQueueJobDetail(w, job) }))
+		return wrapErr(printer.Emit(job, func(w *output.Writer) { writeQueueJobDetail(w, job) }))
 	}
 	ctx := cmd.Context() // canceled by the one signal handler in Execute
 	id := ptr.Deref(job.Id)
@@ -608,5 +608,5 @@ func runQueueJobCreate(cmd *cobra.Command, _ []string) error {
 	if cerr != nil {
 		return cerr
 	}
-	return wrapErr(output.Emit(final, func(w *output.Writer) { writeQueueJobDetail(w, final) }))
+	return wrapErr(printer.Emit(final, func(w *output.Writer) { writeQueueJobDetail(w, final) }))
 }

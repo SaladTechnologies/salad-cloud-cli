@@ -232,7 +232,7 @@ config set says so.`,
 			}
 			ovs := overridesOf(f, configKeyEnv[key])
 			result := configSetResult{key, shown, overrideNames(ovs), path, "set", true}
-			if err := output.Emit(result, func(w *output.Writer) {
+			if err := printer.Emit(result, func(w *output.Writer) {
 				w.Printf("Set %s to %s\n", key, shown)
 				w.Printf("Config at: %s\n", path)
 			}); err != nil {
@@ -277,7 +277,7 @@ SALAD_AI_GATEWAY_API_KEY) is still used; config unset says so.`,
 			}
 			ovs := stillSupplied(configKeyEnv[key])
 			result := configUnsetResult{key, overrideNames(ovs), path, "unset", true}
-			if err := output.Emit(result, func(w *output.Writer) {
+			if err := printer.Emit(result, func(w *output.Writer) {
 				w.Printf("Unset %s\n", key)
 				w.Printf("Config at: %s\n", path)
 			}); err != nil {
@@ -310,7 +310,7 @@ Keys: ` + configKeys + `.`,
 				value = maskedOrNil(*field)
 			}
 			result := configGetResult{key, value}
-			return wrapErr(output.Emit(result, func(w *output.Writer) {
+			return wrapErr(printer.Emit(result, func(w *output.Writer) {
 				if value == nil {
 					w.Println("(not set)")
 					return
@@ -330,7 +330,7 @@ Keys: ` + configKeys + `.`,
 				return cerr
 			}
 			result := configListOf(f, path)
-			return wrapErr(output.Emit(result, func(w *output.Writer) {
+			return wrapErr(printer.Emit(result, func(w *output.Writer) {
 				w.Printf("api-key\t%s\n", maskAPIKey(f.APIKey))
 				w.Printf("organization\t%s\n", orNotSet(shownName(f.Organization)))
 				w.Printf("project\t%s\n", orNotSet(shownName(f.Project)))
@@ -351,7 +351,7 @@ Keys: ` + configKeys + `.`,
 					WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder")
 			}
 			result := configPathResult{path}
-			return wrapErr(output.Emit(result, func(w *output.Writer) {
+			return wrapErr(printer.Emit(result, func(w *output.Writer) {
 				w.Println(path)
 			}))
 		},

@@ -26,7 +26,7 @@ Both commands print the key itself; keep their output out of logs.`,
 	}
 
 	emit := func(k *webhooksecretkey.WebhookSecretKey) error {
-		return wrapErr(output.Emit(k, func(w *output.Writer) {
+		return wrapErr(printer.Emit(k, func(w *output.Writer) {
 			w.Println(ptr.Deref(k.SecretKey))
 		}))
 	}

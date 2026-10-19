@@ -66,7 +66,7 @@ stderr as a single-line JSON document: {"error": {...}}, in yaml mode too.
 		if err != nil {
 			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
 		}
-		if cerr := output.SetMode(m); cerr != nil {
+		if cerr := printer.SetMode(m); cerr != nil {
 			return cerr
 		}
 		d := fr.String("debug")
@@ -228,6 +228,9 @@ func noteTreeErr(err error) {
 	}
 }
 
+// printer is the run's render path: stdout and the --output mode.
+var printer = output.NewPrinter(os.Stdout)
+
 // baseContext is the context a run starts from. Tests replace it to cancel a
 // run the way Ctrl-C does.
 var baseContext = context.Background
@@ -282,11 +285,11 @@ var contextFreeCommands = map[string]bool{
 // that error still reports in table form. Errors raised before the flag was
 // parsed are adoptOutputArg's.
 func adoptOutputFlag(cmd *cobra.Command) {
-	if cmd == nil || output.Machine() {
+	if cmd == nil || printer.Machine() {
 		return
 	}
 	if f := cmd.Flag("output"); f != nil && f.Changed {
-		if cerr := output.SetMode(f.Value.String()); cerr != nil {
+		if cerr := printer.SetMode(f.Value.String()); cerr != nil {
 			return // an invalid -o keeps table mode, the form its own error reports in
 		}
 	}
@@ -299,7 +302,7 @@ func adoptOutputFlag(cmd *cobra.Command) {
 // after "--" are arguments, not flags; an invalid value is ignored, so that
 // error reports in table form.
 func adoptOutputArg(args []string) {
-	if output.Machine() {
+	if printer.Machine() {
 		return
 	}
 	mode := ""
@@ -328,7 +331,7 @@ func adoptOutputArg(args []string) {
 		}
 	}
 	if mode != "" {
-		if cerr := output.SetMode(mode); cerr != nil {
+		if cerr := printer.SetMode(mode); cerr != nil {
 			return // not reached: mode is one of the three modes
 		}
 	}
@@ -343,7 +346,7 @@ var errOut io.Writer = os.Stderr
 func printError(e *clierr.Error) {
 	// Errors are the one-line JSON document in every machine mode, yaml
 	// included, so a script parses one error shape.
-	if output.Machine() {
+	if printer.Machine() {
 		if payload, err := output.Marshal(map[string]*clierr.Error{"error": e}); err == nil {
 			fprintln(errOut, string(output.ASCII(payload)))
 			return

@@ -117,18 +117,18 @@ func TestFillTopLevelSlice(t *testing.T) {
 }
 
 func TestEmitAndStreamFill(t *testing.T) {
-	buf := capture(t)
-	if err := SetMode("json"); err != nil {
+	p, buf := capture(t)
+	if err := p.SetMode("json"); err != nil {
 		t.Fatal(err)
 	}
-	if err := Emit(fillInner{}, nil); err != nil {
+	if err := p.Emit(fillInner{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if want := "{\n  \"id\": null,\n  \"tags\": []\n}\n"; buf.String() != want {
 		t.Errorf("Emit = %q, want %q", buf.String(), want)
 	}
 	buf.Reset()
-	if err := Stream(fillInner{}, ""); err != nil {
+	if err := p.Stream(fillInner{}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if want := `{"id":null,"tags":[]}` + "\n"; buf.String() != want {

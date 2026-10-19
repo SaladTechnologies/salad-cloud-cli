@@ -163,7 +163,7 @@ func instanceAction(group, id, pastTense string, call func() *clierr.Error) erro
 		return instanceNotFound(err, group, id)
 	}
 	v := instanceActionResult{Group: group, ID: id, Action: pastTense, OK: true}
-	return wrapErr(output.Emit(v, func(w *output.Writer) {
+	return wrapErr(printer.Emit(v, func(w *output.Writer) {
 		w.Printf("Instance %s in container group %s %s\n", v.ID, v.Group, v.Action)
 	}))
 }
@@ -256,7 +256,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 				if payload.Items == nil {
 					payload.Items = []containergroups.ContainerGroupInstance{}
 				}
-				err := output.Emit(payload, func(w *output.Writer) {
+				err := printer.Emit(payload, func(w *output.Writer) {
 					w.Println("ID\tMACHINE\tSTATE\tREADY\tCPU\tMEMORY\tPULL%\tSSH\tUPDATED")
 					for i := range instances.Instances {
 						inst := &instances.Instances[i]
@@ -273,7 +273,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 				// have no machines yet, so the instances endpoint omits them
 				// entirely. Best-effort: fetch the group's status counts and
 				// explain on stderr (stdout stays a clean, parseable table).
-				if output.Mode() == "table" && len(instances.Instances) == 0 {
+				if printer.Mode() == "table" && len(instances.Instances) == 0 {
 					if cg, gerr := client.GetGroup(ctx, group); gerr == nil {
 						var counts *shared.ContainerGroupInstanceStatusCount
 						if cg.CurrentState != nil {
@@ -313,7 +313,7 @@ positional argument (its ID, or a unique prefix of it) and the group is
 			if cerr != nil {
 				return instanceNotFound(cerr, group, id)
 			}
-			return wrapErr(output.Emit(inst, func(w *output.Writer) { writeInstanceDetail(w, inst) }))
+			return wrapErr(printer.Emit(inst, func(w *output.Writer) { writeInstanceDetail(w, inst) }))
 		},
 	}
 	addGroupFlag(getCmd)
@@ -360,7 +360,7 @@ so raising it protects an instance doing long work. 0-100000.`,
 					return instanceNotFound(cerr, group, id)
 				}
 			}
-			return wrapErr(output.Emit(inst, func(w *output.Writer) { writeInstanceDetail(w, inst) }))
+			return wrapErr(printer.Emit(inst, func(w *output.Writer) { writeInstanceDetail(w, inst) }))
 		},
 	}
 	addGroupFlag(updateCmd)

@@ -381,7 +381,7 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 			fprintln(os.Stderr, w)
 		}
 		result := cpuAvailabilityResult{Items: []organizations.CpuAvailability{*avail}, Combined: nil}
-		return wrapErr(output.Emit(result, func(w *output.Writer) {
+		return wrapErr(printer.Emit(result, func(w *output.Writer) {
 			if !reportsOnCall(avail.OnCallCpu) {
 				w.Println("CLASS\tBATCH")
 				w.Printf("CPU\t%s\n", countCell(avail.AvailableCpuBatch))
@@ -420,7 +420,7 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 		}
 		result.Combined = &gpuCombinedRow{GpuClasses: req.GpuClasses, GpuAvailability: *avail}
 	}
-	return wrapErr(output.Emit(result, func(w *output.Writer) {
+	return wrapErr(printer.Emit(result, func(w *output.Writer) {
 		onCall := []*int64{}
 		for i := range result.Items {
 			onCall = append(onCall, result.Items[i].OnCallGpu)

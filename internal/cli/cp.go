@@ -255,7 +255,7 @@ set it up, run saladcloud ssh-key setup.`,
 			// held back, and its last line ends the error when it fails.
 			sftpArgs := buildSFTPArgs(target, user, resolveIdentity(identity), batch.Name())
 			var runErr *clierr.Error
-			if output.Machine() {
+			if printer.Machine() {
 				runErr = runChildQuiet(sftpProgram, sftpArgs)
 			} else {
 				runErr = runChildTo(os.Stderr, sftpProgram, sftpArgs)
@@ -271,7 +271,7 @@ set it up, run saladcloud ssh-key setup.`,
 				Src:      args[0],
 				Dst:      args[1],
 			}
-			return wrapErr(output.Emit(v, func(w *output.Writer) {
+			return wrapErr(printer.Emit(v, func(w *output.Writer) {
 				w.Printf("Copied %s to %s (instance %s)\n", v.Src, v.Dst, v.Instance)
 			}))
 		},

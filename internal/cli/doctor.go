@@ -140,7 +140,7 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 			ovs = append(ovs, o)
 		}
 	}
-	err := output.Emit(doctorResult{Items: rows, EnvOverrides: overrideNames(ovs)}, func(w *output.Writer) {
+	err := printer.Emit(doctorResult{Items: rows, EnvOverrides: overrideNames(ovs)}, func(w *output.Writer) {
 		w.Println("CHECK\tSTATUS\tDETAIL")
 		for _, r := range rows {
 			w.Printf("%s\t%s\t%s\n", r.Name, strings.ToUpper(r.Status), r.Detail)
@@ -163,7 +163,7 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 		checks = "check"
 	}
 	hint := "each failing row's hint above says how to fix it"
-	if output.Machine() {
+	if printer.Machine() {
 		hint = "each failing row's hint says how to fix it"
 	}
 	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%d %s failed: %s", len(failed), checks, strings.Join(failed, ", ")).

@@ -10,7 +10,6 @@ import (
 	"golang.org/x/term"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
 // watchMinInterval is the smallest allowed --interval.
@@ -44,7 +43,7 @@ func validateWatchFlags(cmd *cobra.Command) *clierr.Error {
 	if !watch {
 		return nil
 	}
-	if output.Mode() != "table" {
+	if printer.Mode() != "table" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage,
 			"--watch is table mode only; in scripts use --wait, or loop over '%s -o json'", cmd.CommandPath())
 	}
@@ -76,9 +75,9 @@ func runMaybeWatch(cmd *cobra.Command, render func(ctx context.Context) *clierr.
 		return cerr
 	}
 	return watchLoop(cmd.Context(), watchDeps{
-		out:     output.Stdout,
+		out:     printer.Out(),
 		errOut:  os.Stderr,
-		tty:     isTerminal(output.Stdout),
+		tty:     isTerminal(printer.Out()),
 		now:     time.Now,
 		after:   time.After,
 		refresh: interval,

@@ -63,7 +63,7 @@ func runLogout(_ *cobra.Command, _ []string) error {
 		Removed: old != "", Organization: orgJSON, Project: projectJSON,
 		EnvOverrides: overrideNames(ovs), Action: "logged_out", OK: true,
 	}
-	if err := output.Emit(result, func(w *output.Writer) {
+	if err := printer.Emit(result, func(w *output.Writer) {
 		if old == "" {
 			w.Println("No API key was saved; nothing to remove")
 			return

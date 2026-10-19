@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
 // envSetting is a value the environment can supply over the config file.
@@ -118,7 +117,7 @@ func warnOverrides(w io.Writer, when overrideWhen, ovs []override) {
 	if len(ovs) == 0 {
 		return
 	}
-	steps := output.Mode() == "table" && atTerminal()
+	steps := printer.Mode() == "table" && atTerminal()
 	if len(ovs) == 1 {
 		o := ovs[0]
 		var line string

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
 // Keys for the warning tests, each with the mask it shows as.
@@ -21,7 +20,7 @@ func atATerminal(t *testing.T, terminal bool, os, mode string) {
 	con, goos = &fakeConsole{terminal: terminal}, os
 	t.Setenv("CI", "")
 	t.Setenv("SALAD_CLI_NO_PROMPT", "")
-	if err := output.SetMode(mode); err != nil {
+	if err := printer.SetMode(mode); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { con, goos = oldCon, oldOS; setOutputMode(t, "table") })

@@ -29,20 +29,20 @@ import (
 func emitJSON(t *testing.T, v any, stream bool, mode string) any {
 	t.Helper()
 	var buf bytes.Buffer
-	old := output.Stdout
-	output.Stdout = &buf
+	old := printer
+	printer = output.NewPrinter(&buf)
 	t.Cleanup(func() {
-		output.Stdout = old
+		printer = old
 		setOutputMode(t, "table")
 	})
-	if err := output.SetMode(mode); err != nil {
+	if err := printer.SetMode(mode); err != nil {
 		t.Fatal(err)
 	}
 	var err error
 	if stream {
-		err = output.Stream(v, "")
+		err = printer.Stream(v, "")
 	} else {
-		err = output.Emit(v, nil)
+		err = printer.Emit(v, nil)
 	}
 	if err != nil {
 		t.Fatalf("emit: %v", err)

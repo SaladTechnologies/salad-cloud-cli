@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
@@ -320,11 +319,11 @@ func TestHasReadinessProbe(t *testing.T) {
 }
 
 func TestWaitJSONModePrintsNoProgress(t *testing.T) {
-	if err := output.SetMode("json"); err != nil {
+	if err := printer.SetMode("json"); err != nil {
 		t.Fatal(err)
 	}
 	defer func() {
-		if err := output.SetMode("table"); err != nil {
+		if err := printer.SetMode("table"); err != nil {
 			t.Fatal(err)
 		}
 	}()

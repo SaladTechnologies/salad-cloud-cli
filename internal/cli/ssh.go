@@ -33,7 +33,6 @@ import (
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
@@ -180,7 +179,7 @@ var knownHostsPath = func() string {
 // ip:port, which a later instance can be given.
 func hostKeyOptions(instanceID string) []string {
 	opts := []string{"-o", "StrictHostKeyChecking=accept-new"}
-	if output.Machine() {
+	if printer.Machine() {
 		// OpenSSH logs "Permanently added ..." at INFO; in json and yaml mode
 		// stderr carries only warnings, notes and the error document.
 		opts = append(opts, "-o", "LogLevel=ERROR")

@@ -277,7 +277,7 @@ func (sshKeySetup) show(path string, generated bool, passphrase *bool) error {
 		Action:        action,
 		OK:            true,
 	}
-	err := output.Emit(v, func(w *output.Writer) {
+	err := printer.Emit(v, func(w *output.Writer) {
 		if generated {
 			w.Printf("Generated %s\n\n", strings.TrimSuffix(path, ".pub"))
 		}
@@ -288,7 +288,7 @@ func (sshKeySetup) show(path string, generated bool, passphrase *bool) error {
 	if err != nil {
 		return wrapErr(err)
 	}
-	if output.Machine() {
+	if printer.Machine() {
 		fprintf(
 			errw(),
 			"note: register the public key at %s; your account holds one SSH key, so registering this one replaces any other\n",
@@ -323,7 +323,7 @@ func runSSHKeyGet(_ *cobra.Command, _ []string) error {
 		warnPassphrase(strings.TrimSuffix(path, ".pub"))
 	}
 	v := sshKeyResult{Path: path, PublicKey: key, HasPassphrase: passphraseOf(enc, known), Generated: false}
-	return wrapErr(output.Emit(v, func(w *output.Writer) {
+	return wrapErr(printer.Emit(v, func(w *output.Writer) {
 		w.Printf("%s\n%s\n", path, key)
 	}))
 }

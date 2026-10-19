@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"unicode/utf16"
 	"unicode/utf8"
 
@@ -17,17 +16,25 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 )
 
-// Stdout is the destination for all rendered output. Tests may swap it.
-var Stdout io.Writer = os.Stdout
+// Printer is one run's render path: where rendered output goes and the mode
+// it is rendered in, table (the default), json or yaml.
+type Printer struct {
+	w    io.Writer
+	mode string
+}
 
-var mode = "table"
+// NewPrinter returns a Printer writing to w in table mode.
+func NewPrinter(w io.Writer) *Printer { return &Printer{w: w, mode: "table"} }
+
+// Out is where p writes.
+func (p *Printer) Out() io.Writer { return p.w }
 
 // SetMode selects the output mode: "table" (default), "json", or "yaml".
-// Any other value returns a usage error.
-func SetMode(m string) *clierr.Error {
+// Any other value returns a usage error and leaves the mode as it was.
+func (p *Printer) SetMode(m string) *clierr.Error {
 	switch m {
 	case "table", "json", "yaml":
-		mode = m
+		p.mode = m
 		return nil
 	default:
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --output "%s"`, m).
@@ -37,19 +44,19 @@ func SetMode(m string) *clierr.Error {
 
 // Machine reports whether the mode is a document mode (json or yaml), the
 // modes errors are reported in as a JSON document on stderr.
-func Machine() bool { return mode != "table" }
+func (p *Printer) Machine() bool { return p.mode != "table" }
 
 // Mode returns the current output mode.
-func Mode() string { return mode }
+func (p *Printer) Mode() string { return p.mode }
 
 // Emit is the single render path for non-streaming commands.
-// In json mode it writes v indented to Stdout, with every json-tagged key
+// In json mode it writes v indented to p's writer, with every json-tagged key
 // present (see encodeFilled) and every non-ASCII character escaped (ASCII);
 // yaml mode writes the same document as YAML, characters as they are.
 // In table mode it calls table with a Writer over a tabwriter that Emit
 // flushes afterward, and returns the first write error.
-func Emit(v any, table func(w *Writer)) error {
-	if mode == "yaml" {
+func (p *Printer) Emit(v any, table func(w *Writer)) error {
+	if p.mode == "yaml" {
 		data, err := encodeFilled(v)
 		if err != nil {
 			return err
@@ -58,12 +65,12 @@ func Emit(v any, table func(w *Writer)) error {
 		if err != nil {
 			return fmt.Errorf("converting the document to YAML: %w", err)
 		}
-		if _, err = Stdout.Write(y); err != nil {
+		if _, err = p.w.Write(y); err != nil {
 			return fmt.Errorf("writing the document: %w", err)
 		}
 		return nil
 	}
-	if mode == "json" {
+	if p.mode == "json" {
 		data, err := encodeFilled(v)
 		if err != nil {
 			return err
@@ -72,12 +79,12 @@ func Emit(v any, table func(w *Writer)) error {
 		if err = json.Indent(&buf, ASCII(data), "", "  "); err != nil {
 			return fmt.Errorf("indenting the document: %w", err)
 		}
-		if _, err = fmt.Fprintln(Stdout, buf.String()); err != nil {
+		if _, err = fmt.Fprintln(p.w, buf.String()); err != nil {
 			return fmt.Errorf("writing the document: %w", err)
 		}
 		return nil
 	}
-	tw := newTabWriter(Stdout)
+	tw := newTabWriter(p.w)
 	w := NewWriter(tw)
 	table(w)
 	if err := tw.Flush(); w.err == nil {
@@ -93,8 +100,8 @@ func Emit(v any, table func(w *Writer)) error {
 // immediately so pipes stream. In json mode it writes v as one compact
 // line (NDJSON) with every json-tagged key present, as Emit does; in table
 // mode it prints line as-is.
-func Stream(v any, line string) error {
-	if mode == "yaml" {
+func (p *Printer) Stream(v any, line string) error {
+	if p.mode == "yaml" {
 		// A YAML stream: one document per record, each opened with ---.
 		data, err := encodeFilled(v)
 		if err != nil {
@@ -104,25 +111,25 @@ func Stream(v any, line string) error {
 		if err != nil {
 			return fmt.Errorf("converting the document to YAML: %w", err)
 		}
-		if _, err := fmt.Fprintf(Stdout, "---\n%s", y); err != nil {
+		if _, err := fmt.Fprintf(p.w, "---\n%s", y); err != nil {
 			return fmt.Errorf("writing the record: %w", err)
 		}
-		return flush(Stdout)
+		return flush(p.w)
 	}
-	if mode == "json" {
+	if p.mode == "json" {
 		data, err := encodeFilled(v)
 		if err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintln(Stdout, string(ASCII(data))); err != nil {
+		if _, err := fmt.Fprintln(p.w, string(ASCII(data))); err != nil {
 			return fmt.Errorf("writing the record: %w", err)
 		}
 	} else {
-		if _, err := fmt.Fprintln(Stdout, line); err != nil {
+		if _, err := fmt.Fprintln(p.w, line); err != nil {
 			return fmt.Errorf("writing the line: %w", err)
 		}
 	}
-	return flush(Stdout)
+	return flush(p.w)
 }
 
 // flush pushes buffered bytes through if the writer supports it.

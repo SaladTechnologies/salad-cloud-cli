@@ -75,7 +75,7 @@ func runAgentInit(cmd *cobra.Command, _ []string) error {
 
 	if printOnly {
 		res := agentInitResult{Action: "printed", OK: true, Reason: "--print", Version: version.Version, File: nil}
-		return wrapErr(output.Emit(res, func(w *output.Writer) {
+		return wrapErr(printer.Emit(res, func(w *output.Writer) {
 			w.Print(agentdoc.Block(version.Version))
 		}))
 	}
@@ -136,7 +136,7 @@ func runAgentInit(cmd *cobra.Command, _ []string) error {
 		shown = rel
 	}
 	res := agentInitResult{File: &shown, Action: action, OK: true, Reason: target.Reason, Version: version.Version}
-	return wrapErr(output.Emit(res, func(w *output.Writer) {
+	return wrapErr(printer.Emit(res, func(w *output.Writer) {
 		switch action {
 		case "created":
 			w.Printf("Created %s with the SaladCloud block (%s)\n", shown, target.Reason)

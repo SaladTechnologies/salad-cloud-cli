@@ -134,7 +134,7 @@ write (the API does not honor the flag in the same patch as replicas), for
 				}
 			}
 			v := scaleResult{Name: args[0], Action: "scaled", Replicas: n, OK: true}
-			return wrapErr(output.Emit(v, func(w *output.Writer) {
+			return wrapErr(printer.Emit(v, func(w *output.Writer) {
 				w.Printf("Scaled %s to %s\n", v.Name, replicas(v.Replicas))
 			}))
 		},

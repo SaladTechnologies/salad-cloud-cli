@@ -837,7 +837,7 @@ func (l *login) save(org, project string) error {
 		Action:            "logged_in",
 		OK:                true,
 	}
-	if err := output.Emit(result, func(w *output.Writer) {
+	if err := printer.Emit(result, func(w *output.Writer) {
 		if project == "" {
 			w.Printf("Logged in: %s, no project set\n", org)
 		} else {

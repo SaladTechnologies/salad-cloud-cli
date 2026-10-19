@@ -386,12 +386,12 @@ func (s session) run(t *testing.T) outcome {
 	fc := &fakeConsole{terminal: s.tty != nil, answers: append([]string(nil), s.tty...), transcript: &transcript}
 	var opened []string
 
-	oldIn, oldErr, oldErrOut, oldOut, oldCon, oldOpen, oldTee := os.Stdin, os.Stderr, errOut, output.Stdout, con, openPage, stderrTee
+	oldIn, oldErr, oldErrOut, oldOut, oldCon, oldOpen, oldTee := os.Stdin, os.Stderr, errOut, printer, con, openPage, stderrTee
 	tee := io.MultiWriter(stderr, &transcript)
-	os.Stdin, os.Stderr, errOut, output.Stdout, con, stderrTee = stdin, stderr, tee, io.MultiWriter(
+	os.Stdin, os.Stderr, errOut, printer, con, stderrTee = stdin, stderr, tee, output.NewPrinter(io.MultiWriter(
 		&stdout,
 		&transcript,
-	), fc, tee
+	)), fc, tee
 	openPage = func(url string) error { opened = append(opened, url); return nil }
 	oldBase := baseContext
 	baseContext = func() context.Context { return ctx }
@@ -419,7 +419,7 @@ func (s session) run(t *testing.T) outcome {
 	} else {
 		code = <-done
 	}
-	os.Stdin, os.Stderr, errOut, output.Stdout, con, openPage, stderrTee = oldIn, oldErr, oldErrOut, oldOut, oldCon, oldOpen, oldTee
+	os.Stdin, os.Stderr, errOut, printer, con, openPage, stderrTee = oldIn, oldErr, oldErrOut, oldOut, oldCon, oldOpen, oldTee
 	resetRun(t)
 	noErr(t, stdin.Close())
 	noErr(t, stderr.Close())
@@ -573,7 +573,7 @@ func assertAs[T any](t *testing.T, v any) T {
 // setOutputMode selects the output mode, reporting a mode SetMode rejects.
 func setOutputMode(t *testing.T, mode string) {
 	t.Helper()
-	if cerr := output.SetMode(mode); cerr != nil {
+	if cerr := printer.SetMode(mode); cerr != nil {
 		t.Error(cerr)
 	}
 }

@@ -576,7 +576,7 @@ func runCreate(
 		}
 		group = final
 	}
-	return wrapErr(output.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
+	return wrapErr(printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
 }
 
 func init() {

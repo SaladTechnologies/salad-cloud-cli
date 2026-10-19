@@ -336,7 +336,7 @@ func (g *gatewayLogin) save() error {
 			WithHint("%s", unwritableHint("ai-gateway login"))
 	}
 	ovs := overridesOf(f, envGatewayKey)
-	if err := output.Emit(g.result(true, path, ovs), func(w *output.Writer) {
+	if err := printer.Emit(g.result(true, path, ovs), func(w *output.Writer) {
 		w.Println("AI Gateway key saved")
 		w.Printf("Config at: %s\n", path)
 	}); err != nil {
@@ -357,7 +357,7 @@ func (g *gatewayLogin) save() error {
 func (g *gatewayLogin) reportUnsaved() error {
 	path := configPath()
 	say("No AI Gateway key provided, using SALAD_AI_GATEWAY_API_KEY (%s).", maskAPIKey(g.key))
-	err := output.Emit(g.result(false, path, nil), func(w *output.Writer) {
+	err := printer.Emit(g.result(false, path, nil), func(w *output.Writer) {
 		fprintln(
 			w,
 			"The AI Gateway key works. It is not saved, so it works only where SALAD_AI_GATEWAY_API_KEY is set.",
@@ -418,7 +418,7 @@ func runGatewayLogout(_ *cobra.Command, _ []string) error {
 	}
 	ovs := stillSupplied(envGatewayKey)
 	result := gatewayLogoutResult{Removed: old != "", EnvOverrides: overrideNames(ovs), Action: "logged_out", OK: true}
-	if err := output.Emit(result, func(w *output.Writer) {
+	if err := printer.Emit(result, func(w *output.Writer) {
 		if old == "" {
 			w.Println("No AI Gateway key was saved; nothing to remove")
 			return
