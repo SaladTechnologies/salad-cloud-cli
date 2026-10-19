@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,7 @@ import (
 
 // runAgentInitCmd executes `saladcloud agent init <args>` through the real
 // command tree with stdout captured.
-func (app *testRun) runAgentInitCmd(t *testing.T, args ...string) (stdout string, err error) {
+func (app *testRun) runAgentInitCmd(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	return app.runRoot(t, append([]string{"agent", "init"}, args...)...)
 }
@@ -55,7 +56,7 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 		filepath.Base(*res.File) != agentdoc.FileAgents {
 		t.Errorf("first run = %+v", res)
 	}
-	content := must(os.ReadFile(filepath.Join(dir, agentdoc.FileAgents)))(t)
+	content := must(fs.ReadFile(os.DirFS(dir), agentdoc.FileAgents))(t)
 	if string(content) != agentdoc.Block(res.Version) {
 		t.Errorf("created file is not exactly the block:\n%s", content)
 	}
@@ -65,7 +66,7 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 	if res.Action != "unchanged" {
 		t.Errorf("second run action = %q, want unchanged", res.Action)
 	}
-	again := must(os.ReadFile(filepath.Join(dir, agentdoc.FileAgents)))(t)
+	again := must(fs.ReadFile(os.DirFS(dir), agentdoc.FileAgents))(t)
 	if !bytes.Equal(again, content) {
 		t.Error("second run modified the file")
 	}
@@ -80,7 +81,7 @@ func TestAgentInitCreatesUpdatesUnchanged(t *testing.T) {
 	if res.Action != "updated" {
 		t.Errorf("third run action = %q, want updated", res.Action)
 	}
-	final := must(os.ReadFile(filepath.Join(dir, agentdoc.FileAgents)))(t)
+	final := must(fs.ReadFile(os.DirFS(dir), agentdoc.FileAgents))(t)
 	checkStaleBlockReplaced(t, string(final), "# Project\n\nUser intro.\n\n", "\n## Testing\nUser outro.\n")
 }
 
@@ -184,7 +185,7 @@ func TestAgentInitMalformedIsInvalidInput(t *testing.T) {
 	if err == nil || !asClierr(err, &ce) || ce.Code != clierr.CodeInvalidInput || ce.Kind != clierr.KindInvalidInput {
 		t.Fatalf("err = %v, want invalid_input exit 6", err)
 	}
-	after := must(os.ReadFile(p))(t)
+	after := must(fs.ReadFile(os.DirFS(dir), agentdoc.FileAgents))(t)
 	if string(after) != broken {
 		t.Error("a malformed file must be left untouched")
 	}

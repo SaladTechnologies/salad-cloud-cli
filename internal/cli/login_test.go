@@ -779,10 +779,7 @@ func checkLoginErrorDocument(t *testing.T, tc *loginCase, o, j *outcome) {
 func checkLoginDocument(t *testing.T, tc *loginCase, j *outcome, want config.File) {
 	t.Helper()
 	doc := j.document(t)
-	wantOverrides := tc.overrides
-	if wantOverrides == nil {
-		wantOverrides = []string{}
-	}
+	wantOverrides := tc.overrides // nil prints as [] too
 	listed := assertAs[[]any](t, doc["env_overrides"])
 	gotOverrides := make([]string, 0, len(listed))
 	for _, v := range listed {
@@ -885,8 +882,7 @@ Type a project name [default]:
 Project: default
 Logged in: my-org/default
 Config at: C:\Users\you\AppData\Roaming\saladcloud\config.json
-warning: commands will use SALAD_API_KEY (****...ABCD) instead of the API key you just saved (****...9QxZ). To remove the variable:
-  PowerShell:  Remove-Item Env:SALAD_API_KEY
+` + envwarnKeyLine + ". To remove the variable:\n" + `  PowerShell:  Remove-Item Env:SALAD_API_KEY
   cmd:         set SALAD_API_KEY=
 If it comes back in a new terminal, remove it permanently:
   [Environment]::SetEnvironmentVariable('SALAD_API_KEY', $null, 'User')
@@ -905,7 +901,10 @@ Config at: /home/ci/.config/saladcloud/config.json
 		},
 		{
 			"a script with only the environment", ciPath,
-			session{args: []string{"login"}, os: "linux", env: map[string]string{"SALAD_API_KEY": testAPIKey, "SALAD_ORGANIZATION": "my-org"}},
+			session{
+				args: []string{"login"}, os: "linux",
+				env: map[string]string{"SALAD_API_KEY": testAPIKey, "SALAD_ORGANIZATION": "my-org"},
+			},
 			`No API key provided, using SALAD_API_KEY (****...H13m).
 Organization: my-org (from SALAD_ORGANIZATION)
 Project: default

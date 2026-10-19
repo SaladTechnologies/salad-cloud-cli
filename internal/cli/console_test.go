@@ -59,9 +59,9 @@ func TestErrorHint(t *testing.T) {
 	e := clierr.New(clierr.CodeUsage, clierr.KindUsage, "invalid organization name %q", "Café").
 		WithHint("did you mean %q?", "cafe")
 	app.printError(e)
-	if got, want := buf.String(), "saladcloud: error: invalid organization name \"Café\"\nhint: did you mean "+
-		"\"cafe\"?\n"; got != want {
-		t.Errorf("table mode:\n%q\nwant\n%q", got, want)
+	tableWant := "saladcloud: error: invalid organization name \"Café\"\nhint: did you mean \"cafe\"?\n"
+	if got := buf.String(); got != tableWant {
+		t.Errorf("table mode:\n%q\nwant\n%q", got, tableWant)
 	}
 	buf.Reset()
 	app.setOutputMode(t, "json")

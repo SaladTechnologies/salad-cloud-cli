@@ -103,16 +103,18 @@ func TestKeyHasPassphrase(t *testing.T) {
 		t.Skip("ssh-keygen not on PATH")
 	}
 	dir := t.TempDir()
+	keygen := func(path, passphrase string) {
+		t.Helper()
+		//nolint:gosec // generates a test key under t.TempDir()
+		cmd := exec.CommandContext(t.Context(), "ssh-keygen", "-q", "-t", "ed25519", "-N", passphrase, "-f", path)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("ssh-keygen: %v %s", err, out)
+		}
+	}
 	plain := filepath.Join(dir, "plain")
-	if out, err := exec.CommandContext(t.Context(), "ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", plain).
-		CombinedOutput(); err != nil {
-		t.Fatalf("ssh-keygen: %v %s", err, out)
-	}
+	keygen(plain, "")
 	locked := filepath.Join(dir, "locked")
-	if out, err := exec.CommandContext(t.Context(), "ssh-keygen", "-q", "-t", "ed25519", "-N", "correct horse", "-f", locked).
-		CombinedOutput(); err != nil {
-		t.Fatalf("ssh-keygen: %v %s", err, out)
-	}
+	keygen(locked, "correct horse")
 	if enc, known := keyHasPassphrase(plain); !known || enc {
 		t.Errorf("plain key: encrypted=%v known=%v, want false/true", enc, known)
 	}

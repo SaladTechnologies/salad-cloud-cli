@@ -86,22 +86,15 @@ func TestConfigListEmitsItems(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
 	app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	if err := config.Save(
-		app.Env,
-		config.File{APIKey: "salad_cloud_user_1234567890", Organization: "my-org"},
-	); err != nil {
+	saved := config.File{APIKey: "salad_cloud_user_1234567890", Organization: "my-org"}
+	if err := config.Save(app.Env, saved); err != nil {
 		t.Fatal(err)
 	}
 	out, err := app.runRoot(t, "config", "list", "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var doc struct {
-		Items []struct {
-			Key   string  `json:"key"`
-			Value *string `json:"value"`
-		} `json:"items"`
-	}
+	var doc configListResult
 	if err := json.Unmarshal([]byte(out), &doc); err != nil || len(doc.Items) != 4 {
 		t.Fatalf("config list -o json = %s (%v), want four entries in items", out, err)
 	}

@@ -10,7 +10,7 @@ import (
 // this shape — keys must never appear or disappear based on state.
 func TestWhoamiResultStableJSONShape(t *testing.T) {
 	t.Parallel()
-	data, err := json.Marshal(whoamiResult{ConfigPath: "/tmp/config.toml"})
+	data, err := json.Marshal(whoamiResult{ConfigPath: "/tmp/config.toml"}) //nolint:gosec // api_key is masked
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestWhoamiResultSetValues(t *testing.T) {
 		Organization:       strOrNil("my-org"),
 		OrganizationSource: strOrNil("config"),
 		Authenticated:      &authed,
-		Organizations:      []string{},
+		Organizations:      []string{}, //nolint:revive // an empty listing, which renders [], is the case under test
 		ConfigPath:         "/tmp/config.toml",
 	})
 	if err != nil {
