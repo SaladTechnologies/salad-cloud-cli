@@ -53,7 +53,7 @@ func inCI() bool {
 var errInterrupt = errors.New("interrupted")
 
 // con is the console every prompt goes through.
-var con console = &stdConsole{}
+var con console = &stdConsole{device: nil, keys: nil, in: nil}
 
 // openPage opens a URL in the user's browser. Tests replace it.
 var openPage = openBrowser
@@ -104,8 +104,8 @@ func (c *stdConsole) read(hidden bool) (string, error) {
 		return c.readCooked(hidden)
 	}
 	defer func() {
-		if err := term.Restore(fd, state); err != nil {
-			fprintf(errw(), "warning: could not restore the terminal: %v\n", err)
+		if restoreErr := term.Restore(fd, state); restoreErr != nil {
+			fprintf(errw(), "warning: could not restore the terminal: %v\n", restoreErr)
 		}
 	}()
 	echo := c.Device()
@@ -113,7 +113,7 @@ func (c *stdConsole) read(hidden bool) (string, error) {
 		echo = io.Discard
 	}
 	if c.keys == nil {
-		c.keys = &keyReader{r: os.Stdin}
+		c.keys = &keyReader{r: os.Stdin, afterCR: false}
 	}
 	answer, err := c.keys.readLine(echo)
 	fprint(c.Device(), "\r\n") // raw mode does not turn \n into a new line

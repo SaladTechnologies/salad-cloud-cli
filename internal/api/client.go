@@ -77,11 +77,17 @@ func New(res config.Resolved) (*Client, *clierr.Error) {
 		baseURL = override
 	}
 	return &Client{
-		org:            res.Organization,
-		project:        res.Project,
-		apiKey:         res.APIKey,
-		baseURL:        baseURL,
-		projectAssumed: res.ProjectSource == config.SourceDefault && res.Project == config.DefaultProject,
+		org:              res.Organization,
+		project:          res.Project,
+		apiKey:           res.APIKey,
+		baseURL:          baseURL,
+		projectAssumed:   res.ProjectSource == config.SourceDefault && res.Project == config.DefaultProject,
+		OnAssumedProject: nil,
+		assumedNoted:     sync.Once{},
+		checkingProject:  atomic.Bool{},
+		OnRejected:       nil,
+		OnOrgGone:        nil,
+		checkingOrg:      atomic.Bool{},
 	}, nil
 }
 

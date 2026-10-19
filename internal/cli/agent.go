@@ -74,7 +74,7 @@ func runAgentInit(cmd *cobra.Command, _ []string) error {
 	}
 
 	if printOnly {
-		res := agentInitResult{Action: "printed", OK: true, Reason: "--print", Version: version.Version}
+		res := agentInitResult{Action: "printed", OK: true, Reason: "--print", Version: version.Version, File: nil}
 		return wrapErr(output.Emit(res, func(w *output.Writer) {
 			w.Print(agentdoc.Block(version.Version))
 		}))

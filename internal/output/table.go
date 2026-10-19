@@ -23,7 +23,7 @@ type Writer struct {
 
 // NewWriter returns a Writer over w, for rendering a table function outside
 // Emit (tests).
-func NewWriter(w io.Writer) *Writer { return &Writer{w: w} }
+func NewWriter(w io.Writer) *Writer { return &Writer{w: w, err: nil} }
 
 // Print writes its operands as [fmt.Fprint] does.
 func (w *Writer) Print(a ...any) {

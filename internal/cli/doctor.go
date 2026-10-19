@@ -98,7 +98,30 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 	if cerr := fr.Err(); cerr != nil {
 		return cerr
 	}
-	d := &doctorRun{ctx: cmd.Context(), orgFlag: orgFlag, projectFlag: projectFlag}
+	d := &doctorRun{
+		ctx:         cmd.Context(),
+		orgFlag:     orgFlag,
+		projectFlag: projectFlag,
+		saved:       config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
+		res: config.Resolved{
+			APIKey:              "",
+			APIKeySource:        "",
+			Organization:        "",
+			OrganizationSource:  "",
+			Project:             "",
+			ProjectSource:       "",
+			GatewayAPIKey:       "",
+			GatewayAPIKeySource: "",
+			SkippedProject:      "",
+			SkippedProjectOrg:   "",
+		},
+		reachable:    false,
+		keyOK:        false,
+		orgs:         nil,
+		orgChecked:   nil,
+		orgCheckMade: false,
+		orgGood:      false,
+	}
 	rows := []checkResult{
 		d.configRow(), d.reachableRow(), d.apiKeyRow(), d.organizationRow(), d.projectRow(), d.gatewayRow(), d.sshRow(),
 	}
@@ -148,7 +171,7 @@ func runDoctor(cmd *cobra.Command, _ []string) error {
 }
 
 func row(name, status, detail, hint string) checkResult {
-	r := checkResult{Name: name, Status: status, Detail: detail}
+	r := checkResult{Name: name, Status: status, Detail: detail, Hint: nil}
 	if hint != "" {
 		r.Hint = &hint
 	}
@@ -160,13 +183,21 @@ func row(name, status, detail, hint string) checkResult {
 func (d *doctorRun) configRow() checkResult {
 	path, err := config.Path()
 	if err != nil {
-		d.res = config.ResolveFrom(config.File{}, d.orgFlag, d.projectFlag)
+		d.res = config.ResolveFrom(
+			config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
+			d.orgFlag,
+			d.projectFlag,
+		)
 		return row("config", checkFail, "no config location: "+config.Reason(err),
 			"set SALAD_CLI_CONFIG_DIR, or use SALAD_API_KEY, SALAD_ORGANIZATION and SALAD_PROJECT")
 	}
 	f, err := config.Load()
 	if err != nil {
-		d.res = config.ResolveFrom(config.File{}, d.orgFlag, d.projectFlag)
+		d.res = config.ResolveFrom(
+			config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
+			d.orgFlag,
+			d.projectFlag,
+		)
 		return row(
 			"config",
 			checkFail,
@@ -270,7 +301,20 @@ func (d *doctorRun) apiKeyRow() checkResult {
 		)
 	}
 	key, _ := normalizeKey(res.APIKey)
-	client, cerr := api.New(config.Resolved{APIKey: key, Organization: res.Organization})
+	client, cerr := api.New(
+		config.Resolved{
+			APIKey:              key,
+			Organization:        res.Organization,
+			APIKeySource:        "",
+			OrganizationSource:  "",
+			Project:             "",
+			ProjectSource:       "",
+			GatewayAPIKey:       "",
+			GatewayAPIKeySource: "",
+			SkippedProject:      "",
+			SkippedProjectOrg:   "",
+		},
+	)
 	if cerr != nil {
 		return row(name, checkFail, cerr.Message, "")
 	}
@@ -323,7 +367,20 @@ func (d *doctorRun) keyFix(key string) string {
 func (d *doctorRun) checkOrg() *clierr.Error {
 	if !d.orgCheckMade {
 		key, _ := normalizeKey(d.res.APIKey)
-		client, cerr := api.New(config.Resolved{APIKey: key, Organization: d.res.Organization})
+		client, cerr := api.New(
+			config.Resolved{
+				APIKey:              key,
+				Organization:        d.res.Organization,
+				APIKeySource:        "",
+				OrganizationSource:  "",
+				Project:             "",
+				ProjectSource:       "",
+				GatewayAPIKey:       "",
+				GatewayAPIKeySource: "",
+				SkippedProject:      "",
+				SkippedProjectOrg:   "",
+			},
+		)
 		if cerr == nil {
 			cerr = client.CheckOrg(d.ctx)
 		}
@@ -403,7 +460,20 @@ func (d *doctorRun) projectRow() checkResult {
 		)
 	}
 	key, _ := normalizeKey(res.APIKey)
-	client, cerr := api.New(config.Resolved{APIKey: key, Organization: org, Project: project})
+	client, cerr := api.New(
+		config.Resolved{
+			APIKey:              key,
+			Organization:        org,
+			Project:             project,
+			APIKeySource:        "",
+			OrganizationSource:  "",
+			ProjectSource:       "",
+			GatewayAPIKey:       "",
+			GatewayAPIKeySource: "",
+			SkippedProject:      "",
+			SkippedProjectOrg:   "",
+		},
+	)
 	if cerr == nil {
 		cerr = client.CheckProject(d.ctx)
 	}

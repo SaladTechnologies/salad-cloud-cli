@@ -43,7 +43,7 @@ func Parse(markdown string) []Release {
 	for line := range strings.SplitSeq(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n") {
 		if m := headingRE.FindStringSubmatch(line); m != nil {
 			flush()
-			r := Release{Version: m[1]}
+			r := Release{Version: m[1], Date: nil, Body: "", Title: nil}
 			if t := strings.TrimSpace(m[3]); t != "" {
 				r.Title = &t
 			}

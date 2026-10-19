@@ -283,12 +283,13 @@ func liveJobWaitDeps(
 			job, cerr := client.GetInferenceJob(ctx, endpoint, id)
 			return job, jobNotFound(cerr, endpoint, id)
 		},
-		view:  inferenceJobView,
-		now:   time.Now,
-		sleep: ctxSleep,
-		label: label,
-		where: "on endpoint " + endpoint,
-		check: fmt.Sprintf("saladcloud inference jobs get %s --endpoint %s", id, endpoint),
+		view:     inferenceJobView,
+		now:      time.Now,
+		sleep:    ctxSleep,
+		label:    label,
+		where:    "on endpoint " + endpoint,
+		check:    fmt.Sprintf("saladcloud inference jobs get %s --endpoint %s", id, endpoint),
+		progress: nil,
 	}
 }
 

@@ -468,7 +468,20 @@ func organizationGone(ctx context.Context, res config.Resolved) *clierr.Error {
 		WithStatus(http.StatusNotFound)
 	var names []string
 	if atTerminal() {
-		if c, cerr := api.New(config.Resolved{APIKey: res.APIKey}); cerr == nil {
+		if c, cerr := api.New(
+			config.Resolved{
+				APIKey:              res.APIKey,
+				APIKeySource:        "",
+				Organization:        "",
+				OrganizationSource:  "",
+				Project:             "",
+				ProjectSource:       "",
+				GatewayAPIKey:       "",
+				GatewayAPIKeySource: "",
+				SkippedProject:      "",
+				SkippedProjectOrg:   "",
+			},
+		); cerr == nil {
 			if list, lerr := c.OrganizationListing(ctx); lerr == nil && list != nil {
 				names = list.OrgNames()
 			}

@@ -209,6 +209,8 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		MinSeverity: severity,
 		Contains:    filter,
 		RawQuery:    rawQuery,
+		Org:         "",
+		Project:     "",
 	}
 	// Validate the filters now; the scope is filled in once the client has
 	// resolved the organization, so a placeholder stands in for it here.
@@ -282,6 +284,7 @@ func runLogs(cmd *cobra.Command, args []string) error {
 		page := &logsq.Page{
 			PageMinTime: ptr.Deref(coll.PageMinTime),
 			PageMaxTime: ptr.Deref(coll.PageMaxTime),
+			Items:       nil,
 		}
 		for i := range coll.Items {
 			page.Items = append(page.Items, toLogsqEntry(&coll.Items[i]))
@@ -414,6 +417,11 @@ func toLogsqEntry(le *logs.LogEntry) logsq.Entry {
 		Text:        ptr.Deref(le.TextLog),
 		JSON:        le.JsonLog,
 		Raw:         *le,
+		Severity:    "",
+		Project:     "",
+		Group:       "",
+		InstanceID:  "",
+		MachineID:   "",
 	}
 	if le.Severity != nil {
 		e.Severity = string(*le.Severity)

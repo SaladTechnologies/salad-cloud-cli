@@ -87,7 +87,7 @@ func Load() (File, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return File{}, nil
 		}
-		return File{}, &ReadError{Path: p, Err: err}
+		return File{}, &ReadError{Path: p, Err: err, Corrupt: false}
 	}
 	if err := json.Unmarshal(data, &f); err != nil {
 		return File{}, &ReadError{Path: p, Err: err, Corrupt: true}
@@ -110,8 +110,8 @@ func Writable() error {
 		return err
 	}
 	if f, openErr := os.OpenFile(p, os.O_WRONLY, 0); openErr == nil {
-		if err := f.Close(); err != nil {
-			return err
+		if closeErr := f.Close(); closeErr != nil {
+			return closeErr
 		}
 	} else if !errors.Is(openErr, os.ErrNotExist) {
 		return openErr

@@ -115,7 +115,7 @@ func decodeOrdered(dec *json.Decoder) (any, error) {
 	if t, ok := tok.(json.Delim); ok {
 		switch t {
 		case '{':
-			o := &object{vals: make(map[string]any)}
+			o := &object{vals: make(map[string]any), keys: nil}
 			for dec.More() {
 				kt, err := dec.Token()
 				if err != nil {
@@ -357,7 +357,7 @@ func setEmpty(v reflect.Value) (any, bool) {
 		if v.IsNil() || v.Len() > 0 {
 			return nil, false
 		}
-		return &object{vals: make(map[string]any)}, true
+		return &object{vals: make(map[string]any), keys: nil}, true
 	}
 	return nil, false
 }
@@ -380,7 +380,7 @@ func filler(t reflect.Type) any {
 	case reflect.Array:
 		return []any{}
 	case reflect.Map:
-		return &object{vals: make(map[string]any)}
+		return &object{vals: make(map[string]any), keys: nil}
 	}
 	return nil
 }

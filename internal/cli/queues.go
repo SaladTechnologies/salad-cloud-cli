@@ -596,12 +596,13 @@ func runQueueJobCreate(cmd *cobra.Command, _ []string) error {
 			j, err := client.GetQueueJob(ctx, queue, id)
 			return j, queueJobNotFound(err, queue, id)
 		},
-		view:  queueJobView,
-		now:   time.Now,
-		sleep: ctxSleep,
-		label: "waiting for job " + id,
-		where: "in queue " + queue,
-		check: fmt.Sprintf("saladcloud queues jobs get %s --queue %s", id, queue),
+		view:     queueJobView,
+		now:      time.Now,
+		sleep:    ctxSleep,
+		label:    "waiting for job " + id,
+		where:    "in queue " + queue,
+		check:    fmt.Sprintf("saladcloud queues jobs get %s --queue %s", id, queue),
+		progress: nil,
 	}
 	final, cerr := waitForJobTerminal(ctx, d, id, timeout, waitPoll)
 	if cerr != nil {

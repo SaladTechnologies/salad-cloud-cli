@@ -113,7 +113,15 @@ func (e *Error) HintText() string {
 // Canceled is the error for a request that Ctrl-C stopped. Its message is
 // a placeholder: the CLI reports it as "<command> canceled".
 func Canceled() *Error {
-	return &Error{Code: CodeGeneric, Kind: KindInterrupted, Message: "canceled", cancel: true}
+	return &Error{
+		Code:       CodeGeneric,
+		Kind:       KindInterrupted,
+		Message:    "canceled",
+		cancel:     true,
+		Hint:       nil,
+		HTTPStatus: nil,
+		final:      false,
+	}
 }
 
 // IsCancel reports whether e is a request that Ctrl-C stopped (Canceled).
@@ -121,10 +129,18 @@ func (e *Error) IsCancel() bool { return e != nil && e.cancel }
 
 // New builds an *Error with a formatted message.
 func New(code int, kind Kind, format string, args ...any) *Error {
-	return &Error{Code: code, Kind: kind, Message: fmt.Sprintf(format, args...)}
+	return &Error{
+		Code:       code,
+		Kind:       kind,
+		Message:    fmt.Sprintf(format, args...),
+		Hint:       nil,
+		HTTPStatus: nil,
+		cancel:     false,
+		final:      false,
+	}
 }
 
 // HTTP builds the *Error for an HTTP response with the given status.
 func HTTP(code int, kind Kind, status int, message string) *Error {
-	return &Error{Code: code, Kind: kind, Message: message, HTTPStatus: &status}
+	return &Error{Code: code, Kind: kind, Message: message, HTTPStatus: &status, Hint: nil, cancel: false, final: false}
 }

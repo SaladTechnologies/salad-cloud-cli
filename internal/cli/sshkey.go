@@ -322,7 +322,7 @@ func runSSHKeyGet(_ *cobra.Command, _ []string) error {
 	if known && enc {
 		warnPassphrase(strings.TrimSuffix(path, ".pub"))
 	}
-	v := sshKeyResult{Path: path, PublicKey: key, HasPassphrase: passphraseOf(enc, known)}
+	v := sshKeyResult{Path: path, PublicKey: key, HasPassphrase: passphraseOf(enc, known), Generated: false}
 	return wrapErr(output.Emit(v, func(w *output.Writer) {
 		w.Printf("%s\n%s\n", path, key)
 	}))

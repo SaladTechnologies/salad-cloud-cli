@@ -477,7 +477,16 @@ func collectChanges(beforeVal, afterVal any, path string, named map[string]bool,
 		return // server-managed churn (update_time, hash, current_state, …)
 	}
 	if secretPath(path) {
-		*out = append(*out, unrequestedChange{Path: path, Before: secretChange(beforeVal, afterVal), Secret: true})
+		*out = append(
+			*out,
+			unrequestedChange{
+				Path:   path,
+				Before: secretChange(beforeVal, afterVal),
+				Secret: true,
+				After:  "",
+				Note:   false,
+			},
+		)
 		return
 	}
 	*out = append(*out, unrequestedChange{
@@ -485,6 +494,7 @@ func collectChanges(beforeVal, afterVal any, path string, named map[string]bool,
 		Before: shownValue(path, beforeVal),
 		After:  shownValue(path, afterVal),
 		Note:   holdRule(path, named, beforeVal, afterVal),
+		Secret: false,
 	})
 }
 
@@ -629,7 +639,10 @@ func findUnappliedCreateFields(request []byte, created *shared.ContainerGroup) [
 				if v, present := lookupPath(createdTree, top); !present || v == nil {
 					dropped[top] = true
 					req, _ := lookupPath(reqTree, top)
-					out = append(out, ignoredField{Path: top, Requested: shownValue(top, req), Actual: "null"})
+					out = append(
+						out,
+						ignoredField{Path: top, Requested: shownValue(top, req), Actual: "null", Moved: false},
+					)
 				}
 			}
 			continue
@@ -641,6 +654,7 @@ func findUnappliedCreateFields(request []byte, created *shared.ContainerGroup) [
 			Path:      leaf.Path,
 			Requested: shownValue(leaf.Path, leaf.Value),
 			Actual:    shownValue(leaf.Path, got),
+			Moved:     false,
 		})
 	}
 	slices.SortStableFunc(out, func(a, b ignoredField) int { return strings.Compare(a.Path, b.Path) })

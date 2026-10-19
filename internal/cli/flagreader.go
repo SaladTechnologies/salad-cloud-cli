@@ -19,7 +19,7 @@ type flagReader struct {
 }
 
 // readFlags returns a flagReader over fs.
-func readFlags(fs *pflag.FlagSet) *flagReader { return &flagReader{FlagSet: fs} }
+func readFlags(fs *pflag.FlagSet) *flagReader { return &flagReader{FlagSet: fs, err: nil} }
 
 // keep records err when it is the first.
 func (r *flagReader) keep(err error) {

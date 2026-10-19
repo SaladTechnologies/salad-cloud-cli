@@ -451,6 +451,8 @@ func collectCreateFlags(cmd *cobra.Command, name string, hasBase bool) (createFl
 		RestartPolicySet: f.Changed("restart-policy"),
 		NoAutostart:      b("no-autostart"),
 		HasBase:          hasBase,
+		Command:          nil,
+		ResolveGpu:       nil,
 	}
 	return opts, f.Err()
 }

@@ -380,7 +380,7 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 		if w := overloadWarning("CPU", allZeroCPU(avail)); w != "" {
 			fprintln(os.Stderr, w)
 		}
-		result := cpuAvailabilityResult{Items: []organizations.CpuAvailability{*avail}}
+		result := cpuAvailabilityResult{Items: []organizations.CpuAvailability{*avail}, Combined: nil}
 		return wrapErr(output.Emit(result, func(w *output.Writer) {
 			if !reportsOnCall(avail.OnCallCpu) {
 				w.Println("CLASS\tBATCH")
@@ -392,7 +392,7 @@ func runAvailability(cmd *cobra.Command, _ []string) error {
 		}))
 	}
 
-	result := gpuAvailabilityResult{Items: []gpuAvailabilityRow{}}
+	result := gpuAvailabilityResult{Items: []gpuAvailabilityRow{}, Combined: nil}
 	for _, id := range req.GpuClasses {
 		one := req
 		one.GpuClasses = []string{id}

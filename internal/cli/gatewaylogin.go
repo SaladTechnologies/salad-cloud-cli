@@ -99,7 +99,15 @@ func runGatewayLogin(cmd *cobra.Command, _ []string) error {
 	if cerr := configReady("ai-gateway login"); cerr != nil {
 		return cerr
 	}
-	g := &gatewayLogin{ctx: cmd.Context(), terminal: atTerminal(), credits: true}
+	g := &gatewayLogin{
+		ctx:      cmd.Context(),
+		terminal: atTerminal(),
+		credits:  true,
+		saved:    config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
+		key:      "",
+		keyFrom:  "",
+		models:   0,
+	}
 	g.saved = savedConfig() // configReady has read it
 
 	switch {
@@ -194,7 +202,20 @@ func (g *gatewayLogin) failed(cerr *clierr.Error) *clierr.Error {
 // 402 is a working key whose organization is out of credits, which is
 // saved.
 func (g *gatewayLogin) check() *clierr.Error {
-	gw, cerr := api.NewGateway(config.Resolved{GatewayAPIKey: g.key})
+	gw, cerr := api.NewGateway(
+		config.Resolved{
+			GatewayAPIKey:       g.key,
+			APIKey:              "",
+			APIKeySource:        "",
+			Organization:        "",
+			OrganizationSource:  "",
+			Project:             "",
+			ProjectSource:       "",
+			GatewayAPIKeySource: "",
+			SkippedProject:      "",
+			SkippedProjectOrg:   "",
+		},
+	)
 	if cerr != nil {
 		return cerr
 	}

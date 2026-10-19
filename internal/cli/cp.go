@@ -83,7 +83,7 @@ func parseRemoteSpec(arg string) (*remoteSpec, *clierr.Error) {
 	parts := strings.Split(head, "/")
 	switch len(parts) {
 	case 1:
-		return &remoteSpec{Group: parts[0], Path: path}, nil
+		return &remoteSpec{Group: parts[0], Path: path, InstancePrefix: ""}, nil
 	case 2:
 		if parts[0] == "" || parts[1] == "" {
 			return nil, badRemotePath(arg)

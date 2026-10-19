@@ -144,7 +144,19 @@ func runLogin(cmd *cobra.Command, _ []string) error {
 			WithHint("pass the project separately, for example saladcloud login --org %s --project %s", org, project)
 	}
 
-	l := &login{ctx: cmd.Context(), terminal: atTerminal()}
+	l := &login{
+		ctx:               cmd.Context(),
+		terminal:          atTerminal(),
+		saved:             config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
+		key:               "",
+		keyFrom:           "",
+		orgs:              nil,
+		orgName:           "",
+		orgFrom:           "",
+		projectName:       "",
+		projectFrom:       "",
+		savedProjectFound: nil,
+	}
 	l.orgName, l.orgFrom = namedValue(orgFlag, "--org", envOrganization)
 	l.projectName, l.projectFrom = namedValue(projectFlag, "--project", envProject)
 	for _, n := range []struct{ kind, name, from string }{{"organization", l.orgName, l.orgFrom}, {"project", l.projectName, l.projectFrom}} {
@@ -383,7 +395,20 @@ func (l *login) keyInvalid() *clierr.Error {
 // listOrganizations reads the key's organizations: nil when the listing
 // cannot list; a 401 means the key is invalid.
 func listOrganizations(ctx context.Context, key string) ([]api.Organization, *clierr.Error) {
-	c, cerr := api.New(config.Resolved{APIKey: key})
+	c, cerr := api.New(
+		config.Resolved{
+			APIKey:              key,
+			APIKeySource:        "",
+			Organization:        "",
+			OrganizationSource:  "",
+			Project:             "",
+			ProjectSource:       "",
+			GatewayAPIKey:       "",
+			GatewayAPIKeySource: "",
+			SkippedProject:      "",
+			SkippedProjectOrg:   "",
+		},
+	)
 	if cerr != nil {
 		return nil, cerr
 	}
@@ -410,7 +435,20 @@ func (l *login) orgNames() []string {
 // checkOrganization is the organization check, which decides found or not
 // found: (true, nil) found, (false, nil) not found.
 func (l *login) checkOrganization(org string) (bool, *clierr.Error) {
-	c, cerr := api.New(config.Resolved{APIKey: l.key, Organization: org})
+	c, cerr := api.New(
+		config.Resolved{
+			APIKey:              l.key,
+			Organization:        org,
+			APIKeySource:        "",
+			OrganizationSource:  "",
+			Project:             "",
+			ProjectSource:       "",
+			GatewayAPIKey:       "",
+			GatewayAPIKeySource: "",
+			SkippedProject:      "",
+			SkippedProjectOrg:   "",
+		},
+	)
 	if cerr != nil {
 		return false, cerr
 	}
@@ -632,7 +670,20 @@ func projectCreateURL(org string) string {
 // checkProject is the project check: (true, nil) found, (false, nil) not
 // found.
 func (l *login) checkProject(org, project string) (bool, *clierr.Error) {
-	c, cerr := api.New(config.Resolved{APIKey: l.key, Organization: org, Project: project})
+	c, cerr := api.New(
+		config.Resolved{
+			APIKey:              l.key,
+			Organization:        org,
+			Project:             project,
+			APIKeySource:        "",
+			OrganizationSource:  "",
+			ProjectSource:       "",
+			GatewayAPIKey:       "",
+			GatewayAPIKeySource: "",
+			SkippedProject:      "",
+			SkippedProjectOrg:   "",
+		},
+	)
 	if cerr != nil {
 		return false, cerr
 	}

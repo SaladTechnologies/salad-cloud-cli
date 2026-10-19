@@ -313,6 +313,7 @@ func liveWaitDeps(client *api.Client, group string) waitDeps {
 				return nil
 			}
 		},
+		progress: nil,
 	}
 }
 

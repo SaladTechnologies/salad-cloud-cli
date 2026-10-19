@@ -86,7 +86,7 @@ func stillSupplied(vars ...string) []override {
 			continue
 		}
 		if v := os.Getenv(s.env); v != "" {
-			out = append(out, override{setting: s, value: v})
+			out = append(out, override{setting: s, value: v, saved: ""})
 		}
 	}
 	return out

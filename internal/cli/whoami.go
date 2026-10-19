@@ -102,7 +102,20 @@ func runWhoami(cmd *cobra.Command, _ []string) error {
 		if !ok {
 			authenticated, malformed = &no, true // no key has these characters; the API would reject it
 		} else {
-			client, cerr := api.New(config.Resolved{APIKey: key, Organization: res.Organization})
+			client, cerr := api.New(
+				config.Resolved{
+					APIKey:              key,
+					Organization:        res.Organization,
+					APIKeySource:        "",
+					OrganizationSource:  "",
+					Project:             "",
+					ProjectSource:       "",
+					GatewayAPIKey:       "",
+					GatewayAPIKeySource: "",
+					SkippedProject:      "",
+					SkippedProjectOrg:   "",
+				},
+			)
 			if cerr != nil {
 				return cerr
 			}

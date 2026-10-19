@@ -94,7 +94,20 @@ func runUse(cmd *cobra.Command, args []string) error {
 	}
 	u := &useRun{key: key, keyFrom: keyFrom, saved: saved}
 
-	client, cerr := api.New(config.Resolved{APIKey: key, Organization: org})
+	client, cerr := api.New(
+		config.Resolved{
+			APIKey:              key,
+			Organization:        org,
+			APIKeySource:        "",
+			OrganizationSource:  "",
+			Project:             "",
+			ProjectSource:       "",
+			GatewayAPIKey:       "",
+			GatewayAPIKeySource: "",
+			SkippedProject:      "",
+			SkippedProjectOrg:   "",
+		},
+	)
 	if cerr != nil {
 		return cerr
 	}
@@ -121,7 +134,20 @@ func runUse(cmd *cobra.Command, args []string) error {
 	if defaulted {
 		project = config.DefaultProject
 	}
-	pc, cerr := api.New(config.Resolved{APIKey: key, Organization: org, Project: project})
+	pc, cerr := api.New(
+		config.Resolved{
+			APIKey:              key,
+			Organization:        org,
+			Project:             project,
+			APIKeySource:        "",
+			OrganizationSource:  "",
+			ProjectSource:       "",
+			GatewayAPIKey:       "",
+			GatewayAPIKeySource: "",
+			SkippedProject:      "",
+			SkippedProjectOrg:   "",
+		},
+	)
 	if cerr != nil {
 		return cerr
 	}

@@ -53,7 +53,7 @@ func NewGateway(res config.Resolved) (*Gateway, *clierr.Error) {
 
 // NewPublicGateway builds a Gateway with no key, for the one public route:
 // the model list answers anyone the same.
-func NewPublicGateway() *Gateway { return &Gateway{baseURL: gatewayBaseURL()} }
+func NewPublicGateway() *Gateway { return &Gateway{baseURL: gatewayBaseURL(), key: ""} }
 
 // gatewayBaseURL is the gateway base URL in effect: the default, or
 // SALAD_CLI_AI_GATEWAY_BASE_URL (for tests).
