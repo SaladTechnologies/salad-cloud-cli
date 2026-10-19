@@ -176,12 +176,8 @@ func TestLoadScheduledScalingExampleRoundTrip(t *testing.T) {
 		t.Fatalf("scaling-actions has %d entries, want 2", len(req.ScalingActions))
 	}
 	up, down := req.ScalingActions[0], req.ScalingActions[1]
-	if ptr.Deref(up.Replicas) != 2 || ptr.Deref(up.Schedule) != "0 9 * * 1-5" {
-		t.Errorf("action[0] = %d @ %q, want 2 @ \"0 9 * * 1-5\"", ptr.Deref(up.Replicas), ptr.Deref(up.Schedule))
-	}
-	if ptr.Deref(down.Replicas) != 0 || ptr.Deref(down.Schedule) != "0 17 * * 1-5" {
-		t.Errorf("action[1] = %d @ %q, want 0 @ \"0 17 * * 1-5\"", ptr.Deref(down.Replicas), ptr.Deref(down.Schedule))
-	}
+	checkScalingAction(t, 0, ptr.Deref(up.Replicas), ptr.Deref(up.Schedule), 2, "0 9 * * 1-5")
+	checkScalingAction(t, 1, ptr.Deref(down.Replicas), ptr.Deref(down.Schedule), 0, "0 17 * * 1-5")
 	for _, key := range []string{`"scheduled-scaling-enabled":true`, `"scaling-actions":[`} {
 		if !strings.Contains(string(raw), key) {
 			t.Errorf("raw output lacks %s", key)
@@ -189,16 +185,31 @@ func TestLoadScheduledScalingExampleRoundTrip(t *testing.T) {
 	}
 }
 
-// TestLoadExampleRoundTrip pins examples/hello-cpu.yaml: it must unmarshal
-// into a ContainerGroupCreationRequest with every demo-critical field set.
-func TestLoadExampleRoundTrip(t *testing.T) {
-	t.Parallel()
+// checkScalingAction checks scaling action i's replicas and schedule.
+func checkScalingAction(t *testing.T, i int, replicas int64, schedule string, wantReplicas int64, wantSchedule string) {
+	t.Helper()
+	if replicas != wantReplicas || schedule != wantSchedule {
+		t.Errorf("action[%d] = %d @ %q, want %d @ %q", i, replicas, schedule, wantReplicas, wantSchedule)
+	}
+}
+
+// exampleWant is what an example definition sets that differs between the examples.
+type exampleWant struct {
+	name, image, imageDesc string // imageDesc names the image in a failure
+	cpu, memory            int64
+}
+
+// loadExample loads examples/<file> into a creation request and checks what every example sets: want's name, image
+// and resources, one replica, restart always, autostart, and batch priority. It returns the request's container for
+// the test's own checks.
+func loadExample(t *testing.T, file string, want exampleWant) *containergroups.ContainerConfiguration {
+	t.Helper()
 	var req containergroups.ContainerGroupCreationRequest
-	if err := Load(filepath.Join("..", "..", "examples", "hello-cpu.yaml"), nil, &req); err != nil {
+	if err := Load(filepath.Join("..", "..", "examples", file), nil, &req); err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if got := ptr.Deref(req.Name); got != "saladcloud-demo" {
-		t.Errorf("name = %q, want %q", got, "saladcloud-demo")
+	if got := ptr.Deref(req.Name); got != want.name {
+		t.Errorf("name = %q, want %q", got, want.name)
 	}
 	if got := ptr.Deref(req.Replicas); got != 1 {
 		t.Errorf("replicas = %d, want 1", got)
@@ -209,12 +220,19 @@ func TestLoadExampleRoundTrip(t *testing.T) {
 	if req.AutostartPolicy == nil || !*req.AutostartPolicy {
 		t.Errorf("autostart_policy = %v, want true", req.AutostartPolicy)
 	}
-	c := req.Container
-	if c == nil {
+	if req.Container == nil {
 		t.Fatal("container is nil")
 	}
-	if got := ptr.Deref(c.Image); got != "docker.io/library/busybox:1.36" {
-		t.Errorf("container.image = %q, want busybox", got)
+	checkExampleContainer(t, req.Container, want)
+	return req.Container
+}
+
+// checkExampleContainer checks an example container's image, CPU and memory against want's, and its batch
+// priority.
+func checkExampleContainer(t *testing.T, c *containergroups.ContainerConfiguration, want exampleWant) {
+	t.Helper()
+	if got := ptr.Deref(c.Image); got != want.image {
+		t.Errorf("container.image = %q, want %s", got, want.imageDesc)
 	}
 	if c.Priority == nil || c.Priority.IsNull || string(c.Priority.Value) != "batch" {
 		t.Errorf("container.priority = %v, want batch", c.Priority)
@@ -222,12 +240,21 @@ func TestLoadExampleRoundTrip(t *testing.T) {
 	if c.Resources == nil {
 		t.Fatal("container.resources is nil")
 	}
-	if got := ptr.Deref(c.Resources.Cpu); got != 1 {
-		t.Errorf("container.resources.cpu = %d, want 1", got)
+	if got := ptr.Deref(c.Resources.Cpu); got != want.cpu {
+		t.Errorf("container.resources.cpu = %d, want %d", got, want.cpu)
 	}
-	if got := ptr.Deref(c.Resources.Memory); got != 1024 {
-		t.Errorf("container.resources.memory = %d, want 1024", got)
+	if got := ptr.Deref(c.Resources.Memory); got != want.memory {
+		t.Errorf("container.resources.memory = %d, want %d", got, want.memory)
 	}
+}
+
+// TestLoadExampleRoundTrip pins examples/hello-cpu.yaml: it must unmarshal
+// into a ContainerGroupCreationRequest with every demo-critical field set.
+func TestLoadExampleRoundTrip(t *testing.T) {
+	t.Parallel()
+	c := loadExample(t, "hello-cpu.yaml", exampleWant{
+		name: "saladcloud-demo", image: "docker.io/library/busybox:1.36", imageDesc: "busybox", cpu: 1, memory: 1024,
+	})
 	if c.Command == nil || c.Command.IsNull {
 		t.Fatal("container.command is not set")
 	}
@@ -255,29 +282,9 @@ func TestLoadExampleRoundTrip(t *testing.T) {
 // exhibit in the README and docs/guide.md).
 func TestLoadSleepExampleRoundTrip(t *testing.T) {
 	t.Parallel()
-	var req containergroups.ContainerGroupCreationRequest
-	if err := Load(filepath.Join("..", "..", "examples", "sleep-cpu.json"), nil, &req); err != nil {
-		t.Fatalf("Load returned error: %v", err)
-	}
-	if got := ptr.Deref(req.Name); got != "sleep-demo" {
-		t.Errorf("name = %q, want %q", got, "sleep-demo")
-	}
-	if got := ptr.Deref(req.Replicas); got != 1 {
-		t.Errorf("replicas = %d, want 1", got)
-	}
-	if req.RestartPolicy == nil || string(*req.RestartPolicy) != "always" {
-		t.Errorf("restart_policy = %v, want always", req.RestartPolicy)
-	}
-	if req.AutostartPolicy == nil || !*req.AutostartPolicy {
-		t.Errorf("autostart_policy = %v, want true", req.AutostartPolicy)
-	}
-	c := req.Container
-	if c == nil {
-		t.Fatal("container is nil")
-	}
-	if got := ptr.Deref(c.Image); got != "docker.io/library/busybox:1.36" {
-		t.Errorf("container.image = %q, want busybox", got)
-	}
+	c := loadExample(t, "sleep-cpu.json", exampleWant{
+		name: "sleep-demo", image: "docker.io/library/busybox:1.36", imageDesc: "busybox", cpu: 1, memory: 1024,
+	})
 	// "2147483647", not "infinity": busybox's sleep takes an integer, and an
 	// invalid command fails the instance at start, so the platform reallocates
 	// it and the group loops across nodes instead of settling — the example has
@@ -286,58 +293,18 @@ func TestLoadSleepExampleRoundTrip(t *testing.T) {
 		c.Command.Value[0] != "sleep" || c.Command.Value[1] != "2147483647" {
 		t.Errorf("container.command = %v, want [sleep 2147483647]", c.Command)
 	}
-	if c.Priority == nil || c.Priority.IsNull || string(c.Priority.Value) != "batch" {
-		t.Errorf("container.priority = %v, want batch", c.Priority)
-	}
-	if c.Resources == nil {
-		t.Fatal("container.resources is nil")
-	}
-	if got := ptr.Deref(c.Resources.Cpu); got != 1 {
-		t.Errorf("container.resources.cpu = %d, want 1", got)
-	}
-	if got := ptr.Deref(c.Resources.Memory); got != 1024 {
-		t.Errorf("container.resources.memory = %d, want 1024", got)
-	}
 }
 
 // TestLoadGpuExampleRoundTrip pins examples/gpu-small.yaml.
 func TestLoadGpuExampleRoundTrip(t *testing.T) {
 	t.Parallel()
-	var req containergroups.ContainerGroupCreationRequest
-	if err := Load(filepath.Join("..", "..", "examples", "gpu-small.yaml"), nil, &req); err != nil {
-		t.Fatalf("Load returned error: %v", err)
-	}
-	if got := ptr.Deref(req.Name); got != "gpu-demo" {
-		t.Errorf("name = %q, want %q", got, "gpu-demo")
-	}
-	if got := ptr.Deref(req.Replicas); got != 1 {
-		t.Errorf("replicas = %d, want 1", got)
-	}
-	if req.RestartPolicy == nil || string(*req.RestartPolicy) != "always" {
-		t.Errorf("restart_policy = %v, want always", req.RestartPolicy)
-	}
-	if req.AutostartPolicy == nil || !*req.AutostartPolicy {
-		t.Errorf("autostart_policy = %v, want true", req.AutostartPolicy)
-	}
-	c := req.Container
-	if c == nil {
-		t.Fatal("container is nil")
-	}
-	if got := ptr.Deref(c.Image); got != "docker.io/nvidia/cuda:12.4.1-base-ubuntu22.04" {
-		t.Errorf("container.image = %q, want nvidia/cuda base", got)
-	}
-	if c.Priority == nil || c.Priority.IsNull || string(c.Priority.Value) != "batch" {
-		t.Errorf("container.priority = %v, want batch", c.Priority)
-	}
-	if c.Resources == nil {
-		t.Fatal("container.resources is nil")
-	}
-	if got := ptr.Deref(c.Resources.Cpu); got != 2 {
-		t.Errorf("container.resources.cpu = %d, want 2", got)
-	}
-	if got := ptr.Deref(c.Resources.Memory); got != 4096 {
-		t.Errorf("container.resources.memory = %d, want 4096", got)
-	}
+	c := loadExample(t, "gpu-small.yaml", exampleWant{
+		name:      "gpu-demo",
+		image:     "docker.io/nvidia/cuda:12.4.1-base-ubuntu22.04",
+		imageDesc: "nvidia/cuda base",
+		cpu:       2,
+		memory:    4096,
+	})
 	if len(c.Resources.GpuClasses) != 1 ||
 		c.Resources.GpuClasses[0] != "f51baccc-dc95-40fb-a5d1-6d0ee0db31d2" {
 		t.Errorf("container.resources.gpu_classes = %v, want the RTX 3060 id", c.Resources.GpuClasses)
