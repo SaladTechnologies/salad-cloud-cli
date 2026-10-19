@@ -102,25 +102,30 @@ func TestNameCheck(t *testing.T) {
 	} {
 		t.Run(tc.kind+" "+tc.name, func(t *testing.T) {
 			t.Parallel()
-			app := app.clone(t)
-			err := app.checkName(tc.kind, tc.name, tc.origin)
-			if tc.msg == "" {
-				if err != nil {
-					t.Fatalf("valid name rejected: %v", err)
-				}
-				return
-			}
-			if err == nil || err.Code != clierr.CodeInvalidInput || err.Kind != clierr.KindInvalidInput ||
-				err.Message != tc.msg ||
-				err.HintText() != tc.hint {
-				t.Errorf("got %+v hint %q\nwant %q / %q", err, err.HintText(), tc.msg, tc.hint)
-			}
+			run := app.clone(t)
+			wantNameCheck(t, run.checkName(tc.kind, tc.name, tc.origin), tc.msg, tc.hint)
 			if tc.retry != "" {
 				if got := nameRetry(tc.kind, tc.name, "some-key"); got != tc.retry {
 					t.Errorf("retry line:\n got %q\nwant %q", got, tc.retry)
 				}
 			}
 		})
+	}
+}
+
+// wantNameCheck checks the name check's answer: nil when msg is "", else an invalid_input error with msg and hint.
+func wantNameCheck(t *testing.T, err *clierr.Error, msg, hint string) {
+	t.Helper()
+	if msg == "" {
+		if err != nil {
+			t.Fatalf("valid name rejected: %v", err)
+		}
+		return
+	}
+	if err == nil || err.Code != clierr.CodeInvalidInput || err.Kind != clierr.KindInvalidInput ||
+		err.Message != msg ||
+		err.HintText() != hint {
+		t.Errorf("got %+v hint %q\nwant %q / %q", err, err.HintText(), msg, hint)
 	}
 }
 
@@ -249,7 +254,8 @@ func TestOrgsClause(t *testing.T) {
 	}
 }
 
-func TestConfigReady(t *testing.T) {
+// TestConfigReadyNoFile: a config file that does not exist yet is ready, and checking leaves nothing behind.
+func TestConfigReadyNoFile(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
 	dir := t.TempDir()
@@ -260,6 +266,15 @@ func TestConfigReady(t *testing.T) {
 	if entries := must(os.ReadDir(dir))(t); len(entries) != 0 {
 		t.Errorf("the check left %d files behind", len(entries))
 	}
+}
+
+// TestConfigReadyCorruptFile: a config file that cannot be parsed is an error naming the command to run again,
+// and is left as it is.
+func TestConfigReadyCorruptFile(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
+	dir := t.TempDir()
+	app.setenv("SALAD_CLI_CONFIG_DIR", dir)
 	path := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
@@ -281,7 +296,12 @@ func TestConfigReady(t *testing.T) {
 	if b := must(os.ReadFile(path))(t); string(b) != "{not json" {
 		t.Errorf("the corrupt file was changed: %q", b)
 	}
+}
 
+// TestConfigReadyReadOnlyFolder: a config folder this user cannot write is an error whose fix suits the command.
+func TestConfigReadyReadOnlyFolder(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("folder permissions do not stop this user from writing")
 	}

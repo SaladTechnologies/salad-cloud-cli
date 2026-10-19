@@ -51,22 +51,54 @@ func TestOrgsListAndGet(t *testing.T) {
 	if _, present := list.Items[0]["update_time"]; !present {
 		t.Errorf("update_time missing; every key is present: %v", list.Items[0])
 	}
-	out, err = app.runRoot(
-		t,
-		"orgs",
-		"list",
-		"-o",
-		"table",
-	)
-	if err != nil || !strings.Contains(out, "NAME") ||
-		!strings.Contains(out, "My Org") {
-		t.Errorf("orgs list table = %q (%v)", out, err)
+}
+
+// TestOrgsTableAndNotFound: the tables show the listing, and an organization it does not list is not found.
+func TestOrgsTableAndNotFound(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		args    []string
+		want    []string // in the output, or in the error when one is wanted
+		wantErr bool
+	}{
+		{
+			name:    "list table",
+			args:    []string{"orgs", "list", "-o", "table"},
+			want:    []string{"NAME", "My Org"},
+			wantErr: false,
+		},
+		{
+			name:    "get table",
+			args:    []string{"orgs", "get", "my-org", "-o", "table"},
+			want:    []string{"o-1"},
+			wantErr: false,
+		},
+		{
+			name:    "get an unlisted org",
+			args:    []string{"orgs", "get", "other-org"},
+			want:    []string{"not found"},
+			wantErr: true,
+		},
 	}
-	if out, err = app.runRoot(t, "orgs", "get", "my-org", "-o", "table"); err != nil || !strings.Contains(out, "o-1") {
-		t.Errorf("orgs get table = %q (%v)", out, err)
-	}
-	if _, err = app.runRoot(t, "orgs", "get", "other-org"); err == nil || !strings.Contains(err.Error(), "not found") {
-		t.Errorf("orgs get of an unlisted org = %v, want not found", err)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			app := newTestRun(t)
+			app.stubAPI(t, map[string]string{"/v1/organizations": orgsBody})
+			got, err := app.runRoot(t, tc.args...)
+			if err != nil {
+				got = err.Error()
+			}
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("%v = %q, %v; want an error: %t", tc.args, got, err, tc.wantErr)
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(got, w) {
+					t.Errorf("%v = %q, want it to contain %q", tc.args, got, w)
+				}
+			}
+		})
 	}
 }
 
@@ -133,27 +165,25 @@ func TestLogoutKeepsContext(t *testing.T) {
 	app := newTestRun(t)
 	app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
 	app.setenv("SALAD_API_KEY", "")
-	if err := config.Save(app.Env,
-		config.File{APIKey: "k", Organization: "my-org", Project: "p", GatewayAPIKey: "g"},
-	); err != nil {
-		t.Fatal(err)
-	}
+	noErr(t, config.Save(app.Env, config.File{APIKey: "k", Organization: "my-org", Project: "p", GatewayAPIKey: "g"}))
 	out, err := app.runRoot(t, "logout", "-o", "json")
 	if err != nil {
 		t.Fatalf("logout: %v", err)
 	}
-	if !strings.Contains(out, `"removed": true,`) || !strings.Contains(out, `"organization": "my-org",`) ||
-		!strings.Contains(out, `"action": "logged_out",`) {
-		t.Errorf("logout -o json = %s", out)
+	for _, want := range []string{`"removed": true,`, `"organization": "my-org",`, `"action": "logged_out",`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("logout -o json lacks %s:\n%s", want, out)
+		}
 	}
-	f := must(config.Load(app.Env))(t)
-	if f.APIKey != "" || f.Organization != "my-org" || f.Project != "p" || f.GatewayAPIKey != "g" {
-		t.Errorf("after logout the config is %+v; only the API key goes", f)
+	want := config.File{APIKey: "", Organization: "my-org", Project: "p", GatewayAPIKey: "g"}
+	if f := must(config.Load(app.Env))(t); f != want {
+		t.Errorf("after logout the config is %+v, want %+v; only the API key goes", f, want)
 	}
 	if _, err := app.runRoot(t, "ai-gateway", "logout"); err != nil {
 		t.Fatalf("ai-gateway logout: %v", err)
 	}
-	if f = must(config.Load(app.Env))(t); f.GatewayAPIKey != "" || f.Organization != "my-org" {
-		t.Errorf("after ai-gateway logout the config is %+v", f)
+	want.GatewayAPIKey = ""
+	if f := must(config.Load(app.Env))(t); f != want {
+		t.Errorf("after ai-gateway logout the config is %+v, want %+v", f, want)
 	}
 }
