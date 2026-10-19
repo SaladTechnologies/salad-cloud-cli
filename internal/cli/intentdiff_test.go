@@ -385,8 +385,7 @@ func TestWarnUnrequestedChangesOutput(t *testing.T) {
 // TestHoldRuleIsANote: a replicas write putting scheduled scaling on hold is
 // a documented platform rule (thermostat model), so it is classified Note
 // and printed as "note:", while an unrelated side effect in the same diff
-// stays a warning. A flag flip without replicas in the patch is NOT the
-// rule and stays a warning.
+// stays a warning.
 func TestHoldRuleIsANote(t *testing.T) {
 	t.Parallel()
 	changes := findUnrequestedChanges(
@@ -410,18 +409,28 @@ func TestHoldRuleIsANote(t *testing.T) {
 	var buf bytes.Buffer
 	warnUnrequestedChanges(&buf, changes)
 	out := buf.String()
-	if !strings.Contains(out, "warning: this update also changed 1 field") ||
-		!strings.Contains(out, "warning:   country_codes") {
-		t.Errorf("country_codes not reported as a warning:\n%s", out)
+	for _, want := range []string{
+		// country_codes, as a warning
+		"warning: this update also changed 1 field", "warning:   country_codes",
+		// the hold rule, as a note with the re-enable hint
+		"note: scheduled-scaling-enabled: true -> false", "on hold", "to re-enable it",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
 	}
-	if !strings.Contains(out, "note: scheduled-scaling-enabled: true -> false") || !strings.Contains(out, "on hold") ||
-		!strings.Contains(out, "to re-enable it") {
-		t.Errorf("hold rule not reported as a note with the re-enable hint:\n%s", out)
+	for _, unwanted := range []string{"warning:   scheduled-scaling-enabled", "known API bug"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("hold rule still reported as a warning / bug (%q):\n%s", unwanted, out)
+		}
 	}
-	if strings.Contains(out, "warning:   scheduled-scaling-enabled") || strings.Contains(out, "known API bug") {
-		t.Errorf("hold rule still reported as a warning / bug:\n%s", out)
-	}
-	// Same flip, but the patch did not touch replicas: not the rule.
+}
+
+// TestFlagFlipWithoutReplicasIsNotTheHoldRule: the same flip as
+// TestHoldRuleIsANote, but the patch did not touch replicas, so it is not
+// the rule and stays a warning.
+func TestFlagFlipWithoutReplicasIsNotTheHoldRule(t *testing.T) {
+	t.Parallel()
 	other := findUnrequestedChanges(
 		[]byte(`{"display_name":"x"}`),
 		grp(t, `{"name":"g","display_name":"y","scheduled-scaling-enabled":true}`),

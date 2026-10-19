@@ -85,66 +85,105 @@ func requestToResponsePath() map[string]string {
 // patch was observed changing state without incrementing it — which is why
 // this compares field values.
 func findIgnoredFields(patch []byte, before, after *shared.ContainerGroup) []ignoredField {
-	if before == nil || after == nil {
-		return nil
-	}
-	if ptr.Deref(after.PendingChange) {
-		return nil // still settling; the after-state isn't authoritative yet
-	}
-	var patchTree any
-	if err := json.Unmarshal(patch, &patchTree); err != nil {
-		return nil
-	}
-	beforeTree, err := toTree(before)
-	if err != nil {
-		return nil
-	}
-	afterTree, err := toTree(after)
-	if err != nil {
+	trees, ok := intentDiffTrees(patch, before, after)
+	if !ok {
 		return nil
 	}
 
 	var leaves []patchLeaf
-	collectLeaves(patchTree, "", &leaves)
+	collectLeaves(trees.patch, "", &leaves)
 
 	var out []ignoredField
 	for _, leaf := range leaves {
-		path := leaf.Path
-		beforeVal, beforeOK := lookupPath(beforeTree, path)
-		afterVal, afterOK := lookupPath(afterTree, path)
-		// Fall back to the response's own spelling for known asymmetries.
-		if !beforeOK && !afterOK {
-			if alias, ok := requestToResponsePath()[path]; ok {
-				beforeVal, beforeOK = lookupPath(beforeTree, alias)
-				afterVal, afterOK = lookupPath(afterTree, alias)
-			}
+		if f, ignored := ignoredLeaf(leaf, observeLeaf(&trees, leaf.Path)); ignored {
+			out = append(out, f)
 		}
-		if !beforeOK && !afterOK {
-			continue // unobservable in the response; don't guess
-		}
-		if jsonEqual(afterVal, leaf.Value) {
-			continue // applied
-		}
-		moved := !jsonEqual(afterVal, beforeVal)
-		if moved && !afterOK {
-			// The field changed and the response no longer exposes it —
-			// typically a clear ([] / null) that omitempty drops from the
-			// document. Its current value is unobservable, so say nothing
-			// rather than report "got null" for a write that applied.
-			continue
-		}
-		if moved && leaf.Value == nil && afterVal != nil {
-			continue // null request answered with a server default: normalization, not a drop
-		}
-		out = append(out, ignoredField{
-			Path:      path,
-			Requested: shownValue(path, leaf.Value),
-			Actual:    shownValue(path, afterVal),
-			Moved:     moved,
-		})
 	}
 	slices.SortStableFunc(out, func(a, b ignoredField) int { return strings.Compare(a.Path, b.Path) })
 	return out
+}
+
+// intentTrees are the generic trees the update-side intent diffs compare:
+// the patch, and the group before and after the write.
+type intentTrees struct {
+	patch, before, after any
+}
+
+// intentDiffTrees decodes the patch and the two group states for
+// findIgnoredFields and findUnrequestedChanges. It reports false — nothing
+// to compare — when either state is missing, the change is still pending
+// (the after-state isn't authoritative yet), or a document does not decode.
+func intentDiffTrees(patch []byte, before, after *shared.ContainerGroup) (intentTrees, bool) {
+	var trees intentTrees
+	if before == nil || after == nil {
+		return trees, false
+	}
+	if ptr.Deref(after.PendingChange) {
+		return trees, false // still settling; the after-state isn't authoritative yet
+	}
+	if err := json.Unmarshal(patch, &trees.patch); err != nil {
+		return trees, false
+	}
+	var err error
+	if trees.before, err = toTree(before); err != nil {
+		return trees, false
+	}
+	if trees.after, err = toTree(after); err != nil {
+		return trees, false
+	}
+	return trees, true
+}
+
+// observedLeaf is one patch path's value in the group before and after the
+// write; the OK fields report whether the path exists there at all.
+type observedLeaf struct {
+	before, after     any
+	beforeOK, afterOK bool
+}
+
+// observeLeaf looks path up in the before and after trees, falling back to
+// the response's own spelling for known asymmetries when neither has it.
+func observeLeaf(trees *intentTrees, path string) observedLeaf {
+	var o observedLeaf
+	o.before, o.beforeOK = lookupPath(trees.before, path)
+	o.after, o.afterOK = lookupPath(trees.after, path)
+	// Fall back to the response's own spelling for known asymmetries.
+	if !o.beforeOK && !o.afterOK {
+		if alias, ok := requestToResponsePath()[path]; ok {
+			o.before, o.beforeOK = lookupPath(trees.before, alias)
+			o.after, o.afterOK = lookupPath(trees.after, alias)
+		}
+	}
+	return o
+}
+
+// ignoredLeaf is findIgnoredFields' verdict on one patch leaf, given what
+// the before and after states hold at its path: the report, and whether the
+// write was ignored at all.
+func ignoredLeaf(leaf patchLeaf, o observedLeaf) (ignoredField, bool) {
+	if !o.beforeOK && !o.afterOK {
+		return ignoredField{}, false // unobservable in the response; don't guess
+	}
+	if jsonEqual(o.after, leaf.Value) {
+		return ignoredField{}, false // applied
+	}
+	moved := !jsonEqual(o.after, o.before)
+	if moved && !o.afterOK {
+		// The field changed and the response no longer exposes it —
+		// typically a clear ([] / null) that omitempty drops from the
+		// document. Its current value is unobservable, so say nothing
+		// rather than report "got null" for a write that applied.
+		return ignoredField{}, false
+	}
+	if moved && leaf.Value == nil && o.after != nil {
+		return ignoredField{}, false // null request answered with a server default: normalization, not a drop
+	}
+	return ignoredField{
+		Path:      leaf.Path,
+		Requested: shownValue(leaf.Path, leaf.Value),
+		Actual:    shownValue(leaf.Path, o.after),
+		Moved:     moved,
+	}, true
 }
 
 // patchLeaf is one asserted value in a patch document, with its dotted path.
@@ -404,33 +443,28 @@ func callerWritable(path string) bool {
 // even though the patch did not name them. Guards match findIgnoredFields:
 // both states required, and nothing reported while the change is pending.
 func findUnrequestedChanges(patch []byte, before, after *shared.ContainerGroup) []unrequestedChange {
-	if before == nil || after == nil {
+	trees, ok := intentDiffTrees(patch, before, after)
+	if !ok {
 		return nil
 	}
-	if ptr.Deref(after.PendingChange) {
-		return nil
-	}
-	var patchTree any
-	if err := json.Unmarshal(patch, &patchTree); err != nil {
-		return nil
-	}
-	beforeTree, err := toTree(before)
-	if err != nil {
-		return nil
-	}
-	afterTree, err := toTree(after)
-	if err != nil {
-		return nil
-	}
-
-	// A path counts as requested if the patch named it OR anything under it.
-	// Setting a whole object (liveness_probe: {...}) names only its leaves,
-	// but when the field was previously absent the trees diverge at the
-	// object itself — without the ancestors marked, deliberately adding a
-	// probe would be reported as an unrequested side effect.
-	named := make(map[string]bool)
 	var leaves []patchLeaf
-	collectLeaves(patchTree, "", &leaves)
+	collectLeaves(trees.patch, "", &leaves)
+	named := namedPatchPaths(leaves)
+
+	var out []unrequestedChange
+	collectChanges(trees.before, trees.after, "", named, &out)
+	slices.SortStableFunc(out, func(a, b unrequestedChange) int { return strings.Compare(a.Path, b.Path) })
+	return out
+}
+
+// namedPatchPaths is every path the patch requested: a path counts as
+// requested if the patch named it OR anything under it. Setting a whole
+// object (liveness_probe: {...}) names only its leaves, but when the field
+// was previously absent the trees diverge at the object itself — without the
+// ancestors marked, deliberately adding a probe would be reported as an
+// unrequested side effect.
+func namedPatchPaths(leaves []patchLeaf) map[string]bool {
+	named := make(map[string]bool)
 	for _, l := range leaves {
 		for p := l.Path; p != ""; {
 			named[p] = true
@@ -441,11 +475,7 @@ func findUnrequestedChanges(patch []byte, before, after *shared.ContainerGroup) 
 			p = p[:i]
 		}
 	}
-
-	var out []unrequestedChange
-	collectChanges(beforeTree, afterTree, "", named, &out)
-	slices.SortStableFunc(out, func(a, b unrequestedChange) int { return strings.Compare(a.Path, b.Path) })
-	return out
+	return named
 }
 
 // collectChanges walks the before/after trees together, descending while both
@@ -454,19 +484,7 @@ func collectChanges(beforeVal, afterVal any, path string, named map[string]bool,
 	bObj, bOK := beforeVal.(map[string]any)
 	aObj, aOK := afterVal.(map[string]any)
 	if bOK && aOK {
-		keys := make(map[string]bool)
-		for k := range bObj {
-			keys[k] = true
-		}
-		for k := range aObj {
-			keys[k] = true
-		}
-		names := make([]string, 0, len(keys))
-		for k := range keys {
-			names = append(names, k)
-		}
-		slices.Sort(names)
-		for _, k := range names {
+		for _, k := range sortedKeyUnion(bObj, aObj) {
 			child := k
 			if path != "" {
 				child = path + "." + k
@@ -475,32 +493,54 @@ func collectChanges(beforeVal, afterVal any, path string, named map[string]bool,
 		}
 		return
 	}
+	if c, changed := unrequestedLeafChange(path, named, beforeVal, afterVal); changed {
+		*out = append(*out, c)
+	}
+}
+
+// sortedKeyUnion is the keys of a and b together, sorted, each once.
+func sortedKeyUnion(a, b map[string]any) []string {
+	keys := make(map[string]bool)
+	for k := range a {
+		keys[k] = true
+	}
+	for k := range b {
+		keys[k] = true
+	}
+	names := make([]string, 0, len(keys))
+	for k := range keys {
+		names = append(names, k)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// unrequestedLeafChange is collectChanges' verdict on one node that is not
+// an object on both sides: the change, and whether it is one to report (a
+// caller-writable field the patch did not name, whose value moved).
+func unrequestedLeafChange(path string, named map[string]bool, beforeVal, afterVal any) (unrequestedChange, bool) {
 	if path == "" || named[path] || jsonEqual(beforeVal, afterVal) {
-		return
+		return unrequestedChange{}, false
 	}
 	if !callerWritable(path) {
-		return // server-managed churn (update_time, hash, current_state, …)
+		return unrequestedChange{}, false // server-managed churn (update_time, hash, current_state, …)
 	}
 	if secretPath(path) {
-		*out = append(
-			*out,
-			unrequestedChange{
-				Path:   path,
-				Before: secretChange(beforeVal, afterVal),
-				Secret: true,
-				After:  "",
-				Note:   false,
-			},
-		)
-		return
+		return unrequestedChange{
+			Path:   path,
+			Before: secretChange(beforeVal, afterVal),
+			Secret: true,
+			After:  "",
+			Note:   false,
+		}, true
 	}
-	*out = append(*out, unrequestedChange{
+	return unrequestedChange{
 		Path:   path,
 		Before: shownValue(path, beforeVal),
 		After:  shownValue(path, afterVal),
 		Note:   holdRule(path, named, beforeVal, afterVal),
 		Secret: false,
-	})
+	}, true
 }
 
 // warnUnrequestedChanges reports side effects on stderr: the affected keys
@@ -519,34 +559,7 @@ func warnUnrequestedChanges(w io.Writer, changes []unrequestedChange) {
 		}
 	}
 	if len(warns) > 0 {
-		shown := warns
-		extra := 0
-		if len(shown) > maxReportedChanges {
-			extra = len(shown) - maxReportedChanges
-			shown = shown[:maxReportedChanges]
-		}
-		noun := "field"
-		if len(warns) > 1 {
-			noun = "fields"
-		}
-		fprintf(w, "warning: this update also changed %d %s the patch did not mention:\n", len(warns), noun)
-		for _, c := range shown {
-			if c.Secret {
-				fprintf(w, "warning:   %s: %s\n", c.Path, c.Before)
-				continue
-			}
-			fprintf(w, "warning:   %s: %s -> %s\n", c.Path, c.Before, c.After)
-		}
-		if extra > 0 {
-			fprintf(w, "warning:   and %d more\n", extra)
-		}
-		seen := make(map[string]bool)
-		for _, c := range shown {
-			if hint, at := remediationFor(c.Path); hint != "" && !seen[at] {
-				seen[at] = true
-				fprintf(w, "warning:   %s\n", hint)
-			}
-		}
+		warnUnrequestedList(w, warns)
 	}
 	for _, c := range notes {
 		// Only one rule is classified today (holdRule), so its sentence is
@@ -560,6 +573,46 @@ func warnUnrequestedChanges(w io.Writer, changes []unrequestedChange) {
 			c.After,
 			reenableSchedule,
 		)
+	}
+}
+
+// warnUnrequestedList is warnUnrequestedChanges' warning block: the count,
+// up to maxReportedChanges of the changes, and the remediation for each
+// cause among those shown.
+func warnUnrequestedList(w io.Writer, warns []unrequestedChange) {
+	shown := warns
+	extra := 0
+	if len(shown) > maxReportedChanges {
+		extra = len(shown) - maxReportedChanges
+		shown = shown[:maxReportedChanges]
+	}
+	noun := "field"
+	if len(warns) > 1 {
+		noun = "fields"
+	}
+	fprintf(w, "warning: this update also changed %d %s the patch did not mention:\n", len(warns), noun)
+	for _, c := range shown {
+		if c.Secret {
+			fprintf(w, "warning:   %s: %s\n", c.Path, c.Before)
+			continue
+		}
+		fprintf(w, "warning:   %s: %s -> %s\n", c.Path, c.Before, c.After)
+	}
+	if extra > 0 {
+		fprintf(w, "warning:   and %d more\n", extra)
+	}
+	warnRemediations(w, shown)
+}
+
+// warnRemediations prints the remediation for each cause among changes, once
+// per cause rather than once per affected key.
+func warnRemediations(w io.Writer, changes []unrequestedChange) {
+	seen := make(map[string]bool)
+	for _, c := range changes {
+		if hint, at := remediationFor(c.Path); hint != "" && !seen[at] {
+			seen[at] = true
+			fprintf(w, "warning:   %s\n", hint)
+		}
 	}
 }
 
@@ -609,46 +662,22 @@ func findUnappliedCreateFields(request []byte, created *shared.ContainerGroup) [
 	if created == nil {
 		return nil
 	}
-	var reqTree any
-	if err := json.Unmarshal(request, &reqTree); err != nil {
-		return nil
-	}
-	// The response encoded like the request (MarshalRequest), so the empty
-	// lists it holds compare equal to the empty lists sent.
-	b, err := output.MarshalRequest(created)
-	if err != nil {
-		return nil
-	}
-	var createdTree any
-	if err := json.Unmarshal(b, &createdTree); err != nil {
+	trees, decoded := createDiffTrees(request, created)
+	if !decoded {
 		return nil
 	}
 	var leaves []patchLeaf
-	collectLeaves(reqTree, "", &leaves)
+	collectLeaves(trees.request, "", &leaves)
 
 	var out []ignoredField
 	dropped := make(map[string]bool)
 	for _, leaf := range leaves {
-		got, ok := lookupPath(createdTree, leaf.Path)
+		got, ok := lookupCreatedLeaf(trees.created, leaf.Path)
 		if !ok {
-			if alias, aliased := requestToResponsePath()[leaf.Path]; aliased {
-				got, ok = lookupPath(createdTree, alias)
-			}
-		}
-		if !ok {
-			// A top-level object the response could carry and does not was
-			// dropped whole (queue_autoscaler on create); report it once.
-			// Anything else the response leaves out is unobservable.
-			top, _, _ := strings.Cut(leaf.Path, ".")
-			if leaf.Value != nil && !dropped[top] && responseHasField(top) {
-				if v, present := lookupPath(createdTree, top); !present || v == nil {
-					dropped[top] = true
-					req, _ := lookupPath(reqTree, top)
-					out = append(
-						out,
-						ignoredField{Path: top, Requested: shownValue(top, req), Actual: "null", Moved: false},
-					)
-				}
+			// Anything the response leaves out is unobservable, except an
+			// object dropped whole, which is reported once.
+			if f, whole := droppedCreateObject(leaf, &trees, dropped); whole {
+				out = append(out, f)
 			}
 			continue
 		}
@@ -664,6 +693,60 @@ func findUnappliedCreateFields(request []byte, created *shared.ContainerGroup) [
 	}
 	slices.SortStableFunc(out, func(a, b ignoredField) int { return strings.Compare(a.Path, b.Path) })
 	return out
+}
+
+// createTrees are the generic trees findUnappliedCreateFields compares: the
+// create request and the created group.
+type createTrees struct {
+	request, created any
+}
+
+// createDiffTrees decodes the create request and the created group for
+// findUnappliedCreateFields; false when either does not decode.
+func createDiffTrees(request []byte, created *shared.ContainerGroup) (createTrees, bool) {
+	var trees createTrees
+	if err := json.Unmarshal(request, &trees.request); err != nil {
+		return trees, false
+	}
+	// The response encoded like the request (MarshalRequest), so the empty
+	// lists it holds compare equal to the empty lists sent.
+	b, err := output.MarshalRequest(created)
+	if err != nil {
+		return trees, false
+	}
+	if err := json.Unmarshal(b, &trees.created); err != nil {
+		return trees, false
+	}
+	return trees, true
+}
+
+// lookupCreatedLeaf looks a request path up in the created group, under the
+// response's own spelling for known asymmetries when the path is absent.
+func lookupCreatedLeaf(createdTree any, path string) (any, bool) {
+	got, ok := lookupPath(createdTree, path)
+	if !ok {
+		if alias, aliased := requestToResponsePath()[path]; aliased {
+			got, ok = lookupPath(createdTree, alias)
+		}
+	}
+	return got, ok
+}
+
+// droppedCreateObject reports a request leaf the created group does not
+// show whose top-level object the response could carry and does not: the
+// object was dropped whole (queue_autoscaler on create). dropped records
+// the objects already reported, so each is reported once.
+func droppedCreateObject(leaf patchLeaf, trees *createTrees, dropped map[string]bool) (ignoredField, bool) {
+	top, _, _ := strings.Cut(leaf.Path, ".")
+	if leaf.Value == nil || dropped[top] || !responseHasField(top) {
+		return ignoredField{}, false
+	}
+	if v, present := lookupPath(trees.created, top); present && v != nil {
+		return ignoredField{}, false
+	}
+	dropped[top] = true
+	req, _ := lookupPath(trees.request, top)
+	return ignoredField{Path: top, Requested: shownValue(top, req), Actual: "null", Moved: false}, true
 }
 
 // responseHasField reports whether a container group response can carry
