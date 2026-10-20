@@ -94,8 +94,15 @@ are the `saladcloud container-groups` commands.
   it (`cp -r ./input my-app:/data` makes `/data/input`); when it does not, it is created as the copy. End a remote path
   with `/.` to download only its contents (`cp -r my-app:/outputs/. ./results`).
 - **`logs --follow` can miss entries that arrive very late.** The API can only search by when an entry was emitted,
-  not when it was stored, so `--follow` re-checks a window reaching `--lookback` (default 2m) behind the newest entry
-  it has seen. Raise `--lookback` for workloads whose logs reach SaladCloud with a long delay.
+  not when it was stored, so `--follow` reads behind itself: each poll re-reads the 10 seconds before the previous
+  poll, and once a minute a settle scan reads the minute that has just aged past `--lookback` (default 2m). An entry
+  that arrives up to `--lookback` late is printed, about `--lookback` after the rest; one that arrives later is missed.
+  Raise `--lookback` for workloads whose logs reach SaladCloud with a long delay. An entry that a node with a fast clock
+  stamps ahead of this machine's clock is printed once this clock reaches its time.
+- **`logs --follow` can fall behind a group that logs fast.** A log request returns at most 100 entries and takes
+  about a second, so one reader gets about 100 entries a second. When a poll takes longer than `--poll-interval`,
+  `--follow` skips the settle scan (and says so once) to keep up with new entries, so very late entries may be
+  missed; above about 100 entries a second it falls further behind.
 - **Log time ranges have millisecond precision.** Finer `--since`/`--until` values are rounded outward automatically.
 - **GPU availability can read 0 when the availability service is overloaded**: it then answers with every count at 0
   instead of an error, so an overloaded class looks like an empty one. The on-call count (`on_call_gpu`,

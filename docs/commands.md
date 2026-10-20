@@ -87,7 +87,7 @@ Under `saladcloud container-groups`; `saladcloud cg list` works too.
 
 | Command | Description |
 | --- | --- |
-| `logs [-c <group>] [--project <p>] [--instance <id>]` | Query or follow (`-f`) logs and system events for the whole organization, one project (`--project`), or one container group (`-c`); table mode names the scope on stderr and shows a system event as its message; `--poll-interval` paces `--follow`, `--page-size` (1-100) sets entries per request (see [Logs](guide.md#logs)) |
+| `logs [-c <group>] [--project <p>] [--instance <id>]` | Query or follow (`-f`) logs and system events for the whole organization, one project (`--project`), or one container group (`-c`); table mode names the scope on stderr and shows a system event as its message; a query prints the newest `--limit` entries in the range, oldest first (1000 by default, `0` for all; a stderr note says when it left older ones out), and `--follow` starts with the newest `--limit` of its backlog; `--poll-interval` paces `--follow` (10s by default, 5s at least), `--page-size` (1-100) sets entries per request (see [Logs](guide.md#logs)) |
 
 ## Job queues
 

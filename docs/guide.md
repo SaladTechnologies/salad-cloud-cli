@@ -737,7 +737,28 @@ The other filters work at every scope: `--since`/`--until` (default the last
 15 minutes), `--severity`, `--filter` for a substring, `--query` for a raw
 [log query](https://docs.salad.com/container-engine/reference/log-queries),
 and `--instance` (a full instance ID, or a unique prefix when a container
-group is given). `-f` follows new entries until Ctrl-C.
+group is given).
+
+A query prints the newest `--limit` entries in its range, oldest first:
+1000 by default, read newest first so it costs about ten requests however
+long the range. When the range holds more, a `note:` line on stderr says so
+(in every output mode). `--limit 0` prints every entry in the range, read
+oldest first; on a busy group over a long range that can be thousands of
+requests, so for recent errors keep a limit or a short `--since` rather than
+piping a long range to `tail`.
+
+`-f` prints the newest `--limit` entries of the `--since` backlog (all of
+it with `--limit 0`), then follows new entries until Ctrl-C, polling every
+10 seconds (`--poll-interval`, 5s at least). `--until` does not combine with
+it. The API can only search by when an entry was emitted, so each poll
+re-reads the 10 seconds before the previous poll for entries that arrived
+late, and once a minute a settle scan reads the minute that has just aged
+past `--lookback` (default 2m), printing what arrived later than that; an
+entry that arrives later than `--lookback` is missed (see
+[notes](notes.md)). One reader gets about 100 entries a second at most, so
+when a group logs fast enough that a poll takes longer than
+`--poll-interval`, the settle scan is skipped, with a warning, to keep up
+with new entries. The polls are timed by this machine's clock.
 
 Entries come from three sources, in `resource.type`: `container` is your
 app's stdout and stderr; `instance_controller` and `deployment_controller`

@@ -224,7 +224,7 @@ each call site to its row; a generic rewrap (`"%v"`) is exempt.
 | `ssh --config` with a `--` command | 2 | flag combination | message | `--config prints Host blocks` |
 | `logs --until` with `--follow` | 2 | flag combination | message | `--until cannot be combined with --follow` |
 | `logs --until` not after `--since` | 2 | structure | message | `must be after --since` |
-| `logs --poll-interval` below 2s | 2 | the CLI's own minimum | message | `--poll-interval must be` |
+| `logs --poll-interval` below 5s | 2 | the CLI's own minimum | message | `--poll-interval must be` |
 | `logs --lookback` misuse | 2 | flag combination | message | `--lookback` |
 | `logs --page-size` outside 1-100 | 2 | the CLI's own paging | message | `--page-size must be` |
 | `logs --instance` prefix without a group | 2 | missing flag | message | `--instance with an ID prefix` |
