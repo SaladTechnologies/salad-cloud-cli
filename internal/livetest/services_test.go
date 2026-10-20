@@ -87,11 +87,12 @@ func transcribeLite(t *testing.T, audio, phrase string) {
 	}
 }
 
-// TestTranscribeLanguageAndStream pins two behaviors only a live run can
-// confirm: language_code omitted or null detects the language (it is not
-// 'en'), and audio_stream_index is honored. It needs a non-English clip,
-// because English audio cannot tell detection from a forced en. A
-// single-track clip makes stream 1 invalid.
+// TestTranscribeLanguageAndStream pins what only a live run can confirm:
+// language_code omitted and null both leave detection to the endpoint (the
+// same transcript), --language-code reaches the job, and audio_stream_index
+// is honored. It takes a non-English clip, so a regression that sent en by
+// default would not pass unnoticed as English, and a single-track one, so
+// stream 1 is invalid.
 func TestTranscribeLanguageAndStream(t *testing.T) { //nolint:paralleltest // writes to the live account, one at a time
 	audio := os.Getenv("SALAD_CLI_TEST_AUDIO_FOREIGN")
 	if audio == "" {
@@ -116,11 +117,10 @@ func TestTranscribeLanguageAndStream(t *testing.T) { //nolint:paralleltest // wr
 			transcriptText(omitted),
 		)
 	}
-	if transcriptText(forced) == transcriptText(omitted) {
-		t.Errorf(
-			"forcing en changed nothing, so omitted may default to en, or the clip is English: %s",
-			transcriptText(forced),
-		)
+	// language_code names the audio's language; it does not translate, so a
+	// forced en need not change the transcript. What the CLI owns is sending it.
+	if in := valueAs[map[string]any](forced["input"]); in == nil || in["language_code"] != "en" {
+		t.Errorf("--language-code en was not sent; the job's input: %v", forced["input"])
 	}
 
 	transcribeMissingStream(t, audio)
