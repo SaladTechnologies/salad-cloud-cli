@@ -238,7 +238,8 @@ func TestQueues(t *testing.T) { //nolint:paralleltest // writes to the live acco
 	if r.Code != 0 {
 		t.Fatalf("queues create exit %d: %s", r.Code, r.Stderr)
 	}
-	t.Cleanup(func() { _ = run(t, "queues", "delete", q) })
+	// A defer, not t.Cleanup: run uses the test's context, which is canceled before cleanups run.
+	defer func() { _ = run(t, "queues", "delete", q) }()
 	if doc := oneDoc(t, r); doc["name"] != q {
 		t.Errorf("created queue name = %v", doc["name"])
 	}
