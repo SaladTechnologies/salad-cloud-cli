@@ -224,7 +224,7 @@ func transcribeFields() []inputField {
 			"language_code",
 			fieldString,
 			"language of the audio, for example en or de " +
-				"(omit to detect it automatically; setting it forces that language)",
+				"(omit to detect it automatically; for English output, use --translate to_eng)",
 		},
 		{"audio_stream_index", fieldInt, "zero-based audio stream to transcribe in multitrack media"},
 		{"multichannel", fieldBool, "preserve audio channels for channel-based diarization"},

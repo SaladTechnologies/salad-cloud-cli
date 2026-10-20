@@ -16,6 +16,8 @@ may change, and every such change is listed here.
 - Network, output and config file error messages now name what the CLI was doing, for example
   `network error: Get "…": no response: dial tcp …`, `writing the document: write /dev/stdout: broken pipe` or
   `replacing the config file: …`. Exit codes and error kinds are unchanged.
+- `inference transcribe --language-code` no longer claims to force the language: it names the audio's language, as the
+  Transcription API documents, and its help points at `--translate to_eng` for English output.
 
 ## [0.1.0-beta.1] - 2026-10-08
 

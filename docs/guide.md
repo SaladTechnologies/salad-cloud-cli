@@ -888,8 +888,9 @@ Transcription details:
   rest in `--help`), `transcription-lite` takes 8, and a flag the endpoint
   does not take is rejected. **A flag you do not set is not sent**, so the
   endpoint's own defaults apply (every boolean off; on `transcribe` an unset
-  `language_code` means the language is detected automatically, while forcing
-  one makes the audio be treated as that language);
+  `language_code` means the language is detected automatically, while setting
+  one tells the endpoint the audio's language and does not translate: for
+  English output, use `--translate to_eng`);
   the request is the one `inference jobs create --input` would send for the
   same intent. `--input-extra '<json>'` merges raw fields **over** the built
   input (extra wins), for fields newer than this CLI.
