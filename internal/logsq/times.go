@@ -24,9 +24,14 @@ func FormatRequestTime(t time.Time) string {
 // times so a caller-supplied "until" never excludes an entry sitting inside
 // the final, partially-specified millisecond.
 func CeilRequestTime(t time.Time) string {
+	return ceilMillisecond(t).Format(requestTimeLayout)
+}
+
+// ceilMillisecond is t in UTC, rounded up to the next millisecond when it carries sub-millisecond precision.
+func ceilMillisecond(t time.Time) time.Time {
 	u := t.UTC()
 	if f := u.Truncate(time.Millisecond); !f.Equal(u) {
 		u = f.Add(time.Millisecond)
 	}
-	return u.Format(requestTimeLayout)
+	return u
 }

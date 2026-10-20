@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -34,9 +35,26 @@ type Page struct {
 	PageMinTime, PageMaxTime string
 }
 
-// Fetcher abstracts the API: it returns one page of entries for
-// [start, end) matching the compiled query, in ascending order.
-type Fetcher func(ctx context.Context, query, startRFC3339, endRFC3339 string, pageSize int) (*Page, *clierr.Error)
+// Order is the order a page's entries come back in, by emission time; the values are the API's sort_order.
+type Order string
+
+// The two orders the API sorts a page in.
+const (
+	Ascending  Order = "asc"
+	Descending Order = "desc"
+)
+
+// Request is one page request: at most PageSize entries in [Start, End) matching Query, in Order. Start and End are
+// request times (see times.go).
+type Request struct {
+	Query      string
+	Start, End string
+	PageSize   int
+	Order      Order
+}
+
+// Fetcher abstracts the API: it returns one page of entries for req.
+type Fetcher func(ctx context.Context, req Request) (*Page, *clierr.Error)
 
 // DedupKey returns a stable identity for e. Log entries have no unique ID,
 // so pagination and follow dedup hash the fields that together identify an
@@ -89,7 +107,10 @@ func FetchWindow(
 	endStr := CeilRequestTime(w.End)
 	boundary := make(map[string]time.Time) // already-emitted entries with parsed Time >= cur
 	for {
-		page, cerr := fetch(ctx, query, FormatRequestTime(cur), endStr, pageSize)
+		page, cerr := fetch(
+			ctx,
+			Request{Query: query, Start: FormatRequestTime(cur), End: endStr, PageSize: pageSize, Order: Ascending},
+		)
 		if cerr != nil {
 			return cerr
 		}
@@ -106,7 +127,7 @@ func FetchWindow(
 				"could not parse the time of any log entry on a full page returned by the API")
 		}
 		next := maxT.Truncate(time.Millisecond)
-		newBoundary := carryBoundary(page.Items, boundary, next)
+		newBoundary := carryBoundary(page.Items, boundary, func(t time.Time) bool { return !t.Before(next) })
 		if !next.After(cur) {
 			next = cur // re-fetch the same start; newBoundary now covers what was emitted
 			if dups == len(page.Items) {
@@ -134,22 +155,21 @@ func emitNew(items []Entry, boundary map[string]time.Time, emit func(Entry) erro
 	return dups, nil
 }
 
-// carryBoundary is the boundary set for a request starting at next: every already-emitted entry it can re-return,
-// which is this page's entries at or after next plus the previous carries still at or after next (relevant when the
-// window fails to advance).
-func carryBoundary(items []Entry, boundary map[string]time.Time, next time.Time) map[string]time.Time {
+// carryBoundary is the boundary set for the next request: every already-emitted entry it can re-return, which is
+// this page's entries and the previous carries (relevant when the window fails to move) whose time inNext accepts.
+func carryBoundary(items []Entry, boundary map[string]time.Time, inNext func(time.Time) bool) map[string]time.Time {
 	newBoundary := make(map[string]time.Time)
 	for i := range items {
 		t, perr := time.Parse(time.RFC3339Nano, items[i].Time)
 		if perr != nil {
 			continue // unparseable Time cannot be placed on the boundary
 		}
-		if t = t.UTC(); !t.Before(next) {
+		if t = t.UTC(); inNext(t) {
 			newBoundary[DedupKey(&items[i])] = t
 		}
 	}
 	for k, t := range boundary {
-		if !t.Before(next) {
+		if inNext(t) {
 			newBoundary[k] = t
 		}
 	}
@@ -183,18 +203,32 @@ func skipStalledMillisecond(
 // newestEntryTime returns the latest parseable emission Time among items,
 // in UTC; the second result is false when none parses.
 func newestEntryTime(items []Entry) (time.Time, bool) {
-	var newest time.Time
-	ok := false
+	times := entryTimes(items)
+	if len(times) == 0 {
+		return time.Time{}, false
+	}
+	return slices.MaxFunc(times, time.Time.Compare), true
+}
+
+// oldestEntryTime returns the earliest parseable emission Time among items,
+// in UTC; the second result is false when none parses.
+func oldestEntryTime(items []Entry) (time.Time, bool) {
+	times := entryTimes(items)
+	if len(times) == 0 {
+		return time.Time{}, false
+	}
+	return slices.MinFunc(times, time.Time.Compare), true
+}
+
+// entryTimes returns the parseable emission times among items, in UTC.
+func entryTimes(items []Entry) []time.Time {
+	var times []time.Time
 	for i := range items {
-		t, err := time.Parse(time.RFC3339Nano, items[i].Time)
-		if err != nil {
-			continue
-		}
-		if t = t.UTC(); !ok || t.After(newest) {
-			newest, ok = t, true
+		if t, err := time.Parse(time.RFC3339Nano, items[i].Time); err == nil {
+			times = append(times, t.UTC())
 		}
 	}
-	return newest, ok
+	return times
 }
 
 func asCliErr(err error) *clierr.Error {

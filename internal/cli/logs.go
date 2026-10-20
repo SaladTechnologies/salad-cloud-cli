@@ -37,22 +37,35 @@ saved default project and SALAD_PROJECT do not, so saladcloud logs, with
 neither flag, always means the organization. When the scope is wider than one container group,
 each table line names the project and group it came from.
 
-By default the last 15 minutes of logs are printed and the command exits.
+By default the newest 1000 entries of the last 15 minutes are printed,
+oldest first, and the command exits; when the time range holds more, a
+note on stderr says so. --limit sets how many (0 prints every entry in the
+range, reading it oldest first, which on a busy group can take thousands of
+requests). For recent errors, keep the default limit or a short --since
+rather than piping a long range to tail.
+
 --since and --until accept a duration (15m, 2h, 3d, 1d12h, relative to
 now), an RFC3339 timestamp (2026-01-02T15:04:05Z), or a date (2026-01-02,
 midnight UTC). Logs are retained for 90 days. The API only accepts
 millisecond-precision time ranges; finer-grained --since/--until values are
 rounded outward (start down, end up) automatically.
 
-With --follow the command streams new log entries as they arrive (polling;
---poll-interval tunes the cadence) until interrupted with Ctrl-C, which
+With --follow the command prints the newest --limit entries of the --since
+backlog, then streams new log entries as they arrive (polling every 10s;
+--poll-interval tunes it, 5s at least) until interrupted with Ctrl-C, which
 exits 0. --until cannot be combined with --follow.
 
 Caveat: the API can only window on each entry's node emission time, so
---follow re-scans a sliding window reaching --lookback (default 2m) behind
-the newest emission time seen, deduplicating as it goes. An entry ingested
-more than --lookback after its emission time will be missed; raise
---lookback when tailing workloads whose logs arrive with a long delay.
+--follow reads behind it, deduplicating as it goes: each poll re-reads the
+10 seconds before the previous one, and once a minute a settle scan reads
+the minute that has just aged past --lookback (default 2m), printing the
+entries that arrived later than that, about --lookback after the rest. An
+entry ingested more than --lookback after its emission time will be
+missed; raise --lookback when tailing workloads whose logs arrive with a
+long delay. When the log rate is high enough that a poll takes longer than
+--poll-interval, the settle scan is skipped (with a warning) so the polls
+keep up. The windows are measured from this machine's clock, so keep it
+set right.
 
 --filter matches a substring anywhere in the log (text or JSON). --query
 appends a raw log query-language expression, for example
@@ -63,8 +76,12 @@ full API entry (both timestamps, resource labels, span/trace IDs).`,
 		Example: `  # Last 15 minutes of logs across the whole organization
   saladcloud logs
 
-  # Errors and worse in one project over the last day
+  # Errors and worse in one project over the last day (the newest 1000)
   saladcloud logs --project prod --since 1d --severity error
+
+  # The newest 50 lines from one group, then everything from the last hour
+  saladcloud logs -c my-cg --limit 50
+  saladcloud logs -c my-cg --since 1h --limit 0
 
   # Warnings and worse across the organization that mention "timeout"
   saladcloud logs --since 2h --severity warning --filter timeout
@@ -109,7 +126,7 @@ type logsOptions struct {
 	severity, filter, query string
 	follow                  bool
 	pollInterval, lookback  time.Duration
-	pageSize                int
+	pageSize, limit         int
 }
 
 // addLogsFlags binds the logs flags on c to o; both logs commands use it.
@@ -123,16 +140,21 @@ func addLogsFlags(c *cobra.Command, o *logsOptions) {
 	c.Flags().StringVar(&o.severity, "severity", "", "minimum severity: "+strings.Join(logsq.Severities(), "|"))
 	c.Flags().StringVar(&o.filter, "filter", "", "only logs containing this substring (text or JSON)")
 	c.Flags().StringVar(&o.query, "query", "", "raw log query-language expression, ANDed onto the generated query")
+	c.Flags().IntVar(&o.limit, "limit", logsDefaultLimit,
+		"how many of the newest entries to print, oldest first; with --follow, of the backlog (0 = all)")
 	c.Flags().BoolVarP(&o.follow, "follow", "f", false, "stream new log entries until interrupted")
 	c.Flags().DurationVar(&o.pollInterval, "poll-interval", logsq.DefaultPoll,
-		"how often to poll for new entries with --follow (min 2s)")
+		"how often to poll for new entries with --follow (min "+logsq.MinPoll.String()+")")
 	c.Flags().DurationVar(&o.lookback, "lookback", logsq.DefaultLookback,
-		"with --follow, how far behind the newest seen log time each poll re-scans for late-arriving entries")
+		"with --follow, how long after its emission time an entry can arrive and still be printed")
 	c.Flags().IntVar(&o.pageSize, "page-size", logsDefaultPageSize, "entries per API request (1-100)")
 }
 
 // logsDefaultPageSize is --page-size's default: the most entries one API request returns.
 const logsDefaultPageSize = 100
+
+// logsDefaultLimit is --limit's default: how many of the newest entries a one-shot query prints.
+const logsDefaultLimit = 1000
 
 // logsInstancePrefixLen is how many characters of the instance ID a table-mode log line shows.
 const logsInstancePrefixLen = 8
@@ -237,6 +259,9 @@ func logsValidateFlags(cmd *cobra.Command, o *logsOptions, group string) *clierr
 			"--page-size must be between 1 and 100 (got %d)",
 			o.pageSize,
 		)
+	}
+	if o.limit < 0 {
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--limit must be 0 (all) or positive (got %d)", o.limit)
 	}
 	if o.instance != "" && !isUUID(o.instance) && group == "" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage,
@@ -348,19 +373,15 @@ func logsInstanceID(ctx context.Context, client *api.Client, group, instance str
 	return ptr.Deref(inst.Id), nil
 }
 
-// logsFetcher is the logsq.Fetcher that pages through client's log entries, oldest first.
+// logsFetcher is the logsq.Fetcher that pages through client's log entries.
 func logsFetcher(client *api.Client) logsq.Fetcher {
-	return func(
-		ctx context.Context,
-		query, startRFC3339, endRFC3339 string,
-		pageSize int,
-	) (*logsq.Page, *clierr.Error) {
+	return func(ctx context.Context, req logsq.Request) (*logsq.Page, *clierr.Error) {
 		q := logs.LogEntryQuery{}
-		q.SetStartTime(startRFC3339)
-		q.SetEndTime(endRFC3339)
-		q.SetQuery(query)
-		q.SetPageSize(int64(pageSize))
-		q.SetSortOrder(logs.LOG_ENTRY_QUERY_SORT_ORDER_ASC)
+		q.SetStartTime(req.Start)
+		q.SetEndTime(req.End)
+		q.SetQuery(req.Query)
+		q.SetPageSize(int64(req.PageSize))
+		q.SetSortOrder(logs.LogEntryQuerySortOrder(req.Order))
 		coll, err := client.QueryLogs(ctx, q)
 		if err != nil {
 			return nil, err
@@ -403,13 +424,12 @@ func (app *App) logsOnce(
 		emitted++
 		return emit(e)
 	}
-	cerr = logsq.FetchWindow(
-		ctx,
-		logsFetcher(client),
-		logsq.Window{Query: query, Start: window.since, End: window.until, PageSize: o.pageSize},
-		countingEmit,
-		app.stderrLine,
-	)
+	w := logsq.Window{Query: query, Start: window.since, End: window.until, PageSize: o.pageSize}
+	if o.limit == 0 {
+		cerr = logsq.FetchWindow(ctx, logsFetcher(client), w, countingEmit, app.stderrLine)
+	} else {
+		cerr = app.logsNewest(ctx, client, w, o.limit, countingEmit)
+	}
 	if cerr != nil {
 		return cerr
 	}
@@ -418,6 +438,30 @@ func (app *App) logsOnce(
 	// and --follow's silence correctly means "waiting".
 	if emitted == 0 && app.printer.Mode() == globalOutputTable {
 		fprintln(app.errw(), noMatchNote(scope, o.since, o.instance, o.severity, o.filter))
+	}
+	return nil
+}
+
+// logsNewest prints the newest limit entries in w, oldest first, and says on stderr when the window held older ones:
+// the note in every mode, since a script would otherwise not know, and the hint in table mode.
+func (app *App) logsNewest(
+	ctx context.Context,
+	client *api.Client,
+	w logsq.Window,
+	limit int,
+	emit func(logsq.Entry) error,
+) *clierr.Error {
+	truncated, cerr := logsq.FetchNewest(ctx, logsFetcher(client), w, limit, emit, app.stderrLine)
+	if cerr != nil {
+		return cerr
+	}
+	if truncated {
+		fprintf(
+			app.errw(),
+			"note: showing the newest %d log entries; older ones in the time range were left out\n",
+			limit,
+		)
+		app.hintLine("for more, raise --limit (0 means all) or narrow --since")
 	}
 	return nil
 }
@@ -447,6 +491,7 @@ func (app *App) logsFollow(
 		Poll:       o.pollInterval,
 		MaxBackoff: logsq.DefaultMaxBackoff,
 		Lookback:   o.lookback,
+		Limit:      o.limit,
 		Clock:      logsq.RealClock{},
 		Warn:       app.stderrLine,
 	}

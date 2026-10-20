@@ -2,6 +2,7 @@ package logsq
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 type fetchCall struct {
 	query, start, end string
 	pageSize          int
+	order             Order
 }
 
 // scriptedResult is one scripted Fetcher response: a page or an error.
@@ -24,8 +26,11 @@ type scriptedResult struct {
 // returns empty pages. Every call is recorded in *calls.
 func scriptFetcher(results []scriptedResult, calls *[]fetchCall) Fetcher {
 	i := 0
-	return func(_ context.Context, query, start, end string, pageSize int) (*Page, *clierr.Error) {
-		*calls = append(*calls, fetchCall{query: query, start: start, end: end, pageSize: pageSize})
+	return func(_ context.Context, req Request) (*Page, *clierr.Error) {
+		*calls = append(
+			*calls,
+			fetchCall{query: req.Query, start: req.Start, end: req.End, pageSize: req.PageSize, order: req.Order},
+		)
 		if i >= len(results) {
 			return &Page{}, nil
 		}
@@ -102,7 +107,7 @@ func TestFetchWindowSinglePartialPage(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("fetch called %d times, want 1", len(calls))
 	}
-	if calls[0].query != "q" || calls[0].pageSize != 3 {
+	if calls[0].query != "q" || calls[0].pageSize != 3 || calls[0].order != Ascending {
 		t.Errorf("unexpected call: %+v", calls[0])
 	}
 	// Request times must be the millisecond-precision Z form — the only
@@ -394,39 +399,50 @@ func TestDedupKeyUsesRawTimestampStrings(t *testing.T) {
 	}
 }
 
-// realisticFetcher serves entries the way the live API does: the earliest
-// pageSize entries whose emission Time is at or after start, ascending,
-// with PageMinTime/PageMaxTime set to the first and last entries'
-// RECEIVE time, which runs behind emission.
+// realisticFetcher serves entries the way the live API does: the first
+// pageSize entries, in the request's order, whose emission Time is in
+// [start, end), with PageMinTime/PageMaxTime set to the first and last
+// entries' RECEIVE time, which runs behind emission. all is in ascending
+// emission order.
 func realisticFetcher(t *testing.T, all []Entry) Fetcher {
 	t.Helper()
-	return func(_ context.Context, _, start, _ string, pageSize int) (*Page, *clierr.Error) {
-		from, err := time.Parse(time.RFC3339Nano, start)
+	return func(_ context.Context, req Request) (*Page, *clierr.Error) {
+		from, err := time.Parse(time.RFC3339Nano, req.Start)
 		if err != nil {
-			return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "bad start %q: %v", start, err)
+			return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "bad start %q: %v", req.Start, err)
 		}
-		page := &Page{}
-		for i := range all {
-			e := &all[i]
-			emitted, err := time.Parse(time.RFC3339Nano, e.Time)
-			if err != nil {
-				t.Error(err)
-				continue
-			}
-			if emitted.Before(from) {
-				continue
-			}
-			page.Items = append(page.Items, *e)
-			if len(page.Items) == pageSize {
-				break
-			}
+		to, err := time.Parse(time.RFC3339Nano, req.End)
+		if err != nil {
+			return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "bad end %q: %v", req.End, err)
 		}
+		ordered := slices.Clone(all)
+		if req.Order == Descending {
+			slices.Reverse(ordered)
+		}
+		page := &Page{Items: entriesIn(t, ordered, from, to, req.PageSize)}
 		if len(page.Items) > 0 {
 			page.PageMinTime = page.Items[0].ReceiveTime
 			page.PageMaxTime = page.Items[len(page.Items)-1].ReceiveTime
 		}
 		return page, nil
 	}
+}
+
+// entriesIn is the first limit entries of ordered whose emission Time is in [from, to).
+func entriesIn(t *testing.T, ordered []Entry, from, to time.Time, limit int) []Entry {
+	t.Helper()
+	var in []Entry
+	for i := range ordered {
+		emitted, err := time.Parse(time.RFC3339Nano, ordered[i].Time)
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+		if !emitted.Before(from) && emitted.Before(to) && len(in) < limit {
+			in = append(in, ordered[i])
+		}
+	}
+	return in
 }
 
 // TestFetchWindowResumesFromEmissionTimeNotPageMaxTime: page_max_time is a

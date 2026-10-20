@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -47,6 +49,7 @@ func TestRunningLifecycle(t *testing.T) { //nolint:paralleltest // writes to the
 	}
 
 	runningLogsAreNDJSON(t, g)
+	runningLogsLimit(t, g)
 	runningInstancePrefix(t, g)
 
 	// Remote access, while we have a running instance to talk to.
@@ -73,6 +76,58 @@ func runningLogsAreNDJSON(t *testing.T, g string) {
 			t.Errorf("logs line %d is not a complete JSON document: %s", i+1, line)
 		}
 	}
+}
+
+// runningLogsLimit checks --limit, read newest first, against the same fixed window read whole (--limit 0, oldest
+// first): it prints the window's newest entries, oldest first, and notes on stderr when it left older ones out.
+func runningLogsLimit(t *testing.T, g string) {
+	t.Helper()
+	const limit = 3
+	until := time.Now().UTC().Add(-30 * time.Second)
+	window := []string{
+		"--since", until.Add(-20 * time.Minute).Format(time.RFC3339),
+		"--until", until.Format(time.RFC3339),
+		"-o", "json",
+	}
+	all := run(t, append([]string{"container-groups", "logs", g, "--limit", "0"}, window...)...)
+	limited := run(t, append([]string{"container-groups", "logs", g, "--limit", strconv.Itoa(limit)}, window...)...)
+	if all.Code != 0 || limited.Code != 0 {
+		t.Fatalf("logs exit %d (--limit 0) and %d (--limit %d): %s %s",
+			all.Code, limited.Code, limit, all.Stderr, limited.Stderr)
+	}
+	whole, got := ndjsonLines(all.Stdout), ndjsonLines(limited.Stdout)
+	want := whole[max(0, len(whole)-limit):]
+	// Entries that share an emission time may come back in either order, so compare as sets, then check the order.
+	if !slices.Equal(slices.Sorted(slices.Values(got)), slices.Sorted(slices.Values(want))) {
+		t.Errorf("--limit %d printed\n%s\nwant the newest %d of the whole window:\n%s",
+			limit, strings.Join(got, "\n"), limit, strings.Join(want, "\n"))
+	}
+	var prev string
+	for i, line := range got {
+		var entry struct {
+			Time string `json:"time"`
+		}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil || entry.Time < prev {
+			t.Errorf("--limit line %d is out of order or not JSON (%v): %s", i+1, err, line)
+		}
+		prev = entry.Time
+	}
+	noted := strings.Contains(limited.Stderr, "note: showing the newest "+strconv.Itoa(limit)+" log entries")
+	if noted != (len(whole) > limit) {
+		t.Errorf("--limit %d with %d entries in the window: note on stderr %t; stderr: %s",
+			limit, len(whole), noted, limited.Stderr)
+	}
+}
+
+// ndjsonLines is out's non-empty lines.
+func ndjsonLines(out string) []string {
+	var lines []string
+	for line := range strings.Lines(out) {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 // runningInstancePrefix checks instance prefix resolution against a real instance id of g, through instances get
