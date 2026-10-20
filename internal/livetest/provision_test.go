@@ -147,7 +147,7 @@ func lifecycleKeepSchedule(t *testing.T, g, sched string) {
 	if r.Code != 0 {
 		t.Fatalf("re-enable scheduled scaling exit %d: %s", r.Code, r.Stderr)
 	}
-	if r = run(t, "container-groups", "scale", g, "--replicas", "2", "--keep-schedule"); r.Code != 0 {
+	if r = run(t, "container-groups", "scale", g, "--replicas", "2", "--keep-schedule", "-o", "json"); r.Code != 0 {
 		t.Fatalf("scale --keep-schedule exit %d: %s", r.Code, r.Stderr)
 	} else if !strings.Contains(r.Stderr, "re-enabled") {
 		t.Errorf("scale --keep-schedule did not report the re-enable; stderr %q", r.Stderr)
