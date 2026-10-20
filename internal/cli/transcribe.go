@@ -4,22 +4,23 @@
 // exactly after its endpoint and its flags are that endpoint's input fields;
 // everything here could be done with 'saladcloud inference jobs create
 // --endpoint <name>', just less pleasantly.
+
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/inferenceendpoints"
+	"github.com/spf13/cobra"
 
+	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
@@ -31,9 +32,9 @@ const (
 )
 
 // keptUploadNote says, on stderr, that a failed job's upload stays in S4.
-func keptUploadNote(remote string) {
+func (app *App) keptUploadNote(remote string) {
 	if remote != "" {
-		fmt.Fprintf(os.Stderr, "note: the upload stays in S4 as %s for inspection\n", remote)
+		fprintf(app.errw(), "note: the upload stays in S4 as %s for inspection\n", remote)
 	}
 }
 
@@ -45,8 +46,8 @@ func redactUploadURL(job *inferenceendpoints.InferenceEndpointJob) {
 		return
 	}
 	if u, ok := in["url"].(string); ok {
-		if i := strings.IndexByte(u, '?'); i >= 0 {
-			in["url"] = u[:i]
+		if before, _, ok := strings.Cut(u, "?"); ok {
+			in["url"] = before
 		}
 	}
 }
@@ -58,20 +59,22 @@ func isHTTPURL(s string) bool {
 
 // transcribeMimeTypes maps audio/video file extensions to MIME types for the
 // S4 upload; unknown extensions fall back to application/octet-stream.
-var transcribeMimeTypes = map[string]string{
-	".mp3":  "audio/mpeg",
-	".wav":  "audio/wav",
-	".m4a":  "audio/x-m4a",
-	".mp4":  "video/mp4",
-	".ogg":  "audio/ogg",
-	".flac": "audio/flac",
-	".aac":  "audio/aac",
-	".webm": "video/webm",
+func transcribeMimeTypes() map[string]string {
+	return map[string]string{
+		".mp3":  "audio/mpeg",
+		".wav":  "audio/wav",
+		".m4a":  "audio/x-m4a",
+		".mp4":  "video/mp4",
+		".ogg":  "audio/ogg",
+		".flac": "audio/flac",
+		".aac":  "audio/aac",
+		".webm": "video/webm",
+	}
 }
 
 // transcribeMime returns the upload MIME type for a local file path.
 func transcribeMime(path string) string {
-	if m, ok := transcribeMimeTypes[strings.ToLower(filepath.Ext(path))]; ok {
+	if m, ok := transcribeMimeTypes()[strings.ToLower(filepath.Ext(path))]; ok {
 		return m
 	}
 	return "application/octet-stream"
@@ -103,7 +106,31 @@ func humanSize(n int64) string {
 
 // resultURLKeys are where a return_as_file job's output carries the result
 // URL: output.url, in place of the inline text.
-var resultURLKeys = []string{"url"}
+func resultURLKeys() []string {
+	return []string{"url"}
+}
+
+// transcriptForm is what a transcription command prints in table mode: the text, the SRT document (--srt), or the
+// result URL (--return-as-file, which wins over --srt).
+type transcriptForm int
+
+// The forms of transcriptForm.
+const (
+	transcriptFormText transcriptForm = iota
+	transcriptFormSRT
+	transcriptFormURL
+)
+
+// transcriptFormOf is the transcript form the given fields ask for.
+func transcriptFormOf(set fieldValues) transcriptForm {
+	switch {
+	case givenTrue(set, "return_as_file"):
+		return transcriptFormURL
+	case givenTrue(set, "srt"):
+		return transcriptFormSRT
+	}
+	return transcriptFormText
+}
 
 // transcriptText extracts the table-mode stdout payload from a succeeded
 // job's output: the SRT document when requested, else the text field, else
@@ -113,46 +140,56 @@ var resultURLKeys = []string{"url"}
 // --srt was asked for and no SRT field is present, that is an error, not a
 // silent fallback to the plain text — scripts piping to an .srt file must
 // not receive a transcript instead.
-func transcriptText(out any, wantSRT, wantFile bool) (string, *clierr.Error) {
+func transcriptText(out any, form transcriptForm) (string, *clierr.Error) {
 	m, isMap := out.(map[string]any)
-	if isMap && wantFile {
-		for _, key := range resultURLKeys {
-			if s, ok := m[key].(string); ok && s != "" {
-				return s, nil
-			}
+	if isMap && form == transcriptFormURL {
+		if s := transcriptField(m, resultURLKeys()...); s != "" {
+			return s, nil
 		}
 		return "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
 			"the job succeeded, but its output has no result URL").WithHint("inspect the job document with -o json")
 	}
-	if isMap && wantSRT {
-		for _, key := range []string{"srt_content", "srt"} {
-			if s, ok := m[key].(string); ok && s != "" {
-				return s, nil
-			}
-		}
-		return "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
-			"the job succeeded, but its output has no SRT document (expected output.srt_content)").WithHint("inspect the job document with -o json")
-	}
-	if isMap {
-		if s, ok := m["text"].(string); ok && s != "" {
+	if isMap && form == transcriptFormSRT {
+		if s := transcriptField(m, "srt_content", "srt"); s != "" {
 			return s, nil
 		}
+		return "", clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"the job succeeded, but its output has no SRT document (expected output.srt_content)",
+		).WithHint("inspect the job document with -o json")
+	}
+	if s := transcriptField(m, "text"); s != "" {
+		return s, nil
 	}
 	return compactJSON(out, 0), nil
+}
+
+// transcriptField is the first of keys whose value in a job's output m is a non-empty string, or "" when none is.
+func transcriptField(m map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if s, ok := m[key].(string); ok && s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+// jobOutputFailure is the error a terminal job's output embeds: its message and its code, each "" when absent.
+type jobOutputFailure struct {
+	msg, code string
 }
 
 // jobOutputError extracts the error message and code a terminal job's output
 // may embed: a failed job can return `succeeded` with output.error set (e.g.
 // an undownloadable URL), and a failed transcription has to be a nonzero
 // exit either way.
-func jobOutputError(out any) (msg, code string) {
+func jobOutputError(out any) jobOutputFailure {
 	m, ok := out.(map[string]any)
 	if !ok {
-		return "", ""
+		return jobOutputFailure{msg: "", code: ""}
 	}
-	msg, _ = m["error"].(string)
-	code, _ = m["error_code"].(string)
-	return msg, code
+	return jobOutputFailure{msg: asType[string](m["error"]), code: asType[string](m["error_code"])}
 }
 
 // fieldKind is the JSON type of one porcelain input field.
@@ -181,39 +218,88 @@ func (f inputField) flag() string { return strings.ReplaceAll(f.name, "_", "-") 
 
 // transcribeFields are the transcribe endpoint's input fields besides url
 // (the positional), from its published input schema.
-var transcribeFields = []inputField{
-	{"language_code", fieldString, "language of the audio, for example en or de (omit to detect it automatically; setting it forces that language)"},
-	{"audio_stream_index", fieldInt, "zero-based audio stream to transcribe in multitrack media"},
-	{"multichannel", fieldBool, "preserve audio channels for channel-based diarization"},
-	{"return_as_file", fieldBool, "return a temporary result URL instead of inline output (table mode prints the URL)"},
-	{"word_level_timestamps", fieldBool, "include word segments"},
-	{"sentence_level_timestamps", fieldBool, "include sentence-level timestamps"},
-	{"diarization", fieldBool, "add speaker labels to word segments"},
-	{"sentence_diarization", fieldBool, "add speaker labels to sentence segments"},
-	{"srt", fieldBool, "produce an SRT subtitle document (table mode prints it instead of the text)"},
-	{"translate", fieldString, "Whisper translation: to_eng translates to English"},
-	{"llm_translation", fieldList, "a language to translate the transcript into, repeatable (--llm-translation german --llm-translation french)"},
-	{"srt_translation", fieldList, "a language to translate the SRT into, repeatable"},
-	{"custom_prompt", fieldString, "an instruction for processing the transcript"},
-	{"custom_vocabulary", fieldList, "a domain term to improve accuracy, repeatable"},
-	{"summarize", fieldInt, "summarize the transcript in at most this many words (0-2000)"},
-	{"overall_classification", fieldBool, "classify the transcript (see --classification-labels)"},
-	{"classification_labels", fieldList, "a label for --overall-classification, repeatable"},
-	{"overall_sentiment_analysis", fieldBool, "classify the transcript's sentiment"},
-	{"enhanced_accuracy", fieldBool, "use a language-specific fine-tuned model when one is available"},
+func transcribeFields() []inputField {
+	return []inputField{
+		{
+			"language_code",
+			fieldString,
+			"language of the audio, for example en or de " +
+				"(omit to detect it automatically; for English output, use --translate to_eng)",
+		},
+		{"audio_stream_index", fieldInt, "zero-based audio stream to transcribe in multitrack media"},
+		{"multichannel", fieldBool, "preserve audio channels for channel-based diarization"},
+		{
+			"return_as_file",
+			fieldBool,
+			"return a temporary result URL instead of inline output (table mode prints the URL)",
+		},
+		{"word_level_timestamps", fieldBool, "include word segments"},
+		{"sentence_level_timestamps", fieldBool, "include sentence-level timestamps"},
+		{"diarization", fieldBool, "add speaker labels to word segments"},
+		{"sentence_diarization", fieldBool, "add speaker labels to sentence segments"},
+		{"srt", fieldBool, "produce an SRT subtitle document (table mode prints it instead of the text)"},
+		{"translate", fieldString, "Whisper translation: to_eng translates to English"},
+		{
+			"llm_translation",
+			fieldList,
+			"a language to translate the transcript into, repeatable " +
+				"(--llm-translation german --llm-translation french)",
+		},
+		{"srt_translation", fieldList, "a language to translate the SRT into, repeatable"},
+		{"custom_prompt", fieldString, "an instruction for processing the transcript"},
+		{"custom_vocabulary", fieldList, "a domain term to improve accuracy, repeatable"},
+		{"summarize", fieldInt, "summarize the transcript in at most this many words (0-2000)"},
+		{"overall_classification", fieldBool, "classify the transcript (see --classification-labels)"},
+		{"classification_labels", fieldList, "a label for --overall-classification, repeatable"},
+		{"overall_sentiment_analysis", fieldBool, "classify the transcript's sentiment"},
+		{"enhanced_accuracy", fieldBool, "use a language-specific fine-tuned model when one is available"},
+	}
 }
 
 // transcriptionLiteFields are the transcription-lite endpoint's input
 // fields besides url, from its published input schema.
-var transcriptionLiteFields = []inputField{
-	{"language_code", fieldString, "language of the audio, for example en or de (endpoint default: en)"},
-	{"return_as_file", fieldBool, "return the result as a file (table mode prints the URL)"},
-	{"sentence_level_timestamps", fieldBool, "include sentence-level timestamps"},
-	{"word_level_timestamps", fieldBool, "include word-level timestamps"},
-	{"diarization", fieldBool, "separate speakers in multi-speaker audio"},
-	{"sentence_diarization", fieldBool, "sentence-level speaker diarization"},
-	{"srt", fieldBool, "produce an SRT subtitle document (table mode prints it instead of the text)"},
-	{"translate", fieldString, "translate the transcription to English"},
+func transcriptionLiteFields() []inputField {
+	return []inputField{
+		{"language_code", fieldString, "language of the audio, for example en or de (endpoint default: en)"},
+		{"return_as_file", fieldBool, "return the result as a file (table mode prints the URL)"},
+		{"sentence_level_timestamps", fieldBool, "include sentence-level timestamps"},
+		{"word_level_timestamps", fieldBool, "include word-level timestamps"},
+		{"diarization", fieldBool, "separate speakers in multi-speaker audio"},
+		{"sentence_diarization", fieldBool, "sentence-level speaker diarization"},
+		{"srt", fieldBool, "produce an SRT subtitle document (table mode prints it instead of the text)"},
+		{"translate", fieldString, "translate the transcription to English"},
+	}
+}
+
+// fieldValues are the input fields whose flags were given, by field name:
+// a *bool, *string, *int64 or *[]string bound to the flag.
+type fieldValues map[string]any
+
+// transcribeOptions are a transcription command's flags: one per input
+// field, bound by field name, and the command's own.
+type transcribeOptions struct {
+	fields     map[string]any // field name to the value its flag binds
+	inputExtra string
+	noWait     bool
+	keepUpload bool
+	timeout    time.Duration
+}
+
+// given is the fields whose flags cmd's command line set.
+func (o *transcribeOptions) given(cmd *cobra.Command) fieldValues {
+	set := make(fieldValues)
+	for name, v := range o.fields {
+		if cmd.Flags().Changed(strings.ReplaceAll(name, "_", "-")) {
+			set[name] = v
+		}
+	}
+	return set
+}
+
+// givenTrue reports whether the bool field name was given as true.
+func givenTrue(set fieldValues, name string) bool {
+	v, ok := set[name].(*bool)
+	return ok && *v
 }
 
 // buildTranscribeInput builds the job input: url plus every field flag the
@@ -221,25 +307,23 @@ var transcriptionLiteFields = []inputField{
 // govern everything else and the request is the one 'inference jobs create
 // --input' would send for the same intent. --input-extra is merged last,
 // key by key, and wins.
-func buildTranscribeInput(url string, fields []inputField, flags *pflag.FlagSet, inputExtra string) (map[string]any, *clierr.Error) {
+func buildTranscribeInput(
+	url string,
+	fields []inputField,
+	set fieldValues,
+	inputExtra string,
+) (map[string]any, *clierr.Error) {
 	in := map[string]any{"url": url}
 	for _, f := range fields {
-		if !flags.Changed(f.flag()) {
-			continue
-		}
-		switch f.kind {
-		case fieldBool:
-			v, _ := flags.GetBool(f.flag())
-			in[f.name] = v
-		case fieldString:
-			v, _ := flags.GetString(f.flag())
-			in[f.name] = v
-		case fieldInt:
-			v, _ := flags.GetInt64(f.flag())
-			in[f.name] = v
-		case fieldList:
-			v, _ := flags.GetStringArray(f.flag())
-			in[f.name] = strings.Join(v, ",")
+		switch v := set[f.name].(type) {
+		case *bool:
+			in[f.name] = *v
+		case *string:
+			in[f.name] = *v
+		case *int64:
+			in[f.name] = *v
+		case *[]string:
+			in[f.name] = strings.Join(*v, ",")
 		}
 	}
 	if inputExtra != "" {
@@ -248,27 +332,36 @@ func buildTranscribeInput(url string, fields []inputField, flags *pflag.FlagSet,
 			return nil, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
 				"invalid --input-extra: %v (must be a JSON object)", err)
 		}
-		for k, v := range extra {
-			in[k] = v
-		}
+		maps.Copy(in, extra)
 	}
 	return in, nil
 }
 
 // transcribeEndpoints are the endpoints with a transcription porcelain
 // command, each named exactly after its endpoint.
-var transcribeEndpoints = []struct {
+func transcribeEndpoints() []struct {
 	name   string
 	fields []inputField
 	short  string
-}{
-	{"transcribe", transcribeFields, "Transcribe an audio or video file on the transcribe endpoint"},
-	{"transcription-lite", transcriptionLiteFields, "Transcribe an audio or video file on the cheaper transcription-lite endpoint"},
+} {
+	return []struct {
+		name   string
+		fields []inputField
+		short  string
+	}{
+		{"transcribe", transcribeFields(), "Transcribe an audio or video file on the transcribe endpoint"},
+		{
+			"transcription-lite",
+			transcriptionLiteFields(),
+			"Transcribe an audio or video file on the cheaper transcription-lite endpoint",
+		},
+	}
 }
 
-func init() {
-	for _, ep := range transcribeEndpoints {
-		inferenceCmd.AddCommand(newTranscribeCmd(ep.name, ep.fields, ep.short))
+// addTranscribeCommands adds transcribe.go's commands to the tree.
+func (app *App) addTranscribeCommands(inferenceCmd *cobra.Command) {
+	for _, ep := range transcribeEndpoints() {
+		inferenceCmd.AddCommand(app.newTranscribeCmd(ep.name, ep.fields, ep.short))
 	}
 }
 
@@ -276,7 +369,11 @@ func init() {
 // carries a working link to the uploaded file: the CLI shows the API's own
 // document unedited (the output rule in AGENTS.md), so the warning goes
 // where the CLI sends people to it.
-const signedLinkNote = "the job document's input.url is a working link to your uploaded file until it expires; remove it before sharing the output"
+const signedLinkNote = "the job document's input.url is a working link to your uploaded file until it expires; " +
+	"remove it before sharing the output"
+
+// transcribeHelpWidth is the column listFieldsHelp wraps its sentence at, to match the rest of the help text.
+const transcribeHelpWidth = 74
 
 // listFieldsHelp is the help sentence on an endpoint's list fields, naming
 // only the ones it takes, on lines of its own; "" when it takes none.
@@ -294,10 +391,10 @@ func listFieldsHelp(fields []inputField) string {
 		") is a repeatable flag, one value each, joined with commas for you."
 	var b strings.Builder
 	width := 0
-	for _, word := range strings.Fields(sentence) {
+	for word := range strings.FieldsSeq(sentence) {
 		switch {
 		case width == 0:
-		case width+1+len(word) > 74:
+		case width+1+len(word) > transcribeHelpWidth:
 			b.WriteString("\n")
 			width = 0
 		default:
@@ -313,7 +410,20 @@ func listFieldsHelp(fields []inputField) string {
 // newTranscribeCmd builds the porcelain command for one transcription
 // endpoint: the same implementation, with that endpoint's input fields as
 // flags, so a flag the endpoint does not take is rejected by cobra itself.
-func newTranscribeCmd(endpoint string, fields []inputField, short string) *cobra.Command {
+func (app *App) newTranscribeCmd(endpoint string, fields []inputField, short string) *cobra.Command {
+	cmd, _ := app.transcribeCmd(endpoint, fields, short)
+	return cmd
+}
+
+// transcribeCmd is newTranscribeCmd with the options its flags bind.
+func (app *App) transcribeCmd(endpoint string, fields []inputField, short string) (*cobra.Command, *transcribeOptions) {
+	o := &transcribeOptions{
+		fields:     make(map[string]any),
+		inputExtra: "",
+		noWait:     false,
+		keepUpload: false,
+		timeout:    0,
+	}
 	cmd := &cobra.Command{
 		Use:   endpoint + " <file-or-url>",
 		Short: short,
@@ -354,174 +464,277 @@ endpoint's price row, run saladcloud inference get ` + endpoint + `.`,
   saladcloud inference jobs get <job-id> --endpoint ` + endpoint,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runTranscribe(cmd, args[0], endpoint, fields)
+			return app.runTranscribe(cmd, o, args[0], endpoint, fields)
 		},
 	}
 	f := cmd.Flags()
 	for _, fd := range fields {
 		switch fd.kind {
 		case fieldBool:
-			f.Bool(fd.flag(), false, fd.help)
+			v := new(bool)
+			f.BoolVar(v, fd.flag(), false, fd.help)
+			o.fields[fd.name] = v
 		case fieldString:
-			f.String(fd.flag(), "", fd.help)
+			v := new(string)
+			f.StringVar(v, fd.flag(), "", fd.help)
+			o.fields[fd.name] = v
 		case fieldInt:
-			f.Int64(fd.flag(), 0, fd.help)
+			v := new(int64)
+			f.Int64Var(v, fd.flag(), 0, fd.help)
+			o.fields[fd.name] = v
 		case fieldList:
-			f.StringArray(fd.flag(), nil, fd.help)
+			v := new([]string)
+			f.StringArrayVar(v, fd.flag(), nil, fd.help)
+			o.fields[fd.name] = v
 		}
 	}
-	f.String("input-extra", "", "extra input fields as a JSON object, merged over the built input (extra wins)")
-	f.Bool("no-wait", false, "queue the job and exit instead of waiting for the transcript")
-	f.Bool("keep-upload", false, "keep a local file's S4 upload after the transcript is back (and show its signed URL in -o json)")
-	f.Duration("timeout", transcribeWaitTimeout, "give up waiting after this long (the job keeps running server-side)")
-	return cmd
+	f.StringVar(
+		&o.inputExtra,
+		"input-extra",
+		"",
+		"extra input fields as a JSON object, merged over the built input (extra wins)",
+	)
+	f.BoolVar(&o.noWait, "no-wait", false, "queue the job and exit instead of waiting for the transcript")
+	f.BoolVar(
+		&o.keepUpload,
+		"keep-upload",
+		false,
+		"keep a local file's S4 upload after the transcript is back (and show its signed URL in -o json)",
+	)
+	f.DurationVar(
+		&o.timeout,
+		"timeout",
+		transcribeWaitTimeout,
+		"give up waiting after this long (the job keeps running server-side)",
+	)
+	return cmd, o
 }
 
-func runTranscribe(cmd *cobra.Command, source, endpoint string, fields []inputField) error {
-	flags := cmd.Flags()
-	inputExtra, _ := flags.GetString("input-extra")
-	noWait, _ := flags.GetBool("no-wait")
-	keepUpload, _ := flags.GetBool("keep-upload")
-	timeout, _ := flags.GetDuration("timeout")
-	srt := flags.Changed("srt")
-	if srt {
-		srt, _ = flags.GetBool("srt")
-	}
-	asFile := flags.Changed("return-as-file")
-	if asFile {
-		asFile, _ = flags.GetBool("return-as-file")
-	}
-
+func (app *App) runTranscribe(
+	cmd *cobra.Command,
+	o *transcribeOptions,
+	source, endpoint string,
+	fields []inputField,
+) error {
+	set := o.given(cmd)
 	// Pre-flight validation, before any upload or API work.
-	if timeout <= 0 {
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--timeout must be greater than zero (got %s)", timeout)
-	}
-	if flags.Lookup("summarize") != nil {
-		if n, _ := flags.GetInt64("summarize"); n < 0 {
-			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid --summarize %d: the endpoint takes 0 to 2000", n)
-		}
-	}
-	// Validate the input (and --input-extra's JSON) now, so a bad value
-	// fails before any upload.
-	if _, cerr := buildTranscribeInput(source, fields, flags, inputExtra); cerr != nil {
-		return cerr
-	}
-	isURL := isHTTPURL(source)
-	var fileSize int64
-	if !isURL {
-		fi, err := os.Stat(source)
-		switch {
-		case err != nil:
-			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-				`audio file "%s" not found`, source).WithHint("pass a local file path or an http(s) URL")
-		case fi.IsDir():
-			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-				`"%s" is a directory, not an audio file`, source)
-		}
-		fileSize = fi.Size()
-	}
-
-	client, _, cerr := NewClient(cmd)
+	fileSize, cerr := transcribeValidate(o, set, source, fields)
 	if cerr != nil {
 		return cerr
 	}
-	if cerr := client.RequireOrg(); cerr != nil {
+
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	cerr = client.RequireOrg()
+	if cerr != nil {
 		return cerr
 	}
 
 	url := source
 	remote := "" // the S4 name of a local file's upload
-	if !isURL {
-		fh, err := os.Open(source)
-		if err != nil {
-			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, `cannot read "%s": %v`, source, err)
-		}
-		defer fh.Close()
+	if !isHTTPURL(source) {
 		remote = transcribeRemoteName(source, time.Now())
-		signedURL, cerr := client.UploadFile(cmd.Context(), remote, fh, transcribeMime(source), true, transcribeSignedURLExp)
-		if cerr != nil {
+		if url, cerr = app.transcribeUpload(cmd.Context(), client, source, remote, fileSize); cerr != nil {
 			return cerr
-		}
-		url = signedURL
-		if output.Mode() == "table" {
-			fmt.Fprintf(os.Stderr, "uploaded %s (%s) to S4\n", source, humanSize(fileSize))
 		}
 	}
 
-	in, cerr := buildTranscribeInput(url, fields, flags, inputExtra)
+	in, cerr := buildTranscribeInput(url, fields, set, o.inputExtra)
 	if cerr != nil {
 		return cerr // unreachable (validated pre-flight), kept for safety
 	}
-	job, cerr := client.CreateInferenceJob(cmd.Context(), endpoint,
-		inferenceendpoints.InferenceEndpointJobPrototype{Input: in})
+	job, cerr := app.transcribeCreateJob(cmd.Context(), client, o, endpoint, in, remote)
 	if cerr != nil {
-		// No job will read the upload: delete it, unless asked to keep it
-		// or the delete fails, and then say where it is.
-		if remote != "" && (keepUpload || client.DeleteFile(cmd.Context(), remote) != nil) {
-			keptUploadNote(remote)
-		}
-		return endpointNotFound(cerr, endpoint, client.Org())
-	}
-	id := ptr.Deref(job.Id)
-
-	if remote != "" && !keepUpload {
-		redactUploadURL(job)
-	}
-	if noWait {
-		if remote != "" && output.Mode() == "table" {
-			fmt.Fprintf(os.Stderr, "note: the upload stays in S4 as %s; the queued job reads it\n", remote)
-		}
-		return wrapErr(output.Emit(job, func(w io.Writer) {
-			fmt.Fprintf(w, "Job %s queued on endpoint %s (status: %s)\n", id, endpoint, jobStatusString(job))
-			if remote != "" {
-				fmt.Fprintf(os.Stderr, "note: %s\n", signedLinkNote)
-			}
-			fmt.Fprintf(os.Stderr, "hint: to check on it, run saladcloud inference jobs get %s --endpoint %s\n", id, endpoint)
-		}))
-	}
-
-	ctx := cmd.Context() // cancelled by the one signal handler in Execute
-	d := liveJobWaitDeps(client, endpoint, id, "transcribing")
-	final, cerr := waitForJobTerminal(ctx, d, id, timeout, waitPoll)
-	if cerr != nil {
-		keptUploadNote(remote)
-		return transcriptionKind(cerr)
-	}
-	if remote != "" && !keepUpload {
-		redactUploadURL(final)
-	}
-	// The API can mark a failed transcription `succeeded` with the failure
-	// embedded in the output — treat that as the failure it is (stdout stays
-	// empty, scripts can trust the exit code).
-	if errMsg, errCode := jobOutputError(final.Output); errMsg != "" || errCode != "" {
-		detail := errMsg
-		if detail == "" {
-			detail = "transcription failed"
-		}
-		if errCode != "" {
-			detail = fmt.Sprintf("%s (error_code: %s)", detail, errCode)
-		}
-		keptUploadNote(remote)
-		if remote != "" {
-			detail += " (" + signedLinkNote + ")"
-		}
-		return clierr.New(clierr.CodeGeneric, clierr.KindTranscriptionFailed,
-			"%s", detail).WithHint("to see the full job document, run saladcloud inference jobs get %s --endpoint %s -o json", id, endpoint)
-	}
-	text, cerr := transcriptText(final.Output, srt, asFile)
-	if cerr != nil {
-		keptUploadNote(remote)
 		return cerr
 	}
-	if remote != "" && !keepUpload {
-		if derr := client.DeleteFile(cmd.Context(), remote); derr != nil {
-			fmt.Fprintf(os.Stderr, "warning: could not delete the S4 upload %s: %s\n", remote, derr.Message)
+	if o.noWait {
+		return app.transcribeQueued(job, endpoint, remote)
+	}
+	return app.transcribeAwait(cmd.Context(), client, o, set, ptr.Deref(job.Id), endpoint, remote)
+}
+
+// transcribeValidate makes the transcribe checks that need no upload or API call, in the order they are reported,
+// and returns the size of a local audio file (0 for a URL).
+func transcribeValidate(
+	o *transcribeOptions,
+	set fieldValues,
+	source string,
+	fields []inputField,
+) (int64, *clierr.Error) {
+	if o.timeout <= 0 {
+		return 0, clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			"--timeout must be greater than zero (got %s)",
+			o.timeout,
+		)
+	}
+	if p, ok := o.fields["summarize"].(*int64); ok {
+		if n := *p; n < 0 {
+			return 0, clierr.New(
+				clierr.CodeInvalidInput,
+				clierr.KindInvalidInput,
+				"invalid --summarize %d: the endpoint takes 0 to 2000",
+				n,
+			)
+		}
+	}
+	// Validate the input (and --input-extra's JSON) now, so a bad value
+	// fails before any upload.
+	if _, cerr := buildTranscribeInput(source, fields, set, o.inputExtra); cerr != nil {
+		return 0, cerr
+	}
+	if isHTTPURL(source) {
+		return 0, nil
+	}
+	fi, err := os.Stat(source)
+	switch {
+	case err != nil:
+		return 0, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+			`audio file "%s" not found`, source).WithHint("pass a local file path or an http(s) URL")
+	case fi.IsDir():
+		return 0, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+			`"%s" is a directory, not an audio file`, source)
+	}
+	return fi.Size(), nil
+}
+
+// transcribeUpload uploads the local audio file source to S4 as remote and returns its signed URL.
+func (app *App) transcribeUpload(
+	ctx context.Context,
+	client *api.Client,
+	source, remote string,
+	fileSize int64,
+) (string, *clierr.Error) {
+	fh, err := os.Open(source) //nolint:gosec // the audio file the user named is the one to upload
+	if err != nil {
+		return "", clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, `cannot read "%s": %v`, source, err)
+	}
+	url, cerr := client.UploadFile(ctx, remote, fh, transcribeMime(source), transcribeSignedURLExp)
+	if err := fh.Close(); err != nil {
+		fprintf(app.errw(), "warning: could not close %s: %v\n", source, err) // read only: nothing is lost
+	}
+	if cerr != nil {
+		return "", cerr
+	}
+	if app.printer.Mode() == globalOutputTable {
+		fprintf(app.errw(), "uploaded %s (%s) to S4\n", source, humanSize(fileSize))
+	}
+	return url, nil
+}
+
+// transcribeCreateJob queues the transcription job with input in. When that fails, no job will read the upload
+// remote: it is deleted, unless --keep-upload asks to keep it or the delete fails, and then the note says where it
+// is. The returned job's input has the upload's signed URL redacted unless the upload is kept.
+func (app *App) transcribeCreateJob(
+	ctx context.Context,
+	client *api.Client,
+	o *transcribeOptions,
+	endpoint string,
+	in map[string]any,
+	remote string,
+) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
+	job, cerr := client.CreateInferenceJob(ctx, endpoint, inferenceendpoints.InferenceEndpointJobPrototype{Input: in})
+	if cerr != nil {
+		if remote != "" && (o.keepUpload || client.DeleteFile(ctx, remote) != nil) {
+			app.keptUploadNote(remote)
+		}
+		return nil, endpointNotFound(cerr, endpoint, client.Org())
+	}
+	if remote != "" && !o.keepUpload {
+		redactUploadURL(job)
+	}
+	return job, nil
+}
+
+// transcribeQueued emits a job queued with --no-wait, and in table mode the notes and the hint to check on it.
+func (app *App) transcribeQueued(job *inferenceendpoints.InferenceEndpointJob, endpoint, remote string) error {
+	id := ptr.Deref(job.Id)
+	if remote != "" && app.printer.Mode() == globalOutputTable {
+		fprintf(app.errw(), "note: the upload stays in S4 as %s; the queued job reads it\n", remote)
+	}
+	return wrapErr(app.printer.Emit(job, func(w *output.Writer) {
+		w.Printf("Job %s queued on endpoint %s (status: %s)\n", id, endpoint, jobStatusString(job))
+		if remote != "" {
+			fprintf(app.errw(), "note: %s\n", signedLinkNote)
+		}
+		fprintf(
+			app.errw(),
+			"hint: to check on it, run saladcloud inference jobs get %s --endpoint %s\n",
+			id,
+			endpoint,
+		)
+	}))
+}
+
+// transcribeAwait waits for job id to end, emits the transcript (the full job with -o json), and deletes the upload
+// remote unless asked to keep it.
+func (app *App) transcribeAwait(
+	ctx context.Context, // canceled by the one signal handler in Execute
+	client *api.Client,
+	o *transcribeOptions,
+	set fieldValues,
+	id, endpoint, remote string,
+) error {
+	d := liveJobWaitDeps(client, endpoint, id, "transcribing")
+	final, cerr := waitForJobTerminal(ctx, app, d, id, o.timeout, waitPoll)
+	if cerr != nil {
+		app.keptUploadNote(remote)
+		return transcriptionKind(cerr)
+	}
+	if remote != "" && !o.keepUpload {
+		redactUploadURL(final)
+	}
+	if ferr := app.transcribeOutputFailure(final, id, endpoint, remote); ferr != nil {
+		return ferr
+	}
+	text, cerr := transcriptText(final.Output, transcriptFormOf(set))
+	if cerr != nil {
+		app.keptUploadNote(remote)
+		return cerr
+	}
+	if remote != "" && !o.keepUpload {
+		if derr := client.DeleteFile(ctx, remote); derr != nil {
+			fprintf(app.errw(), "warning: could not delete the S4 upload %s: %s\n", remote, derr.Message)
 		}
 	}
 	// Table mode prints the transcript itself; -o json emits the full job.
-	return wrapErr(output.Emit(final, func(w io.Writer) {
-		fmt.Fprintln(w, text)
+	return wrapErr(app.printer.Emit(final, func(w *output.Writer) {
+		w.Println(text)
 	}))
+}
+
+// transcribeOutputFailure is the error for a job that ended succeeded with a failure in its output, or nil. The API
+// can mark a failed transcription `succeeded` with the failure embedded in the output — treat that as the failure it
+// is (stdout stays empty, scripts can trust the exit code).
+func (app *App) transcribeOutputFailure(
+	final *inferenceendpoints.InferenceEndpointJob,
+	id, endpoint, remote string,
+) *clierr.Error {
+	failure := jobOutputError(final.Output)
+	errMsg, errCode := failure.msg, failure.code
+	if errMsg == "" && errCode == "" {
+		return nil
+	}
+	detail := errMsg
+	if detail == "" {
+		detail = "transcription failed"
+	}
+	if errCode != "" {
+		detail = fmt.Sprintf("%s (error_code: %s)", detail, errCode)
+	}
+	app.keptUploadNote(remote)
+	if remote != "" {
+		detail += " (" + signedLinkNote + ")"
+	}
+	return clierr.New(
+		clierr.CodeGeneric,
+		clierr.KindTranscriptionFailed,
+		"%s",
+		detail,
+	).WithHint("to see the full job document, run saladcloud inference jobs get %s --endpoint %s -o json", id, endpoint)
 }
 
 // transcriptionKind gives a transcription job that ended failed the kind

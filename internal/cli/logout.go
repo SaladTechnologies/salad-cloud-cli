@@ -1,9 +1,6 @@
 package cli
 
 import (
-	"fmt"
-	"io"
-
 	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -23,59 +20,76 @@ type logoutResult struct {
 	OK           bool     `json:"ok"`
 }
 
-func init() {
-	Register(&cobra.Command{
-		Use:   "logout",
+// addLogoutCommands adds logout.go's commands to the tree.
+func (app *App) addLogoutCommands(root *cobra.Command) {
+	root.AddCommand(&cobra.Command{
+		Use:   logoutCmdName,
 		Short: "Remove the saved API key (the organization and project stay)",
 		Long: `Remove the SaladCloud API key from the config file. The saved organization and
 project stay, so a later saladcloud login only needs the key again. When
 SALAD_API_KEY is set, commands still use it, and logout says so.`,
 		Args: cobra.NoArgs,
-		RunE: runLogout,
+		RunE: app.runLogout,
 	})
 }
 
-func runLogout(cmd *cobra.Command, args []string) error {
-	path, err := config.Path()
+func (app *App) runLogout(_ *cobra.Command, _ []string) error {
+	path, err := config.Path(app.Env)
 	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err))
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot find a folder for the config file: %s",
+			config.Reason(err),
+		)
 	}
-	f, err := config.Load()
+	f, err := config.Load(app.Env)
 	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
-			WithHint("fix or delete it, then run saladcloud logout again")
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot read the config file %s: %s",
+			path,
+			readReason(err),
+		).WithHint("fix or delete it, then run saladcloud logout again")
 	}
 	old := f.APIKey
 	// Decided before the key is removed: a name equal to it is a key.
-	orgJSON, projectJSON := nameOrNil(f.Organization), nameOrNil(f.Project)
-	orgShown, projectShown := shownName(f.Organization), shownName(f.Project)
+	orgJSON, projectJSON := app.nameOrNil(f.Organization), app.nameOrNil(f.Project)
+	orgShown, projectShown := app.shownName(f.Organization), app.shownName(f.Project)
 	if old != "" {
 		f.APIKey = ""
-		if err := config.Save(f); err != nil {
-			return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
-				WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud logout again")
+		if saveErr := config.Save(app.Env, f); saveErr != nil {
+			return clierr.New(
+				clierr.CodeGeneric,
+				clierr.KindAPIError,
+				"cannot write the config file %s: %s",
+				path,
+				config.Reason(saveErr),
+			).WithHint("set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud logout again")
 		}
 	}
-	ovs := stillSupplied(envAPIKey)
+	ovs := app.stillSupplied(envAPIKey)
 	result := logoutResult{
 		Removed: old != "", Organization: orgJSON, Project: projectJSON,
 		EnvOverrides: overrideNames(ovs), Action: "logged_out", OK: true,
 	}
-	if err := output.Emit(result, func(w io.Writer) {
+	err = app.printer.Emit(result, func(w *output.Writer) {
 		if old == "" {
-			fmt.Fprintln(w, "No API key was saved; nothing to remove")
+			w.Println("No API key was saved; nothing to remove")
 			return
 		}
-		fmt.Fprintf(w, "Logged out: removed the saved API key (%s)\n", maskAPIKey(old))
+		w.Printf("Logged out: removed the saved API key (%s)\n", maskAPIKey(old))
 		switch {
 		case f.Organization != "" && f.Project != "":
-			fmt.Fprintf(w, "Organization and project stay saved: %s/%s\n", orgShown, projectShown)
+			w.Printf("Organization and project stay saved: %s/%s\n", orgShown, projectShown)
 		case f.Organization != "":
-			fmt.Fprintf(w, "Organization stays saved: %s\n", orgShown)
+			w.Printf("Organization stays saved: %s\n", orgShown)
 		}
-	}); err != nil {
+	})
+	if err != nil {
 		return wrapErr(err)
 	}
-	warnOverrides(errw(), afterRemove, ovs)
+	app.warnOverrides(app.errw(), afterRemove, ovs)
 	return nil
 }

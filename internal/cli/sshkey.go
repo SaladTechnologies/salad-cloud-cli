@@ -3,11 +3,12 @@
 // (ssh-ed25519 or ssh-rsa), registered in the portal, so setup
 // discovers/generates a local key pair and hands the public key to the
 // user for portal registration.
+
 package cli
 
 import (
+	"context"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,17 +19,32 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 // sshDedicatedKeyName is the key pair 'ssh-key setup' generates (no
 // passphrase, so one-shot commands work), under ~/.ssh.
 const sshDedicatedKeyName = "saladcloud_ed25519"
 
+// sshDirMode is the mode ssh-key setup creates ~/.ssh with: OpenSSH refuses a key folder others can read.
+const sshDirMode = 0o700
+
+// The actions ssh-key setup reports: a local key found, or the CLI's own generated.
+const (
+	sshKeyActionFound     = "found"
+	sshKeyActionGenerated = "generated"
+)
+
+// setupVerbGet is the get verb's name under ssh-key.
+const setupVerbGet = "get"
+
 // sshPublicKeyCandidates are the public key files probed, in order, under
 // ~/.ssh. The CLI's own generated key comes first: when it exists it is the
 // one 'ssh'/'cp'/'sftp' offer by default (see resolveIdentity), so it is
 // the one to show and register.
-var sshPublicKeyCandidates = []string{sshDedicatedKeyName + ".pub", "id_ed25519.pub", "id_rsa.pub"}
+func sshPublicKeyCandidates() []string {
+	return []string{sshDedicatedKeyName + ".pub", "id_ed25519.pub", "id_rsa.pub"}
+}
 
 // defaultIdentityPath returns the private half of the CLI's dedicated key
 // when it exists under home/.ssh.
@@ -46,11 +62,11 @@ func defaultIdentityPath(home string) (string, bool) {
 // key that 'ssh-key setup' generates — a non-default filename OpenSSH never
 // tries on its own — did not work with the CLI's own verbs until the user
 // ran ssh-add or wrote an ssh_config entry (found on the first macOS pass).
-func resolveIdentity(flag string) string {
+func (app *App) resolveIdentity(flag string) string {
 	if flag != "" {
 		return flag
 	}
-	home, err := os.UserHomeDir()
+	home, err := config.HomeDir(app.Env)
 	if err != nil {
 		return ""
 	}
@@ -66,36 +82,42 @@ func resolveIdentity(flag string) string {
 // unreadable file). A passphrase-protected key matters because one-shot
 // 'ssh -- <cmd>' runs in BatchMode, which cannot prompt for it, so the key
 // fails exactly like an unregistered one.
-func keyHasPassphrase(path string) (encrypted, known bool) {
+func keyHasPassphrase(ctx context.Context, path string) passphraseCheck {
 	if _, err := exec.LookPath("ssh-keygen"); err != nil {
-		return false, false
+		return passphraseCheck{has: false, known: false}
 	}
 	if _, err := os.Stat(path); err != nil {
-		return false, false
+		return passphraseCheck{has: false, known: false}
 	}
-	cmd := exec.Command("ssh-keygen", "-y", "-P", "", "-f", path)
+	cmd := exec.CommandContext(ctx, "ssh-keygen", "-y", "-P", "", "-f", path) //nolint:gosec // the key being checked
 	if err := cmd.Run(); err != nil {
-		return true, true
+		return passphraseCheck{has: true, known: true}
 	}
-	return false, true
+	return passphraseCheck{has: false, known: true}
+}
+
+// passphraseCheck is whether a private key has a passphrase, and whether that could be told at all.
+type passphraseCheck struct {
+	has, known bool
 }
 
 // warnPassphrase says a key has a passphrase that one-shot commands cannot
 // ask for, and how to load it first.
-func warnPassphrase(priv string) {
-	fmt.Fprintf(errw(), "warning: %s has a passphrase, which cp and one-shot ssh commands cannot ask for\n", priv)
-	hintLine("to use it with those, run ssh-add %s first", priv)
+func (app *App) warnPassphrase(priv string) {
+	fprintf(app.errw(), "warning: %s has a passphrase, which cp and one-shot ssh commands cannot ask for\n", priv)
+	app.hintLine("to use it with those, run ssh-add %s first", priv)
 }
 
 // sshKeysPage is the portal page where the account's SSH key is registered.
 const sshKeysPage = "https://portal.salad.com/ssh-keys"
 
-// generateKey runs ssh-keygen for a key without a passphrase at keyPath.
-// Tests replace it.
-var generateKey = func(keyPath string) error {
-	out, err := exec.Command("ssh-keygen", "-t", "ed25519", "-f", keyPath, "-N", "", "-C", "saladcloud-cli").CombinedOutput()
+// sshKeygen runs ssh-keygen for a key without a passphrase at keyPath.
+func sshKeygen(ctx context.Context, keyPath string) error {
+	args := []string{"-t", "ed25519", "-f", keyPath, "-N", "", "-C", "saladcloud-cli"}
+	keygen := exec.CommandContext(ctx, "ssh-keygen", args...) //nolint:gosec // the CLI's own key under ~/.ssh
+	out, err := keygen.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%v; %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("%w; %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
@@ -103,7 +125,7 @@ var generateKey = func(keyPath string) error {
 // findLocalPublicKey returns the first existing candidate under
 // home/.ssh, or ("", false) when none exists.
 func findLocalPublicKey(home string) (string, bool) {
-	for _, name := range sshPublicKeyCandidates {
+	for _, name := range sshPublicKeyCandidates() {
 		path := filepath.Join(home, ".ssh", name)
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			return path, true
@@ -135,9 +157,11 @@ type sshKeySetupResult struct {
 	OK            bool   `json:"ok"`
 }
 
-// passphraseOf is has_passphrase: whether the key has one, or null when
-// that could not be told.
-func passphraseOf(encrypted, known bool) *bool {
+// passphraseAt is has_passphrase for the private key at priv: whether it has
+// one, or null when that could not be told.
+func (app *App) passphraseAt(ctx context.Context, priv string) *bool {
+	check := app.HasPassphrase(ctx, priv)
+	encrypted, known := check.has, check.known
 	if !known {
 		return nil
 	}
@@ -146,59 +170,105 @@ func passphraseOf(encrypted, known bool) *bool {
 
 // readPublicKey loads and trims one public key file.
 func readPublicKey(path string) (string, *clierr.Error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // a public key file under ~/.ssh, which the command exists to show
 	if err != nil {
-		return "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the public key %s: %s", path, config.Reason(err))
+		return "", clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot read the public key %s: %s",
+			path,
+			config.Reason(err),
+		)
 	}
 	return strings.TrimSpace(string(data)), nil
 }
 
 // sshKeySetup is one run of ssh-key setup.
 type sshKeySetup struct {
-	home, keyPath string // keyPath: the CLI's own key, without .pub
+	keyPath      string // the CLI's own key, without .pub
+	generateFlag bool   // --generate
+	app          *App   // the run
 }
 
-func runSSHKeySetup(cmd *cobra.Command, args []string) error {
-	generate, _ := cmd.Flags().GetBool("generate")
-	home, err := os.UserHomeDir()
+func (app *App) runSSHKeySetup(ctx context.Context, generate bool) error {
+	home, err := config.HomeDir(app.Env)
 	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find the home folder: %s", config.Reason(err))
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot find the home folder: %s",
+			config.Reason(err),
+		)
 	}
-	k := sshKeySetup{home: home, keyPath: filepath.Join(home, ".ssh", sshDedicatedKeyName)}
+	k := sshKeySetup{keyPath: filepath.Join(home, ".ssh", sshDedicatedKeyName), generateFlag: generate, app: app}
 	path, found := findLocalPublicKey(home)
 	if found {
-		priv := strings.TrimSuffix(path, ".pub")
-		enc, known := hasPassphrase(priv)
-		if known && enc {
-			warnPassphrase(priv)
-			if !isDedicatedKey(priv) {
-				switch {
-				case generate:
-					return k.generate()
-				case atTerminal():
-					answer, err := ask(fmt.Sprintf("Generate a key without a passphrase at %s? The CLI will use it instead, and registering it replaces your account's current key. [y/N]:", k.keyPath), false)
-					if err != nil {
-						return setupCancelled()
-					}
-					if yes(answer) {
-						return k.generate()
-					}
-				}
-			}
-		}
-		return k.show(path, false, passphraseOf(enc, known))
+		return k.useFound(ctx, path)
 	}
-	if !generate {
-		if !atTerminal() {
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "no local SSH key found, and no terminal to ask whether to generate one").
-				WithHint("to generate one, run saladcloud ssh-key setup --generate")
+	return k.setupMissing(ctx)
+}
+
+// useFound shows the local key found at path, unless it has a passphrase and the CLI's own key is to replace it.
+func (k sshKeySetup) useFound(ctx context.Context, path string) error {
+	app := k.app
+	priv := strings.TrimSuffix(path, ".pub")
+	passphrase := app.passphraseAt(ctx, priv)
+	if passphrase != nil && *passphrase {
+		app.warnPassphrase(priv)
+		replace, cerr := k.replaceWithDedicated(priv)
+		if cerr != nil {
+			return cerr
 		}
-		answer, err := ask(fmt.Sprintf("No SSH key found. Generate one at %s? [Y/n]:", k.keyPath), false)
+		if replace {
+			return k.generate(ctx)
+		}
+	}
+	return k.show(path, sshKeyActionFound, passphrase)
+}
+
+// replaceWithDedicated reports whether to generate the CLI's own key in place of priv, a key with a passphrase:
+// with --generate, or when the person at a terminal says yes; never when priv is already the CLI's own key.
+func (k sshKeySetup) replaceWithDedicated(priv string) (bool, *clierr.Error) {
+	app := k.app
+	switch {
+	case isDedicatedKey(priv):
+		return false, nil
+	case k.generateFlag:
+		return true, nil
+	case app.atTerminal():
+		answer, err := app.ask(
+			fmt.Sprintf(
+				"Generate a key without a passphrase at %s? The CLI will use it instead, "+
+					"and registering it replaces your account's current key. [y/N]:",
+				k.keyPath,
+			),
+		)
+		if err != nil {
+			return false, setupCanceled()
+		}
+		return yes(answer), nil
+	}
+	return false, nil
+}
+
+// setupMissing generates the CLI's own key when there is no local key: with --generate, or when the person at a
+// terminal does not say no; an error without a terminal.
+func (k sshKeySetup) setupMissing(ctx context.Context) error {
+	app := k.app
+	if !k.generateFlag {
+		if !app.atTerminal() {
+			return clierr.New(
+				clierr.CodeUsage,
+				clierr.KindUsage,
+				"no local SSH key found, and no terminal to ask whether to generate one",
+			).WithHint("to generate one, run saladcloud ssh-key setup --generate")
+		}
+		answer, err := app.ask(fmt.Sprintf("No SSH key found. Generate one at %s? [Y/n]:", k.keyPath))
 		if err != nil || answer != "" && !yes(answer) {
-			return setupCancelled()
+			return setupCanceled()
 		}
 	}
-	return k.generate()
+	return k.generate(ctx)
 }
 
 // yes reports whether a yes/no answer is yes.
@@ -206,62 +276,91 @@ func yes(answer string) bool {
 	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes")
 }
 
-// setupCancelled is the error for "n", Ctrl-C or end of input at the
+// setupCanceled is the error for "n", Ctrl-C or end of input at the
 // generate prompt.
-func setupCancelled() *clierr.Error {
-	return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "ssh-key setup cancelled, no key generated")
+func setupCanceled() *clierr.Error {
+	return clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "ssh-key setup canceled, no key generated")
 }
 
 // generate creates the CLI's own key and shows it.
-func (k sshKeySetup) generate() error {
+func (k sshKeySetup) generate(ctx context.Context) error {
+	app := k.app
 	if _, err := os.Stat(k.keyPath); err == nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot generate a key: %s already exists", k.keyPath).
-			WithHint("register %s.pub, or remove it to generate a new one", k.keyPath)
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot generate a key: %s already exists",
+			k.keyPath,
+		).WithHint("register %s.pub, or remove it to generate a new one", k.keyPath)
 	}
-	if _, err := lookPath("ssh-keygen"); err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "ssh-keygen not found").WithHint("%s", sshMissingHint("ssh-keygen"))
+	if _, err := app.LookPath("ssh-keygen"); err != nil {
+		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "ssh-keygen not found").
+			WithHint("%s", app.sshMissingHint("ssh-keygen"))
 	}
-	if err := os.MkdirAll(filepath.Dir(k.keyPath), 0o700); err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot create %s: %s", filepath.Dir(k.keyPath), config.Reason(err))
+	if err := os.MkdirAll(filepath.Dir(k.keyPath), sshDirMode); err != nil {
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot create %s: %s",
+			filepath.Dir(k.keyPath),
+			config.Reason(err),
+		)
 	}
-	if err := generateKey(k.keyPath); err != nil {
+	if err := app.GenerateKey(ctx, k.keyPath); err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "ssh-keygen failed: %v", err)
 	}
-	return k.show(k.keyPath+".pub", true, passphraseOf(false, true))
+	return k.show(k.keyPath+".pub", sshKeyActionGenerated, ptr.To(false))
 }
 
-// show prints the public key and where to register it.
-func (k sshKeySetup) show(path string, generated bool, passphrase *bool) error {
+// show prints the public key at path and where to register it; action is sshKeyActionFound or
+// sshKeyActionGenerated.
+func (k sshKeySetup) show(path, action string, passphrase *bool) error {
+	app := k.app
 	key, cerr := readPublicKey(path)
 	if cerr != nil {
 		return cerr
 	}
-	action := "found"
-	if generated {
-		action = "generated"
+	generated := action == sshKeyActionGenerated
+	v := sshKeySetupResult{
+		Path:          path,
+		PublicKey:     key,
+		Generated:     generated,
+		HasPassphrase: passphrase,
+		Action:        action,
+		OK:            true,
 	}
-	v := sshKeySetupResult{Path: path, PublicKey: key, Generated: generated, HasPassphrase: passphrase, Action: action, OK: true}
-	if err := output.Emit(v, func(w io.Writer) {
+	err := app.printer.Emit(v, func(w *output.Writer) {
 		if generated {
-			fmt.Fprintf(w, "Generated %s\n\n", strings.TrimSuffix(path, ".pub"))
+			w.Printf("Generated %s\n\n", strings.TrimSuffix(path, ".pub"))
 		}
-		fmt.Fprintf(w, "Public key (%s):\n  %s\n\n", path, key)
-		fmt.Fprintf(w, "Register the public key at %s\n", sshKeysPage)
-		fmt.Fprintln(w, "Your account holds one SSH key: registering this one replaces any other.")
-	}); err != nil {
+		w.Printf("Public key (%s):\n  %s\n\n", path, key)
+		w.Printf("Register the public key at %s\n", sshKeysPage)
+		w.Println("Your account holds one SSH key: registering this one replaces any other.")
+	})
+	if err != nil {
 		return wrapErr(err)
 	}
-	if output.Machine() {
-		fmt.Fprintf(errw(), "note: register the public key at %s; your account holds one SSH key, so registering this one replaces any other\n", sshKeysPage)
+	if app.printer.Machine() {
+		fprintf(
+			app.errw(),
+			"note: register the public key at %s; "+
+				"your account holds one SSH key, so registering this one replaces any other\n",
+			sshKeysPage,
+		)
 	}
-	hintLine("to connect to a running instance, run saladcloud container-groups ssh <group> [--instance <id>]")
+	app.hintLine("to connect to a running instance, run saladcloud container-groups ssh <group> [--instance <id>]")
 	return nil
 }
 
-func runSSHKeyGet(cmd *cobra.Command, args []string) error {
-	home, err := os.UserHomeDir()
+func (app *App) runSSHKeyGet(cmd *cobra.Command, _ []string) error {
+	home, err := config.HomeDir(app.Env)
 	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find the home folder: %s", config.Reason(err))
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot find the home folder: %s",
+			config.Reason(err),
+		)
 	}
 	path, found := findLocalPublicKey(home)
 	if !found {
@@ -272,17 +371,18 @@ func runSSHKeyGet(cmd *cobra.Command, args []string) error {
 	if cerr != nil {
 		return cerr
 	}
-	enc, known := hasPassphrase(strings.TrimSuffix(path, ".pub"))
-	if known && enc {
-		warnPassphrase(strings.TrimSuffix(path, ".pub"))
+	passphrase := app.passphraseAt(cmd.Context(), strings.TrimSuffix(path, ".pub"))
+	if passphrase != nil && *passphrase {
+		app.warnPassphrase(strings.TrimSuffix(path, ".pub"))
 	}
-	v := sshKeyResult{Path: path, PublicKey: key, HasPassphrase: passphraseOf(enc, known)}
-	return wrapErr(output.Emit(v, func(w io.Writer) {
-		fmt.Fprintf(w, "%s\n%s\n", path, key)
+	v := sshKeyResult{Path: path, PublicKey: key, HasPassphrase: passphrase, Generated: false}
+	return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
+		w.Printf("%s\n%s\n", path, key)
 	}))
 }
 
-func init() {
+// addSSHKeyCommands adds sshkey.go's commands to the tree.
+func (app *App) addSSHKeyCommands(root *cobra.Command) {
 	sshKeyCmd := &cobra.Command{
 		Use:   "ssh-key",
 		Short: "The SSH key that container-groups ssh, cp, and sftp authenticate with (get, setup)",
@@ -293,6 +393,7 @@ the portal at ` + sshKeysPage + `; registering a key replaces any other.
 The API does not show the registered key, so the CLI cannot check it.`,
 	}
 
+	var generate bool
 	setupCmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Find or generate a local SSH key, and show where to register it",
@@ -314,13 +415,18 @@ behave as if there is no terminal.`,
   # Scripts and CI: generate without asking when there is none
   saladcloud ssh-key setup --generate`,
 		Args: cobra.NoArgs,
-		RunE: runSSHKeySetup,
+		RunE: func(cmd *cobra.Command, _ []string) error { return app.runSSHKeySetup(cmd.Context(), generate) },
 	}
-	setupCmd.Flags().Bool("generate", false, "generate ~/.ssh/saladcloud_ed25519 without asking when no usable key is found")
+	setupCmd.Flags().BoolVar(
+		&generate,
+		"generate",
+		false,
+		"generate ~/.ssh/saladcloud_ed25519 without asking when no usable key is found",
+	)
 	sshKeyCmd.AddCommand(setupCmd)
 
 	sshKeyCmd.AddCommand(&cobra.Command{
-		Use:   "get",
+		Use:   setupVerbGet,
 		Short: "Print the local SSH public key that would be used",
 		Long: `Print the local SSH public key (path and contents) the CLI would use, in the
 same search order as saladcloud ssh-key setup: ~/.ssh/saladcloud_ed25519.pub,
@@ -330,8 +436,8 @@ This is the key on this machine, not the one registered on your account:
 the API does not expose the account's key, so whether this one is
 registered cannot be checked from here.`,
 		Args: cobra.NoArgs,
-		RunE: runSSHKeyGet,
+		RunE: app.runSSHKeyGet,
 	})
 
-	Register(sshKeyCmd)
+	root.AddCommand(sshKeyCmd)
 }

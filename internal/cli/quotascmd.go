@@ -1,15 +1,16 @@
 package cli
 
 import (
-	"fmt"
-	"io"
+	"strconv"
 
+	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/quotas"
 	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
-func init() {
+// addQuotasCommands adds quotascmd.go's commands to the tree.
+func (app *App) addQuotasCommands(root *cobra.Command) {
 	// quotas is a singleton (one per organization): it takes get, never
 	// list, keeps the API's plural spelling, and has no singular alias.
 	quotasCmd := &cobra.Command{
@@ -17,11 +18,11 @@ func init() {
 		Short: "The organization's container group quotas (get)",
 	}
 	cmd := &cobra.Command{
-		Use:   "get",
+		Use:   verbNameGet,
 		Short: "Show the organization's container group quotas",
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			client, _, cerr := NewClient(cmd)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -29,34 +30,38 @@ func init() {
 			if qerr != nil {
 				return qerr
 			}
-			return wrapErr(output.Emit(q, func(w io.Writer) {
-				cg := q.ContainerGroupsQuotas
-				if cg == nil {
-					fmt.Fprintln(w, "No container group quotas reported")
-					return
-				}
-				fmt.Fprintf(w, "replicas\t%s / %s\n",
-					int64Cell(cg.ContainerReplicasUsed), int64Cell(cg.ContainerReplicasQuota))
-				if cg.MaxContainerGroupReallocationsPerMinute != nil {
-					fmt.Fprintf(w, "max reallocations/min\t%d\n", *cg.MaxContainerGroupReallocationsPerMinute)
-				}
-				if cg.MaxContainerGroupRecreatesPerMinute != nil {
-					fmt.Fprintf(w, "max recreates/min\t%d\n", *cg.MaxContainerGroupRecreatesPerMinute)
-				}
-				if cg.MaxContainerGroupRestartsPerMinute != nil {
-					fmt.Fprintf(w, "max restarts/min\t%d\n", *cg.MaxContainerGroupRestartsPerMinute)
-				}
-			}))
+			return wrapErr(app.printer.Emit(q, func(w *output.Writer) { writeQuotas(w, q) }))
 		},
 	}
 	quotasCmd.AddCommand(cmd)
-	orgScoped(quotasCmd)
-	Register(quotasCmd)
+	app.orgScoped(quotasCmd)
+	root.AddCommand(quotasCmd)
+}
+
+// writeQuotas writes quotas get's table: replicas used of the quota, then
+// each per-minute limit the API reports.
+func writeQuotas(w *output.Writer, q *quotas.Quotas) {
+	cg := q.ContainerGroupsQuotas
+	if cg == nil {
+		w.Println("No container group quotas reported")
+		return
+	}
+	w.Printf("replicas\t%s / %s\n",
+		int64Cell(cg.ContainerReplicasUsed), int64Cell(cg.ContainerReplicasQuota))
+	if cg.MaxContainerGroupReallocationsPerMinute != nil {
+		w.Printf("max reallocations/min\t%d\n", *cg.MaxContainerGroupReallocationsPerMinute)
+	}
+	if cg.MaxContainerGroupRecreatesPerMinute != nil {
+		w.Printf("max recreates/min\t%d\n", *cg.MaxContainerGroupRecreatesPerMinute)
+	}
+	if cg.MaxContainerGroupRestartsPerMinute != nil {
+		w.Printf("max restarts/min\t%d\n", *cg.MaxContainerGroupRestartsPerMinute)
+	}
 }
 
 func int64Cell(v *int64) string {
 	if v == nil {
 		return "-"
 	}
-	return fmt.Sprintf("%d", *v)
+	return strconv.FormatInt(*v, 10)
 }

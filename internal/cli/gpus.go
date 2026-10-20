@@ -1,10 +1,7 @@
 package cli
 
 import (
-	"fmt"
-	"io"
-	"os"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/organizationdata"
@@ -17,7 +14,8 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
-func init() {
+// addGpusCommands adds gpus.go's commands to the tree.
+func (app *App) addGpusCommands(root *cobra.Command) {
 	gpusCmd := &cobra.Command{
 		Use:     "gpus",
 		Aliases: []string{"gpu", "gpu-classes"},
@@ -28,8 +26,9 @@ replica right now is what saladcloud availability --gpu <class> answers,
 which costs a platform query and so is never run implicitly.`,
 	}
 
+	var listOpts gpusListOptions
 	listCmd := &cobra.Command{
-		Use:   "list",
+		Use:   verbNameList,
 		Short: "List GPU classes with their prices per priority tier",
 		Long: `List the GPU classes available to the organization, with their $/hr
 prices per priority tier, shown verbatim as the API reports them. The table
@@ -42,9 +41,9 @@ column for.`,
   # Every price entry per class, as JSON
   saladcloud gpus list --all-prices -o json`,
 		Args: cobra.NoArgs,
-		RunE: runGpusList,
+		RunE: func(cmd *cobra.Command, _ []string) error { return app.runGpusList(cmd, &listOpts) },
 	}
-	listCmd.Flags().Bool("all-prices", false, "add a column listing every price entry verbatim")
+	listCmd.Flags().BoolVar(&listOpts.allPrices, "all-prices", false, "add a column listing every price entry verbatim")
 	gpusCmd.AddCommand(listCmd)
 
 	gpusCmd.AddCommand(&cobra.Command{
@@ -55,15 +54,15 @@ names resolve like container-groups create --gpu: case-insensitive exact
 match first, then a unique substring.`,
 		Example: `  saladcloud gpus get "RTX 4090 (24 GB)"`,
 		Args:    cobra.ExactArgs(1),
-		RunE:    runGpusGet,
+		RunE:    app.runGpusGet,
 	})
-	orgScoped(gpusCmd)
-	Register(gpusCmd)
+	app.orgScoped(gpusCmd)
+	root.AddCommand(gpusCmd)
 }
 
 // sortedGpuClasses lists the organization's GPU classes, sorted by name.
-func sortedGpuClasses(cmd *cobra.Command) ([]organizationdata.GpuClass, *clierr.Error) {
-	client, _, cerr := NewClient(cmd)
+func (app *App) sortedGpuClasses(cmd *cobra.Command) ([]organizationdata.GpuClass, *clierr.Error) {
+	client, _, cerr := app.NewClient(cmd)
 	if cerr != nil {
 		return nil, cerr
 	}
@@ -72,27 +71,33 @@ func sortedGpuClasses(cmd *cobra.Command) ([]organizationdata.GpuClass, *clierr.
 		return nil, cerr
 	}
 	classes := list.Items
-	sort.Slice(classes, func(i, j int) bool {
-		return gpuNameCell(classes[i].Name) < gpuNameCell(classes[j].Name)
+	slices.SortStableFunc(classes, func(a, b organizationdata.GpuClass) int {
+		return strings.Compare(gpuNameCell(a.Name), gpuNameCell(b.Name))
 	})
 	return classes, nil
 }
 
-func runGpusList(cmd *cobra.Command, args []string) error {
-	allPrices, _ := cmd.Flags().GetBool("all-prices")
-	classes, cerr := sortedGpuClasses(cmd)
+// gpusListOptions are gpus list's flags.
+type gpusListOptions struct {
+	allPrices bool
+}
+
+// runGpusList is gpus list's RunE: list the GPU classes, sorted by name, and
+// emit them with their prices.
+func (app *App) runGpusList(cmd *cobra.Command, opts *gpusListOptions) error {
+	classes, cerr := app.sortedGpuClasses(cmd)
 	if cerr != nil {
 		return cerr
 	}
 	payload := struct {
 		Items []organizationdata.GpuClass `json:"items"`
 	}{classes}
-	emitErr := output.Emit(payload, func(w io.Writer) {
+	emitErr := app.printer.Emit(payload, func(w *output.Writer) {
 		header := "NAME\tTYPE\tHIGH DEMAND\tBATCH\tLOW\tMEDIUM\tHIGH"
-		if allPrices {
+		if opts.allPrices {
 			header += "\tPRICES"
 		}
-		fmt.Fprintln(w, header)
+		w.Println(header)
 		for _, c := range classes {
 			prices := pricesByPriority(c.Prices)
 			cells := []string{
@@ -104,20 +109,20 @@ func runGpusList(cmd *cobra.Command, args []string) error {
 				orDash(prices["medium"]),
 				orDash(prices["high"]),
 			}
-			if allPrices {
+			if opts.allPrices {
 				cells = append(cells, formatAllPrices(c.Prices))
 			}
-			fmt.Fprintln(w, strings.Join(cells, "\t"))
+			w.Println(strings.Join(cells, "\t"))
 		}
 	})
-	if emitErr == nil && output.Mode() == "table" {
-		fmt.Fprintln(os.Stderr, gpusLegend)
+	if emitErr == nil && !app.printer.Machine() {
+		fprintln(app.errw(), gpusLegend)
 	}
 	return wrapErr(emitErr)
 }
 
-func runGpusGet(cmd *cobra.Command, args []string) error {
-	classes, cerr := sortedGpuClasses(cmd)
+func (app *App) runGpusGet(cmd *cobra.Command, args []string) error {
+	classes, cerr := app.sortedGpuClasses(cmd)
 	if cerr != nil {
 		return cerr
 	}
@@ -134,11 +139,15 @@ func runGpusGet(cmd *cobra.Command, args []string) error {
 		}
 	}
 	if class == nil {
-		return clierr.New(clierr.CodeNotFound, clierr.KindNotFound,
-			`GPU class "%s" not found in this organization's catalog`, args[0]).WithHint("to list them, run saladcloud gpus list")
+		return clierr.New(
+			clierr.CodeNotFound,
+			clierr.KindNotFound,
+			`GPU class "%s" not found in this organization's catalog`,
+			args[0],
+		).WithHint("to list them, run saladcloud gpus list")
 	}
-	return wrapErr(output.Emit(class, func(w io.Writer) {
-		row := func(k, v string) { fmt.Fprintf(w, "%s\t%s\n", k, v) }
+	return wrapErr(app.printer.Emit(class, func(w *output.Writer) {
+		row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
 		row("Name", gpuNameCell(class.Name))
 		row("ID", ptr.Deref(class.Id))
 		row("Type", gpuClassTypeCell(class.GpuClassType))

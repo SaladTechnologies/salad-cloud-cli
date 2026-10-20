@@ -22,8 +22,8 @@ const jobFileShapeHint = `put your fields under "input", or pass them with --inp
 // with no hint. An unknown field is kind unknown_field, and gets
 // jobFileShapeHint when the file has unknown top-level fields and no "input"
 // key.
-func loadJobFile(file string, out any) *clierr.Error {
-	name, raw, cerr := input.ReadDocument(file)
+func (app *App) loadJobFile(file string, out any) *clierr.Error {
+	name, raw, cerr := input.ReadDocument(file, app.Stdin)
 	if cerr != nil {
 		return cerr
 	}
@@ -32,7 +32,7 @@ func loadJobFile(file string, out any) *clierr.Error {
 		var doc map[string]json.RawMessage
 		if json.Unmarshal(raw, &doc) == nil {
 			if _, ok := doc["input"]; !ok && hasTopLevelUnknown(unknowns) {
-				e.WithHint("%s", jobFileShapeHint)
+				e = e.WithHint("%s", jobFileShapeHint)
 			}
 		}
 		return e

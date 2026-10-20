@@ -14,30 +14,32 @@ import (
 )
 
 func TestParseFromRef(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		ref, project, group string
 	}{
 		{"my-app", "", "my-app"},
 		{"staging/my-app", "staging", "my-app"},
 	} {
-		project, group, cerr := parseFromRef(tc.ref)
-		if cerr != nil || project != tc.project || group != tc.group {
-			t.Errorf("parseFromRef(%q) = %q, %q, %v; want %q, %q", tc.ref, project, group, cerr, tc.project, tc.group)
+		from, cerr := parseFromRef(tc.ref)
+		if cerr != nil || from.project != tc.project || from.group != tc.group {
+			t.Errorf("parseFromRef(%q) = %+v, %v; want %q, %q", tc.ref, from, cerr, tc.project, tc.group)
 		}
 	}
 	for _, ref := range []string{"", "/my-app", "staging/", "my-org/staging/my-app"} {
-		if _, _, cerr := parseFromRef(ref); cerr == nil || cerr.Code != clierr.CodeUsage {
+		if _, cerr := parseFromRef(ref); cerr == nil || cerr.Code != clierr.CodeUsage {
 			t.Errorf("parseFromRef(%q) = %v, want a usage error", ref, cerr)
 		}
 	}
 	// The cross-organization form says why it is refused.
-	_, _, cerr := parseFromRef("my-org/staging/my-app")
+	_, cerr := parseFromRef("my-org/staging/my-app")
 	if !strings.Contains(errText(cerr), "organization") {
 		t.Errorf("cross-org message %q does not mention the organization", errText(cerr))
 	}
 }
 
 func TestCheckCopyTarget(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		same    bool
 		name    string
@@ -49,7 +51,11 @@ func TestCheckCopyTarget(t *testing.T) {
 		{false, "", false}, // another project: the source's name is free here
 		{false, "my-app", false},
 	} {
-		if cerr := checkCopyTarget(tc.same, tc.name, "my-app"); (cerr != nil) != tc.wantErr {
+		target := "staging"
+		if tc.same {
+			target = "default"
+		}
+		if cerr := checkCopyTarget("default", target, tc.name, "my-app"); (cerr != nil) != tc.wantErr {
 			t.Errorf("checkCopyTarget(%v, %q) = %v, wantErr %v", tc.same, tc.name, cerr, tc.wantErr)
 		}
 	}
@@ -64,12 +70,14 @@ func copySource(t *testing.T) string {
 	}
 	m["queue_connection"] = map[string]any{"path": "/job", "port": 8080, "queue_name": "jobs"}
 	m["restart_policy"] = "on_failure"
-	b, _ := json.Marshal(m)
+	b := must(json.Marshal(m))(t)
 	return string(b)
 }
 
 func TestCopyDocument(t *testing.T) {
-	raw, err := copyDocument(grp(t, copySource(t)), "my-copy", false)
+	t.Parallel()
+	g := grp(t, copySource(t))
+	raw, err := copyDocument(g, copyDisplayName(g, "my-copy"))
 	if err != nil {
 		t.Fatalf("copyDocument: %v", err)
 	}
@@ -79,7 +87,7 @@ func TestCopyDocument(t *testing.T) {
 	}
 
 	// The create schema accepts the whole document.
-	if u := input.UnknownFieldList(raw, reflect.TypeOf(containergroups.ContainerGroupCreationRequest{})); len(u) > 0 {
+	if u := input.UnknownFieldList(raw, reflect.TypeFor[containergroups.ContainerGroupCreationRequest]()); len(u) > 0 {
 		t.Errorf("copy has fields create rejects: %v", u)
 	}
 	for _, gone := range []string{
@@ -107,12 +115,13 @@ func TestCopyDocument(t *testing.T) {
 		}
 	}
 	env, _ := lookupPath(doc, "container.environment_variables")
-	if env.(map[string]any)["weird.KEY-2"] != "x" {
+	if assertAs[map[string]any](t, env)["weird.KEY-2"] != "x" {
 		t.Errorf("env var with a dotted key not copied: %v", env)
 	}
 }
 
 func TestCopyDocumentDisplayName(t *testing.T) {
+	t.Parallel()
 	g := grp(t, copySource(t))
 	for _, tc := range []struct {
 		name       string
@@ -124,20 +133,33 @@ func TestCopyDocumentDisplayName(t *testing.T) {
 		{"", false, "My App"},       // same name in another project
 		{"my-app", false, "My App"},
 	} {
-		raw, err := copyDocument(g, tc.name, tc.displaySet)
+		displayName := ""
+		if !tc.displaySet {
+			displayName = copyDisplayName(g, tc.name)
+		}
+		raw, err := copyDocument(g, displayName)
 		if err != nil {
 			t.Fatal(err)
 		}
 		var doc map[string]any
-		_ = json.Unmarshal(raw, &doc)
+		noErr(t, json.Unmarshal(raw, &doc))
 		if doc["display_name"] != tc.want {
-			t.Errorf("copyDocument(%q, %v) display_name = %v, want %q", tc.name, tc.displaySet, doc["display_name"], tc.want)
+			t.Errorf(
+				"copy named %q (display name set: %v) display_name = %v, want %q",
+				tc.name,
+				tc.displaySet,
+				doc["display_name"],
+				tc.want,
+			)
 		}
 	}
 }
 
 func TestCopyDocumentBuildsARequest(t *testing.T) {
-	raw, err := copyDocument(grp(t, copySource(t)), "my-copy", false)
+	t.Parallel()
+	app := newTestRun(t)
+	g := grp(t, copySource(t))
+	raw, err := copyDocument(g, copyDisplayName(g, "my-copy"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +167,7 @@ func TestCopyDocumentBuildsARequest(t *testing.T) {
 	if err := json.Unmarshal(raw, &base); err != nil {
 		t.Fatalf("copy does not unmarshal into a creation request: %v", err)
 	}
-	req, cerr := buildCreateRequest(base, createFlags{Name: "my-copy", HasBase: true})
+	req, cerr := app.buildCreateRequest(&base, &createFlags{Name: "my-copy", HasBase: true})
 	if cerr != nil {
 		t.Fatalf("buildCreateRequest: %v", cerr)
 	}
@@ -162,6 +184,7 @@ func TestCopyDocumentBuildsARequest(t *testing.T) {
 }
 
 func TestNoteRegistryCredentials(t *testing.T) {
+	t.Parallel()
 	const private = "registry.example.com/team/app:1"
 	var buf bytes.Buffer
 	noteRegistryCredentials(&buf, nil, private)
@@ -174,7 +197,11 @@ func TestNoteRegistryCredentials(t *testing.T) {
 		t.Error("no note for a file without credentials")
 	}
 	buf.Reset()
-	noteRegistryCredentials(&buf, json.RawMessage(`{"container":{"registry_authentication":{"basic":{"username":"u","password":"p"}}}}`), private)
+	noteRegistryCredentials(
+		&buf,
+		json.RawMessage(`{"container":{"registry_authentication":{"basic":{"username":"u","password":"p"}}}}`),
+		private,
+	)
 	if buf.Len() != 0 {
 		t.Errorf("note printed although the file supplies credentials: %q", buf.String())
 	}
@@ -194,7 +221,8 @@ func TestNoteRegistryCredentials(t *testing.T) {
 }
 
 func TestPlural(t *testing.T) {
-	if plural(1, "replica") != "1 replica" || plural(0, "replica") != "0 replicas" || plural(3, "replica") != "3 replicas" {
-		t.Errorf("plural: %q %q %q", plural(1, "replica"), plural(0, "replica"), plural(3, "replica"))
+	t.Parallel()
+	if replicas(1) != "1 replica" || replicas(0) != "0 replicas" || replicas(3) != "3 replicas" {
+		t.Errorf("replicas: %q %q %q", replicas(1), replicas(0), replicas(3))
 	}
 }

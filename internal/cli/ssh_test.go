@@ -29,6 +29,7 @@ func testInstance(id, state, ip string, port int64) containergroups.ContainerGro
 }
 
 func TestResolveSSHInstancePrefixMatch(t *testing.T) {
+	t.Parallel()
 	instances := []containergroups.ContainerGroupInstance{
 		testInstance("8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37", "running", "1.2.3.4", 30001),
 		testInstance("9b3e24cb-1111-2222-3333-444455556666", "running", "1.2.3.5", 30002),
@@ -43,6 +44,7 @@ func TestResolveSSHInstancePrefixMatch(t *testing.T) {
 }
 
 func TestResolveSSHInstancePrefixMatchesNonRunning(t *testing.T) {
+	t.Parallel()
 	// An explicit prefix may select a non-running instance; the SSH-ready
 	// check happens later in sshTargetOf.
 	instances := []containergroups.ContainerGroupInstance{
@@ -58,6 +60,7 @@ func TestResolveSSHInstancePrefixMatchesNonRunning(t *testing.T) {
 }
 
 func TestResolveSSHInstanceAmbiguousPrefix(t *testing.T) {
+	t.Parallel()
 	instances := []containergroups.ContainerGroupInstance{
 		testInstance("8a2f13ba-x", "running", "1.2.3.4", 30001),
 		testInstance("8a2f24cb-y", "running", "1.2.3.5", 30002),
@@ -75,6 +78,7 @@ func TestResolveSSHInstanceAmbiguousPrefix(t *testing.T) {
 }
 
 func TestResolveSSHInstanceNoPrefixMatch(t *testing.T) {
+	t.Parallel()
 	instances := []containergroups.ContainerGroupInstance{
 		testInstance("aaaa1111", "running", "1.2.3.4", 30001),
 	}
@@ -85,6 +89,7 @@ func TestResolveSSHInstanceNoPrefixMatch(t *testing.T) {
 }
 
 func TestResolveSSHInstanceFirstRunning(t *testing.T) {
+	t.Parallel()
 	instances := []containergroups.ContainerGroupInstance{
 		testInstance("aaaa1111", "downloading", "", 0),
 		testInstance("bbbb2222", "running", "1.2.3.4", 30001),
@@ -100,6 +105,7 @@ func TestResolveSSHInstanceFirstRunning(t *testing.T) {
 }
 
 func TestResolveSSHInstanceNoneRunning(t *testing.T) {
+	t.Parallel()
 	instances := []containergroups.ContainerGroupInstance{
 		testInstance("aaaa1111", "downloading", "", 0),
 		testInstance("bbbb2222", "allocating", "", 0),
@@ -117,6 +123,7 @@ func TestResolveSSHInstanceNoneRunning(t *testing.T) {
 }
 
 func TestSSHTargetOfNotReady(t *testing.T) {
+	t.Parallel()
 	inst := testInstance("aaaa1111", "running", "", 0)
 	_, err := sshTargetOf(&inst, "my-app")
 	if err == nil {
@@ -130,6 +137,7 @@ func TestSSHTargetOfNotReady(t *testing.T) {
 }
 
 func TestSSHTargetOfReady(t *testing.T) {
+	t.Parallel()
 	inst := testInstance("aaaa1111", "running", "203.0.113.7", 30123)
 	target, err := sshTargetOf(&inst, "my-app")
 	if err != nil {
@@ -142,6 +150,7 @@ func TestSSHTargetOfReady(t *testing.T) {
 }
 
 func TestShSingleQuote(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ in, want string }{
 		{"plain", "'plain'"},
 		{"two words", "'two words'"},
@@ -161,6 +170,7 @@ func TestShSingleQuote(t *testing.T) {
 }
 
 func TestRemoteCommand(t *testing.T) {
+	t.Parallel()
 	got := remoteCommand([]string{"uname", "-a", "&&", "echo", "it's done"})
 	want := `sh -c 'uname -a && echo it'\''s done'`
 	if got != want {
@@ -169,17 +179,31 @@ func TestRemoteCommand(t *testing.T) {
 }
 
 func TestBuildSSHArgsInteractive(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
-	got := buildSSHArgs(target, "root", "", nil)
-	want := []string{"-p", "30123", "-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=/cfg/known_hosts", "-o", "HostKeyAlias=saladcloud-aaaa1111", "root@203.0.113.7"}
+	got := app.buildSSHArgs(target, "root", "", nil)
+	want := []string{
+		"-p",
+		"30123",
+		"-o",
+		"StrictHostKeyChecking=accept-new",
+		"-o",
+		"UserKnownHostsFile=/cfg/known_hosts",
+		"-o",
+		"HostKeyAlias=saladcloud-aaaa1111",
+		"root@203.0.113.7",
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("args = %v, want %v", got, want)
 	}
 }
 
 func TestBuildSSHArgsCommandWithIdentityAndUser(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
-	got := buildSSHArgs(target, "worker", "/home/me/.ssh/key", []string{"nvidia-smi", "-L"})
+	got := app.buildSSHArgs(target, "worker", "/home/me/.ssh/key", []string{"nvidia-smi", "-L"})
 	want := []string{
 		"-p", "30123",
 		"-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=/cfg/known_hosts",
@@ -195,10 +219,12 @@ func TestBuildSSHArgsCommandWithIdentityAndUser(t *testing.T) {
 }
 
 func TestBuildSSHArgsCommandIsSingleArg(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	// The whole remote command must be ONE argv element (the relay execs
 	// raw argv without a shell — fact verified live).
 	target := sshTarget{IP: "203.0.113.7", Port: 22}
-	args := buildSSHArgs(target, "root", "", []string{"uname", "-a", ";", "whoami"})
+	args := app.buildSSHArgs(target, "root", "", []string{"uname", "-a", ";", "whoami"})
 	last := args[len(args)-1]
 	if last != `sh -c 'uname -a ; whoami'` {
 		t.Errorf("final arg = %q, want the whole command wrapped in one sh -c string", last)
@@ -206,13 +232,15 @@ func TestBuildSSHArgsCommandIsSingleArg(t *testing.T) {
 }
 
 func TestRenderSSHConfig(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	instances := []containergroups.ContainerGroupInstance{
 		testInstance("8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37", "running", "203.0.113.7", 30123),
 		testInstance("bbbb2222", "downloading", "", 0), // not running: excluded
 		testInstance("cccc3333", "running", "", 0),     // running but not SSH-ready: excluded
 		testInstance("dddd4444-5555", "running", "198.51.100.9", 30124),
 	}
-	text, n := renderSSHConfig("my-app", instances, "root")
+	text, n := app.renderSSHConfig("my-app", instances, "root")
 	if n != 2 {
 		t.Fatalf("blocks = %d, want 2:\n%s", n, text)
 	}
@@ -238,6 +266,7 @@ func TestRenderSSHConfig(t *testing.T) {
 }
 
 func TestOneShotExitNote(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		exitCode int
 		want     string
@@ -258,6 +287,7 @@ func TestOneShotExitNote(t *testing.T) {
 }
 
 func TestChildExitCode(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		runErr *clierr.Error
@@ -276,7 +306,9 @@ func TestChildExitCode(t *testing.T) {
 }
 
 func TestRenderSSHConfigEmpty(t *testing.T) {
-	_, n := renderSSHConfig("my-app", nil, "root")
+	t.Parallel()
+	app := newTestRun(t)
+	_, n := app.renderSSHConfig("my-app", nil, "root")
 	if n != 0 {
 		t.Errorf("blocks = %d, want 0", n)
 	}
@@ -290,10 +322,12 @@ func TestRenderSSHConfigEmpty(t *testing.T) {
 // the live suite ran the linux binary under WSL and was denied every time
 // while the same command from Windows worked.
 func TestSessionFailedHintNamesTheKeyLocation(t *testing.T) {
+	t.Parallel()
 	hint := sessionFailedHint
 	for _, want := range []string{
 		"permission denied", "must be registered", "https://portal.salad.com/ssh-keys", "owns the API key",
-		"ssh-key setup", "this machine", "passphrase", "ssh-add", "closed or refused", "still starting", "try again in a minute",
+		"ssh-key setup", "this machine", "passphrase", "ssh-add", "closed or refused", "still starting",
+		"try again in a minute",
 	} {
 		if !strings.Contains(hint, want) {
 			t.Errorf("hint missing %q; got: %s", want, hint)
@@ -309,14 +343,16 @@ func TestSessionFailedHintNamesTheKeyLocation(t *testing.T) {
 // TestRenderSSHConfigIdentity: with an identity, every Host block carries
 // IdentityFile so plain ssh and VS Code use the CLI's dedicated key too.
 func TestRenderSSHConfigIdentity(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	instances := []containergroups.ContainerGroupInstance{
 		testInstance("8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37", "running", "203.0.113.7", 30123),
 	}
-	text, n := renderSSHConfigIdentity("my-app", instances, "root", "/home/me/.ssh/saladcloud_ed25519")
+	text, n := app.renderSSHConfigIdentity("my-app", instances, "root", "/home/me/.ssh/saladcloud_ed25519")
 	if n != 1 || !strings.Contains(text, "    IdentityFile /home/me/.ssh/saladcloud_ed25519\n") {
 		t.Errorf("IdentityFile missing:\n%s", text)
 	}
-	plain, _ := renderSSHConfig("my-app", instances, "root")
+	plain, _ := app.renderSSHConfig("my-app", instances, "root")
 	if strings.Contains(plain, "IdentityFile") {
 		t.Errorf("no identity given but IdentityFile rendered:\n%s", plain)
 	}
@@ -325,10 +361,12 @@ func TestRenderSSHConfigIdentity(t *testing.T) {
 // ssh reads UserKnownHostsFile as a whitespace-separated list of files, so
 // a path with a space (a Windows profile such as "Jane Doe") is quoted.
 func TestHostKeyOptionsQuoteASpacedPath(t *testing.T) {
-	old := knownHostsPath
-	knownHostsPath = func() string { return `C:\Users\Jane Doe\AppData\Roaming\saladcloud\known_hosts` }
-	t.Cleanup(func() { knownHostsPath = old })
-	got := hostKeyOptions("aaaa1111")
+	t.Parallel()
+	app := newTestRun(t)
+	old := app.KnownHostsPath
+	app.KnownHostsPath = func() string { return `C:\Users\Jane Doe\AppData\Roaming\saladcloud\known_hosts` }
+	t.Cleanup(func() { app.KnownHostsPath = old })
+	got := app.hostKeyOptions("aaaa1111")
 	want := []string{
 		"-o", "StrictHostKeyChecking=accept-new",
 		"-o", `UserKnownHostsFile="C:\Users\Jane Doe\AppData\Roaming\saladcloud\known_hosts"`,
@@ -339,30 +377,24 @@ func TestHostKeyOptionsQuoteASpacedPath(t *testing.T) {
 	}
 }
 
-// TestHelperExit255 is not a test: runChild runs the test binary with it to
-// get a child that exits 255.
-func TestHelperExit255(t *testing.T) {
-	if os.Getenv("SALAD_CLI_TEST_HELPER_EXIT") == "" {
-		t.Skip("a helper for TestRunChildHints")
-	}
-	os.Exit(255)
-}
-
 // TestRunChildHints: a child that exits 255 (ssh or sftp could not open the
 // session) carries the SSH Keys hint; a program that is not installed gets
 // the per-OS install hint.
 func TestRunChildHints(t *testing.T) {
-	t.Setenv("SALAD_CLI_TEST_HELPER_EXIT", "1")
-	cerr := runChildTo(io.Discard, os.Args[0], []string{"-test.run=^TestHelperExit255$"})
+	t.Parallel()
+	app := newTestRun(t)
+	app.setenv("SALAD_CLI_TEST_HELPER_EXIT", "1")
+	cerr := app.runChildTo(io.Discard, os.Args[0], []string{"-test.run=^$"})
 	if cerr == nil || cerr.Code != 255 || cerr.Kind != clierr.KindChildExit || cerr.HintText() != sessionFailedHint {
 		t.Errorf("exit 255: %+v hint %q", cerr, cerr.HintText())
 	}
-	old := goos
-	t.Cleanup(func() { goos = old })
-	goos = "darwin"
-	cerr = runChild("saladcloud-test-no-such-ssh", nil)
+	old := app.Env.GOOS
+	t.Cleanup(func() { app.Env.GOOS = old })
+	app.Env.GOOS = "darwin"
+	cerr = app.runChild("saladcloud-test-no-such-ssh", nil)
 	if cerr == nil || cerr.Message != "saladcloud-test-no-such-ssh not found" ||
-		cerr.HintText() != "macOS includes it at /usr/bin/saladcloud-test-no-such-ssh; check that /usr/bin is on your PATH" {
+		cerr.HintText() != "macOS includes it at /usr/bin/saladcloud-test-no-such-ssh; check that /usr/bin is on "+
+			"your PATH" {
 		t.Errorf("missing: %+v hint %q", cerr, cerr.HintText())
 	}
 }

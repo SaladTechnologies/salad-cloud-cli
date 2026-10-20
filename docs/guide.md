@@ -888,8 +888,9 @@ Transcription details:
   rest in `--help`), `transcription-lite` takes 8, and a flag the endpoint
   does not take is rejected. **A flag you do not set is not sent**, so the
   endpoint's own defaults apply (every boolean off; on `transcribe` an unset
-  `language_code` means the language is detected automatically, while forcing
-  one makes the audio be treated as that language);
+  `language_code` means the language is detected automatically, while setting
+  one tells the endpoint the audio's language and does not translate: for
+  English output, use `--translate to_eng`);
   the request is the one `inference jobs create --input` would send for the
   same intent. `--input-extra '<json>'` merges raw fields **over** the built
   input (extra wins), for fields newer than this CLI.
@@ -897,7 +898,7 @@ Transcription details:
   `--timeout` default `30m` for long audio. On success, table mode prints
   the transcript text — the SRT document with `--srt`, the result URL with
   `--return-as-file`; `-o json` emits the full final job document. A failed
-  job exits 1 (kind `transcription_failed`; a cancelled one, `job_cancelled`)
+  job exits 1 (kind `transcription_failed`; a canceled one, `job_canceled`)
   with the status and last event. `--no-wait` prints the job id
   and the `inference jobs get` command to poll it.
 - Failure detection: the transcription API marks some failed jobs
@@ -996,7 +997,7 @@ that fails is retried at once, up to four attempts in all.
 `queues jobs cancel` stops a pending job from running. A running job is
 marked `cancelled` and its output discarded, but the instance working on it
 runs it to the end, so make handlers with side effects idempotent; a
-finished job cannot be cancelled (exit 1). `queues delete` deletes the
+finished job cannot be canceled (exit 1). `queues delete` deletes the
 queue's pending jobs too, and every group connected to it loses the
 connection for good. Stopping or deleting a group does not stop its worker
 at once: it can take new jobs for some seconds, and those read `running`
@@ -1242,13 +1243,13 @@ script can switch on it. A new failure mode maps onto an existing kind.
 | `not_available` | 10 | the AI Gateway declined the request for billing reasons (402) |
 | `api_error` | 1 | any other API failure (other 4xx, 5xx, an undecodable response), local I/O on files the CLI chose, or a `doctor` check failed |
 | `internal` | 1 | the CLI could not encode or copy its own data; a CLI bug, worth reporting |
-| `interrupted` | 1 | Ctrl-C during a wait (`--wait`, an `update`/`scale` settle, `inference transcribe`), a prompt or a request; end of input at a prompt; "n" at `ssh-key setup`'s generate prompt (`<command> cancelled`, for example `container-groups list cancelled`); what the server already received goes ahead. `logs --follow` and `--watch` end with exit 0 instead |
+| `interrupted` | 1 | Ctrl-C during a wait (`--wait`, an `update`/`scale` settle, `inference transcribe`), a prompt or a request; end of input at a prompt; "n" at `ssh-key setup`'s generate prompt (`<command> canceled`, for example `container-groups list canceled`); what the server already received goes ahead. `logs --follow` and `--watch` end with exit 0 instead |
 | `wait_timeout` | 1 | a wait ran past `--timeout`; the server keeps going |
 | `group_stopped` | 1 | a wait for running saw the group stop instead |
 | `group_failed` | 1 | a wait for running saw the group fail |
 | `group_succeeded` | 1 | a wait for running saw the group's containers exit successfully |
 | `job_failed` | 1 | `inference jobs create --wait` or `queues jobs create --wait` saw the job fail |
-| `job_cancelled` | 1 | `inference jobs create --wait`, `queues jobs create --wait`, `inference transcribe` or `inference transcription-lite` saw the job cancelled |
+| `job_canceled` | 1 | `inference jobs create --wait`, `queues jobs create --wait`, `inference transcribe` or `inference transcription-lite` saw the job canceled |
 | `transcription_failed` | 1 | a transcription job failed, or finished with an error in its output |
 | `child_exit` | the child's | `ssh`, `cp` or `sftp` exited nonzero; the CLI exits with its code |
 

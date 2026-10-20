@@ -23,6 +23,7 @@ func (selfEncoded) MarshalJSON() ([]byte, error) { return []byte(`"custom"`), ni
 
 type fillOuter struct {
 	fillBase
+
 	Name    *string           `json:"name,omitempty"`
 	Count   int               `json:"count,omitempty"`
 	List    []fillInner       `json:"list,omitempty"`
@@ -48,6 +49,7 @@ func fill(t *testing.T, v any) string {
 }
 
 func TestFillZeroValue(t *testing.T) {
+	t.Parallel()
 	got := fill(t, fillOuter{})
 	want := `{"base":null,"name":null,"count":null,"list":[],"labels":{},"nested":null,"ByKey":null,` +
 		`"any":null,"custom":null,"bytes":null,"null":null,"shady":null}`
@@ -57,6 +59,7 @@ func TestFillZeroValue(t *testing.T) {
 }
 
 func TestFillRecursesAndKeepsWrittenKeys(t *testing.T) {
+	t.Parallel()
 	s := "x"
 	v := fillOuter{
 		Name:   &s,
@@ -78,25 +81,27 @@ func TestFillRecursesAndKeepsWrittenKeys(t *testing.T) {
 
 // A null or empty value the CLI wrote on purpose is not replaced.
 func TestFillLeavesExplicitValues(t *testing.T) {
+	t.Parallel()
 	type own struct {
 		Unknown []string          `json:"unknown"`
 		Empty   []string          `json:"empty"`
 		Map     map[string]string `json:"map"`
 	}
-	got := fill(t, own{Empty: []string{}})
+	got := fill(t, own{Empty: []string{}}) //nolint:revive // a set, empty slice is the case under test
 	if want := `{"unknown":null,"empty":[],"map":null}`; got != want {
 		t.Errorf("got %s, want %s", got, want)
 	}
 }
 
 func TestFillPreservesNumbersAndEscapes(t *testing.T) {
+	t.Parallel()
 	type nums struct {
 		Big  int64   `json:"big"`
 		F    float64 `json:"f"`
 		Text string  `json:"text"`
 	}
 	v := nums{Big: 9007199254740993, F: 0.1, Text: "<a&b>"}
-	plain, _ := Marshal(v)
+	plain := must(Marshal(v))(t)
 	if got := fill(t, v); got != string(plain) {
 		t.Errorf("got %s, want %s (the encoder's own bytes)", got, plain)
 	}
@@ -107,6 +112,7 @@ func TestFillPreservesNumbersAndEscapes(t *testing.T) {
 }
 
 func TestFillTopLevelSlice(t *testing.T) {
+	t.Parallel()
 	got := fill(t, []fillInner{{}})
 	if want := `[{"id":null,"tags":[]}]`; got != want {
 		t.Errorf("got %s, want %s", got, want)
@@ -117,18 +123,19 @@ func TestFillTopLevelSlice(t *testing.T) {
 }
 
 func TestEmitAndStreamFill(t *testing.T) {
-	buf := capture(t)
-	if err := SetMode("json"); err != nil {
+	t.Parallel()
+	p, buf := capture(t)
+	if err := p.SetMode("json"); err != nil {
 		t.Fatal(err)
 	}
-	if err := Emit(fillInner{}, nil); err != nil {
+	if err := p.Emit(fillInner{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if want := "{\n  \"id\": null,\n  \"tags\": []\n}\n"; buf.String() != want {
 		t.Errorf("Emit = %q, want %q", buf.String(), want)
 	}
 	buf.Reset()
-	if err := Stream(fillInner{}, ""); err != nil {
+	if err := p.Stream(fillInner{}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if want := `{"id":null,"tags":[]}` + "\n"; buf.String() != want {
@@ -146,7 +153,7 @@ type nullable[T any] struct {
 	IsNull bool
 }
 
-func (n *nullable[T]) MarshalJSON() ([]byte, error) {
+func (n *nullable[T]) MarshalJSON() ([]byte, error) { //nolint:revive // mirrors util.Nullable's pointer receiver
 	if n.IsNull {
 		return []byte("null"), nil
 	}
@@ -154,6 +161,7 @@ func (n *nullable[T]) MarshalJSON() ([]byte, error) {
 }
 
 func TestFillReachesThroughNullable(t *testing.T) {
+	t.Parallel()
 	type probe struct {
 		Probe *nullable[fillInner] `json:"probe,omitempty"`
 		Null  *nullable[fillInner] `json:"null,omitempty"`
@@ -168,6 +176,7 @@ func TestFillReachesThroughNullable(t *testing.T) {
 // MarshalRequest keeps the empty lists and maps a value set, which omitempty
 // drops, and adds nothing the value did not hold.
 func TestMarshalRequestKeepsSetEmpties(t *testing.T) {
+	t.Parallel()
 	enc := func(v any) string {
 		t.Helper()
 		data, err := MarshalRequest(v)
@@ -180,13 +189,14 @@ func TestMarshalRequestKeepsSetEmpties(t *testing.T) {
 		t.Errorf("zero value = %s, want only the keys the encoder writes itself", got)
 	}
 	s := "x"
+	empty := []int{} //nolint:revive // set, empty slices are the case under test
 	v := fillOuter{
 		Name:   &s,
-		List:   []fillInner{{Tags: []int{}}, {ID: &s}},
-		Labels: map[string]string{},
-		Nested: &fillInner{Tags: []int{}},
-		ByKey:  map[string]fillInner{"k": {Tags: []int{}}},
-		Bytes:  []byte{},
+		List:   []fillInner{{Tags: empty}, {ID: &s}},
+		Labels: make(map[string]string),
+		Nested: &fillInner{Tags: empty},
+		ByKey:  map[string]fillInner{"k": {Tags: empty}},
+		Bytes:  []byte{}, //nolint:revive // a set, empty []byte encodes as "" and stays out of the fill
 		Custom: &selfEncoded{Hidden: &s},
 	}
 	want := `{"name":"x","list":[{"tags":[]},{"id":"x"}],"labels":{},"nested":{"tags":[]},` +
@@ -198,7 +208,9 @@ func TestMarshalRequestKeepsSetEmpties(t *testing.T) {
 		Probe *nullable[fillInner] `json:"probe,omitempty"`
 		Null  *nullable[fillInner] `json:"null,omitempty"`
 	}
-	got := enc(probe{Probe: &nullable[fillInner]{Value: fillInner{Tags: []int{}}}, Null: &nullable[fillInner]{IsNull: true}})
+	got := enc(
+		probe{Probe: &nullable[fillInner]{Value: fillInner{Tags: empty}}, Null: &nullable[fillInner]{IsNull: true}},
+	)
 	if want := `{"probe":{"tags":[]},"null":null}`; got != want {
 		t.Errorf("through Nullable = %s, want %s", got, want)
 	}

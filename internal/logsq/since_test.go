@@ -9,7 +9,8 @@ import (
 )
 
 func TestParseTimeRef(t *testing.T) {
-	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	t.Parallel()
+	now := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
 	tests := []struct {
 		in   string
 		want time.Time
@@ -20,13 +21,14 @@ func TestParseTimeRef(t *testing.T) {
 		{"1h30m", now.Add(-90 * time.Minute)},
 		{"3d", now.Add(-72 * time.Hour)},
 		{"1d12h", now.Add(-36 * time.Hour)},
-		{"2026-01-02T03:04:05Z", time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)},
-		{"2026-01-02T03:04:05.123456789Z", time.Date(2026, 1, 2, 3, 4, 5, 123456789, time.UTC)},
-		{"2026-01-02T03:04:05+02:00", time.Date(2026, 1, 2, 1, 4, 5, 0, time.UTC)},
-		{"2026-01-02", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)},
+		{"2026-01-02T03:04:05Z", time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)},
+		{"2026-01-02T03:04:05.123456789Z", time.Date(2026, time.January, 2, 3, 4, 5, 123456789, time.UTC)},
+		{"2026-01-02T03:04:05+02:00", time.Date(2026, time.January, 2, 1, 4, 5, 0, time.UTC)},
+		{"2026-01-02", time.Date(2026, time.January, 2, 0, 0, 0, 0, time.UTC)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
+			t.Parallel()
 			got, err := ParseTimeRef(tt.in, now)
 			if err != nil {
 				t.Fatalf("ParseTimeRef(%q) error: %v", tt.in, err)
@@ -42,9 +44,11 @@ func TestParseTimeRef(t *testing.T) {
 }
 
 func TestParseTimeRefGarbage(t *testing.T) {
-	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+	t.Parallel()
+	now := time.Date(2026, time.March, 15, 12, 0, 0, 0, time.UTC)
 	for _, in := range []string{"", "yesterday", "12x", "d", "2026-13-45", "15", "one hour"} {
 		t.Run("garbage_"+in, func(t *testing.T) {
+			t.Parallel()
 			_, err := ParseTimeRef(in, now)
 			if err == nil {
 				t.Fatalf("ParseTimeRef(%q) should fail", in)

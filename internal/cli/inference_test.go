@@ -10,7 +10,6 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/inferenceendpoints"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
@@ -23,13 +22,16 @@ func jobWithStatus(id string, status inferenceendpoints.Status) *inferenceendpoi
 
 // scriptedJobWaitDeps returns deps whose get walks the given status sequence
 // (sticking on the last entry) against a fake clock that sleep advances.
-func scriptedJobWaitDeps(statuses []inferenceendpoints.Status, progress *bytes.Buffer) jobWaitDeps[inferenceendpoints.InferenceEndpointJob] {
-	clock := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
+func scriptedJobWaitDeps(
+	statuses []inferenceendpoints.Status,
+	progress *bytes.Buffer,
+) jobWaitDeps[inferenceendpoints.InferenceEndpointJob] {
+	clock := time.Date(2026, time.September, 2, 0, 0, 0, 0, time.UTC)
 	i := 0
 	return jobWaitDeps[inferenceendpoints.InferenceEndpointJob]{
 		view:  inferenceJobView,
 		where: `on endpoint "transcribe"`,
-		get: func(ctx context.Context) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
+		get: func(_ context.Context) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
 			s := statuses[i]
 			if i < len(statuses)-1 {
 				i++
@@ -37,7 +39,7 @@ func scriptedJobWaitDeps(statuses []inferenceendpoints.Status, progress *bytes.B
 			return jobWithStatus("job-1", s), nil
 		},
 		now: func() time.Time { return clock },
-		sleep: func(ctx context.Context, d time.Duration) error {
+		sleep: func(_ context.Context, d time.Duration) error {
 			clock = clock.Add(d)
 			return nil
 		},
@@ -47,13 +49,15 @@ func scriptedJobWaitDeps(statuses []inferenceendpoints.Status, progress *bytes.B
 }
 
 func TestWaitForJobTerminalSucceeded(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	var progress bytes.Buffer
 	d := scriptedJobWaitDeps([]inferenceendpoints.Status{
 		inferenceendpoints.STATUS_PENDING,
 		inferenceendpoints.STATUS_RUNNING,
 		inferenceendpoints.STATUS_SUCCEEDED,
 	}, &progress)
-	job, cerr := waitForJobTerminal(context.Background(), d, "job-1", time.Minute, time.Second)
+	job, cerr := waitForJobTerminal(t.Context(), app.App, d, "job-1", time.Minute, time.Second)
 	if cerr != nil {
 		t.Fatalf("waitForJobTerminal: %v", cerr)
 	}
@@ -74,12 +78,14 @@ func TestWaitForJobTerminalSucceeded(t *testing.T) {
 }
 
 func TestWaitForJobTerminalFailed(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	var progress bytes.Buffer
 	d := scriptedJobWaitDeps([]inferenceendpoints.Status{
 		inferenceendpoints.STATUS_PENDING,
 		inferenceendpoints.STATUS_FAILED,
 	}, &progress)
-	job, cerr := waitForJobTerminal(context.Background(), d, "job-1", time.Minute, time.Second)
+	job, cerr := waitForJobTerminal(t.Context(), app.App, d, "job-1", time.Minute, time.Second)
 	if cerr == nil {
 		t.Fatal("waitForJobTerminal = nil error, want a failure naming the status")
 	}
@@ -95,11 +101,13 @@ func TestWaitForJobTerminalFailed(t *testing.T) {
 }
 
 func TestWaitForJobTerminalTimeout(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	var progress bytes.Buffer
 	d := scriptedJobWaitDeps([]inferenceendpoints.Status{
 		inferenceendpoints.STATUS_RUNNING,
 	}, &progress)
-	_, cerr := waitForJobTerminal(context.Background(), d, "job-1", 10*time.Second, 5*time.Second)
+	_, cerr := waitForJobTerminal(t.Context(), app.App, d, "job-1", 10*time.Second, 5*time.Second)
 	if cerr == nil {
 		t.Fatal("waitForJobTerminal = nil error, want wait_timeout")
 	}
@@ -114,12 +122,14 @@ func TestWaitForJobTerminalTimeout(t *testing.T) {
 // TestWaitForJobTransientErrorsKeepPolling: network/5xx errors must warn and
 // continue; the wait still succeeds once the job does.
 func TestWaitForJobTransientErrorsKeepPolling(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	var progress bytes.Buffer
-	clock := time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)
+	clock := time.Date(2026, time.September, 2, 0, 0, 0, 0, time.UTC)
 	calls := 0
 	d := jobWaitDeps[inferenceendpoints.InferenceEndpointJob]{
 		view: inferenceJobView,
-		get: func(ctx context.Context) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
+		get: func(_ context.Context) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
 			calls++
 			if calls == 1 {
 				return nil, clierr.New(clierr.CodeNetwork, clierr.KindNetwork, "connection reset")
@@ -127,14 +137,14 @@ func TestWaitForJobTransientErrorsKeepPolling(t *testing.T) {
 			return jobWithStatus("job-1", inferenceendpoints.STATUS_SUCCEEDED), nil
 		},
 		now: func() time.Time { return clock },
-		sleep: func(ctx context.Context, dur time.Duration) error {
+		sleep: func(_ context.Context, dur time.Duration) error {
 			clock = clock.Add(dur)
 			return nil
 		},
 		progress: &progress,
 		label:    "waiting",
 	}
-	job, cerr := waitForJobTerminal(context.Background(), d, "job-1", time.Minute, time.Second)
+	job, cerr := waitForJobTerminal(t.Context(), app.App, d, "job-1", time.Minute, time.Second)
 	if cerr != nil {
 		t.Fatalf("waitForJobTerminal: %v", cerr)
 	}
@@ -149,22 +159,25 @@ func TestWaitForJobTransientErrorsKeepPolling(t *testing.T) {
 // TestWaitForJobFatalErrorAborts: a 404 must abort immediately — waiting
 // longer cannot fix it.
 func TestWaitForJobFatalErrorAborts(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	d := jobWaitDeps[inferenceendpoints.InferenceEndpointJob]{
 		view: inferenceJobView,
-		get: func(ctx context.Context) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
+		get: func(_ context.Context) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
 			return nil, clierr.New(clierr.CodeNotFound, clierr.KindNotFound, "job not found")
 		},
 		now:   time.Now,
-		sleep: func(ctx context.Context, dur time.Duration) error { return nil },
+		sleep: func(_ context.Context, _ time.Duration) error { return nil },
 		label: "waiting",
 	}
-	_, cerr := waitForJobTerminal(context.Background(), d, "job-1", time.Minute, time.Second)
+	_, cerr := waitForJobTerminal(t.Context(), app.App, d, "job-1", time.Minute, time.Second)
 	if cerr == nil || cerr.Code != clierr.CodeNotFound {
 		t.Fatalf("error = %v, want the not_found error passed through", cerr)
 	}
 }
 
 func TestCompactJSON(t *testing.T) {
+	t.Parallel()
 	if got := compactJSON(nil, 200); got != "-" {
 		t.Errorf("compactJSON(nil) = %q, want -", got)
 	}
@@ -183,34 +196,48 @@ func TestCompactJSON(t *testing.T) {
 // mode (the caller asked for more than one listing returns), below it in
 // table mode when --limit kept the newest.
 func TestJobsLimitNote(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	for _, tc := range []struct {
 		mode         string
 		shown, limit int
 		more         bool
 		want         string
 	}{
-		{"json", 10000, 0, true, "note: showing the newest 10000 jobs, the most one listing returns; older jobs are not shown\n"},
-		{"json", 10000, 20000, true, "note: showing the newest 10000 jobs, the most one listing returns; older jobs are not shown\n"},
-		{"table", 3, 3, true, "note: showing the newest 3 jobs; older ones exist\nhint: for more, raise --limit; 0 means all, up to 10000\n"},
+		{"json", 10000, 0, true, "note: showing the newest 10000 jobs, the most one listing returns; older jobs are " +
+			"not shown\n"},
+		{"json", 10000, 20000, true, "note: showing the newest 10000 jobs, the most one listing returns; older jobs " +
+			"are not shown\n"},
+		{"table", 3, 3, true, "note: showing the newest 3 jobs; older ones exist\nhint: for more, raise --limit; 0 " +
+			"means all, up to 10000\n"},
 		{"json", 3, 3, true, ""},
 		{"table", 39, 100, false, ""},
 		{"table", 10000, 10000, false, ""},
 	} {
-		if err := output.SetMode(tc.mode); err != nil {
+		if err := app.printer.SetMode(tc.mode); err != nil {
 			t.Fatal(err)
 		}
 		var buf bytes.Buffer
-		jobsLimitNote(&buf, tc.shown, tc.limit, 10000, tc.more)
+		app.jobsLimitNote(&buf, tc.shown, tc.limit, 10000, tc.more)
 		if buf.String() != tc.want {
-			t.Errorf("%s, shown %d, limit %d, more %v: note %q, want %q", tc.mode, tc.shown, tc.limit, tc.more, buf.String(), tc.want)
+			t.Errorf(
+				"%s, shown %d, limit %d, more %v: note %q, want %q",
+				tc.mode,
+				tc.shown,
+				tc.limit,
+				tc.more,
+				buf.String(),
+				tc.want,
+			)
 		}
 	}
-	_ = output.SetMode("table")
+	app.setOutputMode(t, "table")
 }
 
 // TestJobTablesShareTheirWording: both job tables word the events row the
 // same way and say input or output was cut only when it was.
 func TestJobTablesShareTheirWording(t *testing.T) {
+	t.Parallel()
 	var rows []string
 	row := func(k, v string) { rows = append(rows, k+"="+v) }
 	writeJobBody(row, map[string]any{"x": 1}, nil, 1, " (last event: created @ t)")

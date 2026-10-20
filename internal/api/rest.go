@@ -2,12 +2,14 @@ package api
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -25,31 +27,27 @@ import (
 // restTimeout bounds each API request.
 const restTimeout = 60 * time.Second
 
-// restRetries429 is the number of retries after a 429, with restBackoff sleeps.
-var restBackoff = []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second}
-
-var restHTTPClient = &http.Client{Timeout: restTimeout, Transport: debugTransport{http.DefaultTransport}}
-
 // Probe makes one unauthenticated GET and returns its status, through the
 // same transport as every other request (so --debug shows it and it carries
 // the User-Agent). doctor uses it to tell "unreachable" from "rejected".
-func Probe(ctx context.Context, url string) (int, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+func Probe(ctx context.Context, target string, opts Options) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, http.NoBody)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("building the probe: %w", err)
 	}
-	req.Header.Set("User-Agent", UserAgent)
-	resp, err := restHTTPClient.Do(req)
+	req.Header.Set("User-Agent", userAgent())
+	dbg := opts.debugger()
+	resp, err := newHTTPClient(restTimeout, dbg).Do(req)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("probing the API: %w", err)
 	}
-	resp.Body.Close()
+	dbg.closeFailed(resp.Body.Close())
 	return resp.StatusCode, nil
 }
 
 // restJSON performs one API request and decodes the JSON response into T.
 // contentType is used when body != nil ("" means application/json). 429s are
-// retried up to len(restBackoff) times, context-aware. Empty 2xx bodies
+// retried up to len(c.backoff) times, context-aware. Empty 2xx bodies
 // decode to the zero T (mutating verbs return 202 with no body). A 404 under
 // an assumed project that does not exist becomes AssumedProjectMissing.
 func restJSON[T any](ctx context.Context, c *Client, method, path, contentType string, body any) (*T, *clierr.Error) {
@@ -70,107 +68,144 @@ func restJSON[T any](ctx context.Context, c *Client, method, path, contentType s
 
 // doRestJSON is restJSON without the assumed-project check.
 func doRestJSON[T any](ctx context.Context, c *Client, method, path, contentType string, body any) (*T, *clierr.Error) {
-	var payload []byte
-	if body != nil {
-		if raw, ok := body.(json.RawMessage); ok {
-			// A raw document goes on the wire byte-for-byte: json.Marshal
-			// would compact it and escape HTML characters (< > &), mutating
-			// the caller's bytes — a merge patch must be sent as written.
-			payload = raw
-		} else {
-			var err error
-			payload, err = json.Marshal(body)
-			if err != nil {
-				return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot encode the request body: %v", err)
-			}
-		}
+	payload, cerr := encodeBody(body)
+	if cerr != nil {
+		return nil, cerr
 	}
 	endpoint := c.baseURL + path
 
-	var lastErr *clierr.Error
 	for attempt := 0; ; attempt++ {
-		var reader io.Reader
-		if payload != nil {
-			reader = bytes.NewReader(payload)
+		status, respBody, cerr := c.send(ctx, method, endpoint, contentType, payload)
+		if cerr != nil {
+			return nil, cerr
 		}
-		req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
-		if err != nil {
-			return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot build the request: %v", err)
+		if status >= 200 && status < 300 {
+			return decodeSuccess[T](respBody)
 		}
-		req.Header.Set("Salad-Api-Key", c.apiKey)
-		req.Header.Set("Accept", "application/json")
-		req.Header.Set("User-Agent", UserAgent)
-		if payload != nil {
-			if contentType == "" {
-				contentType = "application/json"
-			}
-			req.Header.Set("Content-Type", contentType)
-		}
-
-		resp, err := restHTTPClient.Do(req)
-		if err != nil {
-			return nil, transportErr(ctx, "network error", err)
-		}
-		respBody, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return nil, readErr(ctx, "response", err)
-		}
-
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			out := new(T)
-			if len(bytes.TrimSpace(respBody)) == 0 {
-				return out, nil
-			}
-			if err := json.Unmarshal(respBody, out); err != nil {
-				// Some responses carry numeric enum values (e.g.
-				// restart_policy 1/2/3 instead of always/on_failure/never).
-				// Normalize and retry once before giving up.
-				if fixed, changed := normalizeNumericEnums(respBody); changed {
-					if err2 := json.Unmarshal(fixed, out); err2 == nil {
-						return out, nil
-					}
-				}
-				return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot decode the response: %v", err)
-			}
-			return out, nil
-		}
-
-		lastErr = errorFromBody(resp.StatusCode, respBody)
-		if resp.StatusCode != http.StatusTooManyRequests || attempt >= len(restBackoff) {
+		lastErr := errorFromBody(status, respBody)
+		if status != http.StatusTooManyRequests || attempt >= len(c.backoff) {
 			return nil, lastErr
 		}
 		select {
 		case <-ctx.Done():
-			return nil, clierr.Cancelled() // Ctrl-C while waiting to retry
-		case <-time.After(restBackoff[attempt]):
+			return nil, clierr.Canceled() // Ctrl-C while waiting to retry
+		case <-time.After(c.backoff[attempt]):
 		}
 	}
 }
 
+// encodeBody is the request body's bytes, nil when there is no body.
+func encodeBody(body any) ([]byte, *clierr.Error) {
+	if body == nil {
+		return nil, nil
+	}
+	if raw, ok := body.(json.RawMessage); ok {
+		// A raw document goes on the wire byte-for-byte: json.Marshal
+		// would compact it and escape HTML characters (< > &), mutating
+		// the caller's bytes — a merge patch must be sent as written.
+		return raw, nil
+	}
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return nil, clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot encode the request body: %v",
+			err,
+		)
+	}
+	return payload, nil
+}
+
+// send makes one attempt at a request, reading payload afresh, and returns the response's status and whole body.
+// The Content-Type header goes only with a payload, as contentType or else application/json.
+func (c *Client) send(
+	ctx context.Context,
+	method, endpoint, contentType string,
+	payload []byte,
+) (int, []byte, *clierr.Error) {
+	var reader io.Reader
+	if payload != nil {
+		reader = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
+	if err != nil {
+		return 0, nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot build the request: %v", err)
+	}
+	req.Header.Set("Salad-Api-Key", c.apiKey)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", userAgent())
+	if payload != nil {
+		req.Header.Set("Content-Type", cmp.Or(contentType, "application/json"))
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return 0, nil, transportErr(ctx, "network error", err, c.now)
+	}
+	respBody, err := io.ReadAll(resp.Body)
+	c.dbg.closeFailed(resp.Body.Close())
+	if err != nil {
+		return 0, nil, readErr(ctx, "response", err)
+	}
+	return resp.StatusCode, respBody, nil
+}
+
+// decodeSuccess decodes a 2xx response body into a new T; an empty body is the zero T (mutating verbs return 202
+// with no body).
+func decodeSuccess[T any](respBody []byte) (*T, *clierr.Error) {
+	out := new(T)
+	if len(bytes.TrimSpace(respBody)) == 0 {
+		return out, nil
+	}
+	err := json.Unmarshal(respBody, out)
+	if err == nil {
+		return out, nil
+	}
+	// Some responses carry numeric enum values (e.g. restart_policy 1/2/3
+	// instead of always/on_failure/never). Normalize and retry once before
+	// giving up.
+	if fixed, changed := normalizeNumericEnums(respBody); changed {
+		if err2 := json.Unmarshal(fixed, out); err2 == nil {
+			return out, nil
+		}
+	}
+	return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot decode the response: %v", err)
+}
+
 // restNoBody is restJSON for verbs whose success response body is ignored.
-func restNoBody(ctx context.Context, c *Client, method, path string, body any) *clierr.Error {
-	_, err := restJSON[json.RawMessage](ctx, c, method, path, "", body)
+func restNoBody(ctx context.Context, c *Client, method, path string) *clierr.Error {
+	_, err := restJSON[json.RawMessage](ctx, c, method, path, "", nil)
 	return err
 }
 
 // seg path-escapes one URL path segment.
 func seg(s string) string { return url.PathEscape(s) }
 
+// subPath is "/" and each of parts path-escaped, joined with "/"; "" when there are none.
+func subPath(parts []string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	escaped := make([]string, len(parts))
+	for i, part := range parts {
+		escaped[i] = seg(part)
+	}
+	return "/" + strings.Join(escaped, "/")
+}
+
 // groupPath builds /organizations/{org}/projects/{project}/containers[/...].
 func (c *Client) groupPath(parts ...string) string {
-	p := fmt.Sprintf("/organizations/%s/projects/%s/containers", seg(c.org), seg(c.project))
-	for _, part := range parts {
-		p += "/" + seg(part)
-	}
-	return p
+	return fmt.Sprintf("/organizations/%s/projects/%s/containers", seg(c.org), seg(c.project)) + subPath(parts)
 }
 
 // numericEnumNames maps the enum values some responses carry as raw
 // integers to their documented string forms, per field (docs/notes.md).
-var numericEnumNames = map[string]map[float64]string{
-	"restart_policy": {1: "always", 2: "on_failure", 3: "never"},
-	"priority":       {1: "high", 2: "medium", 3: "low", 4: "batch"},
+func numericEnumNames() map[string]map[float64]string {
+	return map[string]map[float64]string{
+		"restart_policy": {1: "always", 2: "on_failure", 3: "never"},
+		"priority":       {1: "high", 2: "medium", 3: "low", 4: "batch"},
+	}
 }
 
 // normalizeNumericEnums walks a JSON document and repairs known
@@ -183,32 +218,7 @@ func normalizeNumericEnums(raw []byte) ([]byte, bool) {
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return raw, false
 	}
-	changed := false
-	var walk func(v any)
-	walk = func(v any) {
-		switch t := v.(type) {
-		case map[string]any:
-			for field, names := range numericEnumNames {
-				if n, ok := t[field].(float64); ok {
-					if name, ok := names[n]; ok {
-						t[field] = name
-					} else {
-						delete(t, field)
-					}
-					changed = true
-				}
-			}
-			for _, child := range t {
-				walk(child)
-			}
-		case []any:
-			for _, child := range t {
-				walk(child)
-			}
-		}
-	}
-	walk(doc)
-	if !changed {
+	if !repairEnums(doc) {
 		return raw, false
 	}
 	fixed, err := json.Marshal(doc)
@@ -216,4 +226,45 @@ func normalizeNumericEnums(raw []byte) ([]byte, bool) {
 		return raw, false
 	}
 	return fixed, true
+}
+
+// repairEnums repairs the numeric enum fields of v and of every object under it, and reports whether it changed
+// anything.
+func repairEnums(v any) bool {
+	changed := false
+	switch t := v.(type) {
+	case map[string]any:
+		changed = repairEnumFields(t)
+		for _, child := range t {
+			if repairEnums(child) {
+				changed = true
+			}
+		}
+	case []any:
+		for _, child := range t {
+			if repairEnums(child) {
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
+// repairEnumFields rewrites one object's numeric enum fields to their names, drops the ones with no name, and
+// reports whether it changed anything.
+func repairEnumFields(obj map[string]any) bool {
+	changed := false
+	for field, names := range numericEnumNames() {
+		n, ok := obj[field].(float64)
+		if !ok {
+			continue
+		}
+		if name, ok := names[n]; ok {
+			obj[field] = name
+		} else {
+			delete(obj, field)
+		}
+		changed = true
+	}
+	return changed
 }

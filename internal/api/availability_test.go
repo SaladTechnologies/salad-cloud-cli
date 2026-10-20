@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -16,10 +15,14 @@ import (
 
 // newTestClient builds a Client pointed at the given base URL via the
 // SALAD_CLI_API_BASE_URL override New honors.
-func newTestClient(t *testing.T, baseURL string) *Client {
+func newTestClient(t *testing.T, baseURL string, opts ...Options) *Client {
 	t.Helper()
-	t.Setenv("SALAD_CLI_API_BASE_URL", baseURL)
-	c, cerr := New(config.Resolved{APIKey: "test-key", Organization: "test org"})
+	o := testOptions(nil)
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	o.Getenv = getenvOf(baseURLs(baseURL))
+	c, cerr := New(&config.Resolved{APIKey: "test-key", Organization: "test org"}, o)
 	if cerr != nil {
 		t.Fatalf("New: %v", cerr)
 	}
@@ -27,18 +30,19 @@ func newTestClient(t *testing.T, baseURL string) *Client {
 }
 
 func TestGetGpuAvailabilityRequest(t *testing.T) {
+	t.Parallel()
 	var gotMethod, gotPath, gotKey string
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod, gotPath, gotKey = r.Method, r.URL.EscapedPath(), r.Header.Get("Salad-Api-Key")
-		gotBody, _ = io.ReadAll(r.Body)
-		w.Write([]byte(`{"available_gpu_high":9,"available_gpu_low":30,"unknown_field":true}`))
+		gotBody = should(io.ReadAll(r.Body))(t)
+		respond(t, w, `{"available_gpu_high":9,"available_gpu_low":30,"unknown_field":true}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newTestClient(t, srv.URL)
-	avail, cerr := c.GetGpuAvailability(context.Background(), AvailabilityRequest{
-		GpuClasses: []string{"gpu-class-1"}, Cpu: ptr.To(int64(4)), StorageAmount: ptr.To(int64(1 << 30)),
+	avail, cerr := c.GetGpuAvailability(t.Context(), AvailabilityRequest{
+		GpuClasses: []string{"gpu-class-1"}, CPU: ptr.To(int64(4)), StorageAmount: ptr.To(int64(1 << 30)),
 		CountryCodes: []string{"us"},
 	})
 	if cerr != nil {
@@ -54,26 +58,33 @@ func TestGetGpuAvailabilityRequest(t *testing.T) {
 	if gotKey != "test-key" {
 		t.Errorf("Salad-Api-Key = %q, want test-key", gotKey)
 	}
-	if want := `{"gpu_classes":["gpu-class-1"],"cpu":4,"storage_amount":1073741824,"country_codes":["us"]}`; string(gotBody) != want {
+	if want := `{"gpu_classes":["gpu-class-1"],"cpu":4,"storage_amount":1073741824,"country_codes":["us"]}`; string(
+		gotBody,
+	) != want {
 		t.Errorf("body = %s, want %s", gotBody, want)
 	}
-	if ptr.Deref(avail.AvailableGpuHigh) != 9 || ptr.Deref(avail.AvailableGpuLow) != 30 || avail.AvailableGpuMedium != nil {
+	if ptr.Deref(avail.AvailableGpuHigh) != 9 || ptr.Deref(avail.AvailableGpuLow) != 30 ||
+		avail.AvailableGpuMedium != nil {
 		t.Errorf("decoded = %+v", avail)
 	}
 }
 
-func TestGetCpuAvailabilityDropsGpuClasses(t *testing.T) {
+func TestGetCPUAvailabilityDropsGpuClasses(t *testing.T) {
+	t.Parallel()
 	var gotPath string
 	var body map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		w.Write([]byte(`{"available_cpu_batch":120,"on_call_cpu":40}`))
+		reportErr(t, json.NewDecoder(r.Body).Decode(&body))
+		respond(t, w, `{"available_cpu_batch":120,"on_call_cpu":40}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newTestClient(t, srv.URL)
-	avail, cerr := c.GetCpuAvailability(context.Background(), AvailabilityRequest{GpuClasses: []string{"x"}, Memory: ptr.To(int64(2048))})
+	avail, cerr := c.GetCPUAvailability(
+		t.Context(),
+		AvailabilityRequest{GpuClasses: []string{"x"}, Memory: ptr.To(int64(2048))},
+	)
 	if cerr != nil {
 		t.Fatal(cerr)
 	}
@@ -91,19 +102,18 @@ func TestGetCpuAvailabilityDropsGpuClasses(t *testing.T) {
 // The availability calls share the API transport, so a 429 is retried
 // before it is reported.
 func TestGetGpuAvailabilityRetries429(t *testing.T) {
-	old := restBackoff
-	restBackoff = []time.Duration{time.Millisecond}
-	t.Cleanup(func() { restBackoff = old })
+	t.Parallel()
 	calls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusTooManyRequests)
-		w.Write([]byte(`{"title":"slow down"}`))
+		respond(t, w, `{"title":"slow down"}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newTestClient(t, srv.URL)
-	_, cerr := c.GetGpuAvailability(context.Background(), AvailabilityRequest{GpuClasses: []string{"g"}})
+	c.backoff = []time.Duration{time.Millisecond}
+	_, cerr := c.GetGpuAvailability(t.Context(), AvailabilityRequest{GpuClasses: []string{"g"}})
 	if cerr == nil || cerr.Code != clierr.CodeRateLimited || ptr.Deref(cerr.HTTPStatus) != 429 {
 		t.Fatalf("error = %+v, want rate limited 429", cerr)
 	}

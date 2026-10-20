@@ -1,0 +1,8 @@
+{
+  "name": "@saladtechnologies/salad-cloud-cli-tooling",
+  "private": true,
+  "devDependencies": {
+    "cspell": "10.3.6",
+    "prettier": "3.9.10"
+  }
+}

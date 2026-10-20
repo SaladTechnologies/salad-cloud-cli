@@ -2,16 +2,14 @@ package api
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
-
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 // TestUploadFile pins the S4 upload wire contract: PUT to the org files path
@@ -19,50 +17,43 @@ import (
 // mimeType/sign/signatureExp fields, the Salad-Api-Key header, and the
 // {"url": ...} response parsed.
 func TestUploadFile(t *testing.T) {
+	t.Parallel()
 	fileBytes := []byte("fake-mp3-bytes")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut {
-			t.Errorf("method = %s, want PUT", r.Method)
-		}
-		if want := "/organizations/my-org/files/saladcloud-cli/transcribe/meeting-123.mp3"; r.URL.Path != want {
-			t.Errorf("path = %s, want %s", r.URL.Path, want)
-		}
-		if got := r.Header.Get("Salad-Api-Key"); got != "test-key" {
-			t.Errorf("Salad-Api-Key = %q, want %q", got, "test-key")
-		}
+		checkRequest(t, r, http.MethodPut, "/organizations/my-org/files/saladcloud-cli/transcribe/meeting-123.mp3")
 		if ct := r.Header.Get("Content-Type"); !strings.HasPrefix(ct, "multipart/form-data") {
 			t.Errorf("Content-Type = %q, want multipart/form-data", ct)
 		}
-		if err := r.ParseMultipartForm(1 << 20); err != nil {
+		if err := r.ParseMultipartForm(1 << 20); err != nil { //nolint:gosec // a test server reading the CLI's upload
 			t.Fatalf("ParseMultipartForm: %v", err)
 		}
-		if got := r.FormValue("mimeType"); got != "audio/mpeg" {
-			t.Errorf("mimeType = %q, want audio/mpeg", got)
-		}
-		if got := r.FormValue("sign"); got != "true" {
-			t.Errorf("sign = %q, want true", got)
-		}
-		if got := r.FormValue("signatureExp"); got != "86400" {
-			t.Errorf("signatureExp = %q, want 86400", got)
+		for field, want := range map[string]string{"mimeType": "audio/mpeg", "sign": "true", "signatureExp": "86400"} {
+			if got := r.FormValue(field); got != want {
+				t.Errorf("%s = %q, want %s", field, got, want)
+			}
 		}
 		f, _, err := r.FormFile("file")
 		if err != nil {
 			t.Fatalf("FormFile: %v", err)
 		}
-		defer f.Close()
-		got, _ := io.ReadAll(f)
+		defer func() { reportErr(t, f.Close()) }()
+		got := should(io.ReadAll(f))(t)
 		if !bytes.Equal(got, fileBytes) {
 			t.Errorf("file part = %q, want %q", got, fileBytes)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"url": "https://storage-api.salad.com/organizations/my-org/files/saladcloud-cli/transcribe/meeting-123.mp3?token=abc"}`))
+		respond(
+			t,
+			w,
+			`{"url": "https://storage-api.salad.com/organizations/my-org/files/`+
+				`saladcloud-cli/transcribe/meeting-123.mp3?token=abc"}`,
+		)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
-	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newRestTestClient(t, srv.URL) // API base URL is irrelevant here
-	url, cerr := c.UploadFile(context.Background(),
-		"saladcloud-cli/transcribe/meeting-123.mp3", bytes.NewReader(fileBytes), "audio/mpeg", true, 86400)
+	url, cerr := c.UploadFile(t.Context(),
+		"saladcloud-cli/transcribe/meeting-123.mp3", bytes.NewReader(fileBytes), "audio/mpeg", 86400)
 	if cerr != nil {
 		t.Fatalf("UploadFile: %v", cerr)
 	}
@@ -74,8 +65,9 @@ func TestUploadFile(t *testing.T) {
 // TestUploadFileUnsigned: without sign, the sign/signatureExp fields must be
 // absent entirely (not sent as "false"/"0").
 func TestUploadFileUnsigned(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseMultipartForm(1 << 20); err != nil {
+		if err := r.ParseMultipartForm(1 << 20); err != nil { //nolint:gosec // a test server reading the CLI's upload
 			t.Fatalf("ParseMultipartForm: %v", err)
 		}
 		if _, ok := r.MultipartForm.Value["sign"]; ok {
@@ -85,28 +77,34 @@ func TestUploadFileUnsigned(t *testing.T) {
 			t.Error("signatureExp field sent, want absent for an unsigned upload")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"url": "https://storage-api.salad.com/x"}`))
+		respond(t, w, `{"url": "https://storage-api.salad.com/x"}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
-	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newRestTestClient(t, srv.URL)
-	if _, cerr := c.UploadFile(context.Background(), "a.bin", strings.NewReader("x"), "application/octet-stream", false, 0); cerr != nil {
+	_, cerr := c.UploadFile(
+		t.Context(),
+		"a.bin",
+		strings.NewReader("x"),
+		"application/octet-stream",
+		0,
+	)
+	if cerr != nil {
 		t.Fatalf("UploadFile: %v", cerr)
 	}
 }
 
 func TestUploadFileNon2xxMapsStatus(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		w.Write([]byte(`{"title": "Forbidden"}`))
+		respond(t, w, `{"title": "Forbidden"}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
-	t.Setenv("SALAD_CLI_STORAGE_BASE_URL", srv.URL)
 	c := newRestTestClient(t, srv.URL)
-	_, cerr := c.UploadFile(context.Background(), "a.mp3", strings.NewReader("x"), "audio/mpeg", true, 60)
+	_, cerr := c.UploadFile(t.Context(), "a.mp3", strings.NewReader("x"), "audio/mpeg", 60)
 	if cerr == nil {
 		t.Fatal("UploadFile = nil error, want auth")
 	}

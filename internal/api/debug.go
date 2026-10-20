@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 )
@@ -16,64 +15,141 @@ import (
 // DebugLevel is how much --debug reports on stderr.
 type DebugLevel int
 
+// The debug levels, in increasing detail.
 const (
-	DebugOff      DebugLevel = iota
-	DebugRequests            // --debug: method, URL, status, duration per request
-	DebugBodies              // --debug=body: plus headers and bodies, redacted
+	DebugOff      DebugLevel = iota // no --debug: nothing
+	DebugRequests                   // --debug: method, URL, status, duration per request
+	DebugBodies                     // --debug=body: plus headers and bodies, redacted
 )
 
-var (
-	debugLevel DebugLevel
-	debugOut   io.Writer = os.Stderr
-)
+// Options configures one run's clients: the environment their base URLs come
+// from, what --debug reports and where, and the retry waits and clock tests
+// shorten or fix.
+type Options struct {
+	Getenv   func(string) string
+	Debug    DebugLevel
+	DebugOut io.Writer        // where --debug writes; nil discards
+	Backoff  []time.Duration  // the waits between retries after a 429; nil: 2s, 4s, 8s
+	Now      func() time.Time // the clock certificate messages read; nil: time.Now
+}
 
-// SetDebug sets the --debug level for every request the CLI makes.
-func SetDebug(level DebugLevel) { debugLevel = level }
+// backoff is o's waits between retries after a 429.
+func (o Options) backoff() []time.Duration {
+	if o.Backoff != nil {
+		return o.Backoff
+	}
+	return []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second}
+}
 
-// Debugging reports whether --debug is on, for detail the CLI keeps out of
-// its messages otherwise.
-func Debugging() bool { return debugLevel != DebugOff }
+// clock is o's clock.
+func (o Options) clock() func() time.Time {
+	if o.Now != nil {
+		return o.Now
+	}
+	return time.Now
+}
+
+// debugger is o's --debug reporting.
+func (o Options) debugger() debugger {
+	out := o.DebugOut
+	if out == nil {
+		out = io.Discard
+	}
+	return debugger{level: o.Debug, out: out}
+}
+
+// debugger is how much --debug reports and where.
+type debugger struct {
+	level DebugLevel
+	out   io.Writer
+}
+
+// debugf writes a --debug line to stderr. A failed write there has nowhere to
+// be reported, so this, the one place --debug writes, drops its error.
+func (d debugger) debugf(format string, args ...any) {
+	line := fmt.Sprintf(format, args...)
+	_, _ = io.WriteString(d.out, line) //nolint:errcheck // a failed write to stderr has nowhere to be reported
+}
+
+// closeBody closes a response body the CLI is done with. Its error says
+// nothing about the response, so it is only reported under --debug.
+func (d debugger) closeBody(body io.Closer) { d.closeFailed(body.Close()) }
+
+// closeFailed reports, under --debug, a response body that did not close.
+func (d debugger) closeFailed(err error) {
+	if err != nil && d.level != DebugOff {
+		d.debugf("debug: closing a response body: %v\n", err)
+	}
+}
+
+// newHTTPClient is an HTTP client with timeout whose requests d reports. Its transport is a copy of the default one
+// (the same proxy and timeout settings) with a connection pool of its own, which nothing else can reset:
+// [net/http/httptest.Server.Close] drops the default transport's idle connections, cutting off a parallel test's
+// request.
+func newHTTPClient(timeout time.Duration, d debugger) *http.Client {
+	base := http.DefaultTransport
+	if t, ok := base.(*http.Transport); ok {
+		base = t.Clone()
+	}
+	return &http.Client{Timeout: timeout, Transport: debugTransport{base: base, debugger: d}}
+}
 
 // debugTransport logs each request at the --debug level, then hands it to
 // the real transport. Credentials never reach the log: the key headers,
 // credential fields, header values and environment variable values in JSON
 // bodies, and signed S4 URL query strings are redacted.
-type debugTransport struct{ base http.RoundTripper }
+type debugTransport struct {
+	debugger
+
+	base http.RoundTripper
+}
 
 func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if debugLevel == DebugOff {
-		return d.base.RoundTrip(req)
-	}
-	if debugLevel >= DebugBodies {
-		fmt.Fprintf(debugOut, "debug: > %s %s\n", req.Method, redactText(req.URL.String()))
-		for _, k := range sortedHeaderKeys(req.Header) {
-			fmt.Fprintf(debugOut, "debug: > %s: %s\n", k, redactHeader(k, req.Header.Get(k)))
+	if d.level == DebugOff {
+		resp, err := d.base.RoundTrip(req)
+		if err != nil {
+			return nil, fmt.Errorf("no response: %w", err)
 		}
-		fmt.Fprintf(debugOut, "debug: > %s\n", requestBodyForLog(req))
+		return resp, nil
+	}
+	if d.level >= DebugBodies {
+		d.debugf("debug: > %s %s\n", req.Method, redactText(req.URL.String()))
+		for _, k := range sortedHeaderKeys(req.Header) {
+			d.debugf("debug: > %s: %s\n", k, redactHeader(k, req.Header.Get(k)))
+		}
+		d.debugf("debug: > %s\n", d.requestBodyForLog(req))
 	}
 	start := time.Now()
 	resp, err := d.base.RoundTrip(req)
 	took := time.Since(start).Round(time.Millisecond)
 	if err != nil {
-		fmt.Fprintf(debugOut, "debug: %s %s -> error after %s: %v\n", req.Method, redactText(req.URL.String()), took, err)
-		return nil, err
+		d.debugf("debug: %s %s -> error after %s: %v\n",
+			req.Method,
+			redactText(req.URL.String()),
+			took,
+			err,
+		)
+		return nil, fmt.Errorf("no response: %w", err)
 	}
-	fmt.Fprintf(debugOut, "debug: %s %s -> %d (%s)\n", req.Method, redactText(req.URL.String()), resp.StatusCode, took)
-	if debugLevel >= DebugBodies && resp.Body != nil {
+	d.debugf("debug: %s %s -> %d (%s)\n", req.Method, redactText(req.URL.String()), resp.StatusCode, took)
+	if d.level >= DebugBodies && resp.Body != nil {
 		body, rerr := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		d.closeBody(resp.Body)
 		resp.Body = io.NopCloser(bytes.NewReader(body))
 		if rerr != nil {
-			return nil, rerr
+			return nil, fmt.Errorf("reading the response for --debug: %w", rerr)
 		}
-		fmt.Fprintf(debugOut, "debug: < %s\n", redactBody(body))
+		d.debugf("debug: < %s\n", redactBody(body))
 	}
 	return resp, nil
 }
 
+// bodyNotShown stands in for a request body --debug=body cannot read without consuming it.
+const bodyNotShown = "(body not shown)"
+
 // requestBodyForLog renders a request body for --debug=body without
 // consuming it. A multipart upload (a file to S4) is not shown.
-func requestBodyForLog(req *http.Request) string {
+func (d debugTransport) requestBodyForLog(req *http.Request) string {
 	if req.Body == nil || req.Body == http.NoBody {
 		return "(no body)"
 	}
@@ -81,25 +157,27 @@ func requestBodyForLog(req *http.Request) string {
 		return "(file upload, not shown)"
 	}
 	if req.GetBody == nil {
-		return "(body not shown)"
+		return bodyNotShown
 	}
 	rc, err := req.GetBody()
 	if err != nil {
-		return "(body not shown)"
+		return bodyNotShown
 	}
-	defer rc.Close()
+	defer d.closeBody(rc)
 	b, err := io.ReadAll(rc)
 	if err != nil {
-		return "(body not shown)"
+		return bodyNotShown
 	}
 	return redactBody(b)
 }
 
 // redactedHeaders carry credentials.
-var redactedHeaders = map[string]bool{"Salad-Api-Key": true, "Authorization": true}
+func redactedHeaders() map[string]bool {
+	return map[string]bool{"Salad-Api-Key": true, "Authorization": true}
+}
 
 func redactHeader(name, value string) string {
-	if redactedHeaders[http.CanonicalHeaderKey(name)] {
+	if redactedHeaders()[http.CanonicalHeaderKey(name)] {
 		return "REDACTED"
 	}
 	return value
@@ -121,7 +199,10 @@ func sortedHeaderKeys(h http.Header) []string {
 // credentialField matches a JSON string field that holds a credential: the
 // webhook secret, API keys, and the registry and log-sink credentials a
 // container group definition can carry.
-var credentialField = regexp.MustCompile(`"(secret_key|api_key|password|personal_access_token|secret_access_key|access_key_id|service_key|api_token|ingestion_key|token)"\s*:\s*"(?:[^"\\]|\\.)*"`)
+var credentialField = regexp.MustCompile(
+	`"(secret_key|api_key|password|personal_access_token|secret_access_key|access_key_id|service_key|api_token|` +
+		`ingestion_key|token)"\s*:\s*"(?:[^"\\]|\\.)*"`,
+)
 
 // signedURL matches an S4 URL's query string, which holds its signing token.
 var signedURL = regexp.MustCompile(`(https?://storage-api\.salad\.com/[^"\s?]*)\?[^"\s]*`)
@@ -133,10 +214,12 @@ func redactText(s string) string {
 }
 
 // credentialKeys are the JSON fields whose string value is a credential.
-var credentialKeys = map[string]bool{
-	"secret_key": true, "api_key": true, "password": true, "personal_access_token": true,
-	"secret_access_key": true, "access_key_id": true, "service_key": true, "api_token": true,
-	"ingestion_key": true, "token": true,
+func credentialKeys() map[string]bool {
+	return map[string]bool{
+		"secret_key": true, "api_key": true, "password": true, "personal_access_token": true,
+		"secret_access_key": true, "access_key_id": true, "service_key": true, "api_token": true,
+		"ingestion_key": true, "token": true,
+	}
 }
 
 // redactBody removes credentials from a request or response body. A JSON
@@ -162,31 +245,9 @@ func redactBody(body []byte) string {
 func writeRedacted(buf *bytes.Buffer, v any, key, parent string) {
 	switch t := v.(type) {
 	case map[string]any:
-		keys := make([]string, 0, len(t))
-		for k := range t {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		buf.WriteByte('{')
-		for i, k := range keys {
-			if i > 0 {
-				buf.WriteByte(',')
-			}
-			writeJSONString(buf, k)
-			buf.WriteByte(':')
-			writeRedacted(buf, t[k], k, key)
-		}
-		buf.WriteByte('}')
+		writeRedactedObject(buf, t, key)
 	case []any:
-		buf.WriteByte('[')
-		for i, e := range t {
-			if i > 0 {
-				buf.WriteByte(',')
-			}
-			// An element sits under the list's own field.
-			writeRedacted(buf, e, key, key)
-		}
-		buf.WriteByte(']')
+		writeRedactedArray(buf, t, key)
 	case string:
 		if secretString(key, parent) {
 			buf.WriteString(`"REDACTED"`)
@@ -194,9 +255,45 @@ func writeRedacted(buf *bytes.Buffer, v any, key, parent string) {
 		}
 		writeJSONString(buf, t)
 	default:
-		b, _ := json.Marshal(t)
+		b, err := json.Marshal(t)
+		if err != nil {
+			b = []byte(`null`) // not reached: a decoded JSON value always encodes
+		}
 		buf.Write(b)
 	}
+}
+
+// writeRedactedObject is writeRedacted for an object under key: its keys sorted, each value redacted by its own key
+// and this one.
+func writeRedactedObject(buf *bytes.Buffer, obj map[string]any, key string) {
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	buf.WriteByte('{')
+	for i, k := range keys {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		writeJSONString(buf, k)
+		buf.WriteByte(':')
+		writeRedacted(buf, obj[k], k, key)
+	}
+	buf.WriteByte('}')
+}
+
+// writeRedactedArray is writeRedacted for an array under key.
+func writeRedactedArray(buf *bytes.Buffer, arr []any, key string) {
+	buf.WriteByte('[')
+	for i, e := range arr {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		// An element sits under the list's own field.
+		writeRedacted(buf, e, key, key)
+	}
+	buf.WriteByte(']')
 }
 
 // SecretField reports whether a string value under key, inside a value
@@ -208,7 +305,7 @@ func SecretField(key, parent string) bool { return secretString(key, parent) }
 // secretString reports whether a string under key, inside a value under
 // parent, is a credential.
 func secretString(key, parent string) bool {
-	return credentialKeys[key] ||
+	return credentialKeys()[key] ||
 		parent == "environment_variables" ||
 		parent == "headers" && key != "name"
 }
@@ -216,6 +313,9 @@ func secretString(key, parent string) bool {
 func writeJSONString(buf *bytes.Buffer, s string) {
 	enc := json.NewEncoder(buf)
 	enc.SetEscapeHTML(false)
-	_ = enc.Encode(s)
+	if err := enc.Encode(s); err != nil {
+		buf.WriteString(`""`) // not reached: a Go string always encodes
+		return
+	}
 	buf.Truncate(buf.Len() - 1) // Encode's newline
 }

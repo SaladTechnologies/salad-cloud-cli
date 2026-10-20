@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -20,15 +21,20 @@ const (
 )
 
 // unsetProject clears the project stubAPI sets, so the fallback applies.
-func unsetProject(t *testing.T) { t.Setenv("SALAD_PROJECT", "") }
+func (app *testRun) unsetProject(t *testing.T) {
+	t.Helper()
+	app.setenv("SALAD_PROJECT", "")
+}
 
 // TestAssumedProjectWarnsOnce: a project-scoped command on the fallback
 // prints one warning, and none when the project was set.
 func TestAssumedProjectWarnsOnce(t *testing.T) {
-	stubAPI(t, map[string]string{defaultListRoute: emptyListBody})
-	unsetProject(t)
-	stderr := captureStderr(t, func() {
-		if _, err := runRoot(t, "container-groups", "list", "-o", "json"); err != nil {
+	t.Parallel()
+	app := newTestRun(t)
+	app.stubAPI(t, map[string]string{defaultListRoute: emptyListBody})
+	app.unsetProject(t)
+	stderr := app.captureStderr(t, func() {
+		if _, err := app.runRoot(t, "container-groups", "list", "-o", "json"); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -36,9 +42,9 @@ func TestAssumedProjectWarnsOnce(t *testing.T) {
 		t.Errorf("warning printed %d times, want once:\n%s", n, stderr)
 	}
 
-	t.Setenv("SALAD_PROJECT", "default")
-	stderr = captureStderr(t, func() {
-		if _, err := runRoot(t, "container-groups", "list", "-o", "json"); err != nil {
+	app.setenv("SALAD_PROJECT", "default")
+	stderr = app.captureStderr(t, func() {
+		if _, err := app.runRoot(t, "container-groups", "list", "-o", "json"); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -50,10 +56,12 @@ func TestAssumedProjectWarnsOnce(t *testing.T) {
 // TestAssumedProjectWarningIsOrgScopedOnly: org-scoped commands never use a
 // project, so they never warn about one.
 func TestAssumedProjectWarningIsOrgScopedOnly(t *testing.T) {
-	stubAPI(t, map[string]string{quotasRoute: `{}`})
-	unsetProject(t)
-	stderr := captureStderr(t, func() {
-		if _, err := runRoot(t, "quotas", "get", "-o", "json"); err != nil {
+	t.Parallel()
+	app := newTestRun(t)
+	app.stubAPI(t, map[string]string{quotasRoute: `{}`})
+	app.unsetProject(t)
+	stderr := app.captureStderr(t, func() {
+		if _, err := app.runRoot(t, "quotas", "get", "-o", "json"); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -67,6 +75,7 @@ func TestAssumedProjectWarningIsOrgScopedOnly(t *testing.T) {
 // with where to find names; a missing group in an existing "default" stays
 // not found, and so does a 404 whose organization is the problem.
 func TestAssumedProjectMissing(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		routes   map[string]string
@@ -100,23 +109,28 @@ func TestAssumedProjectMissing(t *testing.T) {
 		},
 		{
 			"get, the organization is not visible",
-			map[string]string{},
+			make(map[string]string),
 			[]string{"container-groups", "get", "my-app"},
 			clierr.CodeNotFound, `organization "my-org" (from SALAD_ORGANIZATION) not found`,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			stubAPI(t, tc.routes)
-			unsetProject(t)
-			_, err := runRoot(t, tc.args...)
-			ce, ok := err.(*clierr.Error)
+			t.Parallel()
+			app := newTestRun(t)
+			app.stubAPI(t, tc.routes)
+			app.unsetProject(t)
+			_, err := app.runRoot(t, tc.args...)
+			var ce *clierr.Error
+			ok := errors.As(err, &ce)
 			if !ok || ce.Code != tc.wantCode || !strings.Contains(ce.Message, tc.want) {
 				t.Fatalf("err = %v, want code %d containing %q", err, tc.wantCode, tc.want)
 			}
 			if tc.wantCode == clierr.CodeUsage {
 				if ce.Message != `no valid project set: my-org has no "default" project` ||
-					ce.HintText() != "create one at https://portal.salad.com/organizations/my-org/projects/new, then pass --project or run saladcloud use my-org/<project>" {
+					ce.HintText() != "create one at https://portal.salad.com/organizations/my-org/projects/new, then "+
+						"pass --project "+
+						"or run saladcloud use my-org/<project>" {
 					t.Errorf("message %q, hint %q", ce.Message, ce.HintText())
 				}
 			}
@@ -128,14 +142,22 @@ func TestAssumedProjectMissing(t *testing.T) {
 // another organization named by a flag; the fallback applies instead, and
 // its warning names the project it skipped.
 func TestSavedProjectStaysWithItsOrg(t *testing.T) {
-	stubAPI(t, map[string]string{"/projects/default/containers": emptyListBody, "/projects/prod/containers": `{"items":[{"name":"x"}]}`})
-	unsetProject(t)
-	t.Setenv("SALAD_ORGANIZATION", "")
-	if err := config.Save(config.File{Organization: "org-a", Project: "prod"}); err != nil {
+	t.Parallel()
+	app := newTestRun(t)
+	app.stubAPI(
+		t,
+		map[string]string{
+			"/projects/default/containers": emptyListBody,
+			"/projects/prod/containers":    `{"items":[{"name":"x"}]}`,
+		},
+	)
+	app.unsetProject(t)
+	app.setenv("SALAD_ORGANIZATION", "")
+	if err := config.Save(app.Env, config.File{Organization: "org-a", Project: "prod"}); err != nil {
 		t.Fatal(err)
 	}
-	stderr := captureStderr(t, func() {
-		if _, err := runRoot(t, "container-groups", "list", "--org", "org-b", "-o", "json"); err != nil {
+	stderr := app.captureStderr(t, func() {
+		if _, err := app.runRoot(t, "container-groups", "list", "--org", "org-b", "-o", "json"); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -149,15 +171,21 @@ func TestSavedProjectStaysWithItsOrg(t *testing.T) {
 // warns, and exits 2 when the organization has no "default" instead of
 // returning nothing.
 func TestGroupLogsCheckTheAssumedProject(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{
 		{"container-groups", "logs", "g", "--since", "5m", "-o", "json"},
 		{"logs", "-c", "g", "--since", "5m", "-o", "json"},
 	} {
 		t.Run(strings.Join(args[:2], " "), func(t *testing.T) {
-			stubAPI(t, map[string]string{quotasRoute: `{}`, defaultListRoute: emptyListBody, "/log-entries": `{"items":[]}`})
-			unsetProject(t)
-			stderr := captureStderr(t, func() {
-				if _, err := runRoot(t, args...); err != nil {
+			t.Parallel()
+			app := newTestRun(t)
+			app.stubAPI(
+				t,
+				map[string]string{quotasRoute: `{}`, defaultListRoute: emptyListBody, "/log-entries": `{"items":[]}`},
+			)
+			app.unsetProject(t)
+			stderr := app.captureStderr(t, func() {
+				if _, err := app.runRoot(t, args...); err != nil {
 					t.Fatal(err)
 				}
 			})
@@ -165,10 +193,12 @@ func TestGroupLogsCheckTheAssumedProject(t *testing.T) {
 				t.Errorf("want one assumed-project warning:\n%s", stderr)
 			}
 
-			stubAPI(t, map[string]string{quotasRoute: `{}`, "/log-entries": `{"items":[]}`})
-			unsetProject(t)
-			_, err := runRoot(t, args...)
-			if ce, ok := err.(*clierr.Error); !ok || ce.Code != clierr.CodeUsage || !strings.Contains(ce.Message, "no valid project set") {
+			app.stubAPI(t, map[string]string{quotasRoute: `{}`, "/log-entries": `{"items":[]}`})
+			app.unsetProject(t)
+			_, err := app.runRoot(t, args...)
+			var ce *clierr.Error
+			if !errors.As(err, &ce) || ce.Code != clierr.CodeUsage ||
+				!strings.Contains(ce.Message, "no valid project set") {
 				t.Errorf("err = %v, want exit 2, no valid project set", err)
 			}
 		})

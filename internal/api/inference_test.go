@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 )
 
 func TestListInferenceEndpointsWirePath(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method = %s, want GET", r.Method)
@@ -29,15 +29,15 @@ func TestListInferenceEndpointsWirePath(t *testing.T) {
 			t.Errorf("Salad-Api-Key = %q, want %q", got, "test-key")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{
+		respond(t, w, `{
 		  "items": [{"name": "transcribe", "display_name": "Transcription", "description": "Speech to text"}],
 		  "page": 1, "page_size": 100, "total_size": 1
-		}`))
+		}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
-	coll, cerr := c.ListInferenceEndpoints(context.Background())
+	coll, cerr := c.ListInferenceEndpoints(t.Context())
 	if cerr != nil {
 		t.Fatalf("ListInferenceEndpoints: %v", cerr)
 	}
@@ -50,15 +50,16 @@ func TestListInferenceEndpointsWirePath(t *testing.T) {
 // POST to the org-scoped (no project) jobs path, the prototype as the JSON
 // body, and the response job decoded through our transport.
 func TestCreateInferenceJobRoundTrip(t *testing.T) {
+	t.Parallel()
 	var gotMethod, gotPath string
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		gotBody, _ = io.ReadAll(r.Body)
+		gotBody = should(io.ReadAll(r.Body))(t)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(`{
+		respond(t, w, `{
 		  "id": "job-1",
 		  "inference_endpoint_name": "transcribe",
 		  "organization_name": "my-org",
@@ -67,15 +68,15 @@ func TestCreateInferenceJobRoundTrip(t *testing.T) {
 		  "events": [{"action": "created", "time": "2026-09-02T00:00:00Z"}],
 		  "create_time": "2026-09-02T00:00:00Z",
 		  "update_time": "2026-09-02T00:00:00Z"
-		}`))
+		}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
 	proto := inferenceendpoints.InferenceEndpointJobPrototype{
 		Input: map[string]any{"url": "https://example.com/a.mp3", "language_code": "en"},
 	}
-	job, cerr := c.CreateInferenceJob(context.Background(), "transcribe", proto)
+	job, cerr := c.CreateInferenceJob(t.Context(), "transcribe", proto)
 	if cerr != nil {
 		t.Fatalf("CreateInferenceJob: %v", cerr)
 	}
@@ -85,14 +86,7 @@ func TestCreateInferenceJobRoundTrip(t *testing.T) {
 	if want := "/organizations/my-org/inference-endpoints/transcribe/jobs"; gotPath != want {
 		t.Errorf("path = %s, want %s", gotPath, want)
 	}
-	var sent map[string]any
-	if err := json.Unmarshal(gotBody, &sent); err != nil {
-		t.Fatalf("request body is not JSON: %v (%s)", err, gotBody)
-	}
-	in, _ := sent["input"].(map[string]any)
-	if in == nil || in["url"] != "https://example.com/a.mp3" || in["language_code"] != "en" {
-		t.Errorf("sent input = %v, want the prototype's input object", sent["input"])
-	}
+	checkSentInput(t, gotBody)
 	if job.Id == nil || *job.Id != "job-1" {
 		t.Errorf("Id = %v, want job-1", job.Id)
 	}
@@ -101,7 +95,21 @@ func TestCreateInferenceJobRoundTrip(t *testing.T) {
 	}
 }
 
+// checkSentInput checks that TestCreateInferenceJobRoundTrip's request body carries the prototype's input object.
+func checkSentInput(t *testing.T, body []byte) {
+	t.Helper()
+	var sent map[string]any
+	if err := json.Unmarshal(body, &sent); err != nil {
+		t.Fatalf("request body is not JSON: %v (%s)", err, body)
+	}
+	in := valueAs[map[string]any](sent["input"])
+	if in == nil || in["url"] != "https://example.com/a.mp3" || in["language_code"] != "en" {
+		t.Errorf("sent input = %v, want the prototype's input object", sent["input"])
+	}
+}
+
 func TestGetAndCancelInferenceJobPaths(t *testing.T) {
+	t.Parallel()
 	var gotMethods, gotPaths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethods = append(gotMethods, r.Method)
@@ -111,15 +119,15 @@ func TestGetAndCancelInferenceJobPaths(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"id": "job-1", "status": "running"}`))
+		respond(t, w, `{"id": "job-1", "status": "running"}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
-	if _, cerr := c.GetInferenceJob(context.Background(), "transcribe", "job-1"); cerr != nil {
+	if _, cerr := c.GetInferenceJob(t.Context(), "transcribe", "job-1"); cerr != nil {
 		t.Fatalf("GetInferenceJob: %v", cerr)
 	}
-	if cerr := c.CancelInferenceJob(context.Background(), "transcribe", "job-1"); cerr != nil {
+	if cerr := c.CancelInferenceJob(t.Context(), "transcribe", "job-1"); cerr != nil {
 		t.Fatalf("CancelInferenceJob: %v", cerr)
 	}
 	wantPath := "/organizations/my-org/inference-endpoints/transcribe/jobs/job-1"
@@ -132,15 +140,16 @@ func TestGetAndCancelInferenceJobPaths(t *testing.T) {
 }
 
 func TestInferenceEndpoint404Maps(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusNotFound)
-		w.Write([]byte(`{"title": "Not Found"}`))
+		respond(t, w, `{"title": "Not Found"}`)
 	}))
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 
 	c := newRestTestClient(t, srv.URL)
-	_, cerr := c.GetInferenceEndpoint(context.Background(), "no-such")
+	_, cerr := c.GetInferenceEndpoint(t.Context(), "no-such")
 	if cerr == nil {
 		t.Fatal("GetInferenceEndpoint = nil error, want not_found")
 	}

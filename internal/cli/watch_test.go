@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -17,16 +18,17 @@ func fakeWatchDeps(out *bytes.Buffer, tty bool, tick chan time.Time) watchDeps {
 		out:     out,
 		errOut:  out,
 		tty:     tty,
-		now:     func() time.Time { return time.Date(2026, 10, 2, 12, 0, 0, 0, time.UTC) },
+		now:     func() time.Time { return time.Date(2026, time.October, 2, 12, 0, 0, 0, time.UTC) },
 		after:   func(time.Duration) <-chan time.Time { return tick },
 		refresh: 5 * time.Second,
 	}
 }
 
 func TestWatchLoopStopsCleanlyOnCancel(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
 	tick := make(chan time.Time)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	renders := 0
 	done := make(chan error)
 	go func() {
@@ -53,31 +55,35 @@ func TestWatchLoopStopsCleanlyOnCancel(t *testing.T) {
 }
 
 func TestWatchLoopClearsATerminal(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_ = watchLoop(ctx, fakeWatchDeps(&out, true, nil), func(context.Context) *clierr.Error { return nil })
+	noErr(t, watchLoop(ctx, fakeWatchDeps(&out, true, nil), func(context.Context) *clierr.Error { return nil }))
 	if !strings.HasPrefix(out.String(), "\x1b[2J\x1b[H") {
 		t.Errorf("terminal render did not clear the screen: %q", out.String())
 	}
 }
 
 func TestWatchLoopEndsOnFatalError(t *testing.T) {
+	t.Parallel()
 	var out bytes.Buffer
-	err := watchLoop(context.Background(), fakeWatchDeps(&out, false, nil), func(context.Context) *clierr.Error {
+	err := watchLoop(t.Context(), fakeWatchDeps(&out, false, nil), func(context.Context) *clierr.Error {
 		return clierr.New(clierr.CodeNotFound, clierr.KindNotFound, "gone")
 	})
-	if cerr, ok := err.(*clierr.Error); !ok || cerr.Code != clierr.CodeNotFound {
+	var cerr *clierr.Error
+	if !errors.As(err, &cerr) || cerr.Code != clierr.CodeNotFound {
 		t.Errorf("watchLoop = %v, want the not-found error", err)
 	}
 }
 
 func TestWatchIsTableModeOnly(t *testing.T) {
-	_, err := runRoot(t, "container-groups", "list", "-w", "-o", "json")
-	cerr, ok := err.(*clierr.Error)
+	t.Parallel()
+	app := newTestRun(t)
+	_, err := app.runRoot(t, "container-groups", "list", "-w", "-o", "json")
+	var cerr *clierr.Error
+	ok := errors.As(err, &cerr)
 	if !ok || cerr.Code != clierr.CodeUsage || !strings.Contains(cerr.Message, "--wait") {
 		t.Errorf("list -w -o json = %v, want a usage error pointing at --wait", err)
 	}
-	listCmd, _, _ := rootCmd.Find([]string{"container-groups", "list"})
-	_ = listCmd.Flags().Set("watch", "false")
 }

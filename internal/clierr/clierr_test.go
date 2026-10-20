@@ -9,6 +9,7 @@ import (
 // present by tag: hint is null without a fix, http_status without an HTTP
 // response.
 func TestErrorDocumentKeys(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		err  *Error
@@ -24,10 +25,12 @@ func TestErrorDocumentKeys(t *testing.T) {
 		},
 		{
 			"hint", New(CodeUsage, KindUsage, "no organization set").WithHint("pass --org %s", "my-org"),
-			`{"exit_code":2,"kind":"usage","message":"no organization set","hint":"pass --org my-org","http_status":null}`,
+			`{"exit_code":2,"kind":"usage","message":"no organization set","hint":"pass --org ` +
+				`my-org","http_status":null}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			data, err := json.Marshal(tc.err)
 			if err != nil {
 				t.Fatal(err)
@@ -39,19 +42,20 @@ func TestErrorDocumentKeys(t *testing.T) {
 	}
 }
 
-// TestCancelled: the error a cancelled request returns is interrupted, exit
+// TestCanceled: the error a canceled request returns is interrupted, exit
 // 1, and recognizable; a copy keeps the mark, a new error does not have it.
-func TestCancelled(t *testing.T) {
-	c := Cancelled()
+func TestCanceled(t *testing.T) {
+	t.Parallel()
+	c := Canceled()
 	if c.Code != CodeGeneric || c.Kind != KindInterrupted || !c.IsCancel() {
-		t.Errorf("Cancelled() = %+v", c)
+		t.Errorf("Canceled() = %+v", c)
 	}
 	copied := *c
 	if !copied.IsCancel() {
 		t.Error("a copy lost the mark")
 	}
 	if New(CodeGeneric, KindInterrupted, "wait interrupted").IsCancel() {
-		t.Error("an ordinary interrupted error reads as a cancelled request")
+		t.Error("an ordinary interrupted error reads as a canceled request")
 	}
 	var none *Error
 	if none.IsCancel() || New(CodeUsage, KindUsage, "x").HintText() != "" {

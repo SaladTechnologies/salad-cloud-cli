@@ -1,6 +1,7 @@
 // Job queues are project-scoped: /organizations/{org}/projects/{project}/queues.
 // A queue job is the same {input, metadata?, webhook?} document as an
 // inference job; its output is whatever the user's own container returns.
+
 package api
 
 import (
@@ -21,11 +22,7 @@ const queueJobsMaxPages = 400
 
 // queuePath builds /organizations/{org}/projects/{project}/queues[/...].
 func (c *Client) queuePath(parts ...string) string {
-	p := fmt.Sprintf("/organizations/%s/projects/%s/queues", seg(c.org), seg(c.project))
-	for _, part := range parts {
-		p += "/" + seg(part)
-	}
-	return p
+	return fmt.Sprintf("/organizations/%s/projects/%s/queues", seg(c.org), seg(c.project)) + subPath(parts)
 }
 
 // ListQueues lists the project's queues.
@@ -65,7 +62,7 @@ func (c *Client) DeleteQueue(ctx context.Context, name string) *clierr.Error {
 	if err := c.requireOrgProject(); err != nil {
 		return err
 	}
-	return restNoBody(ctx, c, "DELETE", c.queuePath(name), nil)
+	return restNoBody(ctx, c, "DELETE", c.queuePath(name))
 }
 
 // QueueJobsCap is the most jobs ListQueueJobs reads: queueJobsMaxPages full
@@ -76,31 +73,40 @@ const QueueJobsCap = queueJobsMaxPages * queueJobsPageSize
 // 40 pages, or the limit's worth of pages when that is more.
 const QueueJobsBudget = 40 * queueJobsPageSize
 
+// QueueJobListing is the jobs ListQueueJobs read, newest first, and what it left out.
+type QueueJobListing struct {
+	Jobs []queues.QueueJob
+	// More reports jobs read but left out by the limit or the cap.
+	More bool
+	// Partial reports that reading stopped at the budget with the queue holding more, so the newest are the newest
+	// of those read only.
+	Partial bool
+}
+
 // ListQueueJobs lists a queue's newest jobs, newest first: limit of them (0
 // means all, up to QueueJobsCap). The API lists queue jobs in job ID order,
 // so no page holds the newest: the pages are read and the jobs sorted by
 // creation time. With a limit, reading stops after QueueJobsBudget jobs (or
 // the limit, if larger), which keeps one listing from spending the key's
-// request allowance; partial then reports that the queue holds more than
-// was read, so the newest are the newest of those read only. more reports
-// jobs read but left out by the limit or the cap.
-func (c *Client) ListQueueJobs(ctx context.Context, queue string, limit int) (jobs []queues.QueueJob, more, partial bool, cerr *clierr.Error) {
+// request allowance.
+func (c *Client) ListQueueJobs(ctx context.Context, queue string, limit int) (*QueueJobListing, *clierr.Error) {
 	if err := c.requireOrgProject(); err != nil {
-		return nil, false, false, err
+		return nil, err
 	}
 	maxPages := queueJobsMaxPages
 	if limit > 0 {
 		maxPages = (max(limit, QueueJobsBudget) + queueJobsPageSize - 1) / queueJobsPageSize
 		maxPages = min(maxPages, queueJobsMaxPages)
 	}
-	jobs = []queues.QueueJob{}
+	jobs := make([]queues.QueueJob, 0, queueJobsPageSize)
+	more, partial := false, false
 	// One page at a time: reading several at once gains nothing, because the
 	// API answers one key's concurrent page reads one after another.
 	for page := 1; page <= maxPages; page++ {
 		path := c.queuePath(queue, "jobs") + fmt.Sprintf("?page=%d&page_size=%d", page, queueJobsPageSize)
 		coll, cerr := restJSON[queues.QueueJobCollection](ctx, c, "GET", path, "", nil)
 		if cerr != nil {
-			return nil, false, false, cerr
+			return nil, cerr
 		}
 		jobs = append(jobs, coll.Items...)
 		if len(coll.Items) < queueJobsPageSize {
@@ -118,11 +124,15 @@ func (c *Client) ListQueueJobs(ctx context.Context, queue string, limit int) (jo
 	if want := jobsWanted(limit, QueueJobsCap); len(jobs) > want {
 		jobs, more = jobs[:want], true
 	}
-	return jobs, more, partial, nil
+	return &QueueJobListing{Jobs: jobs, More: more, Partial: partial}, nil
 }
 
 // CreateQueueJob submits a job to a queue.
-func (c *Client) CreateQueueJob(ctx context.Context, queue string, proto queues.QueueJobPrototype) (*queues.QueueJob, *clierr.Error) {
+func (c *Client) CreateQueueJob(
+	ctx context.Context,
+	queue string,
+	proto queues.QueueJobPrototype,
+) (*queues.QueueJob, *clierr.Error) {
 	if err := c.requireOrgProject(); err != nil {
 		return nil, err
 	}
@@ -138,10 +148,10 @@ func (c *Client) GetQueueJob(ctx context.Context, queue, id string) (*queues.Que
 }
 
 // CancelQueueJob cancels a queue job; only a job not yet handed to an
-// instance can be cancelled.
+// instance can be canceled.
 func (c *Client) CancelQueueJob(ctx context.Context, queue, id string) *clierr.Error {
 	if err := c.requireOrgProject(); err != nil {
 		return err
 	}
-	return restNoBody(ctx, c, "DELETE", c.queuePath(queue, "jobs", id), nil)
+	return restNoBody(ctx, c, "DELETE", c.queuePath(queue, "jobs", id))
 }

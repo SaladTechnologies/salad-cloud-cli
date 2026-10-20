@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"time"
@@ -11,20 +10,31 @@ import (
 	"golang.org/x/term"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
 // watchMinInterval is the smallest allowed --interval.
 const watchMinInterval = 2 * time.Second
 
+// watchDefaultInterval is --interval's default.
+const watchDefaultInterval = 5 * time.Second
+
+// watchOptions are a read command's -w/--watch and --interval.
+type watchOptions struct {
+	watch    bool
+	interval time.Duration
+}
+
 // addWatchFlags registers -w/--watch and --interval on a read command.
-func addWatchFlags(cmd *cobra.Command) {
-	cmd.Flags().BoolP("watch", "w", false, "poll and re-render the table until interrupted (Windows-friendly watch(1); table mode only)")
-	cmd.Flags().Duration("interval", 5*time.Second, "poll interval for --watch (minimum 2s)")
+func (app *App) addWatchFlags(cmd *cobra.Command, o *watchOptions) {
+	cmd.Flags().
+		BoolVarP(&o.watch, "watch", "w", false,
+			"poll and re-render the table until interrupted (Windows-friendly watch(1); table mode only)")
+	cmd.Flags().DurationVar(&o.interval, "interval", watchDefaultInterval, "poll interval for --watch (minimum 2s)")
 	// Check the watch flags before the command builds its client, so a bad
 	// combination is a usage error even with no API key set.
-	cmd.PreRunE = func(cmd *cobra.Command, args []string) error {
-		if cerr := validateWatchFlags(cmd); cerr != nil {
+	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
+		//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
+		if cerr := app.validateWatchFlags(cmd, *o); cerr != nil {
 			return cerr
 		}
 		return nil
@@ -33,15 +43,16 @@ func addWatchFlags(cmd *cobra.Command) {
 
 // validateWatchFlags rejects --watch outside table mode and an --interval
 // below the minimum.
-func validateWatchFlags(cmd *cobra.Command) *clierr.Error {
-	if watch, _ := cmd.Flags().GetBool("watch"); !watch {
+func (app *App) validateWatchFlags(cmd *cobra.Command, o watchOptions) *clierr.Error {
+	watch, interval := o.watch, o.interval
+	if !watch {
 		return nil
 	}
-	if output.Mode() != "table" {
+	if app.printer.Machine() {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage,
 			"--watch is table mode only; in scripts use --wait, or loop over '%s -o json'", cmd.CommandPath())
 	}
-	if interval, _ := cmd.Flags().GetDuration("interval"); interval < watchMinInterval {
+	if interval < watchMinInterval {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--interval must be at least %s", watchMinInterval)
 	}
 	return nil
@@ -51,22 +62,26 @@ func validateWatchFlags(cmd *cobra.Command) *clierr.Error {
 // Ctrl-C (clean exit 0). --watch is for people watching a table: any other
 // output mode is a usage error, because a stream of documents is not one
 // document; scripts poll with --wait or a loop over 'get -o json'.
-func runMaybeWatch(cmd *cobra.Command, render func(ctx context.Context) *clierr.Error) error {
-	watch, _ := cmd.Flags().GetBool("watch")
+func (app *App) runMaybeWatch(
+	cmd *cobra.Command,
+	o watchOptions,
+	render func(ctx context.Context) *clierr.Error,
+) error {
+	watch, interval := o.watch, o.interval
 	if !watch {
+		//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
 		if cerr := render(cmd.Context()); cerr != nil {
 			return cerr
 		}
 		return nil
 	}
-	if cerr := validateWatchFlags(cmd); cerr != nil {
+	if cerr := app.validateWatchFlags(cmd, o); cerr != nil {
 		return cerr
 	}
-	interval, _ := cmd.Flags().GetDuration("interval")
 	return watchLoop(cmd.Context(), watchDeps{
-		out:     output.Stdout,
-		errOut:  os.Stderr,
-		tty:     isTerminal(output.Stdout),
+		out:     app.printer.Out(),
+		errOut:  app.errw(),
+		tty:     isTerminal(app.printer.Out()),
 		now:     time.Now,
 		after:   time.After,
 		refresh: interval,
@@ -82,7 +97,7 @@ type watchDeps struct {
 	refresh     time.Duration
 }
 
-// watchLoop renders every d.refresh until ctx is cancelled (nil: Ctrl-C is
+// watchLoop renders every d.refresh until ctx is canceled (nil: Ctrl-C is
 // the normal way to stop). On a terminal each render clears the screen, like
 // watch(1), which Windows lacks; otherwise renders are separated by a blank
 // line and no control codes are written. Transient errors are reported and
@@ -93,11 +108,11 @@ func watchLoop(ctx context.Context, d watchDeps, render func(ctx context.Context
 		case d.tty:
 			// VT clear + home; supported by Windows Terminal, PowerShell,
 			// and every Unix terminal.
-			fmt.Fprint(d.out, "\x1b[2J\x1b[H")
+			fprint(d.out, "\x1b[2J\x1b[H")
 		case i > 0:
-			fmt.Fprintln(d.out)
+			fprintln(d.out)
 		}
-		fmt.Fprintf(d.out, "Every %s, at %s (Ctrl-C to stop)\n\n", d.refresh, d.now().Format("15:04:05"))
+		fprintf(d.out, "Every %s, at %s (Ctrl-C to stop)\n\n", d.refresh, d.now().Format(time.TimeOnly))
 		if cerr := render(ctx); cerr != nil {
 			if ctx.Err() != nil {
 				return nil //nolint:nilerr // interrupted mid-request: --watch ends with exit 0
@@ -106,7 +121,7 @@ func watchLoop(ctx context.Context, d watchDeps, render func(ctx context.Context
 			case clierr.CodeAuth, clierr.CodeUsage, clierr.CodeNotFound:
 				return cerr
 			default:
-				fmt.Fprintf(d.errOut, "watch: %s (retrying in %s)\n", cerr.Message, d.refresh)
+				fprintf(d.errOut, "watch: %s (retrying in %s)\n", cerr.Message, d.refresh)
 			}
 		}
 		select {

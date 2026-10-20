@@ -2,8 +2,6 @@ package cli
 
 import (
 	"errors"
-	"fmt"
-	"io"
 
 	"github.com/spf13/cobra"
 
@@ -23,7 +21,9 @@ type changelogResult struct {
 	Items   []changelog.Release `json:"items"`
 }
 
-func init() {
+// addChangelogCommands adds changelog.go's commands to the tree.
+func (app *App) addChangelogCommands(root *cobra.Command) {
+	var since string
 	cmd := &cobra.Command{
 		Use:   "changelog",
 		Short: "Print the CLI changelog, optionally only what is newer than a date or version",
@@ -40,8 +40,7 @@ In JSON mode the result is {"version","since","items":[{"version",
 "date","body","title"}]}, one item per release; items is an empty list,
 never null.`,
 		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			since, _ := cmd.Flags().GetString("since")
+		RunE: func(_ *cobra.Command, _ []string) error {
 			all := changelog.Parse(saladcloudcli.Changelog)
 			releases, err := changelog.Since(all, since)
 			if err != nil {
@@ -51,21 +50,21 @@ never null.`,
 				return wrapErr(err)
 			}
 			if releases == nil {
-				releases = []changelog.Release{}
+				releases = []changelog.Release{} //nolint:revive // the JSON contract renders none as [], not null
 			}
-			res := changelogResult{Version: version.Version, Items: releases}
+			res := changelogResult{Version: version.String(), Items: releases, Since: nil}
 			if since != "" {
 				res.Since = &since
 			}
-			return wrapErr(output.Emit(res, func(w io.Writer) {
+			return wrapErr(app.printer.Emit(res, func(w *output.Writer) {
 				if len(releases) == 0 {
-					fmt.Fprintf(w, "No releases newer than %s\n", since)
+					w.Printf("No releases newer than %s\n", since)
 					return
 				}
-				fmt.Fprint(w, changelog.Render(releases))
+				w.Print(changelog.Render(releases))
 			}))
 		},
 	}
-	cmd.Flags().String("since", "", "only releases newer than this date (YYYY-MM-DD) or version (X.Y.Z)")
-	Register(cmd)
+	cmd.Flags().StringVar(&since, "since", "", "only releases newer than this date (YYYY-MM-DD) or version (X.Y.Z)")
+	root.AddCommand(cmd)
 }

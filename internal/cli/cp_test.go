@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"reflect"
 	"strings"
@@ -14,6 +13,8 @@ import (
 )
 
 func TestParseRemoteSpec(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	cases := []struct {
 		in   string
 		want *remoteSpec // nil = local
@@ -35,7 +36,7 @@ func TestParseRemoteSpec(t *testing.T) {
 		{"my-app:/path:with:colons", &remoteSpec{Group: "my-app", Path: "/path:with:colons"}},
 	}
 	for _, c := range cases {
-		got, err := parseRemoteSpec(c.in)
+		got, err := app.parseRemoteSpec(c.in)
 		if err != nil {
 			t.Errorf("parseRemoteSpec(%q) unexpected error: %v", c.in, err)
 			continue
@@ -47,6 +48,8 @@ func TestParseRemoteSpec(t *testing.T) {
 }
 
 func TestParseRemoteSpecErrors(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	for _, in := range []string{
 		"my-app:",            // empty remote path
 		":/path",             // empty group
@@ -54,7 +57,7 @@ func TestParseRemoteSpecErrors(t *testing.T) {
 		"/my-app/inst:/path", // leading slash: empty first segment
 		"a/b/c:/path",        // too many segments
 	} {
-		_, err := parseRemoteSpec(in)
+		_, err := app.parseRemoteSpec(in)
 		if err == nil {
 			t.Errorf("parseRemoteSpec(%q): want usage error, got nil", in)
 			continue
@@ -69,110 +72,110 @@ func TestParseRemoteSpecErrors(t *testing.T) {
 // into a Windows path list before the CLI runs; the CLI says so and how to
 // stop it, instead of reading both sides as local.
 func TestParseRemoteSpecGitBashRewrite(t *testing.T) {
-	t.Setenv("MSYSTEM", "MINGW64") // the check runs only under Git Bash
+	t.Parallel()
+	app := newTestRun(t)
+	app.setenv("MSYSTEM", "MINGW64") // the check runs only under Git Bash
 	for _, in := range []string{
 		`sr-ex2\0521ee78;C:\Program Files\Git\etc\hostname`,
 		`my-app\8a2f13ba;D:\msys64\data;D:\msys64\more`,
 	} {
-		_, err := parseRemoteSpec(in)
+		_, err := app.parseRemoteSpec(in)
 		if err == nil {
 			t.Errorf("parseRemoteSpec(%q): want usage error, got nil", in)
 			continue
 		}
 		if err.Code != clierr.CodeUsage || !strings.Contains(err.Message, "rewritten by Git Bash") ||
 			!strings.Contains(err.HintText(), "MSYS_NO_PATHCONV=1") {
-			t.Errorf("parseRemoteSpec(%q) = (%d, %q), want a usage error naming MSYS_NO_PATHCONV=1", in, err.Code, err.Message)
+			t.Errorf(
+				"parseRemoteSpec(%q) = (%d, %q), want a usage error naming MSYS_NO_PATHCONV=1",
+				in,
+				err.Code,
+				err.Message,
+			)
 		}
 	}
 }
 
-// The test binary stands in for sftp when SALAD_CLI_TEST_FAKE_SFTP is set: it
-// prints sftp's batch echo on stdout and exits, before the test flags parse.
-func init() {
-	switch os.Getenv("SALAD_CLI_TEST_FAKE_SFTP") {
-	case "":
-	case "fail":
-		fmt.Println(`sftp> get "/etc/hostname" "./h"`)
-		fmt.Fprintln(os.Stderr, `remote open("/etc/hostname"): Permission denied`)
-		os.Exit(1)
-	default:
-		fmt.Println(`sftp> get "/etc/hostname" "./h"`)
-		os.Exit(0)
-	}
+// cpRunOutput is how one cp run ended: the CLI's stdout, the process's stderr (sftp's and the CLI's), and the error.
+type cpRunOutput struct {
+	out, stderr string
+	err         error
 }
 
 // runCp runs cp against a stub API with the test binary as sftp (fake
-// says how it behaves) and returns the CLI's stdout, the process's stderr
-// (sftp's and the CLI's), and the error.
-func runCp(t *testing.T, fake string, mode ...string) (out, stderr string, err error) {
+// says how it behaves) and returns how it ended.
+func (app *testRun) runCp(t *testing.T, fake string, mode ...string) cpRunOutput {
 	t.Helper()
-	stubAPI(t, map[string]string{
-		"/containers/my-app/instances": `{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","state":"running","ssh_ip":"203.0.113.7","ssh_port":30123}]}`,
+	app.stubAPI(t, map[string]string{
+		"/containers/my-app/instances": `{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37",` +
+			`"state":"running","ssh_ip":"203.0.113.7","ssh_port":30123}]}`,
 	})
-	old := sftpProgram
-	sftpProgram = os.Args[0]
-	t.Cleanup(func() { sftpProgram = old })
-	t.Setenv("SALAD_CLI_TEST_FAKE_SFTP", fake)
+	old := app.SFTPProgram
+	app.SFTPProgram = os.Args[0]
+	t.Cleanup(func() { app.SFTPProgram = old })
+	app.setenv("SALAD_CLI_TEST_FAKE_SFTP", fake)
 
-	realOut, realErr := os.Stdout, os.Stderr
-	outFile, _ := os.CreateTemp(t.TempDir(), "stdout")
-	errFile, _ := os.CreateTemp(t.TempDir(), "stderr")
-	os.Stdout, os.Stderr = outFile, errFile
-	out, err = runRoot(t, append([]string{"cg", "cp", "my-app/8a2f:/etc/hostname", "./h"}, mode...)...)
-	os.Stdout, os.Stderr = realOut, realErr
-	// Closed before TempDir's cleanup: Windows cannot remove an open file.
-	outFile.Close()
-	errFile.Close()
-	childOut, _ := os.ReadFile(outFile.Name())
-	if len(childOut) != 0 {
-		t.Errorf("sftp wrote %q to stdout; stdout carries only the result", childOut)
+	var childOut, childErr bytes.Buffer
+	realOut, realErr := app.Stdout, app.Stderr
+	app.Stdout, app.Stderr = &childOut, &childErr
+	out, err := app.runRoot(t, append([]string{"cg", "cp", "my-app/8a2f:/etc/hostname", "./h"}, mode...)...)
+	app.Stdout, app.Stderr = realOut, realErr
+	if childOut.Len() != 0 {
+		t.Errorf("sftp wrote %q to stdout; stdout carries only the result", childOut.String())
 	}
-	childErr, _ := os.ReadFile(errFile.Name())
-	return out, string(childErr), err
+	return cpRunOutput{out: out, stderr: childErr.String(), err: err}
 }
 
 // TestCpStdoutCarriesOnlyTheResult: stdout holds the one result document;
 // in table mode sftp's batch echo reaches stderr, and in json and yaml mode
 // stderr stays empty, as it does for every command that succeeds there.
 func TestCpStdoutCarriesOnlyTheResult(t *testing.T) {
-	out, stderr, err := runCp(t, "ok", "-o", "json")
-	if err != nil {
-		t.Fatalf("cp: %v", err)
+	t.Parallel()
+	app := newTestRun(t)
+	got := app.runCp(t, "ok", "-o", "json")
+	if got.err != nil {
+		t.Fatalf("cp: %v", got.err)
 	}
-	if stderr != "" {
-		t.Errorf("json mode: stderr = %q, want nothing", stderr)
+	if got.stderr != "" {
+		t.Errorf("json mode: stderr = %q, want nothing", got.stderr)
 	}
-	want := `{"group":"my-app","instance":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","action":"copied","ok":true,"src":"my-app/8a2f:/etc/hostname","dst":"./h"}`
+	want := `{"group":"my-app","instance":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","action":"copied","ok":true,` +
+		`"src":"my-app/8a2f:/etc/hostname","dst":"./h"}`
 	var compact bytes.Buffer
-	if err := json.Compact(&compact, []byte(out)); err != nil || compact.String() != want {
-		t.Errorf("stdout = %s, want %s", out, want)
+	if err := json.Compact(&compact, []byte(got.out)); err != nil || compact.String() != want {
+		t.Errorf("stdout = %s, want %s", got.out, want)
 	}
-	if _, stderr, err := runCp(t, "ok", "-o", "yaml"); err != nil || stderr != "" {
-		t.Errorf("yaml mode: err %v, stderr = %q, want nothing", err, stderr)
+	if y := app.runCp(t, "ok", "-o", "yaml"); y.err != nil || y.stderr != "" {
+		t.Errorf("yaml mode: err %v, stderr = %q, want nothing", y.err, y.stderr)
 	}
-	if _, stderr, err := runCp(t, "ok", "-o", "table"); err != nil || !strings.Contains(stderr, "sftp> get") {
-		t.Errorf("table mode: err %v, stderr = %q, want sftp's batch echo", err, stderr)
+	if tb := app.runCp(t, "ok", "-o", "table"); tb.err != nil || !strings.Contains(tb.stderr, "sftp> get") {
+		t.Errorf("table mode: err %v, stderr = %q, want sftp's batch echo", tb.err, tb.stderr)
 	}
 }
 
 // TestCpFailureInJSON: a failing sftp's output stays off stderr in json
 // mode, and its last line ends the error's message.
 func TestCpFailureInJSON(t *testing.T) {
-	_, stderr, err := runCp(t, "fail", "-o", "json")
+	t.Parallel()
+	app := newTestRun(t)
+	got := app.runCp(t, "fail", "-o", "json")
 	var cerr *clierr.Error
-	if !errors.As(err, &cerr) {
-		t.Fatalf("cp: %v, want a child_exit error", err)
+	if !errors.As(got.err, &cerr) {
+		t.Fatalf("cp: %v, want a child_exit error", got.err)
 	}
-	if stderr != "" {
-		t.Errorf("stderr = %q, want nothing before the error document", stderr)
+	if got.stderr != "" {
+		t.Errorf("stderr = %q, want nothing before the error document", got.stderr)
 	}
-	if !strings.HasSuffix(cerr.Message, `exited with status 1; remote open("/etc/hostname"): Permission denied`) || cerr.Kind != clierr.KindChildExit || cerr.Code != 1 {
+	if !strings.HasSuffix(cerr.Message, `exited with status 1; remote open("/etc/hostname"): Permission denied`) ||
+		cerr.Kind != clierr.KindChildExit ||
+		cerr.Code != 1 {
 		t.Errorf("error = %+v, want child_exit 1 ending with sftp's last line", cerr)
 	}
 }
 
 // TestCpResultShape: cp -o json emits its own result, never sftp's echo.
 func TestCpResultShape(t *testing.T) {
+	t.Parallel()
 	v := cpResult{Group: "g", Instance: "8a2f13ba-0000", Action: "copied", OK: true, Src: "g:/etc/x", Dst: "./x"}
 	b, err := json.Marshal(v)
 	if err != nil {
@@ -185,7 +188,9 @@ func TestCpResultShape(t *testing.T) {
 }
 
 func TestBuildSFTPBatchPut(t *testing.T) {
-	got := buildSFTPBatch(true, false, `C:\Users\me\model.bin`, "/models/model.bin")
+	t.Parallel()
+	plan := cpPlan{spec: &remoteSpec{Path: "/models/model.bin"}, local: `C:\Users\me\model.bin`, upload: true}
+	got := plan.sftpBatch()
 	want := "put \"C:/Users/me/model.bin\" \"/models/model.bin\"\n"
 	if got != want {
 		t.Errorf("batch = %q, want %q", got, want)
@@ -193,7 +198,9 @@ func TestBuildSFTPBatchPut(t *testing.T) {
 }
 
 func TestBuildSFTPBatchGetRecursive(t *testing.T) {
-	got := buildSFTPBatch(false, true, "./outputs", "/outputs")
+	t.Parallel()
+	plan := cpPlan{spec: &remoteSpec{Path: "/outputs"}, local: "./outputs", recursive: true}
+	got := plan.sftpBatch()
 	want := "get -r \"/outputs\" \"./outputs\"\n"
 	if got != want {
 		t.Errorf("batch = %q, want %q", got, want)
@@ -201,7 +208,9 @@ func TestBuildSFTPBatchGetRecursive(t *testing.T) {
 }
 
 func TestBuildSFTPBatchQuoting(t *testing.T) {
-	got := buildSFTPBatch(true, false, `my "quoted" file`, `/data/back\slash`)
+	t.Parallel()
+	plan := cpPlan{spec: &remoteSpec{Path: `/data/back\slash`}, local: `my "quoted" file`, upload: true}
+	got := plan.sftpBatch()
 	want := "put \"my \\\"quoted\\\" file\" \"/data/back\\\\slash\"\n"
 	if got != want {
 		t.Errorf("batch = %q, want %q", got, want)
@@ -209,27 +218,55 @@ func TestBuildSFTPBatchQuoting(t *testing.T) {
 }
 
 func TestBuildSFTPArgs(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
-	got := buildSFTPArgs(target, "root", "", "/tmp/batch")
-	want := []string{"-P", "30123", "-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=/cfg/known_hosts", "-o", "HostKeyAlias=saladcloud-aaaa1111", "-b", "/tmp/batch", "root@203.0.113.7"}
+	got := app.buildSFTPArgs(target, "root", "", "/tmp/batch")
+	want := []string{
+		"-P",
+		"30123",
+		"-o",
+		"StrictHostKeyChecking=accept-new",
+		"-o",
+		"UserKnownHostsFile=/cfg/known_hosts",
+		"-o",
+		"HostKeyAlias=saladcloud-aaaa1111",
+		"-b",
+		"/tmp/batch",
+		"root@203.0.113.7",
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("args = %v, want %v", got, want)
 	}
 }
 
 func TestBuildSFTPArgsInteractive(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	// Empty batchPath = interactive 'saladcloud container-groups sftp' session: no -b flag.
 	target := sshTarget{InstanceID: "aaaa1111", IP: "203.0.113.7", Port: 30123}
-	got := buildSFTPArgs(target, "root", "", "")
-	want := []string{"-P", "30123", "-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=/cfg/known_hosts", "-o", "HostKeyAlias=saladcloud-aaaa1111", "root@203.0.113.7"}
+	got := app.buildSFTPArgs(target, "root", "", "")
+	want := []string{
+		"-P",
+		"30123",
+		"-o",
+		"StrictHostKeyChecking=accept-new",
+		"-o",
+		"UserKnownHostsFile=/cfg/known_hosts",
+		"-o",
+		"HostKeyAlias=saladcloud-aaaa1111",
+		"root@203.0.113.7",
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("args = %v, want %v", got, want)
 	}
 }
 
 func TestBuildSFTPArgsInteractiveIdentity(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	target := sshTarget{IP: "203.0.113.7", Port: 22}
-	got := buildSFTPArgs(target, "worker", "/home/me/.ssh/key", "")
+	got := app.buildSFTPArgs(target, "worker", "/home/me/.ssh/key", "")
 	want := []string{
 		"-P", "22",
 		"-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=/cfg/known_hosts",
@@ -242,8 +279,10 @@ func TestBuildSFTPArgsInteractiveIdentity(t *testing.T) {
 }
 
 func TestBuildSFTPArgsIdentity(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	target := sshTarget{IP: "203.0.113.7", Port: 22}
-	got := buildSFTPArgs(target, "worker", "/home/me/.ssh/key", "/tmp/batch")
+	got := app.buildSFTPArgs(target, "worker", "/home/me/.ssh/key", "/tmp/batch")
 	want := []string{
 		"-P", "22",
 		"-o", "StrictHostKeyChecking=accept-new", "-o", "UserKnownHostsFile=/cfg/known_hosts",

@@ -38,6 +38,7 @@ func testResolver(t *testing.T) func(string) (string, *clierr.Error) {
 }
 
 func TestValidateGroupName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		valid bool
@@ -55,21 +56,15 @@ func TestValidateGroupName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			err := validateGroupName(tt.name)
-			if tt.valid {
-				if err != nil {
-					t.Fatalf("validateGroupName(%q) = %v, want nil", tt.name, err)
-				}
+			if !tt.valid {
+				// The message quotes the name.
+				checkCreateInvalidInput(t, err, tt.name)
 				return
 			}
-			if err == nil {
-				t.Fatalf("validateGroupName(%q) = nil, want a usage error", tt.name)
-			}
-			if err.Code != clierr.CodeInvalidInput || err.Kind != clierr.KindInvalidInput {
-				t.Errorf("error = (%d, %s), want (%d, invalid_input)", err.Code, err.Kind, clierr.CodeInvalidInput)
-			}
-			if !strings.Contains(err.Message, tt.name) {
-				t.Errorf("message %q does not quote the name %q", err.Message, tt.name)
+			if err != nil {
+				t.Fatalf("validateGroupName(%q) = %v, want nil", tt.name, err)
 			}
 		})
 	}
@@ -78,6 +73,7 @@ func TestValidateGroupName(t *testing.T) {
 // TestValidateCreateRequestBadName pins that the name rule runs as part of
 // create's pre-validation and surfaces as exit 2, offline.
 func TestValidateCreateRequestBadName(t *testing.T) {
+	t.Parallel()
 	req := validCreateRequest()
 	req.Name = ptr.To("bad_NAME")
 	err := validateCreateRequest(&req)
@@ -90,6 +86,7 @@ func TestValidateCreateRequestBadName(t *testing.T) {
 }
 
 func TestResolveGpuClassName(t *testing.T) {
+	t.Parallel()
 	classes := testGpuClasses()
 	tests := []struct {
 		name    string
@@ -107,30 +104,24 @@ func TestResolveGpuClassName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			id, cerr := resolveGpuClassName(tt.value, classes)
-			if tt.wantErr == "" {
-				if cerr != nil {
-					t.Fatalf("resolveGpuClassName(%q) error: %v", tt.value, cerr)
-				}
-				if id != tt.wantID {
-					t.Errorf("resolveGpuClassName(%q) = %q, want %q", tt.value, id, tt.wantID)
-				}
+			if tt.wantErr != "" {
+				checkCreateInvalidInput(t, cerr, tt.wantErr)
 				return
 			}
-			if cerr == nil {
-				t.Fatalf("resolveGpuClassName(%q) = %q, want error containing %q", tt.value, id, tt.wantErr)
+			if cerr != nil {
+				t.Fatalf("resolveGpuClassName(%q) error: %v", tt.value, cerr)
 			}
-			if cerr.Code != clierr.CodeInvalidInput {
-				t.Errorf("code = %d, want %d", cerr.Code, clierr.CodeInvalidInput)
-			}
-			if !strings.Contains(cerr.Message, tt.wantErr) {
-				t.Errorf("message %q does not contain %q", cerr.Message, tt.wantErr)
+			if id != tt.wantID {
+				t.Errorf("resolveGpuClassName(%q) = %q, want %q", tt.value, id, tt.wantID)
 			}
 		})
 	}
 }
 
 func TestResolveGpuClassNameAmbiguousListsCandidates(t *testing.T) {
+	t.Parallel()
 	_, cerr := resolveGpuClassName("3060", testGpuClasses())
 	if cerr == nil {
 		t.Fatal("expected an ambiguity error")
@@ -147,6 +138,7 @@ func TestResolveGpuClassNameAmbiguousListsCandidates(t *testing.T) {
 // and the user's input are trimmed, so an exact match still wins over a
 // would-be-ambiguous substring match.
 func TestResolveGpuClassNameTrimsStoredAndInput(t *testing.T) {
+	t.Parallel()
 	classes := []organizationdata.GpuClass{
 		{Name: ptr.To(" RTX 5080 (16 GB)"), Id: ptr.To("id-5080")},
 		{Name: ptr.To("RTX 5080 Ti (16 GB)"), Id: ptr.To("id-5080ti")},
@@ -162,6 +154,7 @@ func TestResolveGpuClassNameTrimsStoredAndInput(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			id, cerr := resolveGpuClassName(tt.value, classes)
 			if cerr != nil {
 				t.Fatalf("resolveGpuClassName(%q) error: %v", tt.value, cerr)
@@ -204,49 +197,38 @@ func fileBase() containergroups.ContainerGroupCreationRequest {
 }
 
 func TestBuildCreateRequestFlagsOnlyMinimal(t *testing.T) {
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	t.Parallel()
+	app := newTestRun(t)
+	req, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{
 		Name:  "web",
 		Image: "ghcr.io/me/app:latest",
 	})
 	if cerr != nil {
 		t.Fatalf("buildCreateRequest error: %v", cerr)
 	}
-	if got := ptr.Deref(req.Name); got != "web" {
-		t.Errorf("name = %q, want web", got)
-	}
-	if got := ptr.Deref(req.Container.Image); got != "ghcr.io/me/app:latest" {
-		t.Errorf("image = %q", got)
-	}
-	// Defaults fill everything else.
-	if got := ptr.Deref(req.Container.Resources.Cpu); got != 1 {
-		t.Errorf("cpu = %d, want default 1", got)
-	}
-	if got := ptr.Deref(req.Container.Resources.Memory); got != 1024 {
-		t.Errorf("memory = %d, want default 1024", got)
-	}
-	if got := ptr.Deref(req.Replicas); got != 1 {
-		t.Errorf("replicas = %d, want default 1", got)
-	}
-	if req.RestartPolicy == nil || *req.RestartPolicy != shared.CONTAINER_RESTART_POLICY_ALWAYS {
-		t.Errorf("restart_policy = %v, want always", req.RestartPolicy)
-	}
-	if !ptr.Deref(req.AutostartPolicy) {
-		t.Error("autostart_policy = false, want default true")
-	}
-	if req.Container.Priority != nil {
-		t.Errorf("priority = %v, want unset (server default)", req.Container.Priority)
-	}
-	if req.Networking != nil {
-		t.Errorf("networking = %v, want unset", req.Networking)
-	}
+	checkCreateFields(t, []createFieldCheck{
+		{"name", ptr.Deref(req.Name), "web"},
+		{"image", ptr.Deref(req.Container.Image), "ghcr.io/me/app:latest"},
+		// Defaults fill everything else.
+		{"cpu (default)", ptr.Deref(req.Container.Resources.Cpu), int64(1)},
+		{"memory (default)", ptr.Deref(req.Container.Resources.Memory), int64(1024)},
+		{"replicas (default)", ptr.Deref(req.Replicas), int64(1)},
+		{"restart_policy (default)", ptr.Deref(req.RestartPolicy), shared.CONTAINER_RESTART_POLICY_ALWAYS},
+		{"autostart_policy (default)", ptr.Deref(req.AutostartPolicy), true},
+		{"priority set (server default when unset)", req.Container.Priority != nil, false},
+		{"networking set", req.Networking != nil, false},
+	})
 	if cerr := validateCreateRequest(&req); cerr != nil {
 		t.Errorf("validateCreateRequest rejected the built request: %v", cerr)
 	}
 }
 
 func TestBuildCreateRequestDefaultsOnlyWhenUnset(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	// A fully-specified base with no flags must come through untouched.
-	req, cerr := buildCreateRequest(fileBase(), createFlags{HasBase: true})
+	base := fileBase()
+	req, cerr := app.buildCreateRequest(&base, &createFlags{HasBase: true})
 	if cerr != nil {
 		t.Fatalf("buildCreateRequest error: %v", cerr)
 	}
@@ -271,7 +253,10 @@ func TestBuildCreateRequestDefaultsOnlyWhenUnset(t *testing.T) {
 }
 
 func TestBuildCreateRequestFileWithOverrides(t *testing.T) {
-	req, cerr := buildCreateRequest(fileBase(), createFlags{
+	t.Parallel()
+	app := newTestRun(t)
+	base := fileBase()
+	req, cerr := app.buildCreateRequest(&base, &createFlags{
 		HasBase:          true,
 		Name:             "renamed",
 		Image:            "ghcr.io/me/other:2",
@@ -287,35 +272,68 @@ func TestBuildCreateRequestFileWithOverrides(t *testing.T) {
 	if cerr != nil {
 		t.Fatalf("buildCreateRequest error: %v", cerr)
 	}
-	if got := ptr.Deref(req.Name); got != "renamed" {
-		t.Errorf("name = %q, want renamed (positional overrides file)", got)
+	if req.Container.Priority == nil {
+		t.Fatal("priority is unset, want batch")
 	}
-	if got := ptr.Deref(req.DisplayName); got != "Renamed App" {
-		t.Errorf("display_name = %q", got)
+	checkCreateFields(t, []createFieldCheck{
+		{"name (positional overrides file)", ptr.Deref(req.Name), "renamed"},
+		{"display_name", ptr.Deref(req.DisplayName), "Renamed App"},
+		{"image (the flag value)", ptr.Deref(req.Container.Image), "ghcr.io/me/other:2"},
+		{"cpu (flag overrides file)", ptr.Deref(req.Container.Resources.Cpu), int64(8)},
+		{"memory (file value kept — flag not set)", ptr.Deref(req.Container.Resources.Memory), int64(2048)},
+		{"replicas", ptr.Deref(req.Replicas), int64(2)},
+		{"restart_policy", ptr.Deref(req.RestartPolicy), shared.CONTAINER_RESTART_POLICY_ON_FAILURE},
+		{"priority is null", req.Container.Priority.IsNull, false},
+		{"priority", req.Container.Priority.Value, shared.CONTAINER_GROUP_PRIORITY_BATCH},
+	})
+}
+
+// createFieldCheck is one field of a built request and the value a test
+// wants in it; got and want must be of the same comparable type.
+type createFieldCheck struct {
+	field     string
+	got, want any
+}
+
+// checkCreateFields reports every check whose field does not hold the value
+// it wants.
+func checkCreateFields(t *testing.T, checks []createFieldCheck) {
+	t.Helper()
+	for _, c := range checks {
+		if c.got != c.want {
+			t.Errorf("%s = %v, want %v", c.field, c.got, c.want)
+		}
 	}
-	if got := ptr.Deref(req.Container.Image); got != "ghcr.io/me/other:2" {
-		t.Errorf("image = %q, want the flag value", got)
+}
+
+// checkCreateInvalidInput fails t unless cerr is an invalid-input error
+// whose message contains fragment.
+func checkCreateInvalidInput(t *testing.T, cerr *clierr.Error, fragment string) {
+	t.Helper()
+	if cerr == nil {
+		t.Fatalf("error = nil, want an invalid-input error containing %q", fragment)
 	}
-	if got := ptr.Deref(req.Container.Resources.Cpu); got != 8 {
-		t.Errorf("cpu = %d, want 8 (flag overrides file)", got)
+	if cerr.Code != clierr.CodeInvalidInput || cerr.Kind != clierr.KindInvalidInput {
+		t.Errorf("error = (%d, %s), want (%d, invalid_input)", cerr.Code, cerr.Kind, clierr.CodeInvalidInput)
 	}
-	if got := ptr.Deref(req.Container.Resources.Memory); got != 2048 {
-		t.Errorf("memory = %d, want 2048 (file value kept — flag not set)", got)
-	}
-	if got := ptr.Deref(req.Replicas); got != 2 {
-		t.Errorf("replicas = %d, want 2", got)
-	}
-	if *req.RestartPolicy != shared.CONTAINER_RESTART_POLICY_ON_FAILURE {
-		t.Errorf("restart_policy = %v, want on_failure", *req.RestartPolicy)
-	}
-	if req.Container.Priority == nil || req.Container.Priority.IsNull ||
-		req.Container.Priority.Value != shared.CONTAINER_GROUP_PRIORITY_BATCH {
-		t.Errorf("priority = %v, want batch", req.Container.Priority)
+	checkCreateTextHas(t, cerr.Message, fragment)
+}
+
+// checkCreateTextHas reports each of wants that text does not contain.
+func checkCreateTextHas(t *testing.T, text string, wants ...string) {
+	t.Helper()
+	for _, want := range wants {
+		if !strings.Contains(text, want) {
+			t.Errorf("message %q missing %q", text, want)
+		}
 	}
 }
 
 func TestBuildCreateRequestEnvMerge(t *testing.T) {
-	req, cerr := buildCreateRequest(fileBase(), createFlags{
+	t.Parallel()
+	app := newTestRun(t)
+	base := fileBase()
+	req, cerr := app.buildCreateRequest(&base, &createFlags{
 		HasBase: true,
 		Env:     []string{"B=flag-b", "C=flag-c", "D=has=equals"},
 	})
@@ -340,63 +358,72 @@ func TestBuildCreateRequestEnvMerge(t *testing.T) {
 }
 
 func TestBuildCreateRequestPortAndAuth(t *testing.T) {
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
-		Image:   "ghcr.io/me/app",
-		Port:    8080,
-		PortSet: true,
-	})
-	if cerr != nil {
-		t.Fatalf("buildCreateRequest error: %v", cerr)
+	t.Parallel()
+	// fileNetworking is a base that already has networking.
+	fileNetworking := func() containergroups.ContainerGroupCreationRequest {
+		base := fileBase()
+		proto := shared.CONTAINER_NETWORKING_PROTOCOL_HTTP
+		base.Networking = &containergroups.CreateContainerGroupNetworking{
+			Protocol: &proto, Port: ptr.To(int64(80)), Auth: ptr.To(true),
+		}
+		return base
 	}
-	n := req.Networking
-	if n == nil {
-		t.Fatal("networking is nil")
+	tests := []struct {
+		name     string
+		base     containergroups.ContainerGroupCreationRequest
+		opts     createFlags
+		wantPort int64
+		wantAuth bool
+	}{
+		{
+			// --port alone: http, auth on by default.
+			name:     "port",
+			opts:     createFlags{Image: "ghcr.io/me/app", Port: 8080, PortSet: true},
+			wantPort: 8080,
+			wantAuth: true,
+		},
+		{
+			// --no-auth with --port flips auth off.
+			name:     "port with no-auth",
+			opts:     createFlags{Image: "ghcr.io/me/app", Port: 8080, PortSet: true, NoAuth: true},
+			wantPort: 8080,
+			wantAuth: false,
+		},
+		{
+			// --no-auth against a file that already has networking is fine
+			// too, and keeps the file's port.
+			name:     "no-auth over file networking",
+			base:     fileNetworking(),
+			opts:     createFlags{HasBase: true, NoAuth: true},
+			wantPort: 80,
+			wantAuth: false,
+		},
 	}
-	if got := ptr.Deref(n.Port); got != 8080 {
-		t.Errorf("port = %d, want 8080", got)
-	}
-	if n.Protocol == nil || *n.Protocol != shared.CONTAINER_NETWORKING_PROTOCOL_HTTP {
-		t.Errorf("protocol = %v, want http", n.Protocol)
-	}
-	if !ptr.Deref(n.Auth) {
-		t.Error("auth = false, want default true")
-	}
-
-	// --no-auth with --port flips auth off.
-	req, cerr = buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
-		Image:   "ghcr.io/me/app",
-		Port:    8080,
-		PortSet: true,
-		NoAuth:  true,
-	})
-	if cerr != nil {
-		t.Fatalf("buildCreateRequest error: %v", cerr)
-	}
-	if ptr.Deref(req.Networking.Auth) {
-		t.Error("auth = true, want false with --no-auth")
-	}
-
-	// --no-auth against a file that already has networking is fine too.
-	base := fileBase()
-	proto := shared.CONTAINER_NETWORKING_PROTOCOL_HTTP
-	base.Networking = &containergroups.CreateContainerGroupNetworking{
-		Protocol: &proto, Port: ptr.To(int64(80)), Auth: ptr.To(true),
-	}
-	req, cerr = buildCreateRequest(base, createFlags{HasBase: true, NoAuth: true})
-	if cerr != nil {
-		t.Fatalf("buildCreateRequest error: %v", cerr)
-	}
-	if ptr.Deref(req.Networking.Auth) {
-		t.Error("auth = true, want false (--no-auth over file networking)")
-	}
-	if got := ptr.Deref(req.Networking.Port); got != 80 {
-		t.Errorf("port = %d, want 80 (file value kept)", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			req, cerr := newTestRun(t).buildCreateRequest(&tt.base, &tt.opts)
+			if cerr != nil {
+				t.Fatalf("buildCreateRequest error: %v", cerr)
+			}
+			n := req.Networking
+			if n == nil {
+				t.Fatal("networking is nil")
+			}
+			checkCreateFields(t, []createFieldCheck{
+				{"port", ptr.Deref(n.Port), tt.wantPort},
+				{"protocol", ptr.Deref(n.Protocol), shared.CONTAINER_NETWORKING_PROTOCOL_HTTP},
+				{"auth", ptr.Deref(n.Auth), tt.wantAuth},
+			})
+		})
 	}
 }
 
 func TestBuildCreateRequestGpuFlag(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	uuid := "ed563892-aacd-40f5-80b7-90c9be6c759b"
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{
 		Image: "ghcr.io/me/app",
 		Gpus:  []string{uuid, "RTX 3060 (12 GB)"},
 		ResolveGpu: func(value string) (string, *clierr.Error) {
@@ -417,8 +444,10 @@ func TestBuildCreateRequestGpuFlag(t *testing.T) {
 }
 
 func TestBuildCreateRequestGpuResolverErrors(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	for _, value := range []string{"3060", "H100"} {
-		_, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+		_, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{
 			Image:      "ghcr.io/me/app",
 			Gpus:       []string{value},
 			ResolveGpu: testResolver(t),
@@ -433,7 +462,9 @@ func TestBuildCreateRequestGpuResolverErrors(t *testing.T) {
 }
 
 func TestBuildCreateRequestNoAutostart(t *testing.T) {
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	t.Parallel()
+	app := newTestRun(t)
+	req, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{
 		Image:       "ghcr.io/me/app",
 		NoAutostart: true,
 	})
@@ -446,7 +477,9 @@ func TestBuildCreateRequestNoAutostart(t *testing.T) {
 }
 
 func TestBuildCreateRequestValidationFailures(t *testing.T) {
-	t.Setenv("MSYSTEM", "MINGW64") // the Git Bash check runs only under Git Bash
+	t.Parallel()
+	parent := newTestRun(t)
+	parent.setenv("MSYSTEM", "MINGW64") // the Git Bash check runs only under Git Bash
 	tests := []struct {
 		name     string
 		base     containergroups.ContainerGroupCreationRequest
@@ -467,8 +500,14 @@ func TestBuildCreateRequestValidationFailures(t *testing.T) {
 			wantMsg:  "--env",
 		},
 		{
-			name:     "queue path Git Bash rewrote",
-			opts:     createFlags{Image: "x", Queue: "q", QueuePort: 8000, QueuePortSet: true, QueuePath: "C:/Program Files/Git/"},
+			name: "queue path Git Bash rewrote",
+			opts: createFlags{
+				Image:        "x",
+				Queue:        "q",
+				QueuePort:    8000,
+				QueuePortSet: true,
+				QueuePath:    "C:/Program Files/Git/",
+			},
 			wantCode: clierr.CodeUsage,
 			wantMsg:  "rewritten by Git Bash",
 		},
@@ -505,7 +544,9 @@ func TestBuildCreateRequestValidationFailures(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, cerr := buildCreateRequest(tt.base, tt.opts)
+			t.Parallel()
+			app := parent.clone(t)
+			_, cerr := app.buildCreateRequest(&tt.base, &tt.opts)
 			if cerr == nil {
 				t.Fatal("buildCreateRequest returned nil error")
 			}
@@ -520,8 +561,10 @@ func TestBuildCreateRequestValidationFailures(t *testing.T) {
 }
 
 func TestBuildCreateRequestPriorityNullable(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	// The priority flag must land as a non-null Nullable on the container.
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	req, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{
 		Image:    "x",
 		Priority: "high",
 	})
@@ -537,10 +580,13 @@ func TestBuildCreateRequestPriorityNullable(t *testing.T) {
 }
 
 func TestIsUUID(t *testing.T) {
+	t.Parallel()
 	if !isUUID("f51baccc-dc95-40fb-a5d1-6d0ee0db31d2") {
 		t.Error("isUUID rejected a valid UUID")
 	}
-	for _, s := range []string{"RTX 3060", "f51baccc", "f51baccc-dc95-40fb-a5d1-6d0ee0db31d", "g51baccc-dc95-40fb-a5d1-6d0ee0db31d2"} {
+	for _, s := range []string{
+		"RTX 3060", "f51baccc", "f51baccc-dc95-40fb-a5d1-6d0ee0db31d", "g51baccc-dc95-40fb-a5d1-6d0ee0db31d2",
+	} {
 		if isUUID(s) {
 			t.Errorf("isUUID accepted %q", s)
 		}
@@ -551,7 +597,9 @@ func TestIsUUID(t *testing.T) {
 // keys within the flag slice, as opposed to TestBuildCreateRequestEnvMerge's
 // file-vs-flag precedence. Verified live: the last occurrence wins.
 func TestBuildCreateRequestEnvLastFlagWins(t *testing.T) {
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	t.Parallel()
+	app := newTestRun(t)
+	req, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{
 		Image: "x",
 		Env:   []string{"A=1", "B=keep", "A=2"},
 	})
@@ -576,7 +624,9 @@ func TestBuildCreateRequestEnvLastFlagWins(t *testing.T) {
 // "helpfully" replaced by the default of 1. A refactor to
 // `if req.Replicas == nil || *req.Replicas == 0` would silently break this.
 func TestBuildCreateRequestReplicasZeroSurvivesDefaulting(t *testing.T) {
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{
+	t.Parallel()
+	app := newTestRun(t)
+	req, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{
 		Image:       "x",
 		Replicas:    0,
 		ReplicasSet: true,
@@ -595,7 +645,9 @@ func TestBuildCreateRequestReplicasZeroSurvivesDefaulting(t *testing.T) {
 // TestBuildCreateRequestReplicasDefaultsWhenUnset is the other half: with
 // the flag untouched, the default of 1 still applies.
 func TestBuildCreateRequestReplicasDefaultsWhenUnset(t *testing.T) {
-	req, cerr := buildCreateRequest(containergroups.ContainerGroupCreationRequest{}, createFlags{Image: "x"})
+	t.Parallel()
+	app := newTestRun(t)
+	req, cerr := app.buildCreateRequest(&containergroups.ContainerGroupCreationRequest{}, &createFlags{Image: "x"})
 	if cerr != nil {
 		t.Fatalf("buildCreateRequest error: %v", cerr)
 	}
@@ -609,6 +661,7 @@ func TestBuildCreateRequestReplicasDefaultsWhenUnset(t *testing.T) {
 // out. Exit code must be usage (2), and the check must run before any file
 // read or API call.
 func TestValidateWaitAutostart(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		wait        bool
@@ -622,24 +675,22 @@ func TestValidateWaitAutostart(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cerr := validateWaitAutostart(tt.wait, tt.noAutostart)
-			if !tt.wantErr {
-				if cerr != nil {
-					t.Fatalf("validateWaitAutostart(%v, %v) = %v, want nil", tt.wait, tt.noAutostart, cerr)
-				}
-				return
+			t.Parallel()
+			cerr := validateWaitAutostart(&createOptions{
+				wait:  waitOptions{wait: tt.wait},
+				flags: createFlags{NoAutostart: tt.noAutostart},
+			})
+			if (cerr != nil) != tt.wantErr {
+				t.Fatalf("validateWaitAutostart(%v, %v) = %v, want an error: %v",
+					tt.wait, tt.noAutostart, cerr, tt.wantErr)
 			}
 			if cerr == nil {
-				t.Fatalf("validateWaitAutostart(%v, %v) = nil, want an error", tt.wait, tt.noAutostart)
+				return
 			}
 			if cerr.Code != clierr.CodeUsage {
 				t.Errorf("code = %d, want %d (usage)", cerr.Code, clierr.CodeUsage)
 			}
-			for _, want := range []string{"--wait", "--no-autostart"} {
-				if !strings.Contains(cerr.Message, want) {
-					t.Errorf("message %q does not name %s", cerr.Message, want)
-				}
-			}
+			checkCreateTextHas(t, cerr.Message, "--wait", "--no-autostart")
 		})
 	}
 }
@@ -650,6 +701,7 @@ func TestValidateWaitAutostart(t *testing.T) {
 // sent the field, the API discarded it, and the caller got exit 0 believing
 // the write landed — the exact silent no-op strict checking exists to stop.
 func TestRejectUnknownsOffersHatchOnlyForNovelFields(t *testing.T) {
+	t.Parallel()
 	const hatch = "--allow-unknown-fields"
 	tests := []struct {
 		name      string
@@ -722,7 +774,9 @@ func TestRejectUnknownsOffersHatchOnlyForNovelFields(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cerr := rejectUnknowns([]input.Unknown{
+			t.Parallel()
+			app := newTestRun(t)
+			cerr := app.rejectUnknowns([]input.Unknown{
 				{Desc: `unknown field "x"`, Path: tt.path},
 			})
 			if cerr == nil {
@@ -731,11 +785,7 @@ func TestRejectUnknownsOffersHatchOnlyForNovelFields(t *testing.T) {
 			if got := strings.Contains(errText(cerr), hatch); got != tt.wantHatch {
 				t.Errorf("hatch offered = %v, want %v (message: %s)", got, tt.wantHatch, errText(cerr))
 			}
-			for _, want := range tt.wantText {
-				if !strings.Contains(errText(cerr), want) {
-					t.Errorf("message %q missing %q", errText(cerr), want)
-				}
-			}
+			checkCreateTextHas(t, errText(cerr), tt.wantText...)
 			if cerr.Kind != clierr.KindUnknownField {
 				t.Errorf("kind = %q, want %q", cerr.Kind, clierr.KindUnknownField)
 			}
@@ -747,7 +797,9 @@ func TestRejectUnknownsOffersHatchOnlyForNovelFields(t *testing.T) {
 // only the first offender used to be named, so cleaning a document piped
 // from `get -o json` took one round-trip per field.
 func TestRejectUnknownsListsEveryField(t *testing.T) {
-	cerr := rejectUnknowns([]input.Unknown{
+	t.Parallel()
+	app := newTestRun(t)
+	cerr := app.rejectUnknowns([]input.Unknown{
 		{Desc: `unknown field "id" at the top level`, Path: "id"},
 		{Desc: `unknown field "create_time" at the top level`, Path: "create_time"},
 		{Desc: `unknown field "gpu_sharing" in "container"`, Path: "container.gpu_sharing"},
@@ -766,15 +818,16 @@ func TestRejectUnknownsListsEveryField(t *testing.T) {
 	}
 	// Three or more response-only fields is the get-round-trip tell, which
 	// replaces the list.
-	tell := rejectUnknowns([]input.Unknown{
+	tell := app.rejectUnknowns([]input.Unknown{
 		{Desc: `unknown field "id" at the top level`, Path: "id"},
 		{Desc: `unknown field "create_time" at the top level`, Path: "create_time"},
 		{Desc: `unknown field "version" at the top level`, Path: "version"},
 	})
-	if !strings.HasPrefix(tell.Message, "this document is a get response, not a patch") || strings.Contains(tell.Message, "unknown fields:") {
+	if !strings.HasPrefix(tell.Message, "this document is a get response, not a patch") ||
+		strings.Contains(tell.Message, "unknown fields:") {
 		t.Errorf("get-round-trip message = %q", tell.Message)
 	}
-	if rejectUnknowns(nil) != nil {
+	if app.rejectUnknowns(nil) != nil {
 		t.Error("rejectUnknowns(nil) should be nil")
 	}
 }
@@ -783,10 +836,11 @@ func TestRejectUnknownsListsEveryField(t *testing.T) {
 // through with the flag, the warning must say it will be ignored rather than
 // just "sent to the API anyway".
 func TestWarnUnknownsFlagsIgnoredFields(t *testing.T) {
+	t.Parallel()
 	var buf bytes.Buffer
 	warnUnknowns(&buf, []input.Unknown{
 		{Desc: `unknown field "auth" in "networking"`, Path: "networking.auth"},
-	}, false)
+	})
 	out := buf.String()
 	for _, want := range []string{"expect it to be ignored", "update schema"} {
 		if !strings.Contains(out, want) {
@@ -798,18 +852,21 @@ func TestWarnUnknownsFlagsIgnoredFields(t *testing.T) {
 // TestWarnUnknowns: create mode flags array-nested fields as dropped; update
 // mode passes everything through.
 func TestWarnUnknowns(t *testing.T) {
+	t.Parallel()
 	unknowns := []input.Unknown{
 		{Desc: `unknown field "a" at the top level`},
 		{Desc: `unknown field "b" in "scaling-actions[0]"`, InArray: true},
 	}
 	var createBuf strings.Builder
-	warnUnknowns(&createBuf, unknowns, true)
-	if got := createBuf.String(); !strings.Contains(got, "sent to the API anyway") || !strings.Contains(got, "; dropped, because") {
+	warnCreateUnknowns(&createBuf, unknowns)
+	if got := createBuf.String(); !strings.Contains(got, "sent to the API anyway") ||
+		!strings.Contains(got, "; dropped, because") {
 		t.Errorf("create-mode warnings wrong:\n%s", got)
 	}
 	var updateBuf strings.Builder
-	warnUnknowns(&updateBuf, unknowns, false)
-	if got := updateBuf.String(); strings.Contains(got, "dropped") || strings.Count(got, "sent to the API anyway") != 2 {
+	warnUnknowns(&updateBuf, unknowns)
+	if got := updateBuf.String(); strings.Contains(got, "dropped") ||
+		strings.Count(got, "sent to the API anyway") != 2 {
 		t.Errorf("update-mode warnings wrong:\n%s", got)
 	}
 }
@@ -820,9 +877,11 @@ func TestWarnUnknowns(t *testing.T) {
 // build AND the JSON marshal that goes on the wire — a stopped group created
 // from a true file would be the defect.
 func TestBuildCreateRequestAutostartTrueBaseSurvives(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	base := fileBase()
 	base.AutostartPolicy = ptr.To(true) // file said autostart: true
-	req, cerr := buildCreateRequest(base, createFlags{
+	req, cerr := app.buildCreateRequest(&base, &createFlags{
 		HasBase:  true,
 		Gpus:     []string{"11111111-1111-1111-1111-111111111111"},
 		Priority: "high",

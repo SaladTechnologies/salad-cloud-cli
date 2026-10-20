@@ -2,10 +2,7 @@ package cli
 
 import (
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"io/fs"
-	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -14,9 +11,11 @@ import (
 
 // omitemptyAllowed are the CLI's structs that are never emitted, so leaving
 // unset keys out is right for them: what they encode is not output.
-var omitemptyAllowed = map[string]string{
-	"config.File":             "the config file on disk: an unset value is left out of the file",
-	"api.AvailabilityRequest": "a request body: an unset requirement is not sent",
+func omitemptyAllowed() map[string]string {
+	return map[string]string{
+		"config.File":             "the config file on disk: an unset value is left out of the file",
+		"api.AvailabilityRequest": "a request body: an unset requirement is not sent",
+	}
 }
 
 // TestNoOmitemptyInCLIStructs: the CLI's own structs encode what the code
@@ -27,17 +26,11 @@ var omitemptyAllowed = map[string]string{
 // say), except the few that are never output. (The SDK's structs do, and
 // output's fill handles them.)
 func TestNoOmitemptyInCLIStructs(t *testing.T) {
+	t.Parallel()
 	fset := token.NewFileSet()
 	checked := 0
-	used := map[string]bool{}
-	err := filepath.WalkDir("..", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
-			return err
-		}
-		f, err := parser.ParseFile(fset, path, nil, 0)
-		if err != nil {
-			return err
-		}
+	used := make(map[string]bool)
+	err := walkProductionGoFiles("..", fset, func(f *ast.File) {
 		ast.Inspect(f, func(n ast.Node) bool {
 			spec, ok := n.(*ast.TypeSpec)
 			if !ok {
@@ -47,28 +40,9 @@ func TestNoOmitemptyInCLIStructs(t *testing.T) {
 			if !ok {
 				return true
 			}
-			name := f.Name.Name + "." + spec.Name.Name
-			for _, field := range st.Fields.List {
-				if field.Tag == nil {
-					continue
-				}
-				tag, err := strconv.Unquote(field.Tag.Value)
-				if err != nil {
-					continue
-				}
-				checked++
-				if !strings.Contains(reflect.StructTag(tag).Get("json"), "omitempty") {
-					continue
-				}
-				if _, ok := omitemptyAllowed[name]; ok {
-					used[name] = true
-					continue
-				}
-				t.Errorf("%s: %s's json tag %q has omitempty; a CLI struct encodes every key it sets", fset.Position(field.Pos()), name, tag)
-			}
+			checked += checkOmitemptyStruct(t, fset, f.Name.Name+"."+spec.Name.Name, st, used)
 			return true
 		})
-		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -76,9 +50,47 @@ func TestNoOmitemptyInCLIStructs(t *testing.T) {
 	if checked < 80 {
 		t.Fatalf("checked only %d tagged fields; is the walk reaching internal/?", checked)
 	}
-	for name := range omitemptyAllowed {
+	for name := range omitemptyAllowed() {
 		if !used[name] {
 			t.Errorf("%s is allowed omitempty but no longer has any; remove it from the list", name)
 		}
 	}
+}
+
+// checkOmitemptyStruct reports each field of st, the struct named name (package.Type), whose json tag has
+// omitempty, unless omitemptyAllowed lists name, which it then marks in used. It returns how many tagged fields it
+// checked.
+func checkOmitemptyStruct(
+	t *testing.T,
+	fset *token.FileSet,
+	name string,
+	st *ast.StructType,
+	used map[string]bool,
+) int {
+	t.Helper()
+	checked := 0
+	for _, field := range st.Fields.List {
+		if field.Tag == nil {
+			continue
+		}
+		tag, err := strconv.Unquote(field.Tag.Value)
+		if err != nil {
+			continue
+		}
+		checked++
+		if !strings.Contains(reflect.StructTag(tag).Get("json"), "omitempty") {
+			continue
+		}
+		if _, ok := omitemptyAllowed()[name]; ok {
+			used[name] = true
+			continue
+		}
+		t.Errorf(
+			"%s: %s's json tag %q has omitempty; a CLI struct encodes every key it sets",
+			fset.Position(field.Pos()),
+			name,
+			tag,
+		)
+	}
+	return checked
 }

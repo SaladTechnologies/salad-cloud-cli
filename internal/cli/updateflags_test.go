@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -27,6 +28,7 @@ func samePatch(t *testing.T, got json.RawMessage, want string) {
 }
 
 func TestBuildUpdatePatch(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		file    string
@@ -40,15 +42,32 @@ func TestBuildUpdatePatch(t *testing.T) {
 			want:  `{"container":{"image":"ghcr.io/me/app:v2"},"replicas":4}`,
 		},
 		{
-			name:  "flags win over the file; the rest of the file survives",
-			file:  `{"container":{"image":"old","resources":{"cpu":2}},"replicas":3}`,
-			flags: updateFlags{Image: "new", ImageSet: true, Replicas: 5, ReplicasSet: true, Memory: 2048, MemorySet: true},
-			want:  `{"container":{"image":"new","resources":{"cpu":2,"memory":2048}},"replicas":5}`,
+			name: "flags win over the file; the rest of the file survives",
+			file: `{"container":{"image":"old","resources":{"cpu":2}},"replicas":3}`,
+			flags: updateFlags{
+				Image:       "new",
+				ImageSet:    true,
+				Replicas:    5,
+				ReplicasSet: true,
+				Memory:      2048,
+				MemorySet:   true,
+			},
+			want: `{"container":{"image":"new","resources":{"cpu":2,"memory":2048}},"replicas":5}`,
 		},
 		{
-			name:  "every flag lands on its patch field",
-			flags: updateFlags{CPU: 4, CPUSet: true, Priority: "low", PrioritySet: true, Port: 8080, PortSet: true, DisplayName: "App", DisplayNameSet: true},
-			want:  `{"container":{"resources":{"cpu":4},"priority":"low"},"networking":{"port":8080},"display_name":"App"}`,
+			name: "every flag lands on its patch field",
+			flags: updateFlags{
+				CPU:            4,
+				CPUSet:         true,
+				Priority:       "low",
+				PrioritySet:    true,
+				Port:           8080,
+				PortSet:        true,
+				DisplayName:    "App",
+				DisplayNameSet: true,
+			},
+			want: `{"container":{"resources":{"cpu":4},"priority":"low"},` +
+				`"networking":{"port":8080},"display_name":"App"}`,
 		},
 		{
 			name:    "-e merges into the current variables and the file's changes",
@@ -76,25 +95,29 @@ func TestBuildUpdatePatch(t *testing.T) {
 				Gpus:       []string{"RTX 4090 (24 GB)", "11111111-1111-1111-1111-111111111111"},
 				ResolveGpu: func(string) (string, *clierr.Error) { return "ed563892-aacd-40f5-80b7-90c9be6c759b", nil },
 			},
-			want: `{"container":{"resources":{"gpu_classes":["ed563892-aacd-40f5-80b7-90c9be6c759b","11111111-1111-1111-1111-111111111111"]}}}`,
+			want: `{"container":{"resources":{"gpu_classes":` +
+				`["ed563892-aacd-40f5-80b7-90c9be6c759b","11111111-1111-1111-1111-111111111111"]}}}`,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var file []byte
 			if tt.file != "" {
 				file = []byte(tt.file)
 			}
-			got, _, cerr := buildUpdatePatch(file, tt.flags, tt.current)
+			patch, cerr := buildUpdatePatch(file, &tt.flags, tt.current)
 			if cerr != nil {
 				t.Fatalf("buildUpdatePatch: %v", cerr)
 			}
+			got := patch.wire
 			samePatch(t, got, tt.want)
 		})
 	}
 }
 
 func TestValidateUpdateFlags(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		flags updateFlags
@@ -112,7 +135,8 @@ func TestValidateUpdateFlags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cerr := validateUpdateFlags(tt.flags)
+			t.Parallel()
+			cerr := validateUpdateFlags(&tt.flags)
 			switch {
 			case tt.code == 0 && cerr != nil:
 				t.Errorf("unexpected error: %v", cerr)
@@ -126,10 +150,11 @@ func TestValidateUpdateFlags(t *testing.T) {
 // TestUpdateWithNothingToDoIsUsage: no -f and no flag is a usage error,
 // before any client or API work.
 func TestUpdateWithNothingToDoIsUsage(t *testing.T) {
-	rootCmd.SetArgs([]string{"container-groups", "update", "my-app"})
-	defer rootCmd.SetArgs(nil)
-	err := rootCmd.Execute()
-	cerr, ok := err.(*clierr.Error)
+	t.Parallel()
+	app := newTestRun(t)
+	_, err := app.runRoot(t, "container-groups", "update", "my-app")
+	var cerr *clierr.Error
+	ok := errors.As(err, &cerr)
 	if !ok || cerr.Code != clierr.CodeUsage {
 		t.Fatalf("update with nothing to do = %v, want a usage error", err)
 	}
@@ -139,20 +164,24 @@ func TestUpdateWithNothingToDoIsUsage(t *testing.T) {
 // variable under -e is sent as a full map without it, and the post-write
 // check must still see the removal as requested.
 func TestUpdateEnvRemovalIsNotReportedAsASideEffect(t *testing.T) {
+	t.Parallel()
 	file := []byte(`{"container":{"environment_variables":{"A":null}}}`)
 	flags := updateFlags{Env: []string{"C=3"}}
-	wire, intent, cerr := buildUpdatePatch(file, flags, map[string]*string{"A": ptr.To("1")})
+	patch, cerr := buildUpdatePatch(file, &flags, map[string]*string{"A": ptr.To("1")})
 	if cerr != nil {
 		t.Fatalf("buildUpdatePatch: %v", cerr)
 	}
+	wire, intent := patch.wire, patch.intent
 	samePatch(t, wire, `{"container":{"environment_variables":{"C":"3"}}}`)
 	samePatch(t, intent, `{"container":{"environment_variables":{"C":"3","A":null}}}`)
 
 	var before, after shared.ContainerGroup
-	if err := json.Unmarshal([]byte(`{"name":"g","pending_change":false,"container":{"image":"i","environment_variables":{"A":"1"}}}`), &before); err != nil {
+	beforeDoc := `{"name":"g","pending_change":false,"container":{"image":"i","environment_variables":{"A":"1"}}}`
+	if err := json.Unmarshal([]byte(beforeDoc), &before); err != nil {
 		t.Fatal(err)
 	}
-	if err := json.Unmarshal([]byte(`{"name":"g","pending_change":false,"container":{"image":"i","environment_variables":{"C":"3"}}}`), &after); err != nil {
+	afterDoc := `{"name":"g","pending_change":false,"container":{"image":"i","environment_variables":{"C":"3"}}}`
+	if err := json.Unmarshal([]byte(afterDoc), &after); err != nil {
 		t.Fatal(err)
 	}
 	if got := findUnrequestedChanges(intent, &before, &after); len(got) != 0 {
@@ -166,7 +195,11 @@ func TestUpdateEnvRemovalIsNotReportedAsASideEffect(t *testing.T) {
 		t.Error("expected the wire patch alone to flag the removal; the test no longer covers the bug")
 	}
 	// Without a removal there is nothing to add: intent is the wire patch.
-	w2, i2, _ := buildUpdatePatch(nil, updateFlags{Env: []string{"B=2"}}, map[string]*string{"A": ptr.To("1")})
+	patch, cerr = buildUpdatePatch(nil, &updateFlags{Env: []string{"B=2"}}, map[string]*string{"A": ptr.To("1")})
+	if cerr != nil {
+		t.Fatal(cerr)
+	}
+	w2, i2 := patch.wire, patch.intent
 	if string(w2) != string(i2) {
 		t.Errorf("intent %s differs from wire %s with nothing removed", i2, w2)
 	}

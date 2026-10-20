@@ -13,8 +13,13 @@ indent_size = 2
 max_line_length = 120
 
 [*.go]
+end_of_line = lf
 indent_style = tab
 max_line_length = 120
+
+[go.{mod,sum}]
+end_of_line = lf
+indent_style = tab
 
 [*.json]
 indent_size = 2
@@ -23,7 +28,7 @@ max_line_length = 120
 [*.md]
 indent_size = 2
 
-[*.ps1]
+[*.{ps1,psd1,psm1}]
 end_of_line = lf
 max_line_length = 120
 
@@ -32,9 +37,13 @@ end_of_line = lf
 indent_size = 2
 max_line_length = 120
 
+[[shell]]
+end_of_line = lf
+indent_size = 2
+max_line_length = 120
+simplify = true
+switch_case_indent = true
+
 [*.{yml,yaml}]
 indent_size = 2
 max_line_length = 120
-
-[{go.mod,go.sum}]
-indent_style = tab

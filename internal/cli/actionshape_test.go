@@ -17,6 +17,7 @@ import (
 // Every no-body-response verb must carry "action" and "ok", plus whatever
 // identity fields name the thing acted on.
 func TestActionResultsShareActionAndOK(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		payload  any
@@ -39,7 +40,7 @@ func TestActionResultsShareActionAndOK(t *testing.T) {
 		},
 		{
 			name:     "inference job cancel",
-			payload:  jobActionResult{Endpoint: "transcribe", ID: "abc", Action: "cancelled", OK: true},
+			payload:  jobActionResult{Endpoint: "transcribe", ID: "abc", Action: "canceled", OK: true},
 			identity: []string{"endpoint", "id"},
 		},
 		{
@@ -49,7 +50,7 @@ func TestActionResultsShareActionAndOK(t *testing.T) {
 		},
 		{
 			name:     "queue job cancel",
-			payload:  queueJobActionResult{Queue: "q", ID: "abc", Action: "cancelled", OK: true},
+			payload:  queueJobActionResult{Queue: "q", ID: "abc", Action: "canceled", OK: true},
 			identity: []string{"queue", "id"},
 		},
 		{
@@ -60,43 +61,58 @@ func TestActionResultsShareActionAndOK(t *testing.T) {
 		{
 			// logout acts on no named resource, so it carries no name.
 			name:    "logout",
-			payload: logoutResult{Removed: true, EnvOverrides: []string{}, Action: "logged_out", OK: true},
+			payload: logoutResult{Removed: true, EnvOverrides: nil, Action: "logged_out", OK: true},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			b, err := json.Marshal(tt.payload)
-			if err != nil {
-				t.Fatalf("marshal: %v", err)
-			}
-			var got map[string]any
-			if err := json.Unmarshal(b, &got); err != nil {
-				t.Fatalf("unmarshal: %v", err)
-			}
-
-			action, ok := got["action"]
-			if !ok {
-				t.Fatalf("%s is missing the \"action\" key: %s", tt.name, b)
-			}
-			if s, isStr := action.(string); !isStr || s == "" {
-				t.Errorf("action = %v, want a non-empty string", action)
-			}
-
-			okVal, present := got["ok"]
-			if !present {
-				t.Fatalf("%s is missing the \"ok\" key: %s", tt.name, b)
-			}
-			if _, isBool := okVal.(bool); !isBool {
-				t.Errorf("ok = %v, want a bool", okVal)
-			}
-
-			for _, key := range tt.identity {
-				if v, present := got[key]; !present || v == "" {
-					t.Errorf("%s is missing identity key %q: %s", tt.name, key, b)
-				}
-			}
+			t.Parallel()
+			checkActionDocument(t, tt.name, tt.payload, tt.identity)
 		})
 	}
+}
+
+// checkActionDocument encodes payload, the result named name, and checks the document: a non-empty string action, a
+// bool ok, and every identity key present and not empty.
+func checkActionDocument(t *testing.T, name string, payload any, identity []string) {
+	t.Helper()
+	b, got := encodeActionDocument(t, payload)
+
+	action, ok := got["action"]
+	if !ok {
+		t.Fatalf("%s is missing the \"action\" key: %s", name, b)
+	}
+	if s, isStr := action.(string); !isStr || s == "" {
+		t.Errorf("action = %v, want a non-empty string", action)
+	}
+
+	okVal, present := got["ok"]
+	if !present {
+		t.Fatalf("%s is missing the \"ok\" key: %s", name, b)
+	}
+	if _, isBool := okVal.(bool); !isBool {
+		t.Errorf("ok = %v, want a bool", okVal)
+	}
+
+	for _, key := range identity {
+		if v, present := got[key]; !present || v == "" {
+			t.Errorf("%s is missing identity key %q: %s", name, key, b)
+		}
+	}
+}
+
+// encodeActionDocument encodes payload as JSON and decodes it back, returning both the bytes and the document.
+func encodeActionDocument(t *testing.T, payload any) ([]byte, map[string]any) {
+	t.Helper()
+	b, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	return b, got
 }
 
 // TestActionResultJSONTags audits the struct tags by reflection rather than
@@ -113,42 +129,48 @@ func TestActionResultsShareActionAndOK(t *testing.T) {
 // forgets to populate Action — that needs the command driven end-to-end
 // against a fake server.
 func TestActionResultJSONTags(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		typ      reflect.Type
 		identity []string
 	}{
-		{"groupActionResult", reflect.TypeOf(groupActionResult{}), []string{"name"}},
-		{"scaleResult", reflect.TypeOf(scaleResult{}), []string{"name", "replicas"}},
-		{"instanceActionResult", reflect.TypeOf(instanceActionResult{}), []string{"group", "id"}},
-		{"jobActionResult", reflect.TypeOf(jobActionResult{}), []string{"endpoint", "id"}},
-		{"queueActionResult", reflect.TypeOf(queueActionResult{}), []string{"name"}},
-		{"queueJobActionResult", reflect.TypeOf(queueJobActionResult{}), []string{"queue", "id"}},
-		{"cpResult", reflect.TypeOf(cpResult{}), []string{"group", "instance"}},
-		{"logoutResult", reflect.TypeOf(logoutResult{}), nil},
+		{"groupActionResult", reflect.TypeFor[groupActionResult](), []string{"name"}},
+		{"scaleResult", reflect.TypeFor[scaleResult](), []string{"name", "replicas"}},
+		{"instanceActionResult", reflect.TypeFor[instanceActionResult](), []string{"group", "id"}},
+		{"jobActionResult", reflect.TypeFor[jobActionResult](), []string{"endpoint", "id"}},
+		{"queueActionResult", reflect.TypeFor[queueActionResult](), []string{"name"}},
+		{"queueJobActionResult", reflect.TypeFor[queueJobActionResult](), []string{"queue", "id"}},
+		{"cpResult", reflect.TypeFor[cpResult](), []string{"group", "instance"}},
+		{"logoutResult", reflect.TypeFor[logoutResult](), nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tags := map[string]string{} // json name -> full tag
-			for i := 0; i < tt.typ.NumField(); i++ {
-				raw := tt.typ.Field(i).Tag.Get("json")
-				if raw == "" || raw == "-" {
-					continue
-				}
-				tags[strings.Split(raw, ",")[0]] = raw
-			}
+			t.Parallel()
+			tags := actionResultTags(tt.typ)
 			for _, required := range append([]string{"action", "ok"}, tt.identity...) {
 				full, present := tags[required]
 				if !present {
 					t.Errorf("%s has no field tagged json:%q (tags: %v)", tt.name, required, tags)
 					continue
 				}
-				if required == "action" || required == "ok" {
-					if strings.Contains(full, "omitempty") {
-						t.Errorf("%s tags %q omitempty; it must always serialize", tt.name, required)
-					}
+				if (required == "action" || required == "ok") && strings.Contains(full, "omitempty") {
+					t.Errorf("%s tags %q omitempty; it must always serialize", tt.name, required)
 				}
 			}
 		})
 	}
+}
+
+// actionResultTags maps the json name of each tagged field of struct typ to its full json tag.
+func actionResultTags(typ reflect.Type) map[string]string {
+	tags := make(map[string]string) // json name -> full tag
+	for i := range typ.NumField() {
+		raw := typ.Field(i).Tag.Get("json")
+		if raw == "" || raw == "-" {
+			continue
+		}
+		tags[strings.Split(raw, ",")[0]] = raw
+	}
+	return tags
 }

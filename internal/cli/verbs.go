@@ -14,6 +14,21 @@ import (
 // nothing useful and the bare unknown-command message stands.
 const maxSuggestions = 4
 
+// The verbs several resource nouns take, spelled once.
+const (
+	verbNameList = "list"
+	verbNameGet  = "get"
+)
+
+// Edit distances nearNames accepts: a word of shortNameLen characters or
+// fewer is matched within shortNameDistance edits, a longer one within
+// nameDistance.
+const (
+	shortNameLen      = 3
+	shortNameDistance = 1
+	nameDistance      = 2
+)
+
 // requireVerbs makes every command that only groups others (a resource
 // noun, a product area) a usage error when run bare: exit 2 with the error
 // document, never help on stdout with exit 0, which would make
@@ -69,16 +84,7 @@ func commandsNamed(root *cobra.Command, word, next string) []string {
 				continue
 			}
 			if sub.Name() == word || sub.HasAlias(word) || slices.Contains(sub.SuggestFor, word) {
-				path := sub.CommandPath()
-				if sub.HasSubCommands() && next != "" {
-					for _, v := range sub.Commands() {
-						if v.IsAvailableCommand() && (v.Name() == next || v.HasAlias(next)) {
-							path += " " + v.Name()
-							break
-						}
-					}
-				}
-				paths = append(paths, path)
+				paths = append(paths, pathWithSubcommand(sub, next))
 			}
 			walk(sub)
 		}
@@ -87,12 +93,28 @@ func commandsNamed(root *cobra.Command, word, next string) []string {
 	return paths
 }
 
+// pathWithSubcommand is c's full path, followed by its available subcommand
+// named (or aliased) next when it has one.
+func pathWithSubcommand(c *cobra.Command, next string) string {
+	path := c.CommandPath()
+	if next == "" {
+		return path
+	}
+	i := slices.IndexFunc(c.Commands(), func(v *cobra.Command) bool {
+		return v.IsAvailableCommand() && (v.Name() == next || v.HasAlias(next))
+	})
+	if i >= 0 {
+		path += " " + c.Commands()[i].Name()
+	}
+	return path
+}
+
 // nearNames returns the full paths of parent's subcommands nearest word by
 // edit distance, within a small limit, for typos ('cg lst' finds 'cg list').
 func nearNames(parent *cobra.Command, word string) []string {
-	best := 2
-	if len(word) <= 3 {
-		best = 1
+	best := nameDistance
+	if len(word) <= shortNameLen {
+		best = shortNameDistance
 	}
 	var paths []string
 	for _, sub := range parent.Commands() {
@@ -105,7 +127,7 @@ func nearNames(parent *cobra.Command, word string) []string {
 		}
 		switch {
 		case d < best:
-			best, paths = d, []string{sub.CommandPath()}
+			best, paths = d, append(paths[:0], sub.CommandPath())
 		case d == best:
 			paths = append(paths, sub.CommandPath())
 		}

@@ -14,6 +14,6 @@ Instead, please do one of the following:
 
 Please include as much information as you can provide to help us better understand the nature and scope of the issue.
 
-The CLI stores your API key in its config file (`saladcloud config path` prints the location) and never prints, logs,
-or writes it anywhere else. A case where a credential leaks into output, logs, or another file is a security issue
-and should be reported this way.
+The CLI stores your API key in its config file (`saladcloud config path` prints the location) and never prints, logs, or
+writes it anywhere else. A case where a credential leaks into output, logs, or another file is a security issue and
+should be reported this way.

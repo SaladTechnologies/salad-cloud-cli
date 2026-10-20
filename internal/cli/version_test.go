@@ -1,37 +1,29 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
 
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/version"
 )
 
 // TestVersionJSONShape pins version's JSON document: every key present,
 // including the beta stage and the issues URL bug reports should go to.
 func TestVersionJSONShape(t *testing.T) {
-	var buf bytes.Buffer
-	saved := output.Stdout
-	output.Stdout = &buf
-	// -o json sets the package-wide output mode; restore table mode so later
-	// tests that expect table-mode progress lines are unaffected.
-	defer func() { output.Stdout = saved; _ = output.SetMode("table") }()
-
-	rootCmd.SetArgs([]string{"version", "-o", "json"})
-	defer rootCmd.SetArgs(nil)
-	if err := rootCmd.Execute(); err != nil {
+	t.Parallel()
+	app := newTestRun(t)
+	out, err := app.runRoot(t, "version", "-o", "json")
+	if err != nil {
 		t.Fatalf("version -o json: %v", err)
 	}
 	var m map[string]json.RawMessage
-	if err := json.Unmarshal(buf.Bytes(), &m); err != nil {
-		t.Fatalf("output is not one JSON document: %v\n%s", err, buf.String())
+	if err := json.Unmarshal([]byte(out), &m); err != nil {
+		t.Fatalf("output is not one JSON document: %v\n%s", err, out)
 	}
 	for _, k := range []string{"version", "commit", "os", "arch", "stage", "issues_url"} {
 		if _, ok := m[k]; !ok {
-			t.Errorf("key %q missing from %s", k, buf.String())
+			t.Errorf("key %q missing from %s", k, out)
 		}
 	}
 	if len(m) != 6 {
@@ -47,8 +39,10 @@ func TestVersionJSONShape(t *testing.T) {
 
 // TestRootHelpNamesBetaAndIssues: --help is where a new user looks first.
 func TestRootHelpNamesBetaAndIssues(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	for _, want := range []string{version.Stage + " release", version.IssuesURL, "saladcloud version"} {
-		if !strings.Contains(rootCmd.Long, want) {
+		if !strings.Contains(app.root.Long, want) {
 			t.Errorf("root --help lacks %q", want)
 		}
 	}

@@ -1,0 +1,26 @@
+name: Set up mise
+description: >-
+  Installs the mise.toml tools a job needs, through mise at a pinned, checksum-verified version, with the installs
+  cached. It stands in for jdx/mise-action, which the organization's allowed-actions list does not include.
+inputs:
+  tools:
+    description: The mise.toml tools to install, separated by spaces; empty installs every one.
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Restore the installed tools
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.tool_cache }}/mise
+        key: mise-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('mise.toml') }}-${{ inputs.tools }}
+    - name: Install mise and the tools
+      shell: bash
+      env:
+        MISE_TOOLS: ${{ inputs.tools }}
+        MISE_DATA_DIR: ${{ runner.tool_cache }}/mise
+        MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+        MISE_YES: "1"
+        GITHUB_TOKEN: ${{ github.token }}
+      run: bash "${GITHUB_ACTION_PATH}/setup.sh"

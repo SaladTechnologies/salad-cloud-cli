@@ -8,6 +8,7 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/util"
 
+	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
@@ -32,15 +33,19 @@ func failedGroup(status shared.ContainerGroupStatus, reason *util.Nullable[strin
 // TestGetShowsTheReason: a failed group's reason is in the get table, not
 // only in -o json's current_state.description.
 func TestGetShowsTheReason(t *testing.T) {
-	g := failedGroup(shared.CONTAINER_GROUP_STATUS_FAILED, &util.Nullable[string]{Value: "Access Denied, Check Permissions"})
+	t.Parallel()
+	g := failedGroup(
+		shared.CONTAINER_GROUP_STATUS_FAILED,
+		&util.Nullable[string]{Value: "Access Denied, Check Permissions"},
+	)
 	var b bytes.Buffer
-	writeGroupDetail(&b, g)
+	writeGroupDetail(output.NewWriter(&b), g)
 	if !strings.Contains(b.String(), "Status\tfailed\nReason\tAccess Denied, Check Permissions\n") {
 		t.Errorf("get table lacks the Reason row:\n%s", b.String())
 	}
 	for _, none := range []*util.Nullable[string]{nil, {IsNull: true}, {Value: ""}} {
 		b.Reset()
-		writeGroupDetail(&b, failedGroup(shared.CONTAINER_GROUP_STATUS_STOPPED, none))
+		writeGroupDetail(output.NewWriter(&b), failedGroup(shared.CONTAINER_GROUP_STATUS_STOPPED, none))
 		if strings.Contains(b.String(), "Reason") {
 			t.Errorf("a group with no description shows a Reason row:\n%s", b.String())
 		}
@@ -50,6 +55,8 @@ func TestGetShowsTheReason(t *testing.T) {
 // TestListColumns: list shows running instances against replicas, and the
 // image.
 func TestListColumns(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	g := failedGroup(shared.CONTAINER_GROUP_STATUS_RUNNING, nil)
 	if got := runningCell(g); got != "1/2" {
 		t.Errorf("runningCell = %q, want 1/2", got)
@@ -63,10 +70,10 @@ func TestListColumns(t *testing.T) {
 		t.Errorf("unknown counts and image render %q %q, want -/2 and -", runningCell(g), imageCell(g))
 	}
 
-	stubAPI(t, map[string]string{"/containers": `{"items":[{"name":"my-app","display_name":"My App","replicas":2,` +
+	app.stubAPI(t, map[string]string{"/containers": `{"items":[{"name":"my-app","display_name":"My App","replicas":2,` +
 		`"container":{"image":"docker.io/library/busybox:1.36"},` +
 		`"current_state":{"status":"running","instance_status_counts":{"running_count":1}}}]}`})
-	out, err := runRoot(t, "cg", "list")
+	out, err := app.runRoot(t, "cg", "list")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,12 +93,18 @@ func TestListColumns(t *testing.T) {
 // TestFollowSilentGroupNote: following a failed or stopped group says it
 // will stay silent, and why when the platform says.
 func TestFollowSilentGroupNote(t *testing.T) {
-	failed := failedGroup(shared.CONTAINER_GROUP_STATUS_FAILED, &util.Nullable[string]{Value: "Access Denied, Check Permissions"})
-	if got, want := groupSilentNote(failed), `note: group my-app is failed: Access Denied, Check Permissions; nothing will be logged until it runs`; got != want {
+	t.Parallel()
+	failed := failedGroup(
+		shared.CONTAINER_GROUP_STATUS_FAILED,
+		&util.Nullable[string]{Value: "Access Denied, Check Permissions"},
+	)
+	want := `note: group my-app is failed: Access Denied, Check Permissions; nothing will be logged until it runs`
+	if got := groupSilentNote(failed); got != want {
 		t.Errorf("note = %q, want %q", got, want)
 	}
 	stopped := failedGroup(shared.CONTAINER_GROUP_STATUS_STOPPED, nil)
-	if got, want := groupSilentNote(stopped), `note: group my-app is stopped; nothing will be logged until it runs`; got != want {
+	want = `note: group my-app is stopped; nothing will be logged until it runs`
+	if got := groupSilentNote(stopped); got != want {
 		t.Errorf("note = %q, want %q", got, want)
 	}
 	if got := groupSilentNote(failedGroup(shared.CONTAINER_GROUP_STATUS_RUNNING, nil)); got != "" {
@@ -102,7 +115,9 @@ func TestFollowSilentGroupNote(t *testing.T) {
 // TestDeleteHelpSaysNamesAreKept: a kubectl habit is delete then create
 // with the same name; the help says that cannot work.
 func TestDeleteHelpSaysNamesAreKept(t *testing.T) {
-	c, _, err := rootCmd.Find([]string{"container-groups", "delete"})
+	t.Parallel()
+	app := newTestRun(t)
+	c, _, err := app.root.Find([]string{"container-groups", "delete"})
 	if err != nil || !strings.Contains(c.Long, "name is never released") {
 		t.Errorf("delete --help does not say names are never released: %q", c.Long)
 	}

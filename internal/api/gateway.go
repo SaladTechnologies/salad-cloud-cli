@@ -10,6 +10,7 @@
 // live and billed?", which nothing answers short of a completion. Hence
 // exactly two calls here — list models, and one minimal completion — and a
 // hand-rolled client, since the pinned SDK has no gateway surface.
+
 package api
 
 import (
@@ -19,9 +20,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"sort"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
@@ -37,27 +38,42 @@ const GatewayPricingURL = "https://docs.salad.com/ai-gateway/reference/pricing"
 type Gateway struct {
 	key     string
 	baseURL string
+	http    *http.Client
+	dbg     debugger
+	now     func() time.Time
 }
 
 // NewGateway builds a Gateway from resolved configuration. It needs the
 // gateway key (not the SaladCloud API key). SALAD_CLI_AI_GATEWAY_BASE_URL overrides
 // the base URL (for tests).
-func NewGateway(res config.Resolved) (*Gateway, *clierr.Error) {
+func NewGateway(res *config.Resolved, opts Options) (*Gateway, *clierr.Error) {
 	if res.GatewayAPIKey == "" {
 		return nil, clierr.New(clierr.CodeAuth, clierr.KindAuth, "no AI Gateway key set").
 			WithHint("run saladcloud ai-gateway login in a terminal, or set SALAD_AI_GATEWAY_API_KEY")
 	}
-	return &Gateway{key: res.GatewayAPIKey, baseURL: gatewayBaseURL()}, nil
+	return buildGateway(res.GatewayAPIKey, opts), nil
 }
 
 // NewPublicGateway builds a Gateway with no key, for the one public route:
 // the model list answers anyone the same.
-func NewPublicGateway() *Gateway { return &Gateway{baseURL: gatewayBaseURL()} }
+func NewPublicGateway(opts Options) *Gateway { return buildGateway("", opts) }
+
+// buildGateway is a Gateway for key ("" for none) built with opts.
+func buildGateway(key string, opts Options) *Gateway {
+	dbg := opts.debugger()
+	return &Gateway{
+		key:     key,
+		baseURL: gatewayBaseURL(opts.Getenv),
+		http:    newHTTPClient(restTimeout, dbg),
+		dbg:     dbg,
+		now:     opts.clock(),
+	}
+}
 
 // gatewayBaseURL is the gateway base URL in effect: the default, or
 // SALAD_CLI_AI_GATEWAY_BASE_URL (for tests).
-func gatewayBaseURL() string {
-	if override := os.Getenv("SALAD_CLI_AI_GATEWAY_BASE_URL"); override != "" {
+func gatewayBaseURL(getenv func(string) string) string {
+	if override := getenv("SALAD_CLI_AI_GATEWAY_BASE_URL"); override != "" {
 		return strings.TrimRight(override, "/")
 	}
 	return DefaultGatewayURL
@@ -105,9 +121,14 @@ func (g *Gateway) CheckKey(ctx context.Context) (*GatewayModels, *clierr.Error) 
 	}
 	model, ok := DefaultModel(models.IDs())
 	if !ok {
-		return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "the AI Gateway listed no models; cannot check the key")
+		return nil, clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"the AI Gateway listed no models; cannot check the key",
+		)
 	}
-	if _, cerr := g.Complete(ctx, model, "ping", 1, false); cerr != nil {
+	ping := GatewayRequest{Model: model, Prompt: "ping", MaxTokens: 1, Thinking: false}
+	if _, cerr := g.Complete(ctx, ping); cerr != nil {
 		return models, cerr
 	}
 	return models, nil
@@ -115,30 +136,36 @@ func (g *Gateway) CheckKey(ctx context.Context) (*GatewayModels, *clierr.Error) 
 
 // DefaultModel is the model the CLI uses when none is named: the first id in
 // sorted order. The gateway's own listing order changes between calls, and
-// a default that changes is not a default. ok is false for an empty listing.
-func DefaultModel(ids []string) (model string, ok bool) {
+// a default that changes is not a default. The second result is false for an empty listing.
+func DefaultModel(ids []string) (string, bool) {
 	if len(ids) == 0 {
 		return "", false
 	}
 	sorted := append([]string(nil), ids...)
-	sort.Strings(sorted)
+	slices.Sort(sorted)
 	return sorted[0], true
 }
 
 // GatewayCompletion is the part of a chat completion the CLI reports.
 type GatewayCompletion struct {
-	Model   string `json:"model"`
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-			// Reasoning models return their thinking here and may leave
-			// Content empty when max_tokens runs out first.
-			Reasoning        string `json:"reasoning"`
-			ReasoningContent string `json:"reasoning_content"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	Usage map[string]any `json:"usage"`
+	Model   string          `json:"model"`
+	Choices []GatewayChoice `json:"choices"`
+	Usage   map[string]any  `json:"usage"`
+}
+
+// GatewayChoice is one choice of a chat completion.
+type GatewayChoice struct {
+	Message      GatewayMessage `json:"message"`
+	FinishReason string         `json:"finish_reason"`
+}
+
+// GatewayMessage is a choice's message.
+type GatewayMessage struct {
+	Content string `json:"content"`
+	// Reasoning models return their thinking here and may leave
+	// Content empty when max_tokens runs out first.
+	Reasoning        string `json:"reasoning"`
+	ReasoningContent string `json:"reasoning_content"`
 }
 
 // FinishReason returns the first choice's finish reason ("" when absent).
@@ -165,22 +192,29 @@ func (c *GatewayCompletion) Reply() string {
 	return strings.TrimSpace(c.Choices[0].Message.Content)
 }
 
+// GatewayRequest is one completion request: a single user message to a model, within a token budget.
+type GatewayRequest struct {
+	Model     string
+	Prompt    string
+	MaxTokens int
+	// Thinking leaves the models' reasoning phase on. Off, it is disabled via
+	// chat_template_kwargs.enable_thinking, the one switch the gateway honors
+	// (reasoning_effort, a top-level enable_thinking, a reasoning object and a
+	// /no_think suffix are ignored). With thinking on, the hosted models spend
+	// hundreds of tokens before the first word of the answer.
+	Thinking bool
+}
+
 // Complete sends one user message and returns the completion. No history,
 // no streaming, no system prompt: this exists to prove a key works against
 // a model, not to chat.
-//
-// thinking=false disables the models' reasoning phase via
-// chat_template_kwargs.enable_thinking, the one switch the gateway honors
-// (reasoning_effort, a top-level enable_thinking, a reasoning object and a
-// /no_think suffix are ignored). With thinking on, the hosted models spend
-// hundreds of tokens before the first word of the answer.
-func (g *Gateway) Complete(ctx context.Context, model, prompt string, maxTokens int, thinking bool) (*GatewayCompletion, *clierr.Error) {
+func (g *Gateway) Complete(ctx context.Context, req GatewayRequest) (*GatewayCompletion, *clierr.Error) {
 	body := map[string]any{
-		"model":      model,
-		"messages":   []map[string]string{{"role": "user", "content": prompt}},
-		"max_tokens": maxTokens,
+		"model":      req.Model,
+		"messages":   []map[string]string{{"role": "user", "content": req.Prompt}},
+		"max_tokens": req.MaxTokens,
 	}
-	if !thinking {
+	if !req.Thinking {
 		body["chat_template_kwargs"] = map[string]any{"enable_thinking": false}
 	}
 	return gatewayJSON[GatewayCompletion](ctx, g, http.MethodPost, "/chat/completions", body)
@@ -192,6 +226,37 @@ func (g *Gateway) Complete(ctx context.Context, model, prompt string, maxTokens 
 // model), 429 → rate limited, 402 → not available (billing), else generic;
 // the gateway's own error message is kept when it has one.
 func gatewayJSON[T any](ctx context.Context, g *Gateway, method, path string, body any) (*T, *clierr.Error) {
+	req, cerr := g.newRequest(ctx, method, path, body)
+	if cerr != nil {
+		return nil, cerr
+	}
+	resp, err := g.http.Do(req)
+	if err != nil {
+		return nil, transportErr(ctx, "network error", err, g.now)
+	}
+	defer g.dbg.closeBody(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, readErr(ctx, "response", err)
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		out := new(T)
+		if err := json.Unmarshal(respBody, out); err != nil {
+			return nil, clierr.New(
+				clierr.CodeGeneric,
+				clierr.KindAPIError,
+				"cannot decode the AI Gateway's response: %v",
+				err,
+			)
+		}
+		return out, nil
+	}
+	return nil, gatewayError(resp.StatusCode, respBody)
+}
+
+// newRequest builds a gateway request with bearer auth (when there is a key) and body, when not nil, encoded as
+// JSON.
+func (g *Gateway) newRequest(ctx context.Context, method, path string, body any) (*http.Request, *clierr.Error) {
 	var reader io.Reader
 	if body != nil {
 		payload, err := json.Marshal(body)
@@ -208,57 +273,46 @@ func gatewayJSON[T any](ctx context.Context, g *Gateway, method, path string, bo
 		req.Header.Set("Authorization", "Bearer "+g.key)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", userAgent())
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := restHTTPClient.Do(req)
-	if err != nil {
-		return nil, transportErr(ctx, "network error", err)
-	}
-	defer resp.Body.Close()
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, readErr(ctx, "response", err)
-	}
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		out := new(T)
-		if err := json.Unmarshal(respBody, out); err != nil {
-			return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot decode the AI Gateway's response: %v", err)
-		}
-		return out, nil
-	}
+	return req, nil
+}
+
+// gatewayError is the error for a gateway response that failed, with the gateway's own message when it has one.
+func gatewayError(status int, respBody []byte) *clierr.Error {
 	msg := gatewayErrorMessage(respBody)
-	switch resp.StatusCode {
+	switch status {
 	case http.StatusUnauthorized, http.StatusForbidden:
 		if msg == "" {
 			msg = "the AI Gateway rejected this key"
 		}
-		return nil, clierr.HTTP(clierr.CodeAuth, clierr.KindAuth, resp.StatusCode, msg).
+		return clierr.HTTP(clierr.CodeAuth, clierr.KindAuth, status, msg).
 			WithHint("use the AI Gateway key (SALAD_AI_GATEWAY_API_KEY or the saved one), not the SaladCloud API key")
 	case http.StatusNotFound:
 		if msg == "" {
 			msg = "not found"
 		}
-		return nil, clierr.HTTP(clierr.CodeNotFound, clierr.KindNotFound, resp.StatusCode, msg).
+		return clierr.HTTP(clierr.CodeNotFound, clierr.KindNotFound, status, msg).
 			WithHint("to list the model ids, run saladcloud ai-gateway models list")
 	case http.StatusTooManyRequests:
 		if msg == "" {
 			msg = "rate limited by the AI Gateway"
 		}
-		return nil, clierr.HTTP(clierr.CodeRateLimited, clierr.KindRateLimited, resp.StatusCode, msg)
+		return clierr.HTTP(clierr.CodeRateLimited, clierr.KindRateLimited, status, msg)
 	case http.StatusPaymentRequired:
 		if msg == "" {
 			msg = "the AI Gateway declined the request for billing reasons"
 		}
-		return nil, clierr.HTTP(clierr.CodeNotAvailable, clierr.KindNotAvailable, resp.StatusCode, msg).
+		return clierr.HTTP(clierr.CodeNotAvailable, clierr.KindNotAvailable, status, msg).
 			WithHint("check the pricing and the subscription tier at %s", GatewayPricingURL)
 	}
 	if msg == "" {
-		msg = fmt.Sprintf("AI Gateway returned HTTP %d", resp.StatusCode)
+		msg = fmt.Sprintf("AI Gateway returned HTTP %d", status)
 	}
-	code, kind := codeForStatus(resp.StatusCode)
-	return nil, clierr.HTTP(code, kind, resp.StatusCode, msg)
+	code, kind := codeForStatus(status)
+	return clierr.HTTP(code, kind, status, msg)
 }
 
 // gatewayErrorMessage extracts the OpenAI-style error message

@@ -6,10 +6,10 @@ body:
   - type: markdown
     attributes:
       value: >-
-        Thanks for taking the time to fill out this bug report! The CLI is in beta, so reports like this one are
-        exactly what we need. **Never paste an API key** — check anything you copy from your shell, environment, or
-        config file first. If this issue is security related, please disclose it to us responsibly as a
-        [GitHub security advisory](https://github.com/SaladTechnologies/salad-cloud-cli/security/advisories/new).
+        Thanks for taking the time to fill out this bug report! The CLI is in beta, so reports like this one are exactly
+        what we need. **Never paste an API key** — check anything you copy from your shell, environment, or config file
+        first. If this issue is security related, please disclose it to us responsibly as a [GitHub security
+        advisory](https://github.com/SaladTechnologies/salad-cloud-cli/security/advisories/new).
   - type: textarea
     id: version
     attributes:
@@ -31,8 +31,8 @@ body:
     attributes:
       label: What actually happened?
       description: >-
-        Paste the output. If there was an error, re-running with `-o json` gives the single-line
-        `{"error":{...}}` document, which is the most useful form. Include the exit code if it matters.
+        Paste the output. If there was an error, re-running with `-o json` gives the single-line `{"error":{...}}`
+        document, which is the most useful form. Include the exit code if it matters.
     validations:
       required: true
   - type: textarea

@@ -9,6 +9,7 @@ import (
 )
 
 func TestMaskAPIKey(t *testing.T) {
+	t.Parallel()
 	tests := []struct{ in, want string }{
 		{"", "(not set)"},
 		{"shortkey", "****"},
@@ -22,6 +23,7 @@ func TestMaskAPIKey(t *testing.T) {
 }
 
 func TestStrOrNil(t *testing.T) {
+	t.Parallel()
 	if strOrNil("") != nil {
 		t.Error("strOrNil(\"\") should be nil")
 	}
@@ -40,7 +42,9 @@ func TestStrOrNil(t *testing.T) {
 // other, {"items": [...]} with the path beside it; every config key has an
 // entry, and an unset value is null, never a missing entry.
 func TestConfigListResultStableJSONShape(t *testing.T) {
-	data, err := json.Marshal(configListOf(config.File{}, "/tmp/config.json"))
+	t.Parallel()
+	app := newTestRun(t)
+	data, err := json.Marshal(app.configListOf(config.File{}, "/tmp/config.json"))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -51,10 +55,10 @@ func TestConfigListResultStableJSONShape(t *testing.T) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	var keys []string
+	keys := make([]string, 0, len(doc.Items))
 	for _, item := range doc.Items {
 		var key string
-		_ = json.Unmarshal(item["key"], &key)
+		noErr(t, json.Unmarshal(item["key"], &key))
 		keys = append(keys, key)
 		if raw, ok := item["value"]; !ok || string(raw) != "null" {
 			t.Errorf("%s: value = %s (present %v), want null when unset", key, raw, ok)
@@ -70,7 +74,7 @@ func TestConfigListResultStableJSONShape(t *testing.T) {
 		t.Errorf("path = %q, want /tmp/config.json", doc.Path)
 	}
 	var top map[string]json.RawMessage
-	_ = json.Unmarshal(data, &top)
+	noErr(t, json.Unmarshal(data, &top))
 	if len(top) != 2 {
 		t.Errorf("got %d top-level keys, want items and path", len(top))
 	}
@@ -79,24 +83,22 @@ func TestConfigListResultStableJSONShape(t *testing.T) {
 // TestConfigListEmitsItems runs the command: values set in the file appear
 // in their entries, the API key masked.
 func TestConfigListEmitsItems(t *testing.T) {
-	t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-	if err := config.Save(config.File{APIKey: "salad_cloud_user_1234567890", Organization: "my-org"}); err != nil {
+	t.Parallel()
+	app := newTestRun(t)
+	app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
+	saved := config.File{APIKey: "salad_cloud_user_1234567890", Organization: "my-org"}
+	if err := config.Save(app.Env, saved); err != nil {
 		t.Fatal(err)
 	}
-	out, err := runRoot(t, "config", "list", "-o", "json")
+	out, err := app.runRoot(t, "config", "list", "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var doc struct {
-		Items []struct {
-			Key   string  `json:"key"`
-			Value *string `json:"value"`
-		} `json:"items"`
-	}
+	var doc configListResult
 	if err := json.Unmarshal([]byte(out), &doc); err != nil || len(doc.Items) != 4 {
 		t.Fatalf("config list -o json = %s (%v), want four entries in items", out, err)
 	}
-	got := map[string]string{}
+	got := make(map[string]string)
 	for _, it := range doc.Items {
 		if it.Value != nil {
 			got[it.Key] = *it.Value
@@ -110,12 +112,13 @@ func TestConfigListEmitsItems(t *testing.T) {
 // TestConfigSetKeyFromStdinAtATerminal: config set api-key - reads the key
 // hidden at a terminal, as the logins read --api-key -; Ctrl-C cancels.
 func TestConfigSetKeyFromStdinAtATerminal(t *testing.T) {
+	t.Parallel()
 	o := session{args: []string{"config", "set", "api-key", "-"}, tty: []string{testAPIKey}}.run(t)
 	if o.code != 0 || o.config.APIKey != testAPIKey || strings.Contains(o.device, testAPIKey) {
 		t.Errorf("exit %d, saved %q, terminal %q", o.code, o.config.APIKey, o.device)
 	}
 	o = session{args: []string{"config", "set", "api-key", "-"}, tty: []string{keyCtrlC}}.run(t)
-	if o.code != 1 || !strings.Contains(o.stderr, "config set cancelled, nothing changed") || o.config.APIKey != "" {
+	if o.code != 1 || !strings.Contains(o.stderr, "config set canceled, nothing changed") || o.config.APIKey != "" {
 		t.Errorf("Ctrl-C: exit %d, saved %q\n%s", o.code, o.config.APIKey, o.stderr)
 	}
 }

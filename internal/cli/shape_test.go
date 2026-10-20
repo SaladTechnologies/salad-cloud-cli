@@ -18,33 +18,36 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/quotas"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/webhooksecretkey"
-
 	"sigs.k8s.io/yaml"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
-// emitJSON renders v through output.Emit (or Stream) in mode (json or
+// shapeRender is how emitJSON renders a value: shapeEmit or shapeStream.
+type shapeRender func(p *output.Printer, v any) error
+
+// shapeEmit renders v as a command's one document, through Emit.
+func shapeEmit(p *output.Printer, v any) error { return p.Emit(v, nil) }
+
+// shapeStream renders v as one record of a stream, through Stream.
+func shapeStream(p *output.Printer, v any) error { return p.Stream(v, "") }
+
+// emitJSON renders v through render (output.Emit or Stream) in mode (json or
 // yaml) and returns the decoded document.
-func emitJSON(t *testing.T, v any, stream bool, mode string) any {
+func (app *testRun) emitJSON(t *testing.T, v any, render shapeRender, mode string) any {
 	t.Helper()
 	var buf bytes.Buffer
-	old := output.Stdout
-	output.Stdout = &buf
+	old := app.printer
+	app.printer = output.NewPrinter(&buf)
 	t.Cleanup(func() {
-		output.Stdout = old
-		_ = output.SetMode("table")
+		app.printer = old
+		app.setOutputMode(t, "table")
 	})
-	if err := output.SetMode(mode); err != nil {
+	if err := app.printer.SetMode(mode); err != nil {
 		t.Fatal(err)
 	}
-	var err error
-	if stream {
-		err = output.Stream(v, "")
-	} else {
-		err = output.Emit(v, nil)
-	}
+	err := render(app.printer, v)
 	if err != nil {
 		t.Fatalf("emit: %v", err)
 	}
@@ -71,11 +74,11 @@ func assertShape(t *testing.T, path string, typ reflect.Type, doc any) {
 	for typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
 	}
-	if typ.Implements(reflect.TypeOf((*json.Marshaler)(nil)).Elem()) ||
-		reflect.PointerTo(typ).Implements(reflect.TypeOf((*json.Marshaler)(nil)).Elem()) {
+	if typ.Implements(reflect.TypeFor[json.Marshaler]()) ||
+		reflect.PointerTo(typ).Implements(reflect.TypeFor[json.Marshaler]()) {
 		return // encodes itself
 	}
-	switch typ.Kind() {
+	switch typ.Kind() { //nolint:exhaustive // every reflect.Kind not named is a leaf
 	case reflect.Struct:
 		obj, ok := doc.(map[string]any)
 		if !ok {
@@ -84,48 +87,7 @@ func assertShape(t *testing.T, path string, typ reflect.Type, doc any) {
 			}
 			return
 		}
-		var fields func(reflect.Type)
-		fields = func(st reflect.Type) {
-			for i := 0; i < st.NumField(); i++ {
-				f := st.Field(i)
-				tag := f.Tag.Get("json")
-				name, _, _ := strings.Cut(tag, ",")
-				if tag == "-" {
-					continue
-				}
-				if f.Anonymous && name == "" {
-					fields(f.Type)
-					continue
-				}
-				if !f.IsExported() {
-					continue
-				}
-				if name == "" {
-					name = f.Name
-				}
-				val, ok := obj[name]
-				if !ok {
-					t.Errorf("%s.%s: key missing", path, name)
-					continue
-				}
-				ft := f.Type
-				for ft.Kind() == reflect.Pointer {
-					ft = ft.Elem()
-				}
-				switch val {
-				case nil:
-					if f.Type.Kind() == reflect.Slice && f.Type.Elem().Kind() != reflect.Uint8 && strings.Contains(tag, "omitempty") {
-						t.Errorf("%s.%s: absent array rendered null, want []", path, name)
-					}
-					if f.Type.Kind() == reflect.Map && strings.Contains(tag, "omitempty") {
-						t.Errorf("%s.%s: absent map rendered null, want {}", path, name)
-					}
-				default:
-					assertShape(t, path+"."+name, f.Type, val)
-				}
-			}
-		}
-		fields(typ)
+		assertShapeFields(t, path, typ, obj)
 	case reflect.Slice, reflect.Array:
 		if arr, ok := doc.([]any); ok {
 			for _, el := range arr {
@@ -135,11 +97,58 @@ func assertShape(t *testing.T, path string, typ reflect.Type, doc any) {
 	}
 }
 
+// assertShapeFields checks obj, the object at path, against the json tags of struct st's fields: the key of every
+// exported field not tagged "-" present, the fields of an untagged embedded struct taken as st's own.
+func assertShapeFields(t *testing.T, path string, st reflect.Type, obj map[string]any) {
+	t.Helper()
+	for i := range st.NumField() {
+		f := st.Field(i)
+		tag := f.Tag.Get("json")
+		name, _, _ := strings.Cut(tag, ",")
+		if tag == "-" {
+			continue
+		}
+		if f.Anonymous && name == "" {
+			assertShapeFields(t, path, f.Type, obj)
+			continue
+		}
+		if !f.IsExported() {
+			continue
+		}
+		if name == "" {
+			name = f.Name
+		}
+		val, ok := obj[name]
+		if !ok {
+			t.Errorf("%s.%s: key missing", path, name)
+			continue
+		}
+		assertShapeValue(t, path+"."+name, f.Type, tag, val)
+	}
+}
+
+// assertShapeValue checks val, the value of a field of type typ tagged tag at path: a null omitempty slice (other
+// than bytes) or map is an absent array or map the fill missed; anything else non-null is checked by assertShape.
+func assertShapeValue(t *testing.T, path string, typ reflect.Type, tag string, val any) {
+	t.Helper()
+	if val != nil {
+		assertShape(t, path, typ, val)
+		return
+	}
+	if typ.Kind() == reflect.Slice && typ.Elem().Kind() != reflect.Uint8 && strings.Contains(tag, "omitempty") {
+		t.Errorf("%s: absent array rendered null, want []", path)
+	}
+	if typ.Kind() == reflect.Map && strings.Contains(tag, "omitempty") {
+		t.Errorf("%s: absent map rendered null, want {}", path)
+	}
+}
+
 // TestSDKBackedJSONShape: each type a command emits straight from the SDK
 // (or the CLI's own API models) keeps every key, although the SDK tags them
 // all omitempty. Zero values cover the top level; the populated cases reach
 // nested objects and array elements.
 func TestSDKBackedJSONShape(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		v      any
@@ -163,7 +172,11 @@ func TestSDKBackedJSONShape(t *testing.T) {
 		}{[]organizationdata.GpuClass{{}}}, false},
 		{"gpus get", organizationdata.GpuClass{}, false},
 		{"availability gpu", gpuAvailabilityResult{Items: []gpuAvailabilityRow{{}}}, false},
-		{"availability gpu combined", gpuAvailabilityResult{Items: []gpuAvailabilityRow{{}, {}}, Combined: &gpuCombinedRow{}}, false},
+		{
+			"availability gpu combined",
+			gpuAvailabilityResult{Items: []gpuAvailabilityRow{{}, {}}, Combined: &gpuCombinedRow{}},
+			false,
+		},
 		{"availability cpu", cpuAvailabilityResult{Items: []organizations.CpuAvailability{{}}}, false},
 		{"inference endpoints list", inferenceendpoints.InferenceEndpointCollection{
 			Items: []inferenceendpoints.InferenceEndpoint{{}},
@@ -183,14 +196,24 @@ func TestSDKBackedJSONShape(t *testing.T) {
 			Items []queues.Queue `json:"items"`
 		}{[]queues.Queue{{ContainerGroups: []shared.ContainerGroup{{}}}}}, false},
 		{"queues get", queues.Queue{}, false},
-		{"queues jobs list", queues.QueueJobCollection{Items: []queues.QueueJob{{Events: []queues.QueueJobEvent{{}}}}}, false},
+		{
+			"queues jobs list",
+			queues.QueueJobCollection{Items: []queues.QueueJob{{Events: []queues.QueueJobEvent{{}}}}},
+			false,
+		},
 		{"queues jobs get", queues.QueueJob{}, false},
 		{"webhook-secret get", webhooksecretkey.WebhookSecretKey{}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			app := newTestRun(t)
+			render := shapeRender(shapeEmit)
+			if tc.stream {
+				render = shapeStream
+			}
 			for _, mode := range []string{"json", "yaml"} {
-				doc := emitJSON(t, tc.v, tc.stream, mode)
+				doc := app.emitJSON(t, tc.v, render, mode)
 				assertShape(t, tc.name+" ("+mode+")", reflect.TypeOf(tc.v), doc)
 			}
 		})
@@ -201,6 +224,7 @@ func TestSDKBackedJSONShape(t *testing.T) {
 // a listing that cannot list (404) renders organizations null (unknown), one that
 // answers with no items renders [] (none).
 func TestWhoamiOrganizationsUnavailableVsEmpty(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name   string
 		status int
@@ -212,36 +236,30 @@ func TestWhoamiOrganizationsUnavailableVsEmpty(t *testing.T) {
 		{"one", http.StatusOK, `{"items":[{"organization_name":"my-org"}]}`, `["my-org"]`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			app := newTestRun(t)
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if strings.HasSuffix(r.URL.Path, "/v1/organizations") {
 					w.WriteHeader(tc.status)
-					_, _ = w.Write([]byte(tc.body))
+					respond(t, w, tc.body)
 					return
 				}
-				_, _ = w.Write([]byte(`{}`)) // the quotas probe
+				respond(t, w, `{}`) // the quotas probe
 			}))
 			defer srv.Close()
-			t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
-			t.Setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
-			t.Setenv("SALAD_API_KEY", "salad_cloud_user_test0000")
-			t.Setenv("SALAD_ORGANIZATION", "my-org")
-			t.Setenv("SALAD_PROJECT", "")
+			app.setenv("SALAD_CLI_API_BASE_URL", srv.URL)
+			app.setenv("SALAD_CLI_CONFIG_DIR", t.TempDir())
+			app.setenv("SALAD_API_KEY", "salad_cloud_user_test0000")
+			app.setenv("SALAD_ORGANIZATION", "my-org")
+			app.setenv("SALAD_PROJECT", "")
 
-			var buf bytes.Buffer
-			old := output.Stdout
-			output.Stdout = &buf
-			t.Cleanup(func() {
-				output.Stdout = old
-				_ = output.SetMode("table")
-				rootCmd.SetArgs(nil)
-			})
-			rootCmd.SetArgs([]string{"whoami", "-o", "json", "--org", "", "--project", ""})
-			if err := rootCmd.Execute(); err != nil {
+			out, err := app.runRoot(t, "whoami", "-o", "json", "--org", "", "--project", "")
+			if err != nil {
 				t.Fatalf("whoami: %v", err)
 			}
 			var m map[string]json.RawMessage
-			if err := json.Unmarshal(buf.Bytes(), &m); err != nil {
-				t.Fatalf("not JSON: %v\n%s", err, buf.String())
+			if err := json.Unmarshal([]byte(out), &m); err != nil {
+				t.Fatalf("not JSON: %v\n%s", err, out)
 			}
 			var got bytes.Buffer
 			if err := json.Compact(&got, m["organizations"]); err != nil || got.String() != tc.want {
@@ -255,6 +273,7 @@ func TestWhoamiOrganizationsUnavailableVsEmpty(t *testing.T) {
 // same document under -o yaml as under -o json, so the JSON shape tests
 // cover both modes.
 func TestCLIResultsSameInYAML(t *testing.T) {
+	t.Parallel()
 	cases := map[string]any{
 		"agent init":             agentInitResult{},
 		"changelog":              changelogResult{},
@@ -279,7 +298,9 @@ func TestCLIResultsSameInYAML(t *testing.T) {
 	}
 	for name, v := range cases {
 		t.Run(name, func(t *testing.T) {
-			j, y := emitJSON(t, v, false, "json"), emitJSON(t, v, false, "yaml")
+			t.Parallel()
+			app := newTestRun(t)
+			j, y := app.emitJSON(t, v, shapeEmit, "json"), app.emitJSON(t, v, shapeEmit, "yaml")
 			if !reflect.DeepEqual(j, y) {
 				t.Errorf("yaml differs from json:\njson %v\nyaml %v", j, y)
 			}

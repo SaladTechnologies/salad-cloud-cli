@@ -8,64 +8,127 @@ choices and their reasons are under [Settled decisions](#settled-decisions) belo
 ## Build, test, verify
 
 ```sh
-make build        # cross-compiles into dist/ (windows-amd64, linux-amd64, darwin-arm64, darwin-amd64)
-make test         # offline suite: go test ./...
-make vet          # go vet ./...
-make fmt          # gofumpt and goimports (golangci-lint fmt), then prettier
-make lint         # golangci-lint, prettier --check, cspell; golangci-lint and Node from .tool-versions (mise install)
-make test-live    # live suite against the real API; needs SALAD_API_KEY and SALAD_ORGANIZATION (SALAD_PROJECT
-                  # optional), spends money, fails without them. Optional: SALAD_CLI_TEST_REQUIRE_SSH=1 fails the ssh
-                  # test instead of skipping it on a publickey denial, SALAD_AI_GATEWAY_API_KEY adds the
-                  # AI Gateway test, SALAD_CLI_TEST_AUDIO=<short wav> and SALAD_CLI_TEST_PHRASE=<words in it> add
+mise install      # the tools at the versions in mise.toml: Go, golangci-lint, govulncheck, go-licenses, just, Node,
+                  # PowerShell, ShellCheck, shfmt
+npm ci            # prettier and cspell, at the versions in package-lock.json
+just build        # cross-compiles into dist/ (windows-amd64, linux-amd64, darwin-arm64, darwin-amd64)
+just test         # offline suite, shuffled, with -race where cgo is available
+just vet          # go vet ./...
+just fmt          # golangci-lint fmt (gci, gofumpt, golines), PSScriptAnalyzer, shfmt, prettier
+just lint         # golangci-lint, go mod tidy -diff and verify, govulncheck, go-licenses, PSScriptAnalyzer,
+                  # ShellCheck, cspell
+just ci           # fmt-check, lint and test, as CI runs them
+just test-live    # live suite against the real API; needs SALAD_API_KEY and SALAD_ORGANIZATION (SALAD_PROJECT optional:
+                  # default when unset), spends money, fails without them. Optional: SALAD_CLI_TEST_REQUIRE_SSH=1 fails
+                  # the ssh test instead of skipping it on a publickey denial, SALAD_AI_GATEWAY_API_KEY adds the AI
+                  # Gateway test, SALAD_CLI_TEST_AUDIO=<short wav> and SALAD_CLI_TEST_PHRASE=<words in it> add
                   # transcription, SALAD_CLI_TEST_AUDIO_FOREIGN=<short single-track non-English clip> adds the
-                  # language_code and audio_stream_index test, SALAD_CLI_TEST_BIN=<path> tests another binary than dist/.
+                  # language_code and audio_stream_index test, SALAD_CLI_TEST_BIN=<path> tests another binary than
+                  # dist/.
 ```
 
-A change is done when `go vet ./...`, `go test ./...` and `make lint` pass, `docs/` and the CHANGELOG reflect it, and
-anything that touches an API call has been exercised live (or the pull request says it has not). Lint settings live in
-`.golangci.yml`, `.prettierignore` (`AGENTS.md` and `docs/` keep their hand-wrapped compact tables) and `cspell.json`;
-add a project term to `dictionaries/salad-cloud-cli.txt`, and a deliberate misspelling in a test to
-`dictionaries/test-fixtures.txt`.
-CI (`.github/workflows/test.yml`) runs gofmt, vet, the offline suite (with `-race` on Linux and macOS), `make lint`,
-govulncheck, and a cross-build on Linux, macOS, and Windows; it does not run the live suite by decision. It runs on
-every push and pull request, and by hand with `gh workflow run test.yml` (`--ref <branch>` for another branch).
-Actions are pinned by commit SHA and Dependabot bumps them.
+A change is done when `just ci` passes, `docs/` and the CHANGELOG reflect it, and anything that touches an API call
+has been exercised live (or the pull request says it has not). Lint settings live in `.golangci.yml`,
+`.prettierrc.yaml` and `.prettierignore` (`AGENTS.md` and `docs/` keep their hand-wrapped compact tables),
+`.shellcheckrc`, `PSScriptAnalyzerSettings.psd1` and `cspell.json`; add a project term to
+`dictionaries/salad-cloud-cli.txt`, and a deliberate misspelling in a test to `dictionaries/test-fixtures.txt`.
 
-Releasing: run `make test-live` with `SALAD_CLI_TEST_REQUIRE_SSH=1`, using the Windows build from a machine whose SSH
+Format with `just fmt` after editing (or one language's recipe: `fmt-go`, `fmt-powershell`, `fmt-shell`,
+`fmt-markup`), and check with the matching `fmt-check-*` and `lint-*` recipes and `just test`. Never run `gofmt`,
+`goimports` or `go fmt` directly (they disagree with `.golangci.yml`), and never run a formatter or linter with flags
+or settings that override the configuration. Every finding is fixed; a suppression names its rule and its reason, on
+the narrowest scope there is: in Go, `//nolint:<linter> // <reason>` on the line (never a bare `//nolint`, a file-wide
+directive, or a `.golangci.yml` exclusion); in PowerShell, a
+`[Diagnostics.CodeAnalysis.SuppressMessageAttribute('<rule>', '<target>', Justification = '<reason>')]` on the
+narrowest function or `param` block (never script-wide, never a `PSScriptAnalyzerSettings.psd1` exclusion); in shell,
+`# shellcheck disable=SC<n> # <reason>` on the line before the one command it covers (never file-wide, never a
+`.shellcheckrc` exclusion). Add a Go dependency with `go get` then `go mod tidy`, and commit `go.mod` and `go.sum`
+together; its license must be on the justfile's `go-allowed-licenses`. Developer tools go in `mise.toml`, never a
+`tool` directive.
+CI (`.github/workflows/test.yml`) installs the `mise.toml` tools through `.github/actions/setup-mise`, which fetches
+mise at a pinned, checksum-verified version (the organization's allowed-actions list does not include
+`jdx/mise-action`), and runs `just vet`, `just test` and `just build` on Linux, macOS, and Windows, and
+`just fmt-check lint` on Linux; it does not run the live suite by decision. It runs on every push and pull request,
+and by hand with `gh workflow run test.yml` (`--ref <branch>` for another branch). Actions are pinned by commit SHA
+and Dependabot bumps them; the mise version in `setup.sh` is bumped by hand, with each archive's sum from the
+release's `SHASUMS256.txt`.
+
+Releasing: run `just test-live` with `SALAD_CLI_TEST_REQUIRE_SSH=1`, using the Windows build from a machine whose SSH
 key is registered on the account (so ssh and cp really run), open one `sftp` session by hand, run `test.yml` on the
-commit and see it pass, then push a `v*` tag. `.github/workflows/release.yml` checks that the binary's
-`version` matches the tag, then runs goreleaser (`.goreleaser.yaml`): reproducible archives for linux and darwin
-amd64/arm64 and windows amd64 (each with README, LICENSE, CHANGELOG, `docs/` and `completions/`), `checksums.txt`, SBOMs,
-the `ghcr.io/saladtechnologies/saladcloud` image, and a GitHub release (a pre-release when the tag has a `-`, e.g.
+commit and see it pass, then push a `v*` tag. `.github/workflows/release.yml` checks that the binary's `version` matches
+the tag, then runs goreleaser (`.goreleaser.yaml`): reproducible archives for linux and darwin amd64/arm64 and windows
+amd64 (each with README, LICENSE, CHANGELOG, `docs/` and `completions/`), `checksums.txt`, SBOMs, the
+`ghcr.io/saladtechnologies/saladcloud` image, and a GitHub release (a pre-release when the tag has a `-`, e.g.
 `v0.1.0-beta.1`), followed by a build provenance attestation for every archive. The Homebrew cask, Scoop manifest and
-winget pull request publish only when `HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN` and `WINGET_TOKEN` are set as repository
-secrets (and their `SaladTechnologies/homebrew-tap`, `scoop-bucket` and `winget-pkgs` fork exist). `install.sh` and
-`install.ps1` at the repo root install from those releases; they depend on the archive names and the `checksums.txt`
-format goreleaser produces, and `test.yml` runs both against archives goreleaser packages from the commit (and against
-the latest published release, once there is one). `uninstall.sh` and `uninstall.ps1` undo them (the binary, the
-Windows user `PATH` entry, and with `SALAD_CLI_PURGE=1` the config file), and `test.yml` runs them after each install. The CLI is in beta: `internal/version.Stage` drives the
-notice in `--help`, `version`, and the `agent init` block; drop it there when the CLI leaves beta.
+winget pull request publish only when `HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN` and `WINGET_TOKEN` are set as
+repository secrets (and their `SaladTechnologies/homebrew-tap`, `scoop-bucket` and `winget-pkgs` fork exist).
+`install.sh` and `install.ps1` at the repo root install from those releases; they depend on the archive names and the
+`checksums.txt` format goreleaser produces, and `test.yml` runs both against archives goreleaser packages from the
+commit (and against the latest published release, once there is one). `uninstall.sh` and `uninstall.ps1` undo them (the
+binary, the Windows user `PATH` entry, and with `SALAD_CLI_PURGE=1` the config file), and `test.yml` runs them after
+each install. The CLI is in beta: `internal/version.Stage` drives the notice in `--help`, `version`, and the `agent
+init` block; drop it there when the CLI leaves beta.
 
 ## Layout
 
-- `cmd/saladcloud/main.go` — entry point; `os.Exit(cli.Execute())`, nothing else.
-- `internal/cli/` — one file per verb (`create.go`, `logs.go`, `agent.go`, …), registered from `init()` with
-  `Register(cmd)`. `root.go` owns global flags, the error-to-exit-code mapping, and `NewClient`; `orgScoped` and
-  `contextFree` keep `--project` (and `--org`) off commands that never read them. The setup helpers every verb
-  uses: `console.go` (`atTerminal()`, which counts `SALAD_CLI_NO_PROMPT` and `CI`, and the hidden read),
-  `prompt.go` (`ask` and `tell`, which write to the terminal device, falling back to stderr only when it cannot be
-  opened), `setup.go` (`errw()`, `say` and
-  `hintLine` for stderr status and `hint:` lines, which print in table mode only; `maskAPIKey`, `fromTag`,
+- `cmd/saladcloud/main.go` — entry point: creates the root context (canceled on Ctrl-C or SIGTERM), runs
+  `cli.Run(ctx, cli.ProcessDeps())` and exits with its code; nothing else.
+- `internal/cli/` — one file per verb (`create.go`, `logs.go`, `agent.go`, …), each with an `addXxxCommands` method
+  that builds its commands for one run; `New` builds the whole tree from them, so nothing is registered at package
+  load. `app.go` holds `Deps`, everything a run takes from the process (arguments, streams, the environment as a
+  `config.Env`, the terminal, and the seams tests replace: the sftp program, ssh-keygen, the child environment), and
+  `App`, one run: its deps, the output printer, and the flags every command reads. `root.go` owns the global flags,
+  `Run` with the error-to-exit-code mapping, and `NewClient`; `orgScoped` and `contextFree` keep `--project` (and
+  `--org`) off commands that never read them. The setup helpers every verb uses, all `*App` methods: `console.go`
+  (`atTerminal()`, which counts `SALAD_CLI_NO_PROMPT` and `CI`, and the hidden read), `prompt.go` (`ask` and `tell`,
+  which write to the terminal device, falling back to stderr only when it cannot be opened), `setup.go` (`errw()`,
+  `say` and `hintLine` for stderr status and `hint:` lines, which print in table mode only; `maskAPIKey`, `fromTag`,
   `checkName`) and `envwarn.go` (`warnOverrides` and `env_overrides` for every command that writes the config
   file).
 - `internal/api/` — the CLI's own HTTP transport (`rest.go`) plus per-area calls. The generated SDK
   (`salad-cloud-sdk-go`) is used **only for its types**; its transport rejects real API responses (7-digit fractional
   timestamps, JSON nulls). Do not route requests through the SDK client.
 - `internal/clierr/` — exit codes and the structured error. `internal/output/` — the single render path (`Emit`,
-  `Stream`). `internal/config/` — flag > env > config-file resolution; a saved project applies only to the
-  saved organization, and `default` is the project's last fallback (warned on stderr). `internal/input/` — definition-file loading and
-  strict unknown-field checking. `internal/logsq/` — log query windowing, pagination, follow. `internal/agentdoc/` —
-  the block `agent init` writes. `internal/livetest/` — the live suite (build tag `live`).
+  `Stream`). `internal/config/` — flag > env > config-file resolution; a saved project applies only to the saved
+  organization, and `default` is the project's last fallback (warned on stderr). `internal/input/` — definition-file
+  loading and strict unknown-field checking. `internal/logsq/` — log query windowing, pagination, follow.
+  `internal/agentdoc/` — the block `agent init` writes. `internal/livetest/` — the live suite (build tag `live`).
+
+## Writing code
+
+Go:
+
+- Return a `*clierr.Error` from command code and wrap other errors with `%w`, matching them with
+  `errors.Is`/`errors.As`. Never `panic`; only `main` calls `os.Exit` or creates a root context.
+- No package state: a run's state lives on its `App`, constant tables are functions, and only regexps, sentinel errors
+  and the ldflags-stamped version variables are package variables. The environment is read through `config.Env`,
+  never `os.Getenv`.
+- Diagnostic logging, should the CLI ever add any, goes through `log/slog` and a passed-in `*slog.Logger` and its
+  `...Context` methods: attributes only, snake_case keys, lowercase constant messages. Results, `warning:`, `note:`
+  and `hint:` lines, the error document and `--debug` dumps are not logging and keep their own paths.
+- Godoc every package and exported identifier. Wrap comments by hand at 120 columns; the formatter wraps code only.
+- Tests use the standard `testing` package, are table-driven where they repeat, use `t.Context()`, and call
+  `t.Parallel()` in every test and subtest; none calls `t.Setenv`. A live test that creates resources on the account
+  runs alone, under a `//nolint:paralleltest` with that reason.
+
+PowerShell (scripts run with pwsh):
+
+- A script that is run directly starts with `#!/usr/bin/env pwsh` and is committed as executable
+  (`git update-index --chmod=+x -- <file>`, which also works on Windows).
+- Scripts begin, after any shebang, with `[CmdletBinding(SupportsShouldProcess = $true)] param()`,
+  `#Requires -Version 7.4`, `Set-StrictMode -Version Latest`, `$ErrorActionPreference = 'Stop'`, and
+  `$PSNativeCommandUseErrorActionPreference = $true`. Functions use the same `[CmdletBinding()]`, minus
+  `SupportsShouldProcess` if read-only. Prefer cmdlets and guard each change with `$PSCmdlet.ShouldProcess()` so
+  `-WhatIf` works.
+- The installers, `install.ps1` and `uninstall.ps1`, are exempt from the shebang, `#Requires -Version 7.4` and
+  top-level `param()` and settings: they must run on Windows PowerShell 5.1 under `irm | iex`, where anything set at
+  the top level leaks into the user's session, so they keep their settings inside their one function.
+
+Shell:
+
+- A script that is run directly starts with a shebang and is committed as executable
+  (`git update-index --chmod=+x -- <file>`). A file that is only `source`d has no shebang and starts with a
+  `# shellcheck shell=bash` directive instead. The installers, `install.sh` and `uninstall.sh`, stay POSIX `sh`.
 
 ## Contracts you must not break
 
@@ -81,44 +144,45 @@ never as a side effect of other work.
   applies after accepting the request, such as a container command it cannot run), or a file the user named cannot be
   read; **3** when there is no credential. Every such check is in the [validation table](#validation-table),
   and `internal/cli/validation_test.go` fails on a check that is not, or whose code disagrees.
-- **JSON output shapes are complete.** Every key is always present; an array or map the API omitted renders empty; `null`
-  means the value is unknown or not set. `output` fills absent keys after encoding (the SDK tags every field
+- **JSON output shapes are complete.** Every key is always present; an array or map the API omitted renders empty;
+  `null` means the value is unknown or not set. `output` fills absent keys after encoding (the SDK tags every field
   `omitempty`), so the CLI's own structs encode what the code set: a nil slice or map is *unknown* and renders `null`,
   an empty one renders `[]`/`{}`, and a scalar that can be unknown is a pointer. Adding a key is fine; removing or
-  renaming one is a breaking change and needs a CHANGELOG entry. One JSON document per command on stdout; `logs`
-  emits NDJSON, `ssh` and `sftp` hand stdout to the remote session, and `ssh --config`, `completion` and `help` print text.
-  Every command that changes state, the API's or the config file's, and has no API resource to return carries
-  `action` and `ok`, and `name` (or the identity fields: `group`/`id`, `group`/`instance`, `endpoint`/`id`,
-  `queue`/`id`) when it acts on a named resource; `logout` acts on none, so it is `{"removed","organization","project",
-  "env_overrides","action","ok"}`. `ok` is always
-  true (failures exit non-zero). `outputkind_test.go` makes every leaf command declare its output kind, and
-  `keysnapshot_test.go` compares every emitted key path with `testdata/json-keys.golden`, so an SDK bump that moves a
-  key fails CI until the golden file and the CHANGELOG are updated.
+  renaming one is a breaking change and needs a CHANGELOG entry. One JSON document per command on stdout; `logs` emits
+  NDJSON, `ssh` and `sftp` hand stdout to the remote session, and `ssh --config`, `completion` and `help` print text.
+  Every command that changes state, the API's or the config file's, and has no API resource to return carries `action`
+  and `ok`, and `name` (or the identity fields: `group`/`id`, `group`/`instance`, `endpoint`/`id`, `queue`/`id`) when it
+  acts on a named resource; `logout` acts on none, so it is `{"removed","organization","project",
+  "env_overrides","action","ok"}`. `ok` is always true (failures exit non-zero). `outputkind_test.go` makes every leaf
+  command declare its output kind, and `keysnapshot_test.go` compares every emitted key path with
+  `testdata/json-keys.golden`, so an SDK bump that moves a key fails CI until the golden file and the CHANGELOG are
+  updated.
 - **Warnings never print a secret.** A write-verification warning names an environment variable, header or credential
   field and says `(set)`, `(changed)`, `(removed)` or `(hidden)`; the rule is `api.SecretField`, the one
   `--debug=body` redacts by.
 - **Errors** are a single-line `{"error":{"exit_code","kind","message","hint","http_status"}}` on stderr in json and
-  yaml mode, `saladcloud: error: <message>` then `hint: <fix>` (when there is one) in table mode. The message states
-  the problem; the fix goes in the hint (`clierr.Error.WithHint`), `null` when there is none. In json and yaml mode
-  stderr carries nothing else but `warning:` and `note:` lines (and `--debug` lines when asked for, prompts when the
-  terminal device cannot be opened, and an `ssh` or `sftp` session's own stderr). A valid `-o` anywhere on the command line selects the
-  JSON form, command-line mistakes included (an unknown command and its did-you-mean, a bad flag ahead of `-o`); only
-  an invalid `-o` value reports in table form. `http_status` is `null` when no HTTP response caused the error. `kind` is
-  one of the `clierr.Kind*` constants, listed with their exit codes in `docs/guide.md`. A file the user named that
-  cannot be read or parsed is `invalid_input`; I/O on a file the CLI chose (the config file, an AGENTS.md it writes) is
-  `api_error`.
+  yaml mode, `saladcloud: error: <message>` then `hint: <fix>` (when there is one) in table mode. The message states the
+  problem; the fix goes in the hint (`clierr.Error.WithHint`), `null` when there is none. In json and yaml mode stderr
+  carries nothing else but `warning:` and `note:` lines (and `--debug` lines when asked for, prompts when the terminal
+  device cannot be opened, and an `ssh` or `sftp` session's own stderr). A valid `-o` anywhere on the command line
+  selects the JSON form, command-line mistakes included (an unknown command and its did-you-mean, a bad flag ahead of
+  `-o`); only an invalid `-o` value reports in table form. `http_status` is `null` when no HTTP response caused the
+  error. `kind` is one of the `clierr.Kind*` constants, listed with their exit codes in `docs/guide.md`. A file the user
+  named that cannot be read or parsed is `invalid_input`; I/O on a file the CLI chose (the config file, an AGENTS.md it
+  writes) is `api_error`.
 - **Non-interactive by default.** No prompts in any verb except `login` (and `ai-gateway login`, `ssh-key setup`); every
   command must work with stdin closed. `delete` is unconfirmed on purpose.
 - **Writes verify themselves.** `create`, `update`, and `scale` compare the result with the request (`create` checks
   its response; `update` and `scale` read back) and report drift on stderr as `warning:` / `note:` lines; `update`
   and `scale` settle by default. Keep that path shared (`intentdiff.go`, `writable.go`).
 - **Credentials are never printed, logged, or persisted anywhere but the config file**, and always referred to by
-  environment-variable name in messages and evidence. Stored credentials are shown masked to their last four
-  characters (`****...ABCD`); a key passed as a flag draws a stderr warning, and scripts use the environment variable. The exception is a command whose purpose is to return a secret:
-  `webhook-secret get` and `rotate` print `secret_key` whole, like `gh auth token`. `--debug=body` redacts the
-  `Salad-Api-Key` and `Authorization` headers, and in JSON bodies credential fields (`secret_key`, `api_key`, registry and
-  log-sink passwords and tokens), the value of every header in a headers list (log-sink and probe headers), and every
-  environment variable's value; signed S4 URL query strings are redacted and a file upload's body is never shown.
+  environment-variable name in messages and evidence. Stored credentials are shown masked to their last four characters
+  (`****...ABCD`); a key passed as a flag draws a stderr warning, and scripts use the environment variable. The
+  exception is a command whose purpose is to return a secret: `webhook-secret get` and `rotate` print `secret_key`
+  whole, like `gh auth token`. `--debug=body` redacts the `Salad-Api-Key` and `Authorization` headers, and in JSON
+  bodies credential fields (`secret_key`, `api_key`, registry and log-sink passwords and tokens), the value of every
+  header in a headers list (log-sink and probe headers), and every environment variable's value; signed S4 URL query
+  strings are redacted and a file upload's body is never shown.
 
 ## Validation table
 
@@ -254,21 +318,22 @@ Each of these was argued out; reopen one only with a reason the original did not
   verb.
 - **Alias rule.** Every plural resource noun answers to its singular; a noun may also answer to its full name and its
   API resource name. `cg` is the one alias that abbreviates; `orgs` and `gpus` are primary names whose full forms are
-  aliases. No synonyms. The first guess at a noun, singular or plural, always resolves, while a closed set keeps help and
-  completion free of synonyms that would have to be supported forever. `commandtree_test.go` derives the singular rule
-  and holds the table of the rest.
+  aliases. No synonyms. The first guess at a noun, singular or plural, always resolves, while a closed set keeps help
+  and completion free of synonyms that would have to be supported forever. `commandtree_test.go` derives the singular
+  rule and holds the table of the rest.
 - **Singletons take `get`, never `list`.** A resource with one instance per organization or account (`quotas`,
   `webhook-secret`, `ssh-key`) takes `get` plus action verbs (`rotate`, `setup`), keeps the API's spelling
   (so `quotas` stays plural), and has no singular alias. `config` is not a singleton but a key/value store with gh's
   verbs (`get <key>`, `set`, `unset`, `list`, `path`). `list` would promise several and hand scripts a one-item array to
   unwrap; the API's spelling keeps the CLI and the API reference searchable together.
 - **`inference` is both the product area and the endpoints resource**, the one singular resource noun that takes
-  `list`/`get` (`config` is a key/value store, not a resource). Its porcelain is one command per endpoint, named exactly after the endpoint, verb or not (`transcribe`,
-  `transcription-lite`), whose flags are that endpoint's input fields kebab-cased; a flag not set is not sent. `list`,
-  `get`, `jobs`, `help` and `completion` are reserved; an endpoint with a reserved name, or one newer than the CLI, is
-  reached through `inference jobs create --endpoint`. Porcelain never moves to the top level. The API nests endpoints
-  directly under inference, and the endpoint's name is the one the portal and the docs use, so porcelain named after it
-  needs no lookup table; the reserved names keep porcelain from shadowing the resource verbs.
+  `list`/`get` (`config` is a key/value store, not a resource). Its porcelain is one command per endpoint, named exactly
+  after the endpoint, verb or not (`transcribe`, `transcription-lite`), whose flags are that endpoint's input fields
+  kebab-cased; a flag not set is not sent. `list`, `get`, `jobs`, `help` and `completion` are reserved; an endpoint with
+  a reserved name, or one newer than the CLI, is reached through `inference jobs create --endpoint`. Porcelain never
+  moves to the top level. The API nests endpoints directly under inference, and the endpoint's name is the one the
+  portal and the docs use, so porcelain named after it needs no lookup table; the reserved names keep porcelain from
+  shadowing the resource verbs.
 - **Short flags are a closed table**: `-o` output, `-f` file (write verbs) / follow (`logs`), `-e` env, `-c` container
   group, `-w` watch, `-i` identity (`ssh`, `cp`, `sftp`), `-r` recursive (`cp`). Nothing else gets a short (`-g` reads
   as GPU, `-e` is env everywhere, `-q` reads as quiet); completion makes the long forms cheap.
@@ -318,7 +383,7 @@ Each of these was argued out; reopen one only with a reason the original did not
   document, which `--writable` gives without an editor or TTY.
 - **No standalone `wait` verb.** `--wait` on create/start/stop and the settle-by-default writes cover every poll shape
   so far; revisit only if a third shape appears.
-- **The live suite is not run in CI.** It needs an API key and spends money, so `make test-live` is a manual step before
+- **The live suite is not run in CI.** It needs an API key and spends money, so `just test-live` is a manual step before
   tagging.
 - **The CLI ships its own HTTP transport.** The SDK's transport validation rejects real responses (7-digit fractional
   timestamps, JSON nulls such as `current_state.description`); the SDK is used for types only. Regression tests are in
@@ -337,28 +402,31 @@ Each of these was argued out; reopen one only with a reason the original did not
 - **Error kinds are a closed set.** Scripts switch on `kind`, so it is a contract like the exit codes: a `clierr.Kind`
   constant, never a literal or a kind derived from a status string, and a new failure mode maps onto an existing kind.
   `internal/clierr/kinds_test.go` walks every call site and checks the guide's table. `interrupted` is Ctrl-C during a
-  wait, a prompt or a request; a cancelled request reads `<command> cancelled` (`Execute` names it), while
+  wait, a prompt or a request; a canceled request reads `<command> canceled` (`Run` names it), while
   `logs --follow` and `--watch` end with exit 0.
 
 ## How to add or change a verb
 
-1. New file in `internal/cli/`, cobra command registered in `init()`. `RunE` must return a `*clierr.Error` (wrap
-   anything else with `wrapErr`) so `Execute` maps it to the right exit code instead of reporting a usage error.
-2. Render through `output.Emit(v, tableFn)` (or `output.Stream` for line-oriented output). Define a result struct with
+1. New file in `internal/cli/` with an `(app *App) addXxxCommands(parent)` method that `New` calls. The command's flags
+   bind to the fields of an options struct the command owns (never read back by name), and code that needs the run
+   is an `*App` method. `RunE` must return a `*clierr.Error` (wrap anything else with `wrapErr`) so `Run` maps it to
+   the right exit code instead of reporting a usage error.
+2. Render through `app.printer.Emit(v, tableFn)` (or `Stream` for line-oriented output). Define a result struct with
    json tags for every key, no `omitempty`; pointer types for values that can be unset. A verb that emits an SDK type
    directly gets the key fill from `output` for free.
 3. Tests in the same package: unit tests for the pure logic, plus a JSON-shape test asserting every key is present and
    null when unset (see `configcmd_test.go`, `agent_test.go`); a newly emitted SDK type gets a case in
-   `TestSDKBackedJSONShape` (`shape_test.go`). Run commands through `rootCmd.SetArgs(...)` and capture `output.Stdout`
-   when the verb has no API dependency. Declare the new command's output kind in `outputkind_test.go`, add its result
-   to `keysnapshot_test.go` and regenerate the golden file
-   (`go test ./internal/cli -run TestJSONKeySnapshot -update-keys`), and give it a row in docs/commands.md
-   (`docscommands_test.go` checks both directions and the alias table). A verb that prints to stderr, prompts, or
-   writes the config file also gets a case in `invariants_test.go`'s lists (the error document and json-mode
-   stderr, no credential in any output, the override warning), which nothing adds for you. Status lines go
-   through `say`/`hintLine` and prompts through `ask`/`tell` (a direct `os.Stderr` write must be table-mode only), and
-   whether a person can be asked is `atTerminal()`, which counts `CI` and `SALAD_CLI_NO_PROMPT`; `term.IsTerminal` is for
-   what a stream is (watch's stdout), so json mode and CI stay quiet.
+   `TestSDKBackedJSONShape` (`shape_test.go`). Run a command line through `newTestRun(t)` and its `runRoot` (a fresh
+   tree on fake deps whose environment is a map the test sets with `setenv`), or a harness `session` for the whole run
+   against the fake API (`harness_test.go`); every test and subtest calls `t.Parallel()`, and none sets the process
+   environment. Declare the new command's output kind in `outputkind_test.go`, add its result to `keysnapshot_test.go`
+   and regenerate the golden file (`go test ./internal/cli -run TestJSONKeySnapshot -update-keys`), and give it a row in
+   docs/commands.md (`docscommands_test.go` checks both directions and the alias table). A verb that prints to stderr,
+   prompts, or writes the config file also gets a case in `invariants_test.go`'s lists (the error document and json-mode
+   stderr, no credential in any output, the override warning), which nothing adds for you. Status lines go through
+   `say`/`hintLine` and prompts through `ask`/`tell` (a direct write to `app.errw()` must be table-mode only), and
+   whether a person can be asked is `atTerminal()`, which counts `CI` and `SALAD_CLI_NO_PROMPT`; `term.IsTerminal` is
+   for what a stream is (watch's stdout), so json mode and CI stay quiet.
 4. If it calls the API, add a case to `internal/livetest` and run it before tagging.
 5. Update `docs/commands.md` (plus a section in `docs/guide.md` if the verb has semantics), the CHANGELOG, and
    `internal/agentdoc` only if the CLI's public contract for agents changed. CHANGELOG entries go under

@@ -9,6 +9,7 @@ import (
 )
 
 func TestBlockShape(t *testing.T) {
+	t.Parallel()
 	b := Block("1.2.3")
 	if !strings.HasPrefix(b, "<!-- SALADCLOUD START (saladcloud agent init 1.2.3) -->\n") {
 		t.Errorf("start marker wrong:\n%s", b)
@@ -37,7 +38,8 @@ func TestBlockShape(t *testing.T) {
 		"`container-groups delete` is immediate and unconfirmed",
 		"`saladcloud container-groups` (alias `cg`)",
 		"`cg logs <group>`",
-		"`saladcloud availability --gpu <class>` costs platform queries (one per class, one more for several): call it once",
+		"`saladcloud availability --gpu <class>` costs platform queries (one per class, one more for several): call " +
+			"it once",
 		"The CLI is a beta release",
 		"https://github.com/SaladTechnologies/salad-cloud-cli/issues",
 		"Never include credential values",
@@ -53,6 +55,7 @@ func TestBlockShape(t *testing.T) {
 }
 
 func TestApplyEmptyFile(t *testing.T) {
+	t.Parallel()
 	out, changed, err := Apply("", "1.0.0")
 	if err != nil {
 		t.Fatal(err)
@@ -66,6 +69,7 @@ func TestApplyEmptyFile(t *testing.T) {
 }
 
 func TestApplyAppendsAfterBlankLine(t *testing.T) {
+	t.Parallel()
 	existing := "# My project\n\nRun `make test`.\n"
 	out, changed, err := Apply(existing, "1.0.0")
 	if err != nil {
@@ -81,6 +85,7 @@ func TestApplyAppendsAfterBlankLine(t *testing.T) {
 }
 
 func TestApplyAppendsNewlineWhenFileLacksOne(t *testing.T) {
+	t.Parallel()
 	existing := "# My project" // no trailing newline
 	out, _, err := Apply(existing, "1.0.0")
 	if err != nil {
@@ -92,6 +97,7 @@ func TestApplyAppendsNewlineWhenFileLacksOne(t *testing.T) {
 }
 
 func TestApplyIsIdempotent(t *testing.T) {
+	t.Parallel()
 	first, _, err := Apply("# Repo\n", "1.0.0")
 	if err != nil {
 		t.Fatal(err)
@@ -109,6 +115,7 @@ func TestApplyIsIdempotent(t *testing.T) {
 }
 
 func TestApplyReplacesInPlacePreservingSurroundings(t *testing.T) {
+	t.Parallel()
 	before := "# Repo\n\nintro text\n\n"
 	after := "\n## Other section\nkept.\n"
 	old := before + StartMarker("0.9.0") + "\nold body that must disappear\n<!-- SALADCLOUD END -->\n" + after
@@ -132,6 +139,7 @@ func TestApplyReplacesInPlacePreservingSurroundings(t *testing.T) {
 }
 
 func TestApplyPreservesCRLF(t *testing.T) {
+	t.Parallel()
 	existing := "# Repo\r\n\r\nWindows file.\r\n"
 	out, _, err := Apply(existing, "1.0.0")
 	if err != nil {
@@ -151,6 +159,7 @@ func TestApplyPreservesCRLF(t *testing.T) {
 }
 
 func TestApplyMalformed(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"start only":     "x\n<!-- SALADCLOUD START (saladcloud agent init 1.0.0) -->\nbody\n",
 		"end only":       "x\n<!-- SALADCLOUD END -->\n",
@@ -168,76 +177,85 @@ func TestApplyMalformed(t *testing.T) {
 }
 
 func TestPickFile(t *testing.T) {
-	noEnv := func(string) string { return "" }
-	claude := func(k string) string {
-		if k == EnvClaudeCode {
-			return "1"
-		}
-		return ""
+	t.Parallel()
+	for _, tc := range []struct {
+		name     string
+		files    []string // made in the directory
+		dirs     []string // made in the directory
+		override string
+		env      map[string]string
+		want     Target // its Path relative to the directory
+	}{
+		{
+			name: "default is AGENTS.md",
+			want: Target{Path: FileAgents, Name: FileAgents, Reason: "default"},
+		},
+		{
+			name:  "CLAUDECODE selects CLAUDE.md even when AGENTS.md exists",
+			files: []string{FileAgents},
+			env:   map[string]string{EnvClaudeCode: "1"},
+			want:  Target{Path: FileClaude, Name: FileClaude, Reason: "CLAUDECODE set"},
+		},
+		{
+			name:  "existing CLAUDE.md alone selects CLAUDE.md",
+			files: []string{FileClaude},
+			want:  Target{Path: FileClaude, Name: FileClaude, Reason: "CLAUDE.md present"},
+		},
+		{
+			name:  "both present selects AGENTS.md",
+			files: []string{FileClaude, FileAgents},
+			want:  Target{Path: FileAgents, Name: FileAgents, Reason: "default"},
+		},
+		{
+			name:     "override relative",
+			override: "docs/AGENTS.md",
+			want:     Target{Path: filepath.Join("docs", "AGENTS.md"), Name: "docs/AGENTS.md", Reason: "--file"},
+		},
+		{
+			name: "a directory named CLAUDE.md does not count",
+			dirs: []string{FileClaude},
+			want: Target{Path: FileAgents, Name: FileAgents, Reason: "default"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			populate(t, dir, tc.files, tc.dirs)
+			want := tc.want
+			want.Path = filepath.Join(dir, want.Path)
+			if got := PickFile(dir, tc.override, func(k string) string { return tc.env[k] }); got != want {
+				t.Errorf("got %+v, want %+v", got, want)
+			}
+		})
 	}
+}
 
-	t.Run("default is AGENTS.md", func(t *testing.T) {
-		dir := t.TempDir()
-		got := PickFile(dir, "", noEnv)
-		if got.Name != FileAgents || got.Reason != "default" || got.Path != filepath.Join(dir, FileAgents) {
-			t.Errorf("got %+v", got)
-		}
-	})
-	t.Run("CLAUDECODE selects CLAUDE.md even when AGENTS.md exists", func(t *testing.T) {
-		dir := t.TempDir()
-		touch(t, filepath.Join(dir, FileAgents))
-		got := PickFile(dir, "", claude)
-		if got.Name != FileClaude || got.Reason != "CLAUDECODE set" {
-			t.Errorf("got %+v", got)
-		}
-	})
-	t.Run("existing CLAUDE.md alone selects CLAUDE.md", func(t *testing.T) {
-		dir := t.TempDir()
-		touch(t, filepath.Join(dir, FileClaude))
-		got := PickFile(dir, "", noEnv)
-		if got.Name != FileClaude || got.Reason != "CLAUDE.md present" {
-			t.Errorf("got %+v", got)
-		}
-	})
-	t.Run("both present selects AGENTS.md", func(t *testing.T) {
-		dir := t.TempDir()
-		touch(t, filepath.Join(dir, FileClaude))
-		touch(t, filepath.Join(dir, FileAgents))
-		got := PickFile(dir, "", noEnv)
-		if got.Name != FileAgents {
-			t.Errorf("got %+v", got)
-		}
-	})
-	t.Run("override relative", func(t *testing.T) {
-		dir := t.TempDir()
-		got := PickFile(dir, "docs/AGENTS.md", noEnv)
-		if got.Path != filepath.Join(dir, "docs", "AGENTS.md") || got.Reason != "--file" {
-			t.Errorf("got %+v", got)
-		}
-	})
-	t.Run("override absolute", func(t *testing.T) {
-		dir := t.TempDir()
-		abs := filepath.Join(t.TempDir(), "X.md")
-		got := PickFile(dir, abs, noEnv)
-		if got.Path != abs {
-			t.Errorf("got %+v", got)
-		}
-	})
-	t.Run("a directory named CLAUDE.md does not count", func(t *testing.T) {
-		dir := t.TempDir()
-		if err := os.Mkdir(filepath.Join(dir, FileClaude), 0o755); err != nil {
+// populate makes the files and directories named in dir.
+func populate(t *testing.T, dir string, files, dirs []string) {
+	t.Helper()
+	for _, f := range files {
+		touch(t, filepath.Join(dir, f))
+	}
+	for _, d := range dirs {
+		if err := os.Mkdir(filepath.Join(dir, d), 0o750); err != nil {
 			t.Fatal(err)
 		}
-		got := PickFile(dir, "", noEnv)
-		if got.Name != FileAgents {
-			t.Errorf("got %+v", got)
-		}
-	})
+	}
+}
+
+// TestPickFileAbsoluteOverride: an absolute --file is used as it is, not joined to the directory.
+func TestPickFileAbsoluteOverride(t *testing.T) {
+	t.Parallel()
+	abs := filepath.Join(t.TempDir(), "X.md")
+	got := PickFile(t.TempDir(), abs, func(string) string { return "" })
+	if want := (Target{Path: abs, Name: abs, Reason: "--file"}); got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
 }
 
 func touch(t *testing.T, p string) {
 	t.Helper()
-	if err := os.WriteFile(p, []byte("x\n"), 0o644); err != nil {
+	if err := os.WriteFile(p, []byte("x\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 }

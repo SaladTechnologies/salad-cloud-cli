@@ -34,6 +34,7 @@ type OrganizationList struct {
 // organizationPage is one page of the organizations listing.
 type organizationPage struct {
 	OrganizationList
+
 	NextPageToken *string `json:"next_page_token"`
 }
 
@@ -50,10 +51,10 @@ const (
 // part of the documented API, so callers treat any failure as "unknown",
 // never as "none".
 func (c *Client) ListOrganizations(ctx context.Context) (*OrganizationList, *clierr.Error) {
-	all := OrganizationList{Items: []Organization{}}
+	all := OrganizationList{Items: make([]Organization, 0, orgPageSize), TotalCount: nil, noItems: false}
 	token := ""
-	seen := map[string]bool{}
-	for page := 0; page < maxOrgPages; page++ {
+	seen := make(map[string]bool)
+	for page := range maxOrgPages {
 		q := url.Values{"page_size": {strconv.Itoa(orgPageSize)}}
 		if token != "" {
 			q.Set("page_token", token)

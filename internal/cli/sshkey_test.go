@@ -22,6 +22,7 @@ func writeKey(t *testing.T, home, name string) string {
 }
 
 func TestFindLocalPublicKeyNone(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	if path, ok := findLocalPublicKey(home); ok {
 		t.Errorf("found %q in empty home, want none", path)
@@ -29,6 +30,7 @@ func TestFindLocalPublicKeyNone(t *testing.T) {
 }
 
 func TestFindLocalPublicKeyOrder(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	rsa := writeKey(t, home, "id_rsa.pub")
 	salad := writeKey(t, home, "saladcloud_ed25519.pub")
@@ -54,6 +56,7 @@ func TestFindLocalPublicKeyOrder(t *testing.T) {
 }
 
 func TestFindLocalPublicKeyIgnoresDirectories(t *testing.T) {
+	t.Parallel()
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, ".ssh", "id_ed25519.pub"), 0o700); err != nil {
 		t.Fatal(err)
@@ -66,13 +69,15 @@ func TestFindLocalPublicKeyIgnoresDirectories(t *testing.T) {
 // TestResolveIdentity: the flag wins; else the dedicated key when present;
 // else "" so OpenSSH uses its own defaults.
 func TestResolveIdentity(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-	if got := resolveIdentity("/explicit/key"); got != "/explicit/key" {
+	app.setenv("HOME", home)
+	app.setenv("USERPROFILE", home)
+	if got := app.resolveIdentity("/explicit/key"); got != "/explicit/key" {
 		t.Errorf("flag = %q", got)
 	}
-	if got := resolveIdentity(""); got != "" {
+	if got := app.resolveIdentity(""); got != "" {
 		t.Errorf("no dedicated key: %q, want empty", got)
 	}
 	priv := filepath.Join(home, ".ssh", sshDedicatedKeyName)
@@ -82,10 +87,10 @@ func TestResolveIdentity(t *testing.T) {
 	if err := os.WriteFile(priv, []byte("key"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := resolveIdentity(""); got != priv {
+	if got := app.resolveIdentity(""); got != priv {
 		t.Errorf("dedicated key present: %q, want %q", got, priv)
 	}
-	if got := resolveIdentity("/explicit/key"); got != "/explicit/key" {
+	if got := app.resolveIdentity("/explicit/key"); got != "/explicit/key" {
 		t.Errorf("flag must still win: %q", got)
 	}
 }
@@ -93,25 +98,30 @@ func TestResolveIdentity(t *testing.T) {
 // TestKeyHasPassphrase generates real keys with and without a passphrase
 // and checks the detection; skipped where ssh-keygen is unavailable.
 func TestKeyHasPassphrase(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("ssh-keygen"); err != nil {
 		t.Skip("ssh-keygen not on PATH")
 	}
 	dir := t.TempDir()
+	keygen := func(path, passphrase string) {
+		t.Helper()
+		//nolint:gosec // generates a test key under t.TempDir()
+		cmd := exec.CommandContext(t.Context(), "ssh-keygen", "-q", "-t", "ed25519", "-N", passphrase, "-f", path)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("ssh-keygen: %v %s", err, out)
+		}
+	}
 	plain := filepath.Join(dir, "plain")
-	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", plain).CombinedOutput(); err != nil {
-		t.Fatalf("ssh-keygen: %v %s", err, out)
-	}
+	keygen(plain, "")
 	locked := filepath.Join(dir, "locked")
-	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "correct horse", "-f", locked).CombinedOutput(); err != nil {
-		t.Fatalf("ssh-keygen: %v %s", err, out)
+	keygen(locked, "correct horse")
+	if c := keyHasPassphrase(t.Context(), plain); !c.known || c.has {
+		t.Errorf("plain key: encrypted=%v known=%v, want false/true", c.has, c.known)
 	}
-	if enc, known := keyHasPassphrase(plain); !known || enc {
-		t.Errorf("plain key: encrypted=%v known=%v, want false/true", enc, known)
+	if c := keyHasPassphrase(t.Context(), locked); !c.known || !c.has {
+		t.Errorf("locked key: encrypted=%v known=%v, want true/true", c.has, c.known)
 	}
-	if enc, known := keyHasPassphrase(locked); !known || !enc {
-		t.Errorf("locked key: encrypted=%v known=%v, want true/true", enc, known)
-	}
-	if _, known := keyHasPassphrase(filepath.Join(dir, "missing")); known {
+	if c := keyHasPassphrase(t.Context(), filepath.Join(dir, "missing")); c.known {
 		t.Error("missing key must be unknown, not a verdict")
 	}
 }

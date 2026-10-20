@@ -2,12 +2,9 @@ package cli
 
 import (
 	"fmt"
-	"io"
-	"os"
-
-	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
@@ -46,28 +43,39 @@ func scalePatch(n int64) []byte {
 // reenableSchedulePatch switches scheduled scaling back on. It has to be a
 // second write: the API does not honor scheduled-scaling-enabled true in
 // the same patch as replicas.
-var reenableSchedulePatch = []byte(`{"scheduled-scaling-enabled":true}`)
+func reenableSchedulePatch() []byte {
+	return []byte(`{"scheduled-scaling-enabled":true}`)
+}
 
-// shouldReenableSchedule decides whether --keep-schedule has work to do:
-// the schedule was on before the replicas write and the write put it on
-// hold. A group whose schedule was already off is left alone — keeping a
-// schedule is not the same as enabling one.
-func shouldReenableSchedule(keep bool, before, after *shared.ContainerGroup) bool {
-	if !keep || before == nil || after == nil {
+// shouldReenableSchedule decides whether --keep-schedule, once given, has
+// work to do: the schedule was on before the replicas write and the write
+// put it on hold. A group whose schedule was already off is left alone —
+// keeping a schedule is not the same as enabling one.
+func shouldReenableSchedule(before, after *shared.ContainerGroup) bool {
+	if before == nil || after == nil {
 		return false
 	}
 	return ptr.Deref(before.ScheduledScalingEnabled) && !ptr.Deref(after.ScheduledScalingEnabled)
 }
 
-// plural renders a count with its noun: "1 replica", "3 replicas".
-func plural(n int64, noun string) string {
+// replicas renders a replica count: "1 replica", "3 replicas".
+func replicas(n int64) string {
 	if n == 1 {
-		return "1 " + noun
+		return "1 replica"
 	}
-	return fmt.Sprintf("%d %ss", n, noun)
+	return fmt.Sprintf("%d replicas", n)
 }
 
-func init() {
+// scaleOptions are scale's flags.
+type scaleOptions struct {
+	replicas     int64
+	keepSchedule bool
+	settle       settleOptions
+}
+
+// addScaleCommands adds scale.go's commands to the tree.
+func (app *App) addScaleCommands(cg *cobra.Command) {
+	var scaleOpts scaleOptions
 	scaleCmd := &cobra.Command{
 		Use:   "scale <group> --replicas <n>",
 		Short: "Set the replica count of a container group (waits for the change to settle; --no-wait returns at once)",
@@ -81,55 +89,83 @@ write (the API does not honor the flag in the same patch as replicas), for
 "new setpoint, keep the program".`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			wait, timeout, cerr := settleFlagValues(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			if !cmd.Flags().Changed("replicas") {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing required flag: --replicas <n>")
-			}
-			n, err := cmd.Flags().GetInt64("replicas")
-			if err != nil {
-				return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
-			}
-			if cerr := validateScaleReplicas(n); cerr != nil {
-				return cerr
-			}
-			client, _, cerr := NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			keep, _ := cmd.Flags().GetBool("keep-schedule")
-			var before *shared.ContainerGroup
-			if keep {
-				if b, cerr := client.GetGroup(cmd.Context(), args[0]); cerr == nil {
-					before = b
-				}
-			}
-			// No settle line: the one success line below says it.
-			group, err := applyPatch(cmd, client, args[0], scalePatch(n), nil, wait, timeout, "")
-			if err != nil {
-				return err
-			}
-			if keep {
-				switch {
-				case shouldReenableSchedule(keep, before, group):
-					if _, err := applyPatch(cmd, client, args[0], reenableSchedulePatch, nil, wait, timeout, "scheduled scaling re-enabled"); err != nil {
-						return err
-					}
-					fmt.Fprintln(os.Stderr, "note: scheduled scaling re-enabled (--keep-schedule)")
-				case before != nil && !ptr.Deref(before.ScheduledScalingEnabled):
-					fmt.Fprintln(os.Stderr, "note: --keep-schedule: scheduled scaling was not enabled, nothing to keep")
-				}
-			}
-			v := scaleResult{Name: args[0], Action: "scaled", Replicas: n, OK: true}
-			return wrapErr(output.Emit(v, func(w io.Writer) {
-				fmt.Fprintf(w, "Scaled %s to %s\n", v.Name, plural(v.Replicas, "replica"))
-			}))
+			return app.runScale(cmd, &scaleOpts, args[0])
 		},
 	}
-	scaleCmd.Flags().Int64("replicas", 0, "desired replica count (0-500)")
-	scaleCmd.Flags().Bool("keep-schedule", false, "re-enable scheduled scaling after the write (setting replicas puts it on hold)")
-	addSettleFlags(scaleCmd)
-	RegisterContainerGroups(scaleCmd)
+	scaleCmd.Flags().Int64Var(&scaleOpts.replicas, "replicas", 0, "desired replica count (0-500)")
+	scaleCmd.Flags().
+		BoolVar(&scaleOpts.keepSchedule, "keep-schedule", false,
+			"re-enable scheduled scaling after the write (setting replicas puts it on hold)")
+	addSettleFlags(scaleCmd, &scaleOpts.settle)
+	cg.AddCommand(scaleCmd)
+}
+
+// runScale is scale's RunE: check the flags pre-flight, write the replica
+// count, restore the schedule under --keep-schedule, and emit the result.
+func (app *App) runScale(cmd *cobra.Command, opts *scaleOptions, name string) error {
+	keep := opts.keepSchedule
+	wait, timeout, cerr := opts.settle.values()
+	if cerr != nil {
+		return cerr
+	}
+	if !cmd.Flags().Changed("replicas") {
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing required flag: --replicas <n>")
+	}
+	n := opts.replicas
+	if verr := validateScaleReplicas(n); verr != nil {
+		return verr
+	}
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	write := func(patch []byte, doneMsg string) (*shared.ContainerGroup, error) {
+		return app.applyPatch(
+			cmd,
+			client,
+			name,
+			patch,
+			nil,
+			patchSettle{wait: wait, timeout: timeout, doneMsg: doneMsg},
+		)
+	}
+	var before *shared.ContainerGroup
+	if keep {
+		if b, cerr := client.GetGroup(cmd.Context(), name); cerr == nil {
+			before = b
+		}
+	}
+	// No settle line: the one success line below says it.
+	group, err := write(scalePatch(n), "")
+	if err != nil {
+		return err
+	}
+	if keep {
+		if err := app.scaleKeepSchedule(before, group, write); err != nil {
+			return err
+		}
+	}
+	v := scaleResult{Name: name, Action: "scaled", Replicas: n, OK: true}
+	return wrapErr(app.printer.Emit(v, func(w *output.Writer) {
+		w.Printf("Scaled %s to %s\n", v.Name, replicas(v.Replicas))
+	}))
+}
+
+// scaleKeepSchedule is --keep-schedule after the replicas write: switch the
+// schedule back on through write when the write put it on hold, or note
+// that there was none to keep.
+func (app *App) scaleKeepSchedule(
+	before, after *shared.ContainerGroup,
+	write func(patch []byte, doneMsg string) (*shared.ContainerGroup, error),
+) error {
+	switch {
+	case shouldReenableSchedule(before, after):
+		if _, err := write(reenableSchedulePatch(), "scheduled scaling re-enabled"); err != nil {
+			return err
+		}
+		fprintln(app.errw(), "note: scheduled scaling re-enabled (--keep-schedule)")
+	case before != nil && !ptr.Deref(before.ScheduledScalingEnabled):
+		fprintln(app.errw(), "note: --keep-schedule: scheduled scaling was not enabled, nothing to keep")
+	}
+	return nil
 }

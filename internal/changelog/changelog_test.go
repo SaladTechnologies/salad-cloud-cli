@@ -2,6 +2,7 @@ package changelog
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -23,7 +24,7 @@ Preamble that is not part of any release.
 
 ## [1.1.0] — 2026-09-15 the middle one
 
-- one one
+- one point one
 
 ## [1.0.0] - 2026-09-01
 
@@ -31,28 +32,37 @@ Preamble that is not part of any release.
 `
 
 func TestParse(t *testing.T) {
+	t.Parallel()
 	rs := Parse(sample)
-	if len(rs) != 4 {
-		t.Fatalf("got %d releases, want 4: %+v", len(rs), rs)
+	want := []string{
+		`version Unreleased, date <nil>, title first release, body "### Added\n- unreleased thing"`,
+		`version 1.2.0, date 2026-10-01, title <nil>, body "- one two"`,
+		`version 1.1.0, date 2026-09-15, title the middle one, body "- one point one"`,
+		`version 1.0.0, date 2026-09-01, title <nil>, body "- one oh"`,
 	}
-	if rs[0].Version != "Unreleased" || rs[0].Date != nil || rs[0].Title == nil || *rs[0].Title != "first release" {
-		t.Errorf("unreleased = %+v", rs[0])
+	if len(rs) != len(want) {
+		t.Fatalf("got %d releases, want %d: %+v", len(rs), len(want), rs)
 	}
-	if !strings.Contains(rs[0].Body, "unreleased thing") || strings.Contains(rs[0].Body, "one two") {
-		t.Errorf("unreleased body wrong: %q", rs[0].Body)
-	}
-	if rs[1].Version != "1.2.0" || rs[1].Date == nil || *rs[1].Date != "2026-10-01" || rs[1].Title != nil {
-		t.Errorf("1.2.0 = %+v", rs[1])
-	}
-	if rs[2].Title == nil || *rs[2].Title != "the middle one" {
-		t.Errorf("1.1.0 title = %v", rs[2].Title)
-	}
-	if rs[3].Body != "- one oh" {
-		t.Errorf("1.0.0 body = %q", rs[3].Body)
+	for i, r := range rs {
+		if got := describe(r); got != want[i] {
+			t.Errorf("release %d = %s, want %s", i, got, want[i])
+		}
 	}
 }
 
+// describe renders a release's fields on one line, an unset one as <nil>.
+func describe(r Release) string {
+	opt := func(s *string) string {
+		if s == nil {
+			return "<nil>"
+		}
+		return *s
+	}
+	return fmt.Sprintf("version %s, date %s, title %s, body %q", r.Version, opt(r.Date), opt(r.Title), r.Body)
+}
+
 func TestParseCRLF(t *testing.T) {
+	t.Parallel()
 	rs := Parse(strings.ReplaceAll(sample, "\n", "\r\n"))
 	if len(rs) != 4 || strings.Contains(rs[3].Body, "\r") {
 		t.Errorf("CRLF parse: %+v", rs)
@@ -60,7 +70,7 @@ func TestParseCRLF(t *testing.T) {
 }
 
 func versions(rs []Release) string {
-	var v []string
+	v := make([]string, 0, len(rs))
 	for _, r := range rs {
 		v = append(v, r.Version)
 	}
@@ -68,6 +78,7 @@ func versions(rs []Release) string {
 }
 
 func TestSince(t *testing.T) {
+	t.Parallel()
 	rs := Parse(sample)
 	cases := []struct{ since, want string }{
 		{"", "Unreleased,1.2.0,1.1.0,1.0.0"},
@@ -95,6 +106,7 @@ func TestSince(t *testing.T) {
 }
 
 func TestRenderRoundTrips(t *testing.T) {
+	t.Parallel()
 	rs := Parse(sample)
 	again := Parse(Render(rs))
 	if versions(again) != versions(rs) {
@@ -110,6 +122,7 @@ func TestRenderRoundTrips(t *testing.T) {
 // The embedded changelog must parse and must always have an Unreleased or a
 // dated release at the top — otherwise `saladcloud changelog` is useless.
 func TestEmbeddedChangelogParses(t *testing.T) {
+	t.Parallel()
 	rs := Parse(saladcloudcli.Changelog)
 	if len(rs) == 0 {
 		t.Fatal("embedded CHANGELOG.md has no release headings")

@@ -1,6 +1,7 @@
 // Managed inference endpoints (transcription etc.) are ORG-scoped — their
 // paths have no project segment: /organizations/{org}/inference-endpoints.
 // Same SDK-types-over-our-transport split as the rest of the client.
+
 package api
 
 import (
@@ -14,11 +15,7 @@ import (
 
 // inferencePath builds /organizations/{org}/inference-endpoints[/...].
 func (c *Client) inferencePath(parts ...string) string {
-	p := fmt.Sprintf("/organizations/%s/inference-endpoints", seg(c.org))
-	for _, part := range parts {
-		p += "/" + seg(part)
-	}
-	return p
+	return fmt.Sprintf("/organizations/%s/inference-endpoints", seg(c.org)) + subPath(parts)
 }
 
 // inferencePageSize is the largest page the inference endpoints accept:
@@ -36,13 +33,22 @@ func inferencePage(page int) string {
 
 // ListInferenceEndpoints lists the managed inference endpoints available to
 // the resolved organization, paging through the whole catalog.
-func (c *Client) ListInferenceEndpoints(ctx context.Context) (*inferenceendpoints.InferenceEndpointCollection, *clierr.Error) {
+func (c *Client) ListInferenceEndpoints(
+	ctx context.Context,
+) (*inferenceendpoints.InferenceEndpointCollection, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return nil, err
 	}
 	var all *inferenceendpoints.InferenceEndpointCollection
 	for page := 1; page <= inferenceMaxPages; page++ {
-		coll, cerr := restJSON[inferenceendpoints.InferenceEndpointCollection](ctx, c, "GET", c.inferencePath()+inferencePage(page), "", nil)
+		coll, cerr := restJSON[inferenceendpoints.InferenceEndpointCollection](
+			ctx,
+			c,
+			"GET",
+			c.inferencePath()+inferencePage(page),
+			"",
+			nil,
+		)
 		if cerr != nil {
 			return nil, cerr
 		}
@@ -65,16 +71,19 @@ func (c *Client) ListInferenceEndpoints(ctx context.Context) (*inferenceendpoint
 const InferenceJobsCap = inferenceMaxPages * inferencePageSize
 
 // jobsWanted is how many jobs a listing returns for a --limit: the limit, or
-// the cap for 0 (all) and for a limit above it.
-func jobsWanted(limit, cap int) int {
-	if limit <= 0 || limit > cap {
-		return cap
+// the ceiling for 0 (all) and for a limit above it.
+func jobsWanted(limit, ceiling int) int {
+	if limit <= 0 || limit > ceiling {
+		return ceiling
 	}
 	return limit
 }
 
 // GetInferenceEndpoint fetches one managed inference endpoint by name.
-func (c *Client) GetInferenceEndpoint(ctx context.Context, name string) (*inferenceendpoints.InferenceEndpoint, *clierr.Error) {
+func (c *Client) GetInferenceEndpoint(
+	ctx context.Context,
+	name string,
+) (*inferenceendpoints.InferenceEndpoint, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return nil, err
 	}
@@ -85,42 +94,74 @@ func (c *Client) GetInferenceEndpoint(ctx context.Context, name string) (*infere
 // endpoint, newest first: limit of them (0 means all, up to
 // InferenceJobsCap). The API lists oldest first, so this reads from the
 // last page backwards (newestPages); more reports older jobs left out.
-func (c *Client) ListInferenceJobs(ctx context.Context, endpoint string, limit int) (jobs []inferenceendpoints.InferenceEndpointJob, more bool, cerr *clierr.Error) {
+func (c *Client) ListInferenceJobs(
+	ctx context.Context,
+	endpoint string,
+	limit int,
+) ([]inferenceendpoints.InferenceEndpointJob, bool, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return nil, false, err
 	}
 	fetch := func(page int) ([]inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
-		coll, cerr := restJSON[inferenceendpoints.InferenceEndpointJobCollection](ctx, c, "GET", c.inferencePath(endpoint, "jobs")+inferencePage(page), "", nil)
-		if cerr != nil {
-			return nil, cerr
+		coll, err := restJSON[inferenceendpoints.InferenceEndpointJobCollection](
+			ctx,
+			c,
+			"GET",
+			c.inferencePath(endpoint, "jobs")+inferencePage(page),
+			"",
+			nil,
+		)
+		if err != nil {
+			return nil, err
 		}
 		return coll.Items, nil
 	}
-	jobs, more, cerr = newestPages(fetch, inferencePageSize, jobsWanted(limit, InferenceJobsCap))
+	jobs, more, cerr := newestPages(fetch, inferencePageSize, jobsWanted(limit, InferenceJobsCap))
 	if cerr != nil {
 		return nil, false, cerr
 	}
 	sortNewestFirst(jobs, func(j *inferenceendpoints.InferenceEndpointJob) *string { return j.CreateTime })
 	if jobs == nil {
-		jobs = []inferenceendpoints.InferenceEndpointJob{}
+		jobs = []inferenceendpoints.InferenceEndpointJob{} //nolint:revive // known empty, not unknown: [] in JSON
 	}
 	return jobs, more, nil
 }
 
 // CreateInferenceJob queues a job on an inference endpoint.
-func (c *Client) CreateInferenceJob(ctx context.Context, endpoint string, proto inferenceendpoints.InferenceEndpointJobPrototype) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
+func (c *Client) CreateInferenceJob(
+	ctx context.Context,
+	endpoint string,
+	proto inferenceendpoints.InferenceEndpointJobPrototype,
+) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return nil, err
 	}
-	return restJSON[inferenceendpoints.InferenceEndpointJob](ctx, c, "POST", c.inferencePath(endpoint, "jobs"), "", proto)
+	return restJSON[inferenceendpoints.InferenceEndpointJob](
+		ctx,
+		c,
+		"POST",
+		c.inferencePath(endpoint, "jobs"),
+		"",
+		proto,
+	)
 }
 
 // GetInferenceJob fetches one inference endpoint job by id.
-func (c *Client) GetInferenceJob(ctx context.Context, endpoint, id string) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
+func (c *Client) GetInferenceJob(
+	ctx context.Context,
+	endpoint, id string,
+) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return nil, err
 	}
-	return restJSON[inferenceendpoints.InferenceEndpointJob](ctx, c, "GET", c.inferencePath(endpoint, "jobs", id), "", nil)
+	return restJSON[inferenceendpoints.InferenceEndpointJob](
+		ctx,
+		c,
+		"GET",
+		c.inferencePath(endpoint, "jobs", id),
+		"",
+		nil,
+	)
 }
 
 // CancelInferenceJob cancels one inference endpoint job.
@@ -128,5 +169,5 @@ func (c *Client) CancelInferenceJob(ctx context.Context, endpoint, id string) *c
 	if err := c.RequireOrg(); err != nil {
 		return err
 	}
-	return restNoBody(ctx, c, "DELETE", c.inferencePath(endpoint, "jobs", id), nil)
+	return restNoBody(ctx, c, "DELETE", c.inferencePath(endpoint, "jobs", id))
 }

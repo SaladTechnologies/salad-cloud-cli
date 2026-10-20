@@ -1,12 +1,8 @@
 package cli
 
 import (
-	"fmt"
-	"io"
-
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/webhooksecretkey"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -18,7 +14,8 @@ import (
 // rotate action, never list. Both print secret_key whole: returning it is
 // the command's purpose, like 'gh auth token'; masking applies to stored
 // credentials, not to this.
-func init() {
+// addWebhookSecretCommands adds webhooksecret.go's commands to the tree.
+func (app *App) addWebhookSecretCommands(root *cobra.Command) {
 	wsCmd := &cobra.Command{
 		Use:   "webhook-secret",
 		Short: "The key that signs the organization's webhook deliveries (get, rotate)",
@@ -30,13 +27,15 @@ Both commands print the key itself; keep their output out of logs.`,
 	}
 
 	emit := func(k *webhooksecretkey.WebhookSecretKey) error {
-		return wrapErr(output.Emit(k, func(w io.Writer) {
-			fmt.Fprintln(w, ptr.Deref(k.SecretKey))
+		return wrapErr(app.printer.Emit(k, func(w *output.Writer) {
+			w.Println(ptr.Deref(k.SecretKey))
 		}))
 	}
-	run := func(call func(c *api.Client, cmd *cobra.Command) (*webhooksecretkey.WebhookSecretKey, *clierr.Error)) func(*cobra.Command, []string) error {
-		return func(cmd *cobra.Command, args []string) error {
-			client, _, cerr := NewClient(cmd)
+	run := func(
+		call func(c *api.Client, cmd *cobra.Command) (*webhooksecretkey.WebhookSecretKey, *clierr.Error),
+	) func(*cobra.Command, []string) error {
+		return func(cmd *cobra.Command, _ []string) error {
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
@@ -49,7 +48,7 @@ Both commands print the key itself; keep their output out of logs.`,
 	}
 
 	wsCmd.AddCommand(&cobra.Command{
-		Use:   "get",
+		Use:   verbNameGet,
 		Short: "Print the organization's webhook secret key",
 		Args:  cobra.NoArgs,
 		RunE: run(func(c *api.Client, cmd *cobra.Command) (*webhooksecretkey.WebhookSecretKey, *clierr.Error) {
@@ -67,6 +66,6 @@ verify with the old one start rejecting them until they are updated.`,
 			return c.RotateWebhookSecret(cmd.Context())
 		}),
 	})
-	orgScoped(wsCmd)
-	Register(wsCmd)
+	app.orgScoped(wsCmd)
+	root.AddCommand(wsCmd)
 }

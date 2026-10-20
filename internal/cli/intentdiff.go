@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
@@ -37,8 +37,10 @@ type ignoredField struct {
 //
 // Without this the diff would compare an absent path against an absent path
 // and report a *successful* GPU-group priority change as dropped.
-var requestToResponsePath = map[string]string{
-	"container.priority": "priority",
+func requestToResponsePath() map[string]string {
+	return map[string]string{
+		"container.priority": "priority",
+	}
 }
 
 // findIgnoredFields compares a merge patch against the group state before and
@@ -83,66 +85,105 @@ var requestToResponsePath = map[string]string{
 // patch was observed changing state without incrementing it — which is why
 // this compares field values.
 func findIgnoredFields(patch []byte, before, after *shared.ContainerGroup) []ignoredField {
-	if before == nil || after == nil {
-		return nil
-	}
-	if ptr.Deref(after.PendingChange) {
-		return nil // still settling; the after-state isn't authoritative yet
-	}
-	var patchTree any
-	if err := json.Unmarshal(patch, &patchTree); err != nil {
-		return nil
-	}
-	beforeTree, err := toTree(before)
-	if err != nil {
-		return nil
-	}
-	afterTree, err := toTree(after)
-	if err != nil {
+	trees, ok := intentDiffTrees(patch, before, after)
+	if !ok {
 		return nil
 	}
 
 	var leaves []patchLeaf
-	collectLeaves(patchTree, "", &leaves)
+	collectLeaves(trees.patch, "", &leaves)
 
 	var out []ignoredField
 	for _, leaf := range leaves {
-		path := leaf.Path
-		beforeVal, beforeOK := lookupPath(beforeTree, path)
-		afterVal, afterOK := lookupPath(afterTree, path)
-		// Fall back to the response's own spelling for known asymmetries.
-		if !beforeOK && !afterOK {
-			if alias, ok := requestToResponsePath[path]; ok {
-				beforeVal, beforeOK = lookupPath(beforeTree, alias)
-				afterVal, afterOK = lookupPath(afterTree, alias)
-			}
+		if f, ignored := ignoredLeaf(leaf, observeLeaf(&trees, leaf.Path)); ignored {
+			out = append(out, f)
 		}
-		if !beforeOK && !afterOK {
-			continue // unobservable in the response; don't guess
-		}
-		if jsonEqual(afterVal, leaf.Value) {
-			continue // applied
-		}
-		moved := !jsonEqual(afterVal, beforeVal)
-		if moved && !afterOK {
-			// The field changed and the response no longer exposes it —
-			// typically a clear ([] / null) that omitempty drops from the
-			// document. Its current value is unobservable, so say nothing
-			// rather than report "got null" for a write that applied.
-			continue
-		}
-		if moved && leaf.Value == nil && afterVal != nil {
-			continue // null request answered with a server default: normalization, not a drop
-		}
-		out = append(out, ignoredField{
-			Path:      path,
-			Requested: shownValue(path, leaf.Value),
-			Actual:    shownValue(path, afterVal),
-			Moved:     moved,
-		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	slices.SortStableFunc(out, func(a, b ignoredField) int { return strings.Compare(a.Path, b.Path) })
 	return out
+}
+
+// intentTrees are the generic trees the update-side intent diffs compare:
+// the patch, and the group before and after the write.
+type intentTrees struct {
+	patch, before, after any
+}
+
+// intentDiffTrees decodes the patch and the two group states for
+// findIgnoredFields and findUnrequestedChanges. It reports false — nothing
+// to compare — when either state is missing, the change is still pending
+// (the after-state isn't authoritative yet), or a document does not decode.
+func intentDiffTrees(patch []byte, before, after *shared.ContainerGroup) (intentTrees, bool) {
+	var trees intentTrees
+	if before == nil || after == nil {
+		return trees, false
+	}
+	if ptr.Deref(after.PendingChange) {
+		return trees, false // still settling; the after-state isn't authoritative yet
+	}
+	if err := json.Unmarshal(patch, &trees.patch); err != nil {
+		return trees, false
+	}
+	var err error
+	if trees.before, err = toTree(before); err != nil {
+		return trees, false
+	}
+	if trees.after, err = toTree(after); err != nil {
+		return trees, false
+	}
+	return trees, true
+}
+
+// observedLeaf is one patch path's value in the group before and after the
+// write; the OK fields report whether the path exists there at all.
+type observedLeaf struct {
+	before, after     any
+	beforeOK, afterOK bool
+}
+
+// observeLeaf looks path up in the before and after trees, falling back to
+// the response's own spelling for known asymmetries when neither has it.
+func observeLeaf(trees *intentTrees, path string) observedLeaf {
+	var o observedLeaf
+	o.before, o.beforeOK = lookupPath(trees.before, path)
+	o.after, o.afterOK = lookupPath(trees.after, path)
+	// Fall back to the response's own spelling for known asymmetries.
+	if !o.beforeOK && !o.afterOK {
+		if alias, ok := requestToResponsePath()[path]; ok {
+			o.before, o.beforeOK = lookupPath(trees.before, alias)
+			o.after, o.afterOK = lookupPath(trees.after, alias)
+		}
+	}
+	return o
+}
+
+// ignoredLeaf is findIgnoredFields' verdict on one patch leaf, given what
+// the before and after states hold at its path: the report, and whether the
+// write was ignored at all.
+func ignoredLeaf(leaf patchLeaf, o observedLeaf) (ignoredField, bool) {
+	if !o.beforeOK && !o.afterOK {
+		return ignoredField{}, false // unobservable in the response; don't guess
+	}
+	if jsonEqual(o.after, leaf.Value) {
+		return ignoredField{}, false // applied
+	}
+	moved := !jsonEqual(o.after, o.before)
+	if moved && !o.afterOK {
+		// The field changed and the response no longer exposes it —
+		// typically a clear ([] / null) that omitempty drops from the
+		// document. Its current value is unobservable, so say nothing
+		// rather than report "got null" for a write that applied.
+		return ignoredField{}, false
+	}
+	if moved && leaf.Value == nil && o.after != nil {
+		return ignoredField{}, false // null request answered with a server default: normalization, not a drop
+	}
+	return ignoredField{
+		Path:      leaf.Path,
+		Requested: shownValue(leaf.Path, leaf.Value),
+		Actual:    shownValue(leaf.Path, o.after),
+		Moved:     moved,
+	}, true
 }
 
 // patchLeaf is one asserted value in a patch document, with its dotted path.
@@ -160,7 +201,7 @@ func collectLeaves(v any, path string, out *[]patchLeaf) {
 		for k := range obj {
 			keys = append(keys, k)
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		for _, k := range keys {
 			child := k
 			if path != "" {
@@ -178,7 +219,7 @@ func collectLeaves(v any, path string, out *[]patchLeaf) {
 // this is null" from "the response has no such field".
 func lookupPath(tree any, path string) (any, bool) {
 	cur := tree
-	for _, seg := range strings.Split(path, ".") {
+	for seg := range strings.SplitSeq(path, ".") {
 		obj, ok := cur.(map[string]any)
 		if !ok {
 			return nil, false
@@ -198,11 +239,11 @@ func lookupPath(tree any, path string) (any, bool) {
 func toTree(g *shared.ContainerGroup) (any, error) {
 	b, err := json.Marshal(g)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("encoding the group: %w", err)
 	}
 	var t any
 	if err := json.Unmarshal(b, &t); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decoding the group: %w", err)
 	}
 	return t, nil
 }
@@ -233,18 +274,24 @@ func secretPath(path string) bool {
 	if strings.HasPrefix(path, "container.environment_variables.") {
 		return true // a variable's name may itself contain dots
 	}
-	key, parent := pathKeys(path)
-	return api.SecretField(key, parent)
+	tail := pathKeys(path)
+	return api.SecretField(tail.key, tail.parent)
+}
+
+// pathTail is the last two segments of a dotted path: its key, and the key
+// of the object holding it ("" at the top level).
+type pathTail struct {
+	key, parent string
 }
 
 // pathKeys returns the last two segments of a dotted path.
-func pathKeys(path string) (key, parent string) {
+func pathKeys(path string) pathTail {
 	segs := strings.Split(path, ".")
-	key = segs[len(segs)-1]
+	tail := pathTail{key: segs[len(segs)-1], parent: ""}
 	if len(segs) > 1 {
-		parent = segs[len(segs)-2]
+		tail.parent = segs[len(segs)-2]
 	}
-	return key, parent
+	return tail
 }
 
 // redactNested returns v with every credential inside it replaced, walking
@@ -278,8 +325,8 @@ func shownValue(path string, v any) string {
 	if v != nil && secretPath(path) {
 		return "(hidden)"
 	}
-	key, parent := pathKeys(path)
-	return compactValue(redactNested(v, key, parent))
+	tail := pathKeys(path)
+	return compactValue(redactNested(v, tail.key, tail.parent))
 }
 
 // secretChange describes a credential's change without its value.
@@ -293,23 +340,27 @@ func secretChange(before, after any) string {
 	return "(changed)"
 }
 
+// fieldsNoun is "field" for n of one or fewer, else "fields".
+func fieldsNoun(n int) string {
+	if n > 1 {
+		return "fields"
+	}
+	return "field"
+}
+
 // warnIgnoredFields reports dropped writes on stderr. Warnings always go to
 // stderr, including in json mode, so the stdout one-document contract holds.
 func warnIgnoredFields(w io.Writer, fields []ignoredField) {
 	if len(fields) == 0 {
 		return
 	}
-	noun := "field"
-	if len(fields) > 1 {
-		noun = "fields"
-	}
-	fmt.Fprintf(w, "warning: the API accepted this update but did not apply %d %s:\n", len(fields), noun)
+	fprintf(w, "warning: the API accepted this update but did not apply %d %s:\n", len(fields), fieldsNoun(len(fields)))
 	for _, f := range fields {
 		if f.Moved {
-			fmt.Fprintf(w, "warning:   %s: requested %s, got %s\n", f.Path, f.Requested, f.Actual)
+			fprintf(w, "warning:   %s: requested %s, got %s\n", f.Path, f.Requested, f.Actual)
 			continue
 		}
-		fmt.Fprintf(w, "warning:   %s: requested %s, still %s\n", f.Path, f.Requested, f.Actual)
+		fprintf(w, "warning:   %s: requested %s, still %s\n", f.Path, f.Requested, f.Actual)
 	}
 }
 
@@ -366,14 +417,19 @@ const maxReportedChanges = 8
 // there is a concrete fix. This is not a detection list — detection stays
 // fully dynamic — so if the API stops misbehaving the entry simply never
 // fires again.
-var remediation = map[string]string{
-	"scheduled-scaling-enabled":       "scheduled scaling is on hold (the flag is false; the actions are kept); to re-enable it, put " + reenableSchedule,
-	"container.environment_variables": "the API replaces the whole environment_variables map rather than merging it, so keys you did not mention are dropped; send the complete desired map",
+func remediation() map[string]string {
+	return map[string]string{
+		"scheduled-scaling-enabled": "scheduled scaling is on hold (the flag is false; the actions are kept); " +
+			"to re-enable it, put " + reenableSchedule,
+		"container.environment_variables": "the API replaces the whole environment_variables map rather than " +
+			"merging it, so keys you did not mention are dropped; send the complete desired map",
+	}
 }
 
 // reenableSchedule is the fix for scheduled scaling left on hold, with no
 // shell syntax: a patch file works in every shell.
-const reenableSchedule = `{"scheduled-scaling-enabled": true} in a file and run saladcloud container-groups update <group> -f <file>`
+const reenableSchedule = `{"scheduled-scaling-enabled": true} in a file and run ` +
+	`saladcloud container-groups update <group> -f <file>`
 
 // holdRule is the one documented platform rule the inverse diff knows the
 // meaning of: writing `replicas` puts scheduled scaling on hold — the flag
@@ -392,41 +448,36 @@ func holdRule(path string, named map[string]bool, before, after any) bool {
 // whether a caller could have caused the change. Everything else is
 // server-managed churn and is excluded from the inverse report.
 func callerWritable(path string) bool {
-	return input.FieldPathKnown(reflect.TypeOf(containergroups.ContainerGroupCreationRequest{}), path) ||
-		input.FieldPathKnown(reflect.TypeOf(containergroups.ContainerGroupPatch{}), path)
+	return input.FieldPathKnown(reflect.TypeFor[containergroups.ContainerGroupCreationRequest](), path) ||
+		input.FieldPathKnown(reflect.TypeFor[containergroups.ContainerGroupPatch](), path)
 }
 
 // findUnrequestedChanges reports caller-writable fields whose value moved
 // even though the patch did not name them. Guards match findIgnoredFields:
 // both states required, and nothing reported while the change is pending.
 func findUnrequestedChanges(patch []byte, before, after *shared.ContainerGroup) []unrequestedChange {
-	if before == nil || after == nil {
+	trees, ok := intentDiffTrees(patch, before, after)
+	if !ok {
 		return nil
 	}
-	if ptr.Deref(after.PendingChange) {
-		return nil
-	}
-	var patchTree any
-	if err := json.Unmarshal(patch, &patchTree); err != nil {
-		return nil
-	}
-	beforeTree, err := toTree(before)
-	if err != nil {
-		return nil
-	}
-	afterTree, err := toTree(after)
-	if err != nil {
-		return nil
-	}
-
-	// A path counts as requested if the patch named it OR anything under it.
-	// Setting a whole object (liveness_probe: {...}) names only its leaves,
-	// but when the field was previously absent the trees diverge at the
-	// object itself — without the ancestors marked, deliberately adding a
-	// probe would be reported as an unrequested side effect.
-	named := map[string]bool{}
 	var leaves []patchLeaf
-	collectLeaves(patchTree, "", &leaves)
+	collectLeaves(trees.patch, "", &leaves)
+	named := namedPatchPaths(leaves)
+
+	var out []unrequestedChange
+	collectChanges(trees.before, trees.after, "", named, &out)
+	slices.SortStableFunc(out, func(a, b unrequestedChange) int { return strings.Compare(a.Path, b.Path) })
+	return out
+}
+
+// namedPatchPaths is every path the patch requested: a path counts as
+// requested if the patch named it OR anything under it. Setting a whole
+// object (liveness_probe: {...}) names only its leaves, but when the field
+// was previously absent the trees diverge at the object itself — without the
+// ancestors marked, deliberately adding a probe would be reported as an
+// unrequested side effect.
+func namedPatchPaths(leaves []patchLeaf) map[string]bool {
+	named := make(map[string]bool)
 	for _, l := range leaves {
 		for p := l.Path; p != ""; {
 			named[p] = true
@@ -437,11 +488,7 @@ func findUnrequestedChanges(patch []byte, before, after *shared.ContainerGroup) 
 			p = p[:i]
 		}
 	}
-
-	var out []unrequestedChange
-	collectChanges(beforeTree, afterTree, "", named, &out)
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
-	return out
+	return named
 }
 
 // collectChanges walks the before/after trees together, descending while both
@@ -450,19 +497,7 @@ func collectChanges(beforeVal, afterVal any, path string, named map[string]bool,
 	bObj, bOK := beforeVal.(map[string]any)
 	aObj, aOK := afterVal.(map[string]any)
 	if bOK && aOK {
-		keys := map[string]bool{}
-		for k := range bObj {
-			keys[k] = true
-		}
-		for k := range aObj {
-			keys[k] = true
-		}
-		names := make([]string, 0, len(keys))
-		for k := range keys {
-			names = append(names, k)
-		}
-		sort.Strings(names)
-		for _, k := range names {
+		for _, k := range sortedKeyUnion(bObj, aObj) {
 			child := k
 			if path != "" {
 				child = path + "." + k
@@ -471,22 +506,54 @@ func collectChanges(beforeVal, afterVal any, path string, named map[string]bool,
 		}
 		return
 	}
+	if c, changed := unrequestedLeafChange(path, named, beforeVal, afterVal); changed {
+		*out = append(*out, c)
+	}
+}
+
+// sortedKeyUnion is the keys of a and b together, sorted, each once.
+func sortedKeyUnion(a, b map[string]any) []string {
+	keys := make(map[string]bool)
+	for k := range a {
+		keys[k] = true
+	}
+	for k := range b {
+		keys[k] = true
+	}
+	names := make([]string, 0, len(keys))
+	for k := range keys {
+		names = append(names, k)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// unrequestedLeafChange is collectChanges' verdict on one node that is not
+// an object on both sides: the change, and whether it is one to report (a
+// caller-writable field the patch did not name, whose value moved).
+func unrequestedLeafChange(path string, named map[string]bool, beforeVal, afterVal any) (unrequestedChange, bool) {
 	if path == "" || named[path] || jsonEqual(beforeVal, afterVal) {
-		return
+		return unrequestedChange{}, false
 	}
 	if !callerWritable(path) {
-		return // server-managed churn (update_time, hash, current_state, …)
+		return unrequestedChange{}, false // server-managed churn (update_time, hash, current_state, …)
 	}
 	if secretPath(path) {
-		*out = append(*out, unrequestedChange{Path: path, Before: secretChange(beforeVal, afterVal), Secret: true})
-		return
+		return unrequestedChange{
+			Path:   path,
+			Before: secretChange(beforeVal, afterVal),
+			Secret: true,
+			After:  "",
+			Note:   false,
+		}, true
 	}
-	*out = append(*out, unrequestedChange{
+	return unrequestedChange{
 		Path:   path,
 		Before: shownValue(path, beforeVal),
 		After:  shownValue(path, afterVal),
 		Note:   holdRule(path, named, beforeVal, afterVal),
-	})
+		Secret: false,
+	}, true
 }
 
 // warnUnrequestedChanges reports side effects on stderr: the affected keys
@@ -505,50 +572,72 @@ func warnUnrequestedChanges(w io.Writer, changes []unrequestedChange) {
 		}
 	}
 	if len(warns) > 0 {
-		shown := warns
-		extra := 0
-		if len(shown) > maxReportedChanges {
-			extra = len(shown) - maxReportedChanges
-			shown = shown[:maxReportedChanges]
-		}
-		noun := "field"
-		if len(warns) > 1 {
-			noun = "fields"
-		}
-		fmt.Fprintf(w, "warning: this update also changed %d %s the patch did not mention:\n", len(warns), noun)
-		for _, c := range shown {
-			if c.Secret {
-				fmt.Fprintf(w, "warning:   %s: %s\n", c.Path, c.Before)
-				continue
-			}
-			fmt.Fprintf(w, "warning:   %s: %s -> %s\n", c.Path, c.Before, c.After)
-		}
-		if extra > 0 {
-			fmt.Fprintf(w, "warning:   and %d more\n", extra)
-		}
-		seen := map[string]bool{}
-		for _, c := range shown {
-			if hint, at := remediationFor(c.Path); hint != "" && !seen[at] {
-				seen[at] = true
-				fmt.Fprintf(w, "warning:   %s\n", hint)
-			}
-		}
+		warnUnrequestedList(w, warns)
 	}
 	for _, c := range notes {
 		// Only one rule is classified today (holdRule), so its sentence is
 		// spelled out here rather than routed through the remediation map,
 		// whose entry is worded for the flag flipping WITHOUT a replicas write.
-		fmt.Fprintf(w, "note: %s: %s -> %s; setting replicas puts scheduled scaling on hold (actions kept); to re-enable it, put %s\n", c.Path, c.Before, c.After, reenableSchedule)
+		fprintf(
+			w,
+			"note: %s: %s -> %s; setting replicas puts scheduled scaling on hold (actions kept); "+
+				"to re-enable it, put %s\n",
+			c.Path,
+			c.Before,
+			c.After,
+			reenableSchedule,
+		)
+	}
+}
+
+// warnUnrequestedList is warnUnrequestedChanges' warning block: the count,
+// up to maxReportedChanges of the changes, and the remediation for each
+// cause among those shown.
+func warnUnrequestedList(w io.Writer, warns []unrequestedChange) {
+	shown := warns
+	extra := 0
+	if len(shown) > maxReportedChanges {
+		extra = len(shown) - maxReportedChanges
+		shown = shown[:maxReportedChanges]
+	}
+	fprintf(
+		w,
+		"warning: this update also changed %d %s the patch did not mention:\n",
+		len(warns),
+		fieldsNoun(len(warns)),
+	)
+	for _, c := range shown {
+		if c.Secret {
+			fprintf(w, "warning:   %s: %s\n", c.Path, c.Before)
+			continue
+		}
+		fprintf(w, "warning:   %s: %s -> %s\n", c.Path, c.Before, c.After)
+	}
+	if extra > 0 {
+		fprintf(w, "warning:   and %d more\n", extra)
+	}
+	warnRemediations(w, shown)
+}
+
+// warnRemediations prints the remediation for each cause among changes, once
+// per cause rather than once per affected key.
+func warnRemediations(w io.Writer, changes []unrequestedChange) {
+	seen := make(map[string]bool)
+	for _, c := range changes {
+		if at, ok := remediationFor(c.Path); ok && !seen[at] {
+			seen[at] = true
+			fprintf(w, "warning:   %s\n", remediation()[at])
+		}
 	}
 }
 
 // remediationFor finds the most specific remediation covering a path,
-// returning the advice and the key it matched (so it is printed once per
-// cause rather than once per affected key).
-func remediationFor(path string) (string, string) {
+// returning the remediation key it matched (so the advice is printed once
+// per cause rather than once per affected key), and false when none does.
+func remediationFor(path string) (string, bool) {
 	for p := path; p != ""; {
-		if hint, ok := remediation[p]; ok {
-			return hint, p
+		if _, ok := remediation()[p]; ok {
+			return p, true
 		}
 		i := strings.LastIndexByte(p, '.')
 		if i < 0 {
@@ -556,7 +645,7 @@ func remediationFor(path string) (string, string) {
 		}
 		p = p[:i]
 	}
-	return "", ""
+	return "", false
 }
 
 // findUnappliedCreateFields is findIgnoredFields for create, where there is
@@ -588,43 +677,22 @@ func findUnappliedCreateFields(request []byte, created *shared.ContainerGroup) [
 	if created == nil {
 		return nil
 	}
-	var reqTree any
-	if err := json.Unmarshal(request, &reqTree); err != nil {
-		return nil
-	}
-	// The response encoded like the request (MarshalRequest), so the empty
-	// lists it holds compare equal to the empty lists sent.
-	b, err := output.MarshalRequest(created)
-	if err != nil {
-		return nil
-	}
-	var createdTree any
-	if err := json.Unmarshal(b, &createdTree); err != nil {
+	trees, decoded := createDiffTrees(request, created)
+	if !decoded {
 		return nil
 	}
 	var leaves []patchLeaf
-	collectLeaves(reqTree, "", &leaves)
+	collectLeaves(trees.request, "", &leaves)
 
 	var out []ignoredField
-	dropped := map[string]bool{}
+	dropped := make(map[string]bool)
 	for _, leaf := range leaves {
-		got, ok := lookupPath(createdTree, leaf.Path)
+		got, ok := lookupCreatedLeaf(trees.created, leaf.Path)
 		if !ok {
-			if alias, aliased := requestToResponsePath[leaf.Path]; aliased {
-				got, ok = lookupPath(createdTree, alias)
-			}
-		}
-		if !ok {
-			// A top-level object the response could carry and does not was
-			// dropped whole (queue_autoscaler on create); report it once.
-			// Anything else the response leaves out is unobservable.
-			top, _, _ := strings.Cut(leaf.Path, ".")
-			if leaf.Value != nil && !dropped[top] && responseHasField(top) {
-				if v, present := lookupPath(createdTree, top); !present || v == nil {
-					dropped[top] = true
-					req, _ := lookupPath(reqTree, top)
-					out = append(out, ignoredField{Path: top, Requested: shownValue(top, req), Actual: "null"})
-				}
+			// Anything the response leaves out is unobservable, except an
+			// object dropped whole, which is reported once.
+			if f, whole := droppedCreateObject(leaf, &trees, dropped); whole {
+				out = append(out, f)
 			}
 			continue
 		}
@@ -635,40 +703,88 @@ func findUnappliedCreateFields(request []byte, created *shared.ContainerGroup) [
 			Path:      leaf.Path,
 			Requested: shownValue(leaf.Path, leaf.Value),
 			Actual:    shownValue(leaf.Path, got),
+			Moved:     false,
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	slices.SortStableFunc(out, func(a, b ignoredField) int { return strings.Compare(a.Path, b.Path) })
 	return out
 }
 
-// responseFields are the top-level keys a container group response can
-// carry, by the SDK's json tags.
-var responseFields = func() map[string]bool {
-	fields := map[string]bool{}
-	t := reflect.TypeOf(shared.ContainerGroup{})
-	for i := range t.NumField() {
-		if name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ","); name != "" && name != "-" {
-			fields[name] = true
+// createTrees are the generic trees findUnappliedCreateFields compares: the
+// create request and the created group.
+type createTrees struct {
+	request, created any
+}
+
+// createDiffTrees decodes the create request and the created group for
+// findUnappliedCreateFields; false when either does not decode.
+func createDiffTrees(request []byte, created *shared.ContainerGroup) (createTrees, bool) {
+	var trees createTrees
+	if err := json.Unmarshal(request, &trees.request); err != nil {
+		return trees, false
+	}
+	// The response encoded like the request (MarshalRequest), so the empty
+	// lists it holds compare equal to the empty lists sent.
+	b, err := output.MarshalRequest(created)
+	if err != nil {
+		return trees, false
+	}
+	if err := json.Unmarshal(b, &trees.created); err != nil {
+		return trees, false
+	}
+	return trees, true
+}
+
+// lookupCreatedLeaf looks a request path up in the created group, under the
+// response's own spelling for known asymmetries when the path is absent.
+func lookupCreatedLeaf(createdTree any, path string) (any, bool) {
+	got, ok := lookupPath(createdTree, path)
+	if !ok {
+		if alias, aliased := requestToResponsePath()[path]; aliased {
+			got, ok = lookupPath(createdTree, alias)
 		}
 	}
-	return fields
-}()
+	return got, ok
+}
+
+// droppedCreateObject reports a request leaf the created group does not
+// show whose top-level object the response could carry and does not: the
+// object was dropped whole (queue_autoscaler on create). dropped records
+// the objects already reported, so each is reported once.
+func droppedCreateObject(leaf patchLeaf, trees *createTrees, dropped map[string]bool) (ignoredField, bool) {
+	top, _, _ := strings.Cut(leaf.Path, ".")
+	if leaf.Value == nil || dropped[top] || !responseHasField(top) {
+		return ignoredField{}, false
+	}
+	if v, present := lookupPath(trees.created, top); present && v != nil {
+		return ignoredField{}, false
+	}
+	dropped[top] = true
+	req, _ := lookupPath(trees.request, top)
+	return ignoredField{Path: top, Requested: shownValue(top, req), Actual: "null", Moved: false}, true
+}
 
 // responseHasField reports whether a container group response can carry
-// the top-level key, so its absence means the API dropped it.
-func responseHasField(key string) bool { return responseFields[key] }
+// the top-level key, by the SDK's json tags, so its absence means the API
+// dropped it.
+func responseHasField(key string) bool {
+	t := reflect.TypeFor[shared.ContainerGroup]()
+	for i := range t.NumField() {
+		if name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ","); name != "" && name != "-" && name == key {
+			return true
+		}
+	}
+	return false
+}
 
 // warnUnappliedCreateFields is warnIgnoredFields with create's wording.
 func warnUnappliedCreateFields(w io.Writer, fields []ignoredField) {
 	if len(fields) == 0 {
 		return
 	}
-	noun := "field"
-	if len(fields) > 1 {
-		noun = "fields"
-	}
-	fmt.Fprintf(w, "warning: the group was created but the API did not apply %d requested %s:\n", len(fields), noun)
+	fprintf(w, "warning: the group was created but the API did not apply %d requested %s:\n",
+		len(fields), fieldsNoun(len(fields)))
 	for _, f := range fields {
-		fmt.Fprintf(w, "warning:   %s: requested %s, got %s\n", f.Path, f.Requested, f.Actual)
+		fprintf(w, "warning:   %s: requested %s, got %s\n", f.Path, f.Requested, f.Actual)
 	}
 }

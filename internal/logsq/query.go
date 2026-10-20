@@ -6,6 +6,7 @@
 package logsq
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -14,9 +15,11 @@ import (
 // Severities is the log query language's ordered severity enum, lowest
 // first. The API treats severity as orderable, so `severity >= "warning"`
 // matches warning and everything above it.
-var Severities = []string{
-	"default", "debug", "info", "notice", "warning",
-	"error", "critical", "alert", "emergency",
+func Severities() []string {
+	return []string{
+		"default", "debug", "info", "notice", "warning",
+		"error", "critical", "alert", "emergency",
+	}
 }
 
 // Filters describes the clauses Compile assembles into a log query. The
@@ -43,24 +46,14 @@ type Filters struct {
 // the organization_name label, which every entry carries. All values
 // except RawQuery are quoted and escaped; RawQuery is the user's own
 // query-language syntax and passes through verbatim inside parentheses.
-func Compile(f Filters) (string, *clierr.Error) {
+func Compile(f *Filters) (string, *clierr.Error) {
 	var b strings.Builder
-	switch {
-	case f.Group != "":
-		b.WriteString("resource.labels.container_group_name = ")
-		b.WriteString(quoteValue(f.Group))
-		if f.Project != "" {
-			b.WriteString(" and resource.labels.project_name = ")
-			b.WriteString(quoteValue(f.Project))
-		}
-	case f.Project != "":
-		b.WriteString("resource.labels.project_name = ")
-		b.WriteString(quoteValue(f.Project))
-	case f.Org != "":
-		b.WriteString("resource.labels.organization_name = ")
-		b.WriteString(quoteValue(f.Org))
-	default:
-		return "", clierr.New(clierr.CodeUsage, clierr.KindUsage, "an organization, project, or container group is required to query logs")
+	if !writeScope(&b, f) {
+		return "", clierr.New(
+			clierr.CodeUsage,
+			clierr.KindUsage,
+			"an organization, project, or container group is required to query logs",
+		)
 	}
 	if f.Instance != "" {
 		b.WriteString(" and resource.labels.instance_id = ")
@@ -69,8 +62,12 @@ func Compile(f Filters) (string, *clierr.Error) {
 	if f.MinSeverity != "" {
 		sev := strings.ToLower(f.MinSeverity)
 		if !validSeverity(sev) {
-			return "", clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, `invalid severity "%s"`, f.MinSeverity).
-				WithHint("use one of %s", strings.Join(Severities, ", "))
+			return "", clierr.New(
+				clierr.CodeInvalidInput,
+				clierr.KindInvalidInput,
+				`invalid severity "%s"`,
+				f.MinSeverity,
+			).WithHint("use one of %s", strings.Join(Severities(), ", "))
 		}
 		b.WriteString(" and severity >= ")
 		b.WriteString(quoteValue(sev))
@@ -87,13 +84,31 @@ func Compile(f Filters) (string, *clierr.Error) {
 	return b.String(), nil
 }
 
-func validSeverity(s string) bool {
-	for _, v := range Severities {
-		if s == v {
-			return true
+// writeScope writes the clause for f's scope, the narrowest of its group (within its project when that is set too),
+// project and organization, and reports false, writing nothing, when none is set.
+func writeScope(b *strings.Builder, f *Filters) bool {
+	switch {
+	case f.Group != "":
+		b.WriteString("resource.labels.container_group_name = ")
+		b.WriteString(quoteValue(f.Group))
+		if f.Project != "" {
+			b.WriteString(" and resource.labels.project_name = ")
+			b.WriteString(quoteValue(f.Project))
 		}
+	case f.Project != "":
+		b.WriteString("resource.labels.project_name = ")
+		b.WriteString(quoteValue(f.Project))
+	case f.Org != "":
+		b.WriteString("resource.labels.organization_name = ")
+		b.WriteString(quoteValue(f.Org))
+	default:
+		return false
 	}
-	return false
+	return true
+}
+
+func validSeverity(s string) bool {
+	return slices.Contains(Severities(), s)
 }
 
 // quoteValue renders s as a double-quoted query-language string literal,
@@ -101,9 +116,9 @@ func validSeverity(s string) bool {
 // everything else (newlines, unicode, ...) stays as-is inside the quotes.
 func quoteValue(s string) string {
 	var b strings.Builder
-	b.Grow(len(s) + 2)
+	b.Grow(len(s) + len(`""`))
 	b.WriteByte('"')
-	for i := 0; i < len(s); i++ {
+	for i := range len(s) {
 		switch s[i] {
 		case '\\':
 			b.WriteString(`\\`)

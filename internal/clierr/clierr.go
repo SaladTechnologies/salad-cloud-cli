@@ -26,32 +26,35 @@ type Kind string
 
 // The kinds, each with the exit code it goes with.
 const (
-	KindUsage               Kind = "usage"                // 2: the command line is wrong
-	KindInvalidInput        Kind = "invalid_input"        // 6: a value breaks a platform rule
-	KindUnknownField        Kind = "unknown_field"        // 6: a definition file has a field the API does not take
-	KindAuth                Kind = "auth"                 // 3: no credential, or the API rejected it
-	KindNotFound            Kind = "not_found"            // 4
-	KindRateLimited         Kind = "rate_limited"         // 5
-	KindNetwork             Kind = "network"              // 7
-	KindNotAvailable        Kind = "not_available"        // 10: the platform cannot serve it right now
-	KindAPIError            Kind = "api_error"            // 1: any other API failure, and local I/O
-	KindInternal            Kind = "internal"             // 1: a CLI bug
-	KindInterrupted         Kind = "interrupted"          // 1: Ctrl-C during a wait, a prompt or a request, or end of input at a prompt
+	KindUsage        Kind = "usage"         // 2: the command line is wrong
+	KindInvalidInput Kind = "invalid_input" // 6: a value breaks a platform rule
+	KindUnknownField Kind = "unknown_field" // 6: a definition file has a field the API does not take
+	KindAuth         Kind = "auth"          // 3: no credential, or the API rejected it
+	KindNotFound     Kind = "not_found"     // 4
+	KindRateLimited  Kind = "rate_limited"  // 5
+	KindNetwork      Kind = "network"       // 7
+	KindNotAvailable Kind = "not_available" // 10: the platform cannot serve it right now
+	KindAPIError     Kind = "api_error"     // 1: any other API failure, and local I/O
+	KindInternal     Kind = "internal"      // 1: a CLI bug
+	// KindInterrupted is Ctrl-C during a wait, a prompt or a request, or end of input at a prompt.
+	KindInterrupted         Kind = "interrupted"          // 1
 	KindWaitTimeout         Kind = "wait_timeout"         // 1: a wait ran out of time
 	KindGroupStopped        Kind = "group_stopped"        // 1: a waited-for group stopped instead
 	KindGroupFailed         Kind = "group_failed"         // 1: a waited-for group failed
 	KindGroupSucceeded      Kind = "group_succeeded"      // 1: a waited-for group exited instead of running
 	KindJobFailed           Kind = "job_failed"           // 1: a waited-for job failed
-	KindJobCancelled        Kind = "job_cancelled"        // 1: a waited-for job was cancelled
+	KindJobCanceled         Kind = "job_canceled"         // 1: a waited-for job was canceled
 	KindTranscriptionFailed Kind = "transcription_failed" // 1: a transcription job failed or reported an error
 	KindChildExit           Kind = "child_exit"           // the child's code: ssh, cp or sftp exited nonzero
 )
 
 // Kinds lists every kind, in the guide table's order.
-var Kinds = []Kind{
-	KindUsage, KindInvalidInput, KindUnknownField, KindAuth, KindNotFound, KindRateLimited, KindNetwork,
-	KindNotAvailable, KindAPIError, KindInternal, KindInterrupted, KindWaitTimeout, KindGroupStopped,
-	KindGroupFailed, KindGroupSucceeded, KindJobFailed, KindJobCancelled, KindTranscriptionFailed, KindChildExit,
+func Kinds() []Kind {
+	return []Kind{
+		KindUsage, KindInvalidInput, KindUnknownField, KindAuth, KindNotFound, KindRateLimited, KindNetwork,
+		KindNotAvailable, KindAPIError, KindInternal, KindInterrupted, KindWaitTimeout, KindGroupStopped,
+		KindGroupFailed, KindGroupSucceeded, KindJobFailed, KindJobCanceled, KindTranscriptionFailed, KindChildExit,
+	}
 }
 
 // Error is the CLI's structured error. It marshals directly into the
@@ -67,7 +70,7 @@ type Error struct {
 	HTTPStatus *int    `json:"http_status"`
 
 	// cancel marks the error a request returns when Ctrl-C stopped it; the
-	// CLI names the command in its message (Cancelled).
+	// CLI names the command in its message (Canceled).
 	cancel bool
 	// final marks an error that already says what was not found (Final).
 	final bool
@@ -110,21 +113,37 @@ func (e *Error) HintText() string {
 	return *e.Hint
 }
 
-// Cancelled is the error for a request that Ctrl-C stopped. Its message is
-// a placeholder: the CLI reports it as "<command> cancelled".
-func Cancelled() *Error {
-	return &Error{Code: CodeGeneric, Kind: KindInterrupted, Message: "cancelled", cancel: true}
+// Canceled is the error for a request that Ctrl-C stopped. Its message is
+// a placeholder: the CLI reports it as "<command> canceled".
+func Canceled() *Error {
+	return &Error{
+		Code:       CodeGeneric,
+		Kind:       KindInterrupted,
+		Message:    "canceled",
+		cancel:     true,
+		Hint:       nil,
+		HTTPStatus: nil,
+		final:      false,
+	}
 }
 
-// IsCancel reports whether e is a request that Ctrl-C stopped (Cancelled).
+// IsCancel reports whether e is a request that Ctrl-C stopped (Canceled).
 func (e *Error) IsCancel() bool { return e != nil && e.cancel }
 
 // New builds an *Error with a formatted message.
 func New(code int, kind Kind, format string, args ...any) *Error {
-	return &Error{Code: code, Kind: kind, Message: fmt.Sprintf(format, args...)}
+	return &Error{
+		Code:       code,
+		Kind:       kind,
+		Message:    fmt.Sprintf(format, args...),
+		Hint:       nil,
+		HTTPStatus: nil,
+		cancel:     false,
+		final:      false,
+	}
 }
 
 // HTTP builds the *Error for an HTTP response with the given status.
 func HTTP(code int, kind Kind, status int, message string) *Error {
-	return &Error{Code: code, Kind: kind, Message: message, HTTPStatus: &status}
+	return &Error{Code: code, Kind: kind, Message: message, HTTPStatus: &status, Hint: nil, cancel: false, final: false}
 }

@@ -3,11 +3,11 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"slices"
 	"strings"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/organizationdata"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -25,48 +25,62 @@ type updateFlags struct {
 	Storage                                 int64 // GB
 	StorageSet                              bool
 	Countries                               []string
-	Env                                     []string                                   // KEY=VALUE, merged into the group's current variables
-	Command                                 []string                                   // the container command after "--"; nil when none was given
-	ResolveGpu                              func(value string) (string, *clierr.Error) // injected; nil when no --gpu is a name
+	// Env is the -e values, KEY=VALUE, merged into the group's current
+	// variables.
+	Env []string
+	// Command is the container command after "--"; nil when none was given.
+	Command []string
+	// ResolveGpu is injected; nil when no --gpu is a name.
+	ResolveGpu func(value string) (string, *clierr.Error)
 }
 
 // any reports whether at least one update flag was given.
-func (f updateFlags) any() bool {
-	return f.ImageSet || f.PrioritySet || f.DisplayNameSet || f.CPUSet || f.MemorySet ||
-		f.ReplicasSet || f.PortSet || len(f.Gpus) > 0 || len(f.Env) > 0 || f.StorageSet || len(f.Countries) > 0 ||
-		f.Command != nil
+func (f *updateFlags) any() bool {
+	return slices.Contains([]bool{
+		f.ImageSet, f.PrioritySet, f.DisplayNameSet, f.CPUSet, f.MemorySet,
+		f.ReplicasSet, f.PortSet, len(f.Gpus) > 0, len(f.Env) > 0, f.StorageSet, len(f.Countries) > 0,
+		f.Command != nil,
+	}, true)
 }
 
-func addUpdateFlags(cmd *cobra.Command) {
+// addUpdateFlags binds the update flags to u.
+func addUpdateFlags(cmd *cobra.Command, u *updateFlags) {
 	f := cmd.Flags()
-	f.String("image", "", "container image")
-	f.Int64("cpu", 0, "vCPU cores")
-	f.Int64("memory", 0, "memory in MB")
-	f.Int64("storage", 0, "storage in GB")
-	f.StringArray("country", nil, "country code the group may run in, repeatable; replaces the group's countries")
-	f.StringArray("gpu", nil, "GPU class UUID or name, repeatable; replaces the group's GPU classes")
-	f.Int64("replicas", 0, "container instance count (0-500); puts scheduled scaling on hold, like scale")
-	f.StringArrayP("env", "e", nil, "environment variable KEY=VALUE, repeatable; merged into the group's current variables")
-	f.String("priority", "", "scheduling priority: high|medium|low|batch (ignored on CPU-only groups)")
-	f.Int64("port", 0, "container gateway port")
-	f.String("display-name", "", "human-readable display name")
+	f.StringVar(&u.Image, "image", "", "container image")
+	f.Int64Var(&u.CPU, "cpu", 0, "vCPU cores")
+	f.Int64Var(&u.Memory, "memory", 0, "memory in MB")
+	f.Int64Var(&u.Storage, "storage", 0, "storage in GB")
+	f.StringArrayVar(
+		&u.Countries,
+		"country",
+		nil,
+		"country code the group may run in, repeatable; replaces the group's countries",
+	)
+	f.StringArrayVar(&u.Gpus, "gpu", nil, "GPU class UUID or name, repeatable; replaces the group's GPU classes")
+	f.Int64Var(
+		&u.Replicas,
+		"replicas",
+		0,
+		"container instance count (0-500); puts scheduled scaling on hold, like scale",
+	)
+	f.StringArrayVarP(
+		&u.Env,
+		"env",
+		"e",
+		nil,
+		"environment variable KEY=VALUE, repeatable; merged into the group's current variables",
+	)
+	f.StringVar(&u.Priority, "priority", "", "scheduling priority: high|medium|low|batch (ignored on CPU-only groups)")
+	f.Int64Var(&u.Port, "port", 0, "container gateway port")
+	f.StringVar(&u.DisplayName, "display-name", "", "human-readable display name")
 }
 
-func collectUpdateFlags(cmd *cobra.Command) updateFlags {
+// collectUpdateFlags is a copy of the update flags bound to bound, with the
+// ones given on the command line marked set.
+func collectUpdateFlags(cmd *cobra.Command, bound *updateFlags) updateFlags {
 	f := cmd.Flags()
-	var u updateFlags
-	u.Image, _ = f.GetString("image")
-	u.CPU, _ = f.GetInt64("cpu")
-	u.Memory, _ = f.GetInt64("memory")
-	u.Gpus, _ = f.GetStringArray("gpu")
-	u.Storage, _ = f.GetInt64("storage")
+	u := *bound
 	u.StorageSet = f.Changed("storage")
-	u.Countries, _ = f.GetStringArray("country")
-	u.Replicas, _ = f.GetInt64("replicas")
-	u.Env, _ = f.GetStringArray("env")
-	u.Priority, _ = f.GetString("priority")
-	u.Port, _ = f.GetInt64("port")
-	u.DisplayName, _ = f.GetString("display-name")
 	u.ImageSet, u.CPUSet, u.MemorySet = f.Changed("image"), f.Changed("cpu"), f.Changed("memory")
 	u.ReplicasSet, u.PrioritySet = f.Changed("replicas"), f.Changed("priority")
 	u.PortSet, u.DisplayNameSet = f.Changed("port"), f.Changed("display-name")
@@ -75,44 +89,84 @@ func collectUpdateFlags(cmd *cobra.Command) updateFlags {
 
 // validateUpdateFlags checks the flag values before any file or API work,
 // so bad input exits 2 or 6 even with no API key set.
-func validateUpdateFlags(u updateFlags) *clierr.Error {
+func validateUpdateFlags(u *updateFlags) *clierr.Error {
 	if u.ImageSet && u.Image == "" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "--image cannot be empty")
 	}
-	if u.CPUSet && u.CPU < 1 {
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid --cpu %d: must be at least 1", u.CPU)
-	}
-	if u.MemorySet && u.Memory < 1 {
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid --memory %d: must be at least 1 (MB)", u.Memory)
-	}
-	if u.StorageSet && u.Storage < 1 {
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid --storage %d: must be at least 1 (GB)", u.Storage)
+	if cerr := updateValidateResources(u); cerr != nil {
+		return cerr
 	}
 	if _, cerr := normalizeCountries(u.Countries); cerr != nil {
 		return cerr
 	}
+	if cerr := updateValidateScheduling(u); cerr != nil {
+		return cerr
+	}
+	for _, kv := range u.Env {
+		if cerr := checkGroupEnvFlag(kv); cerr != nil {
+			return cerr
+		}
+	}
+	return nil
+}
+
+// updateValidateResources checks --cpu, --memory and --storage.
+func updateValidateResources(u *updateFlags) *clierr.Error {
+	if u.CPUSet && u.CPU < 1 {
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"invalid --cpu %d: must be at least 1",
+			u.CPU,
+		)
+	}
+	if u.MemorySet && u.Memory < 1 {
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"invalid --memory %d: must be at least 1 (MB)",
+			u.Memory,
+		)
+	}
+	if u.StorageSet && u.Storage < 1 {
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"invalid --storage %d: must be at least 1 (GB)",
+			u.Storage,
+		)
+	}
+	return nil
+}
+
+// updateValidateScheduling checks --replicas, --priority and --port.
+func updateValidateScheduling(u *updateFlags) *clierr.Error {
 	if u.ReplicasSet {
 		if cerr := validateScaleReplicas(u.Replicas); cerr != nil {
 			return cerr
 		}
 	}
 	if u.PrioritySet {
-		switch u.Priority {
-		case "high", "medium", "low", "batch":
-		default:
-			return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-				`invalid --priority "%s"`, u.Priority).WithHint("use high, medium, low or batch")
+		if _, cerr := parseGroupPriorityFlag(u.Priority); cerr != nil {
+			return cerr
 		}
 	}
 	if u.PortSet && (u.Port < 1 || u.Port > 65535) {
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "invalid --port %d: must be between 1 and 65535", u.Port)
-	}
-	for _, kv := range u.Env {
-		if k, _, ok := strings.Cut(kv, "="); !ok || k == "" {
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid --env "%s"`, kv).WithHint("write it as KEY=VALUE")
-		}
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"invalid --port %d: must be between 1 and 65535",
+			u.Port,
+		)
 	}
 	return nil
+}
+
+// updatePatch is what buildUpdatePatch builds: wire is the merge patch to
+// send, and intent what the caller asked for, which the post-write checks
+// compare against.
+type updatePatch struct {
+	wire, intent json.RawMessage
 }
 
 // buildUpdatePatch lays the flags over the patch file (fileRaw may be nil)
@@ -126,15 +180,61 @@ func validateUpdateFlags(u updateFlags) *clierr.Error {
 // patch plus an explicit null for each variable the file removed. The wire
 // map must omit a removed variable rather than null it, but the checks need
 // to know the removal was requested, or they report it as a side effect.
-func buildUpdatePatch(fileRaw []byte, u updateFlags, currentEnv map[string]*string) (wire, intent json.RawMessage, cerr *clierr.Error) {
-	doc := map[string]any{}
-	if len(fileRaw) > 0 {
-		dec := json.NewDecoder(bytes.NewReader(fileRaw))
-		dec.UseNumber() // keep the file's numbers exactly as written
-		if err := dec.Decode(&doc); err != nil {
-			return nil, nil, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "patch file is not a JSON object: %v", err)
-		}
+func buildUpdatePatch(
+	fileRaw []byte,
+	u *updateFlags,
+	currentEnv map[string]*string,
+) (updatePatch, *clierr.Error) {
+	doc, cerr := updateDecodePatchFile(fileRaw)
+	if cerr != nil {
+		return updatePatch{}, cerr
 	}
+	updateSetContainerFlags(doc, u)
+	if perr := updateSetPlacementFlags(doc, u); perr != nil {
+		return updatePatch{}, perr
+	}
+	updateSetGroupFlags(doc, u)
+	var removed []string // variables the file set to null, under -e
+	if len(u.Env) > 0 {
+		removed = updateMergeEnv(doc, u.Env, currentEnv)
+	}
+	wire, err := json.Marshal(doc)
+	if err != nil {
+		return updatePatch{}, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot encode the patch: %v", err)
+	}
+	if len(removed) == 0 {
+		return updatePatch{wire: wire, intent: wire}, nil
+	}
+	intent, ierr := updateIntentPatch(doc, removed)
+	if ierr != nil {
+		return updatePatch{}, ierr
+	}
+	return updatePatch{wire: wire, intent: intent}, nil
+}
+
+// updateDecodePatchFile decodes the patch file (fileRaw may be nil, for an
+// empty document), keeping its numbers exactly as written.
+func updateDecodePatchFile(fileRaw []byte) (map[string]any, *clierr.Error) {
+	doc := make(map[string]any)
+	if len(fileRaw) == 0 {
+		return doc, nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(fileRaw))
+	dec.UseNumber() // keep the file's numbers exactly as written
+	if err := dec.Decode(&doc); err != nil {
+		return nil, clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"patch file is not a JSON object: %v",
+			err,
+		)
+	}
+	return doc, nil
+}
+
+// updateSetContainerFlags lays --image, the container command, --cpu,
+// --memory and --storage over doc.
+func updateSetContainerFlags(doc map[string]any, u *updateFlags) {
 	if u.ImageSet {
 		setPath(doc, "container.image", u.Image)
 	}
@@ -150,32 +250,31 @@ func buildUpdatePatch(fileRaw []byte, u updateFlags, currentEnv map[string]*stri
 	if u.StorageSet {
 		setPath(doc, "container.resources.storage_amount", u.Storage*bytesPerGB)
 	}
+}
+
+// updateSetPlacementFlags lays --country and --gpu over doc, the GPU names
+// resolved to class UUIDs.
+func updateSetPlacementFlags(doc map[string]any, u *updateFlags) *clierr.Error {
 	if len(u.Countries) > 0 {
 		codes, cerr := normalizeCountries(u.Countries)
 		if cerr != nil {
-			return nil, nil, cerr
+			return cerr
 		}
 		doc["country_codes"] = codes
 	}
 	if len(u.Gpus) > 0 {
-		ids := make([]string, 0, len(u.Gpus))
-		for _, g := range u.Gpus {
-			if isUUID(g) {
-				ids = append(ids, g)
-				continue
-			}
-			if u.ResolveGpu == nil {
-				return nil, nil, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
-					`--gpu "%s" is not a GPU class UUID, and name resolution is unavailable`, g)
-			}
-			id, rerr := u.ResolveGpu(g)
-			if rerr != nil {
-				return nil, nil, rerr
-			}
-			ids = append(ids, id)
+		ids, cerr := resolveGroupGpuFlags(u.Gpus, u.ResolveGpu)
+		if cerr != nil {
+			return cerr
 		}
 		setPath(doc, "container.resources.gpu_classes", ids)
 	}
+	return nil
+}
+
+// updateSetGroupFlags lays --priority, --replicas, --port and
+// --display-name over doc.
+func updateSetGroupFlags(doc map[string]any, u *updateFlags) {
 	if u.PrioritySet {
 		setPath(doc, "container.priority", u.Priority)
 	}
@@ -188,48 +287,69 @@ func buildUpdatePatch(fileRaw []byte, u updateFlags, currentEnv map[string]*stri
 	if u.DisplayNameSet {
 		doc["display_name"] = u.DisplayName
 	}
-	var removed []string // variables the file set to null, under -e
-	if len(u.Env) > 0 {
-		merged := map[string]any{}
-		for k, v := range currentEnv {
-			if v != nil {
-				merged[k] = *v
-			}
+}
+
+// updateMergeEnv sets doc's container.environment_variables to the full
+// merged map -e needs: currentEnv, then the file's changes (null removes a
+// variable), then the -e values. It returns the variables the file removed.
+func updateMergeEnv(doc map[string]any, env []string, currentEnv map[string]*string) []string {
+	merged := make(map[string]any)
+	for k, v := range currentEnv {
+		if v != nil {
+			merged[k] = *v
 		}
-		if c, ok := doc["container"].(map[string]any); ok {
-			if fileEnv, ok := c["environment_variables"].(map[string]any); ok {
-				for k, v := range fileEnv {
-					if v == nil {
-						delete(merged, k)
-						removed = append(removed, k)
-					} else {
-						merged[k] = v
-					}
-				}
-			}
-		}
-		for _, kv := range u.Env {
-			k, v, _ := strings.Cut(kv, "=")
+	}
+	var removed []string
+	for k, v := range updateFileEnv(doc) {
+		if v == nil {
+			delete(merged, k)
+			removed = append(removed, k)
+		} else {
 			merged[k] = v
 		}
-		setPath(doc, "container.environment_variables", merged)
 	}
-	wire, err := json.Marshal(doc)
-	if err != nil {
-		return nil, nil, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot encode the patch: %v", err)
+	for _, kv := range env {
+		k, v, _ := strings.Cut(kv, "=")
+		merged[k] = v
 	}
-	if len(removed) == 0 {
-		return wire, wire, nil
+	setPath(doc, "container.environment_variables", merged)
+	return removed
+}
+
+// updateFileEnv is the patch file's container.environment_variables; nil
+// when it has none.
+func updateFileEnv(doc map[string]any) map[string]any {
+	c, ok := doc["container"].(map[string]any)
+	if !ok {
+		return nil
 	}
-	env := doc["container"].(map[string]any)["environment_variables"].(map[string]any)
+	fileEnv, ok := c["environment_variables"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return fileEnv
+}
+
+// updateIntentPatch encodes buildUpdatePatch's intent: doc, already encoded
+// as the wire patch, with an explicit null for each removed variable.
+func updateIntentPatch(doc map[string]any, removed []string) (json.RawMessage, *clierr.Error) {
+	container, ok := doc["container"].(map[string]any)
+	env, envOK := container["environment_variables"].(map[string]any)
+	if !ok || !envOK {
+		return nil, clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindInternal,
+			"cannot encode the patch: no environment variables to remove from",
+		)
+	}
 	for _, k := range removed {
 		env[k] = nil
 	}
-	intent, err = json.Marshal(doc)
+	intent, err := json.Marshal(doc)
 	if err != nil {
-		return nil, nil, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot encode the patch: %v", err)
+		return nil, clierr.New(clierr.CodeGeneric, clierr.KindInternal, "cannot encode the patch: %v", err)
 	}
-	return wire, intent, nil
+	return intent, nil
 }
 
 // lazyGpuResolver resolves --gpu names against the organization's GPU
@@ -248,17 +368,23 @@ func lazyGpuResolver(cmd *cobra.Command, client *api.Client) func(string) (strin
 	}
 }
 
+// groupEnvDocument is the part of a group document envOf reads.
+type groupEnvDocument struct {
+	Container groupEnvContainer `json:"container"`
+}
+
+// groupEnvContainer is the part of a group's container envOf reads.
+type groupEnvContainer struct {
+	Env map[string]*string `json:"environment_variables"`
+}
+
 // envOf reads container.environment_variables from a group document.
 func envOf(group any) map[string]*string {
 	b, err := json.Marshal(group)
 	if err != nil {
 		return nil
 	}
-	var g struct {
-		Container struct {
-			Env map[string]*string `json:"environment_variables"`
-		} `json:"container"`
-	}
+	var g groupEnvDocument
 	if json.Unmarshal(b, &g) != nil {
 		return nil
 	}

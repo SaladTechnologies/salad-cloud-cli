@@ -3,7 +3,8 @@ updates:
   # Actions are pinned by commit SHA; Dependabot bumps the SHA and its
   # version comment together.
   - package-ecosystem: github-actions
-    directory: /
+    # The workflows, and the local setup-mise action's own pinned actions.
+    directories: [/, /.github/actions/*]
     schedule:
       interval: weekly
     labels: [dependencies]

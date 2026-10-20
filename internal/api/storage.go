@@ -1,6 +1,7 @@
 // Salad Simple Storage Service (S4) — a DIFFERENT host from the Public API
 // (default https://storage-api.salad.com, override via SALAD_CLI_STORAGE_BASE_URL
 // for tests). Used by the transcribe porcelain to stage local audio files.
+
 package api
 
 import (
@@ -10,7 +11,6 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
-	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -26,13 +26,9 @@ const DefaultStorageBaseURL = "https://storage-api.salad.com"
 // restTimeout — audio/video files are big.
 const storageTimeout = 10 * time.Minute
 
-// storageHTTPClient is dedicated to S4 so the upload timeout does not leak
-// into ordinary API requests.
-var storageHTTPClient = &http.Client{Timeout: storageTimeout, Transport: debugTransport{http.DefaultTransport}}
-
 // storageBaseURL resolves the S4 base URL, honoring the test override.
-func storageBaseURL() string {
-	if override := os.Getenv("SALAD_CLI_STORAGE_BASE_URL"); override != "" {
+func storageBaseURL(getenv func(string) string) string {
+	if override := getenv("SALAD_CLI_STORAGE_BASE_URL"); override != "" {
 		return override
 	}
 	return DefaultStorageBaseURL
@@ -40,16 +36,22 @@ func storageBaseURL() string {
 
 // uploadResponse is S4's PUT response document.
 type uploadResponse struct {
-	Url string `json:"url"`
+	URL string `json:"url"`
 }
 
 // UploadFile PUTs one file into the organization's S4 storage as
-// multipart/form-data (parts: file, mimeType, and — when sign is true —
-// sign/signatureExp) and returns the file's URL (a signed URL when sign is
-// set). remoteName may contain "/" as folder separators; each segment is
+// multipart/form-data (parts: file, mimeType, and — when signedSeconds is
+// above zero — sign/signatureExp) and returns the file's URL: signed for
+// signedSeconds, or unsigned when it is zero. remoteName may contain "/" as folder separators; each segment is
 // path-escaped individually. The reader is streamed to the wire — the file
 // is never buffered in memory.
-func (c *Client) UploadFile(ctx context.Context, remoteName string, r io.Reader, mimeType string, sign bool, signatureExpSeconds int64) (string, *clierr.Error) {
+func (c *Client) UploadFile(
+	ctx context.Context,
+	remoteName string,
+	r io.Reader,
+	mimeType string,
+	signedSeconds int64,
+) (string, *clierr.Error) {
 	if err := c.RequireOrg(); err != nil {
 		return "", err
 	}
@@ -58,7 +60,7 @@ func (c *Client) UploadFile(ctx context.Context, remoteName string, r io.Reader,
 	pr, pw := io.Pipe()
 	mw := multipart.NewWriter(pw)
 	go func() {
-		err := writeUploadForm(mw, remoteName, r, mimeType, sign, signatureExpSeconds)
+		err := writeUploadForm(mw, remoteName, r, mimeType, signedSeconds)
 		if cerr := mw.Close(); err == nil {
 			err = cerr
 		}
@@ -71,15 +73,15 @@ func (c *Client) UploadFile(ctx context.Context, remoteName string, r io.Reader,
 	}
 	req.Header.Set("Salad-Api-Key", c.apiKey)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", UserAgent)
+	req.Header.Set("User-Agent", userAgent())
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 
-	resp, err := storageHTTPClient.Do(req)
+	resp, err := c.storageHTTP.Do(req)
 	if err != nil {
-		return "", transportErr(ctx, "network error uploading to storage", err)
+		return "", transportErr(ctx, "network error uploading to storage", err, c.now)
 	}
 	respBody, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	c.dbg.closeFailed(resp.Body.Close())
 	if err != nil {
 		return "", readErr(ctx, "storage response", err)
 	}
@@ -90,10 +92,10 @@ func (c *Client) UploadFile(ctx context.Context, remoteName string, r io.Reader,
 	if err := json.Unmarshal(respBody, &out); err != nil {
 		return "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot decode the storage response: %v", err)
 	}
-	if out.Url == "" {
+	if out.URL == "" {
 		return "", clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "storage upload succeeded but returned no url")
 	}
-	return out.Url, nil
+	return out.URL, nil
 }
 
 // storageFileURL is the S4 URL of one file; remoteName may contain "/"
@@ -103,7 +105,7 @@ func (c *Client) storageFileURL(remoteName string) string {
 	for i, s := range segs {
 		segs[i] = seg(s)
 	}
-	return storageBaseURL() + fmt.Sprintf("/organizations/%s/files/%s", seg(c.org), strings.Join(segs, "/"))
+	return c.storageBaseURL + fmt.Sprintf("/organizations/%s/files/%s", seg(c.org), strings.Join(segs, "/"))
 }
 
 // DeleteFile removes one file from the organization's S4 storage.
@@ -111,18 +113,21 @@ func (c *Client) DeleteFile(ctx context.Context, remoteName string) *clierr.Erro
 	if err := c.RequireOrg(); err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.storageFileURL(remoteName), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.storageFileURL(remoteName), http.NoBody)
 	if err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot build the delete request: %v", err)
 	}
 	req.Header.Set("Salad-Api-Key", c.apiKey)
-	req.Header.Set("User-Agent", UserAgent)
-	resp, err := storageHTTPClient.Do(req)
+	req.Header.Set("User-Agent", userAgent())
+	resp, err := c.storageHTTP.Do(req)
 	if err != nil {
-		return transportErr(ctx, "network error deleting from storage", err)
+		return transportErr(ctx, "network error deleting from storage", err, c.now)
 	}
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		body = nil // a body that cannot be read is no body: the status still decides
+	}
+	c.dbg.closeFailed(resp.Body.Close())
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return errorFromBody(resp.StatusCode, body)
 	}
@@ -131,22 +136,30 @@ func (c *Client) DeleteFile(ctx context.Context, remoteName string) *clierr.Erro
 
 // writeUploadForm writes S4's multipart fields. Field parts go first so the
 // server sees the metadata before the (potentially large) file part.
-func writeUploadForm(mw *multipart.Writer, remoteName string, r io.Reader, mimeType string, sign bool, signatureExpSeconds int64) error {
+func writeUploadForm(
+	mw *multipart.Writer,
+	remoteName string,
+	r io.Reader,
+	mimeType string,
+	signedSeconds int64,
+) error {
 	if err := mw.WriteField("mimeType", mimeType); err != nil {
-		return err
+		return fmt.Errorf("writing the upload form: %w", err)
 	}
-	if sign {
+	if signedSeconds > 0 {
 		if err := mw.WriteField("sign", "true"); err != nil {
-			return err
+			return fmt.Errorf("writing the upload form: %w", err)
 		}
-		if err := mw.WriteField("signatureExp", strconv.FormatInt(signatureExpSeconds, 10)); err != nil {
-			return err
+		if err := mw.WriteField("signatureExp", strconv.FormatInt(signedSeconds, 10)); err != nil {
+			return fmt.Errorf("writing the upload form: %w", err)
 		}
 	}
 	part, err := mw.CreateFormFile("file", path.Base(remoteName))
 	if err != nil {
-		return err
+		return fmt.Errorf("writing the upload form: %w", err)
 	}
-	_, err = io.Copy(part, r)
-	return err
+	if _, err := io.Copy(part, r); err != nil {
+		return fmt.Errorf("copying the file into the upload: %w", err)
+	}
+	return nil
 }

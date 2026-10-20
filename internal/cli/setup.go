@@ -6,48 +6,119 @@ package cli
 // organizations, and the config file check that runs before any prompt.
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
-// stderrTee, when set, is where errw writes instead of os.Stderr: the test
-// harness records stderr in order with stdout and the terminal.
-var stderrTee io.Writer
-
-// errw is where a command's stderr lines go.
-func errw() io.Writer {
-	if stderrTee != nil {
-		return stderrTee
-	}
-	return os.Stderr
-}
+// errw is where a command's stderr lines go: the run's stderr.
+func (app *App) errw() io.Writer { return app.Stderr }
 
 // say writes a readback or status line to stderr, in table mode only: in
 // json and yaml mode stderr carries only warnings, notes and the error
 // document, and the JSON document holds the fact.
-func say(format string, args ...any) {
-	if output.Mode() == "table" {
-		fmt.Fprintf(errw(), format+"\n", args...)
+//
+//nolint:goprintffuncname // AGENTS.md names say as the status-line helper every verb uses
+func (app *App) say(format string, args ...any) {
+	if !app.printer.Machine() {
+		fprintf(app.errw(), format+"\n", args...)
 	}
 }
 
+// writeUnreported writes s to w, a stream the CLI has no way to report a
+// failed write on: stderr, the terminal device, or watch's screen. Every such
+// write goes through here (fprintf, fprintln, fprint), and this is where its
+// error is dropped.
+func writeUnreported(w io.Writer, s string) {
+	_, _ = io.WriteString(w, s) //nolint:errcheck // a failed write to stderr has nowhere to be reported
+}
+
+// stderrLine writes line to the run's stderr: a warning a package reports
+// through a callback.
+func (app *App) stderrLine(line string) { fprintln(app.errw(), line) }
+
+// fprintf is [fmt.Fprintf] for a stream writeUnreported covers.
+func fprintf(w io.Writer, format string, args ...any) {
+	writeUnreported(w, fmt.Sprintf(format, args...))
+}
+
+// fprintln is [fmt.Fprintln] for a stream writeUnreported covers.
+func fprintln(w io.Writer, args ...any) { writeUnreported(w, fmt.Sprintln(args...)) }
+
+// fprint is [fmt.Fprint] for a stream writeUnreported covers.
+func fprint(w io.Writer, args ...any) { writeUnreported(w, fmt.Sprint(args...)) }
+
 // hintLine writes a suggested next step after a success as a hint: line on
 // stderr, in table mode only.
-func hintLine(format string, args ...any) { say("hint: "+format, args...) }
+//
+//nolint:goprintffuncname // AGENTS.md names hintLine as the hint helper every verb uses
+func (app *App) hintLine(format string, args ...any) { app.say("hint: "+format, args...) }
+
+// savedConfig is the config file's contents for a command that has already
+// checked it can be read (configReady) or reported that it cannot; a file
+// that cannot be read reads as empty, as it does to Load's caller anyway.
+func (app *App) savedConfig() config.File {
+	f, err := config.Load(app.Env)
+	if err != nil {
+		return config.File{}
+	}
+	return f
+}
+
+// configPath is the config file's location for a message, or "" when the
+// location itself is unknown (no user config directory).
+func (app *App) configPath() string {
+	p, err := config.Path(app.Env)
+	if err != nil {
+		return ""
+	}
+	return p
+}
 
 // The two credentials, as messages name them.
 const (
 	labelAPIKey     = "API key"
 	labelGatewayKey = "AI Gateway key"
 )
+
+// Where a resolved setting came from, as config.Resolved's source fields spell it.
+const (
+	settingFromFlag   = "flag"
+	settingFromEnv    = "env"
+	settingFromConfig = "config"
+)
+
+// The two kinds of name the setup commands check, as messages spell them.
+const (
+	nameKindOrganization = "organization"
+	nameKindProject      = "project"
+)
+
+// projectFlagSpelling is the --project flag as messages and sources spell it.
+const projectFlagSpelling = "--project"
+
+// setupGOOSWindows is the GOOS value of Windows, where the terminal device, the removal steps, the browser opener
+// and the OpenSSH hint differ.
+const setupGOOSWindows = "windows"
+
+// notSetLabel is how a value that is not set shows in a table and in maskAPIKey.
+const notSetLabel = "(not set)"
+
+// How maskAPIKey shows a key: its last maskTailLen characters, and none of a key of maskShortKeyLen characters or
+// fewer.
+const (
+	maskTailLen     = 4
+	maskShortKeyLen = 8
+)
+
+// nameMaxLen is the longest organization or project name the API's pattern allows.
+const nameMaxLen = 63
 
 // maskAPIKey shows a credential as "****..." and its last four characters
 // ("****...ABCD"), or "(not set)" when empty. A key of eight characters or
@@ -56,13 +127,13 @@ const (
 // plain ASCII.
 func maskAPIKey(k string) string {
 	if k == "" {
-		return "(not set)"
+		return notSetLabel
 	}
 	r := []rune(k)
-	if len(r) <= 8 {
+	if len(r) <= maskShortKeyLen {
 		return "****"
 	}
-	last := r[len(r)-4:]
+	last := r[len(r)-maskTailLen:]
 	for i, c := range last {
 		if c < 0x20 || c > 0x7e {
 			last[i] = '?'
@@ -85,12 +156,12 @@ func fromTag(origin string) string {
 // variable, or "config" ("" for the built-in fallback).
 func originOf(source, flag, env string) string {
 	switch source {
-	case "flag":
+	case settingFromFlag:
 		return flag
-	case "env":
+	case settingFromEnv:
 		return env
-	case "config":
-		return "config"
+	case settingFromConfig:
+		return settingFromConfig
 	}
 	return ""
 }
@@ -109,29 +180,35 @@ func validName(name string) bool { return namePattern.MatchString(name) }
 // in a hint, "type" at a prompt).
 func nameGuess(kind, name, verb string) string {
 	if lower := strings.ToLower(name); validName(lower) {
-		return fmt.Sprintf(`did you mean "%s"?`, lower)
+		return fmt.Sprintf(`did you mean "%s"?`, lower) //nolint:gocritic // shows the name as typed; %q would escape it
 	}
 	if strings.IndexFunc(name, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-')
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '-'
 	}) >= 0 {
-		return fmt.Sprintf("it looks like a display name; %s the name from the portal URL, the part after /%ss/", verb, kind)
+		return fmt.Sprintf(
+			"it looks like a display name; %s the name from the portal URL, the part after /%ss/",
+			verb,
+			kind,
+		)
 	}
-	return "names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending with a letter or digit"
+	return "names are 2-63 characters: lowercase letters, digits and hyphens, " +
+		"starting with a letter and ending with a letter or digit"
 }
 
 // looksLikeKey reports whether a value in an organization or project slot
 // may be a key put there by mistake: longer than any name can be, or equal
 // to the API key or AI Gateway key in effect or saved. Such a value is
 // never shown.
-func looksLikeKey(v string) bool {
-	if len(v) > 63 {
+func (app *App) looksLikeKey(v string) bool {
+	if len(v) > nameMaxLen {
 		return true
 	}
 	if v == "" {
 		return false
 	}
-	saved, _ := config.Load()
-	for _, k := range []string{os.Getenv(envAPIKey), os.Getenv(envGatewayKey), saved.APIKey, saved.GatewayAPIKey} {
+	saved := app.savedConfig()
+	keys := []string{app.Env.Getenv(envAPIKey), app.Env.Getenv(envGatewayKey), saved.APIKey, saved.GatewayAPIKey}
+	for _, k := range keys {
 		if key, _ := normalizeKey(k); key != "" && key == v {
 			return true
 		}
@@ -141,8 +218,8 @@ func looksLikeKey(v string) bool {
 
 // shownName is a name as messages show it: the name, or "hidden, looks
 // like an API key" for a value that may be a key.
-func shownName(v string) string {
-	if looksLikeKey(v) {
+func (app *App) shownName(v string) string {
+	if app.looksLikeKey(v) {
 		return "hidden, looks like an API key"
 	}
 	return v
@@ -158,19 +235,34 @@ func keyLikeName(kind, origin string) *clierr.Error {
 	case origin == "":
 		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "that looks like an API key, not %s", what).
 			WithHint("the target is <org> or <org>/<project>, for example saladcloud use acme-prod/staging")
-	case origin == "config":
+	case origin == settingFromConfig:
 		target := "<org>"
-		if kind == "project" {
+		if kind == nameKindProject {
 			target = "<org>/<project>"
 		}
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "the saved %s looks like an API key, not %s", kind, what).
-			WithHint("to switch, run saladcloud use %s", target)
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"the saved %s looks like an API key, not %s",
+			kind,
+			what,
+		).WithHint("to switch, run saladcloud use %s", target)
 	case strings.HasPrefix(origin, "--"):
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "%s looks like an API key, not %s", origin, what).
-			WithHint("pass %s", fix)
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindInvalidInput,
+			"%s looks like an API key, not %s",
+			origin,
+			what,
+		).WithHint("pass %s", fix)
 	}
-	return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, "%s looks like an API key, not %s", origin, what).
-		WithHint("set it to %s; the key goes in SALAD_API_KEY", fix)
+	return clierr.New(
+		clierr.CodeInvalidInput,
+		clierr.KindInvalidInput,
+		"%s looks like an API key, not %s",
+		origin,
+		what,
+	).WithHint("set it to %s; the key goes in SALAD_API_KEY", fix)
 }
 
 // checkName is the error for an organization or project name that breaks
@@ -178,15 +270,21 @@ func keyLikeName(kind, origin string) *clierr.Error {
 // nil when it fits; a value that looks like a key gets keyLikeName's error
 // instead, which does not show it. It runs before any request: the API
 // would reject the name on every route.
-func checkName(kind, name, origin string) *clierr.Error {
-	if looksLikeKey(name) {
+func (app *App) checkName(kind, name, origin string) *clierr.Error {
+	if app.looksLikeKey(name) {
 		return keyLikeName(kind, origin)
 	}
 	if validName(name) {
 		return nil
 	}
-	return clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput, `invalid %s name "%s"%s`, kind, name, fromTag(origin)).
-		WithHint("%s", nameGuess(kind, name, "use"))
+	return clierr.New(
+		clierr.CodeInvalidInput,
+		clierr.KindInvalidInput,
+		`invalid %s name "%s"%s`,
+		kind,
+		name,
+		fromTag(origin),
+	).WithHint("%s", nameGuess(kind, name, "use"))
 }
 
 // nameRetry is the line a prompt shows before asking again for a name that
@@ -196,11 +294,17 @@ func nameRetry(kind, answer, key string) string {
 	switch {
 	case key != "" && answer == key:
 		return fmt.Sprintf("That looks like the API key you just pasted, not %s %s name.", article(kind), kind)
-	case len(answer) > 63:
+	case len(answer) > nameMaxLen:
 		return fmt.Sprintf("That is not a valid %s name: names are at most 63 characters.", kind)
 	}
 	guess := nameGuess(kind, answer, "type")
-	return fmt.Sprintf(`"%s" is not a valid %s name. %s%s`, answer, kind, strings.ToUpper(guess[:1]), guess[1:]+period(guess))
+	return fmt.Sprintf( //nolint:gocritic // shows the answer as typed; %q would escape it
+		`"%s" is not a valid %s name. %s%s`,
+		answer,
+		kind,
+		strings.ToUpper(guess[:1]),
+		guess[1:]+period(guess),
+	)
 }
 
 // article is "an" before organization, "a" before project.
@@ -223,12 +327,12 @@ func period(s string) string {
 // markers and a UTF-8 byte order mark. Quotes are never stripped. ok is false
 // when what is left has a character outside printable ASCII, which no key
 // has.
-func normalizeKey(raw string) (key string, ok bool) {
-	key = strings.ReplaceAll(raw, "\x1b[200~", "")
+func normalizeKey(raw string) (string, bool) {
+	key := strings.ReplaceAll(raw, "\x1b[200~", "")
 	key = strings.ReplaceAll(key, "\x1b[201~", "")
 	key = strings.TrimSpace(key)
 	key = strings.TrimSpace(strings.TrimPrefix(key, "\xef\xbb\xbf"))
-	for i := 0; i < len(key); i++ {
+	for i := range len(key) {
 		if key[i] < 0x20 || key[i] > 0x7e {
 			return key, false
 		}
@@ -245,13 +349,24 @@ func quotedKey(key string) bool {
 // malformedKey is the error for a key with a character no key has; label is
 // labelAPIKey or labelGatewayKey, origin where the key came from.
 func malformedKey(label, key, origin string) *clierr.Error {
-	return clierr.New(clierr.CodeAuth, clierr.KindAuth, "%s %s%s contains characters an %s cannot have", label, maskAPIKey(key), fromTag(origin), label).
-		WithHint("check for quotes or stray characters in it")
+	return clierr.New(
+		clierr.CodeAuth,
+		clierr.KindAuth,
+		"%s %s%s contains characters an %s cannot have",
+		label,
+		maskAPIKey(key),
+		fromTag(origin),
+		label,
+	).WithHint("check for quotes or stray characters in it")
 }
 
 // malformedKeyRetry is malformedKey's line at a prompt, before asking again.
 func malformedKeyRetry(label string) string {
-	return fmt.Sprintf("That %s contains characters an %s cannot have. Check for quotes or stray characters in it.", label, label)
+	return fmt.Sprintf(
+		"That %s contains characters an %s cannot have. Check for quotes or stray characters in it.",
+		label,
+		label,
+	)
 }
 
 // orgListShown is how many organization names a hint lists before cutting
@@ -265,8 +380,8 @@ const orgListShown = 10
 // the reader is a log or an agent, it never lists them: "to list yours, run
 // saladcloud orgs list", whatever names holds, so callers there need not
 // fetch the listing for it.
-func orgsClause(names []string) string {
-	if !atTerminal() {
+func (app *App) orgsClause(names []string) string {
+	if !app.atTerminal() {
 		return "to list yours, run saladcloud orgs list"
 	}
 	if len(names) == 0 {
@@ -294,26 +409,41 @@ func hintClauses(clauses ...string) string {
 // be read and saved, so a setup command never asks for what it cannot keep
 // and never overwrites a corrupt file. command is the one the hint says to
 // run again: "login", "ai-gateway login" or "use".
-func configReady(command string) *clierr.Error {
-	path, err := config.Path()
+func (app *App) configReady(command string) *clierr.Error {
+	path, err := config.Path(app.Env)
 	if err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot find a folder for the config file: %s", config.Reason(err)).
-			WithHint("%s", unwritableHint(command))
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot find a folder for the config file: %s",
+			config.Reason(err),
+		).WithHint("%s", unwritableHint(command))
 	}
-	if _, err := config.Load(); err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the config file %s: %s", path, readReason(err)).
-			WithHint("fix or delete it, then run saladcloud %s again", command)
+	if _, err := config.Load(app.Env); err != nil {
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot read the config file %s: %s",
+			path,
+			readReason(err),
+		).WithHint("fix or delete it, then run saladcloud %s again", command)
 	}
-	if err := config.Writable(); err != nil {
-		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot write the config file %s: %s", path, config.Reason(err)).
-			WithHint("%s", unwritableHint(command))
+	if err := config.Writable(app.Env); err != nil {
+		return clierr.New(
+			clierr.CodeGeneric,
+			clierr.KindAPIError,
+			"cannot write the config file %s: %s",
+			path,
+			config.Reason(err),
+		).WithHint("%s", unwritableHint(command))
 	}
 	return nil
 }
 
 // readReason is why the config file could not be read, without its path.
 func readReason(err error) string {
-	if re, ok := err.(*config.ReadError); ok {
+	var re *config.ReadError
+	if errors.As(err, &re) {
 		return re.Reason()
 	}
 	return config.Reason(err)
@@ -323,8 +453,9 @@ func readReason(err error) string {
 // folder, or the variables the command would have saved.
 func unwritableHint(command string) string {
 	switch command {
-	case "login":
-		return "set SALAD_CLI_CONFIG_DIR to a writable folder, or set SALAD_API_KEY, SALAD_ORGANIZATION and SALAD_PROJECT instead of logging in"
+	case loginCmdName:
+		return "set SALAD_CLI_CONFIG_DIR to a writable folder, " +
+			"or set SALAD_API_KEY, SALAD_ORGANIZATION and SALAD_PROJECT instead of logging in"
 	case "ai-gateway login":
 		return "set SALAD_CLI_CONFIG_DIR to a writable folder, or set SALAD_AI_GATEWAY_API_KEY instead of logging in"
 	}
@@ -333,9 +464,9 @@ func unwritableHint(command string) string {
 
 // sshMissingHint says how to get an OpenSSH client tool (ssh, ssh-keygen)
 // on this OS.
-func sshMissingHint(tool string) string {
-	switch goos {
-	case "windows":
+func (app *App) sshMissingHint(tool string) string {
+	switch app.Env.GOOS {
+	case setupGOOSWindows:
 		return "add the OpenSSH Client optional feature in Windows Settings, then open a new terminal"
 	case "darwin":
 		return fmt.Sprintf("macOS includes it at /usr/bin/%s; check that /usr/bin is on your PATH", tool)

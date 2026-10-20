@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 // TestValidateCommand: the words after -- reach the node unchanged, where
 // the first runs as the program in place of the image's ENTRYPOINT and CMD.
 func TestValidateCommand(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		words    []string
@@ -19,16 +21,24 @@ func TestValidateCommand(t *testing.T) {
 	}{
 		{"no --", nil, false, 0, ""},
 		{"a plain command", []string{"sleep", "infinity"}, true, 0, ""},
-		{"a shell script with nested quotes", []string{"bash", "-c", `echo "hi there"; exec python app.py --port "$PORT"`}, true, 0, ""},
+		{
+			"a shell script with nested quotes",
+			[]string{"bash", "-c", `echo "hi there"; exec python app.py --port "$PORT"`},
+			true,
+			0,
+			"",
+		},
 		{"padded words pass (the node trims them)", []string{"bash", "-c", " echo hi\n"}, true, 0, ""},
-		{"nothing after --", []string{}, true, clierr.CodeUsage, "nothing after --"},
+		{"nothing after --", nil, true, clierr.CodeUsage, "nothing after --"},
 		{"an empty word", []string{"python", "app.py", "--name", ""}, true, clierr.CodeInvalidInput, "word 4 is empty"},
 		{"docker-style args", []string{"--port", "8080"}, true, clierr.CodeInvalidInput, "start it with a program"},
 		{"too many words", make101(), true, clierr.CodeInvalidInput, "the API allows at most 100"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cerr := validateCommand(tt.words, tt.given)
+			t.Parallel()
+			app := newTestRun(t)
+			cerr := app.validateCommand(containerCommand{words: tt.words, given: tt.given})
 			if tt.wantCode == 0 {
 				if cerr != nil {
 					t.Fatalf("rejected: %v", cerr)
@@ -45,18 +55,22 @@ func TestValidateCommand(t *testing.T) {
 // TestValidateCommandGitBash: rewritten words are caught only under Git Bash,
 // and never inside a script word, whose text is literal.
 func TestValidateCommandGitBash(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	rewritten := []string{"C:/Program-Files/Git/usr/bin/bash", "-c", "x"}
-	t.Setenv("MSYSTEM", "")
-	if cerr := validateCommand(rewritten, true); cerr != nil {
+	app.setenv("MSYSTEM", "")
+	if cerr := app.validateCommand(containerCommand{words: rewritten, given: true}); cerr != nil {
 		t.Errorf("outside Git Bash: %v", cerr)
 	}
-	t.Setenv("MSYSTEM", "MINGW64")
+	app.setenv("MSYSTEM", "MINGW64")
 	for _, words := range [][]string{rewritten, {"configure", "--prefix=C:/Program-Files/Git/usr"}} {
-		if cerr := validateCommand(words, true); cerr == nil || cerr.Code != clierr.CodeUsage || !strings.Contains(cerr.Message, "rewritten by Git Bash") {
+		cerr := app.validateCommand(containerCommand{words: words, given: true})
+		if cerr == nil || cerr.Code != clierr.CodeUsage || !strings.Contains(cerr.Message, "rewritten by Git Bash") {
 			t.Errorf("%q under Git Bash: %v", words, cerr)
 		}
 	}
-	if cerr := validateCommand([]string{"bash", "-c", "P=a:/opt; ls $P"}, true); cerr != nil {
+	script := containerCommand{words: []string{"bash", "-c", "P=a:/opt; ls $P"}, given: true}
+	if cerr := app.validateCommand(script); cerr != nil {
 		t.Errorf("a script word was checked: %v", cerr)
 	}
 }
@@ -64,8 +78,9 @@ func TestValidateCommandGitBash(t *testing.T) {
 // TestWarnCommand: a spaced first word and saladcloud's own flags after --
 // draw a warning; ordinary commands do not.
 func TestWarnCommand(t *testing.T) {
-	prepareTree()
-	create, _, err := rootCmd.Find([]string{"container-groups", "create"})
+	t.Parallel()
+	app := newTestRun(t)
+	create, _, err := app.root.Find([]string{"container-groups", "create"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,10 +117,13 @@ func make101() []string {
 // TestCreateSendsCommand: the words after -- become container.command,
 // exactly as given, and a positional after them is not taken for the name.
 func TestCreateSendsCommand(t *testing.T) {
-	posted := stubCreate(t)
+	t.Parallel()
+	app := newTestRun(t)
+	posted := app.stubCreate(t)
 	script := `echo "hi there"; sleep 5`
-	if _, err := runRoot(t, "container-groups", "create", "new", "--image", "busybox:1.36", "--no-autostart",
-		"-o", "json", "--", "sh", "-c", script); err != nil {
+	_, err := app.runRoot(t, "container-groups", "create", "new", "--image", "busybox:1.36", "--no-autostart",
+		"-o", "json", "--", "sh", "-c", script)
+	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	got, ok := postedPath(t, *posted, "container.command")
@@ -119,14 +137,16 @@ func TestCreateSendsCommand(t *testing.T) {
 
 // TestCreateCommandArgs: one positional before --, any number after.
 func TestCreateCommandArgs(t *testing.T) {
-	_, err := runRoot(t, "container-groups", "create", "a", "b", "--image", "x", "--", "sleep", "1")
-	cerr, ok := err.(*clierr.Error)
+	t.Parallel()
+	app := newTestRun(t)
+	_, err := app.runRoot(t, "container-groups", "create", "a", "b", "--image", "x", "--", "sleep", "1")
+	var cerr *clierr.Error
+	ok := errors.As(err, &cerr)
 	if !ok || cerr.Code != clierr.CodeUsage || !strings.Contains(cerr.Message, `unexpected argument "b"`) {
 		t.Errorf("two positionals: %v", err)
 	}
-	resetFlags()
-	_, err = runRoot(t, "container-groups", "update", "a", "--")
-	if cerr, ok := err.(*clierr.Error); !ok || !strings.Contains(cerr.Message, "nothing after --") {
+	_, err = app.runRoot(t, "container-groups", "update", "a", "--")
+	if !errors.As(err, &cerr) || !strings.Contains(cerr.Message, "nothing after --") {
 		t.Errorf("update with nothing after --: %v", err)
 	}
 }
@@ -134,15 +154,17 @@ func TestCreateCommandArgs(t *testing.T) {
 // TestUpdatePatchCommand: update -- <words> puts container.command in the
 // patch, over a file's.
 func TestUpdatePatchCommand(t *testing.T) {
-	wire, _, cerr := buildUpdatePatch([]byte(`{"container":{"command":["old"],"image":"i"}}`),
-		updateFlags{Command: []string{"python", "app.py"}}, nil)
+	t.Parallel()
+	patch, cerr := buildUpdatePatch([]byte(`{"container":{"command":["old"],"image":"i"}}`),
+		&updateFlags{Command: []string{"python", "app.py"}}, nil)
 	if cerr != nil {
 		t.Fatal(cerr)
 	}
+	wire := patch.wire
 	if want := `{"container":{"command":["python","app.py"],"image":"i"}}`; string(wire) != want {
 		t.Errorf("patch = %s, want %s", wire, want)
 	}
-	if !(updateFlags{Command: []string{"x"}}).any() {
+	if !(&updateFlags{Command: []string{"x"}}).any() {
 		t.Error("a command alone should count as something to update")
 	}
 }

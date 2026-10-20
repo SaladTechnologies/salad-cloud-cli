@@ -6,10 +6,10 @@ body:
   - type: markdown
     attributes:
       value: >-
-        Thanks for taking the time to fill out this feature request! We encourage you to start with a
-        [GitHub discussion](https://github.com/SaladTechnologies/salad-cloud-cli/discussions) to ensure this fits in the
-        roadmap. If this issue is security related, please disclose vulnerabilities to us responsibly as a
-        [GitHub security advisory](https://github.com/SaladTechnologies/salad-cloud-cli/security/advisories/new).
+        Thanks for taking the time to fill out this feature request! We encourage you to start with a [GitHub
+        discussion](https://github.com/SaladTechnologies/salad-cloud-cli/discussions) to ensure this fits in the
+        roadmap. If this issue is security related, please disclose vulnerabilities to us responsibly as a [GitHub
+        security advisory](https://github.com/SaladTechnologies/salad-cloud-cli/security/advisories/new).
   - type: textarea
     id: feature
     attributes:

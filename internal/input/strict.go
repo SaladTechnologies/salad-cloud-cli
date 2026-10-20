@@ -13,13 +13,14 @@
 // — the --allow-unknown-fields escape hatch downgrades rejection to
 // warnings so a definition can carry API fields newer than this CLI's
 // pinned SDK model.
+
 package input
 
 import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -86,7 +87,14 @@ func CheckUnknownFields(data []byte, t reflect.Type) *clierr.Error {
 // before and after (each "" or ending/starting with its own separator).
 func UnknownFieldsError(lead string, unknowns []Unknown, tail string) *clierr.Error {
 	if len(unknowns) == 1 {
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindUnknownField, "%sunknown field %s%s", lead, unknowns[0].Detail(), tail)
+		return clierr.New(
+			clierr.CodeInvalidInput,
+			clierr.KindUnknownField,
+			"%sunknown field %s%s",
+			lead,
+			unknowns[0].Detail(),
+			tail,
+		)
 	}
 	shown := unknowns
 	suffix := ""
@@ -108,7 +116,7 @@ func UnknownFieldsError(lead string, unknowns []Unknown, tail string) *clierr.Er
 // field rejected by the patch type is a legitimate create-time field.
 func FieldPathKnown(t reflect.Type, path string) bool {
 	cur := unwrapType(t)
-	for _, seg := range strings.Split(path, ".") {
+	for seg := range strings.SplitSeq(path, ".") {
 		if i := strings.IndexByte(seg, '['); i >= 0 {
 			seg = seg[:i]
 		}
@@ -144,10 +152,11 @@ func FieldPathKnown(t reflect.Type, path string) bool {
 // place a field really lives when a request and response disagree on its
 // location (create takes container.priority; responses return priority).
 func FindFieldPath(t reflect.Type, leaf string) string {
-	return findFieldPath(unwrapType(t), leaf, "", 0)
+	return searchFieldPath(unwrapType(t), leaf, "", 0)
 }
 
-func findFieldPath(t reflect.Type, leaf, path string, depth int) string {
+// searchFieldPath is FindFieldPath below path, at most 4 levels down.
+func searchFieldPath(t reflect.Type, leaf, path string, depth int) string {
 	if t == nil || t.Kind() != reflect.Struct || depth > 4 {
 		return ""
 	}
@@ -159,9 +168,9 @@ func findFieldPath(t reflect.Type, leaf, path string, depth int) string {
 	for n := range fields {
 		names = append(names, n)
 	}
-	sort.Strings(names) // deterministic when several branches could match
+	slices.Sort(names) // deterministic when several branches could match
 	for _, n := range names {
-		if found := findFieldPath(unwrapType(fields[n]), leaf, childPath(path, n), depth+1); found != "" {
+		if found := searchFieldPath(unwrapType(fields[n]), leaf, childPath(path, n), depth+1); found != "" {
 			return found
 		}
 	}
@@ -182,45 +191,66 @@ func collectUnknown(data json.RawMessage, t reflect.Type, path string, out *[]Un
 	}
 	switch t.Kind() {
 	case reflect.Struct:
-		fields := structFields(t)
-		if fields == nil {
-			return // no json-tagged fields (e.g. time.Time): leave it be
-		}
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(data, &obj); err != nil {
-			return // not an object: shape errors are the unmarshaler's job
-		}
-		keys := make([]string, 0, len(obj))
-		for k := range obj {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys) // deterministic ordering
-		for _, k := range keys {
-			ft, ok := fields[k]
-			if !ok {
-				*out = append(*out, describeUnknown(k, path, fields))
-				continue // the subtree has no type to check against
-			}
-			collectUnknown(obj[k], ft, childPath(path, k), out)
-		}
+		collectUnknownFields(data, t, path, out)
 	case reflect.Slice, reflect.Array:
-		var items []json.RawMessage
-		if err := json.Unmarshal(data, &items); err != nil {
-			return
-		}
-		for i, item := range items {
-			collectUnknown(item, t.Elem(), fmt.Sprintf("%s[%d]", path, i), out)
-		}
+		collectUnknownItems(data, t, path, out)
 	case reflect.Map:
-		var obj map[string]json.RawMessage
-		if err := json.Unmarshal(data, &obj); err != nil {
-			return
-		}
-		for k, v := range obj { // keys are free-form; values follow the map's value type
-			collectUnknown(v, t.Elem(), childPath(path, k), out)
-		}
-	default:
+		collectUnknownValues(data, t, path, out)
+	case reflect.Invalid, reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Float32,
+		reflect.Float64, reflect.Complex64, reflect.Complex128, reflect.Chan, reflect.Func, reflect.Interface,
+		reflect.Pointer, reflect.String, reflect.UnsafePointer:
 		// scalars
+	}
+}
+
+// collectUnknownFields is collectUnknown for struct type t: every key of the object data that t has no field for
+// is unknown, and the rest are walked against their fields' types, in key order.
+func collectUnknownFields(data json.RawMessage, t reflect.Type, path string, out *[]Unknown) {
+	fields := structFields(t)
+	if fields == nil {
+		return // no json-tagged fields (e.g. time.Time): leave it be
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return // not an object: shape errors are the unmarshaler's job
+	}
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys) // deterministic ordering
+	for _, k := range keys {
+		ft, ok := fields[k]
+		if !ok {
+			*out = append(*out, describeUnknown(k, path, fields))
+			continue // the subtree has no type to check against
+		}
+		collectUnknown(obj[k], ft, childPath(path, k), out)
+	}
+}
+
+// collectUnknownItems is collectUnknown for slice or array type t: each item of the array data is walked against
+// t's element type.
+func collectUnknownItems(data json.RawMessage, t reflect.Type, path string, out *[]Unknown) {
+	var items []json.RawMessage
+	if err := json.Unmarshal(data, &items); err != nil {
+		return
+	}
+	for i, item := range items {
+		collectUnknown(item, t.Elem(), fmt.Sprintf("%s[%d]", path, i), out)
+	}
+}
+
+// collectUnknownValues is collectUnknown for map type t: the object data's keys are free-form, and its values are
+// walked against t's value type.
+func collectUnknownValues(data json.RawMessage, t reflect.Type, path string, out *[]Unknown) {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return
+	}
+	for k, v := range obj {
+		collectUnknown(v, t.Elem(), childPath(path, k), out)
 	}
 }
 
@@ -258,7 +288,7 @@ func isNullable(t reflect.Type) bool {
 
 // structFields maps a struct's JSON field names to their Go types,
 // flattening anonymous embedded structs. Returns nil when the struct has
-// no json-tagged fields at all (an opaque type like time.Time).
+// no json-tagged fields at all (an opaque type like [time.Time]).
 func structFields(t reflect.Type) map[string]reflect.Type {
 	fields := make(map[string]reflect.Type)
 	collectFields(t, fields)
@@ -269,7 +299,7 @@ func structFields(t reflect.Type) map[string]reflect.Type {
 }
 
 func collectFields(t reflect.Type, out map[string]reflect.Type) {
-	for i := 0; i < t.NumField(); i++ {
+	for i := range t.NumField() {
 		f := t.Field(i)
 		if f.Anonymous && f.Tag.Get("json") == "" {
 			if et := unwrapType(f.Type); et != nil && et.Kind() == reflect.Struct {
@@ -312,20 +342,23 @@ func childPath(path, key string) string {
 func describeUnknown(key, path string, fields map[string]reflect.Type) Unknown {
 	where := "at the top level"
 	if path != "" {
-		where = fmt.Sprintf(`in "%s"`, path)
+		where = fmt.Sprintf(`in "%s"`, path) //nolint:gocritic // shows the path as typed; %q would escape it
 	}
 	hint := suggestField(key, fields)
 	suffix := ""
 	if hint != "" {
-		suffix = fmt.Sprintf(` (did you mean "%s"?)`, hint)
+		suffix = fmt.Sprintf(` (did you mean "%s"?)`, hint) //nolint:gocritic // a field name; %q would escape it
 	}
 	return Unknown{
-		Desc:    fmt.Sprintf(`unknown field "%s" %s%s`, key, where, suffix),
+		Desc:    fmt.Sprintf(`unknown field "%s" %s%s`, key, where, suffix), //nolint:gocritic // the key as typed
 		Path:    childPath(path, key),
 		Hint:    hint,
 		InArray: strings.Contains(path, "["),
 	}
 }
+
+// shortKeyRunes is the longest key, in runes, that suggestField allows only one edit for.
+const shortKeyRunes = 4
 
 // suggestField returns the known field name key most plausibly meant, or
 // "". Exact kebab/snake swaps win outright. Otherwise the closest field by
@@ -344,7 +377,7 @@ func suggestField(key string, fields map[string]reflect.Type) string {
 		}
 	}
 	budget := 2
-	if len([]rune(key)) <= 4 {
+	if len([]rune(key)) <= shortKeyRunes {
 		budget = 1
 	}
 	lower := strings.ToLower(key)
@@ -380,19 +413,27 @@ func editDistance(a, b string) int {
 	}
 	for i := 1; i <= len(ra); i++ {
 		for j := 1; j <= len(rb); j++ {
-			cost := 1
-			if ra[i-1] == rb[j-1] {
-				cost = 0
-			}
-			d[i][j] = min3(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
-			if i > 1 && j > 1 && ra[i-1] == rb[j-2] && ra[i-2] == rb[j-1] {
-				if t := d[i-2][j-2] + 1; t < d[i][j] {
-					d[i][j] = t
-				}
-			}
+			d[i][j] = osaCell(d, ra, rb, i, j)
 		}
 	}
 	return d[len(ra)][len(rb)]
+}
+
+// osaCell is the distance between the first i runes of ra and the first j of rb, from the cells of d before it: the
+// cheapest of a deletion, an insertion, a substitution (free when the runes match) and, when the last two runes are
+// swapped, a transposition.
+func osaCell(d [][]int, ra, rb []rune, i, j int) int {
+	cost := 1
+	if ra[i-1] == rb[j-1] {
+		cost = 0
+	}
+	v := min3(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+cost)
+	if i > 1 && j > 1 && ra[i-1] == rb[j-2] && ra[i-2] == rb[j-1] {
+		if t := d[i-2][j-2] + 1; t < v {
+			v = t
+		}
+	}
+	return v
 }
 
 func min3(a, b, c int) int {
@@ -420,45 +461,61 @@ func FilterTree(v any, t reflect.Type, path string, dropped *[]string) any {
 	}
 	switch t.Kind() {
 	case reflect.Struct:
-		obj, ok := v.(map[string]any)
-		if !ok {
-			return v
+		if obj, ok := v.(map[string]any); ok {
+			return filterFields(obj, t, path, dropped)
 		}
-		fields := structFields(t)
-		if fields == nil {
-			return v // opaque struct (time.Time): leave it be
-		}
-		out := make(map[string]any, len(obj))
-		for k, child := range obj {
-			ft, known := fields[k]
-			if !known {
-				*dropped = append(*dropped, childPath(path, k))
-				continue
-			}
-			out[k] = FilterTree(child, ft, childPath(path, k), dropped)
-		}
-		return out
 	case reflect.Slice, reflect.Array:
-		items, ok := v.([]any)
-		if !ok {
-			return v
+		if items, ok := v.([]any); ok {
+			return filterItems(items, t, path, dropped)
 		}
-		out := make([]any, len(items))
-		for i, item := range items {
-			out[i] = FilterTree(item, t.Elem(), fmt.Sprintf("%s[%d]", path, i), dropped)
-		}
-		return out
 	case reflect.Map:
-		obj, ok := v.(map[string]any)
-		if !ok {
-			return v
+		if obj, ok := v.(map[string]any); ok {
+			return filterValues(obj, t, path, dropped)
 		}
-		out := make(map[string]any, len(obj))
-		for k, child := range obj { // keys are free-form; values follow the map's value type
-			out[k] = FilterTree(child, t.Elem(), childPath(path, k), dropped)
-		}
-		return out
-	default:
-		return v
+	case reflect.Invalid, reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Float32,
+		reflect.Float64, reflect.Complex64, reflect.Complex128, reflect.Chan, reflect.Func, reflect.Interface,
+		reflect.Pointer, reflect.String, reflect.UnsafePointer:
+		// scalars pass through
 	}
+	return v // also a value whose shape is not t's
+}
+
+// filterFields is FilterTree for an object against struct type t: a copy without the keys t has no field for, the
+// rest filtered against their fields' types. An opaque struct (time.Time) leaves the object as it is.
+func filterFields(obj map[string]any, t reflect.Type, path string, dropped *[]string) any {
+	fields := structFields(t)
+	if fields == nil {
+		return obj // opaque struct (time.Time): leave it be
+	}
+	out := make(map[string]any, len(obj))
+	for k, child := range obj {
+		ft, known := fields[k]
+		if !known {
+			*dropped = append(*dropped, childPath(path, k))
+			continue
+		}
+		out[k] = FilterTree(child, ft, childPath(path, k), dropped)
+	}
+	return out
+}
+
+// filterItems is FilterTree for an array against slice or array type t: a copy with each item filtered against
+// t's element type.
+func filterItems(items []any, t reflect.Type, path string, dropped *[]string) any {
+	out := make([]any, len(items))
+	for i, item := range items {
+		out[i] = FilterTree(item, t.Elem(), fmt.Sprintf("%s[%d]", path, i), dropped)
+	}
+	return out
+}
+
+// filterValues is FilterTree for an object against map type t: its keys are free-form, and a copy has each value
+// filtered against t's value type.
+func filterValues(obj map[string]any, t reflect.Type, path string, dropped *[]string) any {
+	out := make(map[string]any, len(obj))
+	for k, child := range obj {
+		out[k] = FilterTree(child, t.Elem(), childPath(path, k), dropped)
+	}
+	return out
 }

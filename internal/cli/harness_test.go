@@ -12,21 +12,18 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/spf13/cobra"
-
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
 // Credentials the harness hands the CLI. Each has a distinctive word in its
@@ -39,7 +36,9 @@ const (
 )
 
 // testSecrets are the credentials no output may print whole.
-var testSecrets = []string{testAPIKey, testOtherAPIKey, testGatewayKey, testOtherGatewayKey}
+func testSecrets() []string {
+	return []string{testAPIKey, testOtherAPIKey, testGatewayKey, testOtherGatewayKey}
+}
 
 // fakeAPI is the SaladCloud API and AI Gateway as the harness serves them:
 // every API key in keys sees the organizations in orgs, each with its
@@ -57,6 +56,9 @@ type fakeAPI struct {
 	// the run and holds the request until the CLI gives up on it.
 	cancelOn string
 	cancel   func()
+	// t is the test of the session serving the fake, which its handlers
+	// report to.
+	t *testing.T
 
 	mu       sync.Mutex
 	requests []string // "METHOD path", in order
@@ -69,7 +71,7 @@ func newFakeAPI() *fakeAPI {
 		keys:        map[string]bool{testAPIKey: true},
 		orgs:        map[string][]string{"my-org": {"default", "staging"}, "acme-prod": {"default"}},
 		display:     map[string]string{"my-org": "My Org", "acme-prod": "Acme Production"},
-		status:      map[string]int{},
+		status:      make(map[string]int),
 		gatewayKeys: map[string]int{testGatewayKey: http.StatusOK},
 	}
 }
@@ -81,28 +83,16 @@ func (f *fakeAPI) Requests() []string {
 	return append([]string(nil), f.requests...)
 }
 
+// ServeHTTP records the request and answers it: Ctrl-C at cancelOn, a status set for the path's suffix, the gateway
+// under /gw/, then the API for a known key (401 for any other).
 func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.requests = append(f.requests, r.Method+" "+r.URL.Path)
 	f.mu.Unlock()
 	w.Header().Set("Content-Type", "application/json")
 	path := r.URL.Path
-	if f.cancelOn != "" && strings.HasSuffix(path, f.cancelOn) {
-		f.cancel()
-		// Read the body first: until it has, the server cannot see the
-		// client hang up.
-		_, _ = io.Copy(io.Discard, r.Body)
-		select {
-		case <-r.Context().Done():
-		case <-time.After(5 * time.Second):
-		}
+	if f.answerOverride(w, r) {
 		return
-	}
-	for suffix, code := range f.status {
-		if strings.HasSuffix(path, suffix) {
-			w.WriteHeader(code)
-			return
-		}
 	}
 	if strings.HasPrefix(path, "/gw/") {
 		f.serveGateway(w, r, strings.TrimPrefix(path, "/gw"))
@@ -119,40 +109,106 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	switch {
 	case path == "/v1/organizations":
-		items := []map[string]any{}
-		order := f.orgOrder
-		if order == nil {
-			order = sortedKeys(f.orgs)
-		}
-		for _, name := range order {
-			items = append(items, map[string]any{
-				"organization_name": name, "display_name": f.display[name],
-				"organization_id": "o-" + name, "create_time": "2026-01-01T00:00:00Z",
-			})
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"items": items})
+		f.serveOrganizations(w)
 	case len(parts) >= 2 && parts[0] == "organizations":
-		projects, ok := f.orgs[parts[1]]
-		if !ok {
+		f.serveOrganization(w, r, parts)
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+// clone is f's setup with no requests received yet. The maps are shared:
+// a run only reads them.
+func (f *fakeAPI) clone() *fakeAPI {
+	return &fakeAPI{
+		keys: f.keys, orgs: f.orgs, orgOrder: f.orgOrder, display: f.display, listing: f.listing, status: f.status,
+		gatewayKeys: f.gatewayKeys, cancelOn: f.cancelOn, cancel: nil, t: nil, mu: sync.Mutex{}, requests: nil,
+	}
+}
+
+// answerOverride answers r ahead of any route when the setup says to, and reports whether it did: Ctrl-C at
+// cancelOn, or the status set for a suffix of the path.
+func (f *fakeAPI) answerOverride(w http.ResponseWriter, r *http.Request) bool {
+	path := r.URL.Path
+	if f.cancelOn != "" && strings.HasSuffix(path, f.cancelOn) {
+		f.pressCtrlC(r)
+		return true
+	}
+	for suffix, code := range f.status {
+		if strings.HasSuffix(path, suffix) {
+			w.WriteHeader(code)
+			return true
+		}
+	}
+	return false
+}
+
+// pressCtrlC cancels the run and holds the request r until the CLI gives up on it (or five seconds pass).
+func (f *fakeAPI) pressCtrlC(r *http.Request) {
+	f.cancel()
+	// Read the body first: until it has, the server cannot see the
+	// client hang up.
+	should(io.Copy(io.Discard, r.Body))(f.t)
+	select {
+	case <-r.Context().Done():
+	case <-time.After(5 * time.Second):
+	}
+}
+
+// serveOrganizations answers the organizations listing: every organization, in orgOrder or sorted by name.
+func (f *fakeAPI) serveOrganizations(w http.ResponseWriter) {
+	order := f.orgOrder
+	if order == nil {
+		order = sortedKeys(f.orgs)
+	}
+	items := make([]map[string]any, 0, len(order))
+	for _, name := range order {
+		items = append(items, map[string]any{
+			"organization_name": name, "display_name": f.display[name],
+			"organization_id": "o-" + name, "create_time": "2026-01-01T00:00:00Z",
+		})
+	}
+	reportErr(f.t, json.NewEncoder(w).Encode(map[string]any{"items": items}))
+}
+
+// serveOrganization answers a request under /organizations/<org>/, split into parts: the quotas, the GPU classes and
+// the project containers paths; 404 for an unknown organization and for anything else.
+func (f *fakeAPI) serveOrganization(w http.ResponseWriter, r *http.Request, parts []string) {
+	projects, ok := f.orgs[parts[1]]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+	switch {
+	case len(parts) == 3 && parts[2] == "quotas":
+		respond(f.t, w, `{}`)
+	case len(parts) == 3 && parts[2] == "gpu-classes":
+		respond(f.t, w, `{"items":[]}`)
+	case len(parts) >= 5 && parts[2] == "projects" && parts[4] == "containers":
+		f.serveContainers(w, r, projects, parts)
+	default:
+		w.WriteHeader(http.StatusNotFound)
+	}
+}
+
+// serveContainers answers a request under /organizations/<org>/projects/<project>/containers, split into parts, for
+// an organization with the given projects: a group's instances (one running), and a project's group listing (empty,
+// 404 for an unknown project); 404 for anything else.
+func (f *fakeAPI) serveContainers(w http.ResponseWriter, r *http.Request, projects, parts []string) {
+	switch {
+	case len(parts) == 7 && parts[6] == "instances":
+		respond(
+			f.t,
+			w,
+			`{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","state":"running",`+
+				`"ssh_ip":"203.0.113.7","ssh_port":30123}]}`,
+		)
+	case len(parts) == 5 && r.Method == http.MethodGet:
+		if !slices.Contains(projects, parts[3]) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		switch {
-		case len(parts) == 3 && parts[2] == "quotas":
-			_, _ = w.Write([]byte(`{}`))
-		case len(parts) == 3 && parts[2] == "gpu-classes":
-			_, _ = w.Write([]byte(`{"items":[]}`))
-		case len(parts) == 7 && parts[2] == "projects" && parts[4] == "containers" && parts[6] == "instances":
-			_, _ = w.Write([]byte(`{"instances":[{"id":"8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37","state":"running","ssh_ip":"203.0.113.7","ssh_port":30123}]}`))
-		case len(parts) == 5 && parts[2] == "projects" && parts[4] == "containers" && r.Method == http.MethodGet:
-			if !slices.Contains(projects, parts[3]) {
-				w.WriteHeader(http.StatusNotFound)
-				return
-			}
-			_, _ = w.Write([]byte(`{"items":[]}`))
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
+		respond(f.t, w, `{"items":[]}`)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 	}
@@ -161,7 +217,7 @@ func (f *fakeAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (f *fakeAPI) serveGateway(w http.ResponseWriter, r *http.Request, path string) {
 	switch path {
 	case "/models":
-		_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"model-a","owned_by":"salad"}]}`))
+		respond(f.t, w, `{"object":"list","data":[{"id":"model-a","owned_by":"salad"}]}`)
 	case "/chat/completions":
 		code, ok := f.gatewayKeys[strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")]
 		if !ok {
@@ -169,13 +225,17 @@ func (f *fakeAPI) serveGateway(w http.ResponseWriter, r *http.Request, path stri
 		}
 		switch code {
 		case http.StatusOK:
-			_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"total_tokens":2}}`))
+			respond(
+				f.t,
+				w,
+				`{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}],"usage":{"total_tokens":2}}`,
+			)
 		case http.StatusPaymentRequired:
 			w.WriteHeader(code)
-			_, _ = w.Write([]byte(`{"error":{"code":"credits_exhausted","message":"out of credits"}}`))
+			respond(f.t, w, `{"error":{"code":"credits_exhausted","message":"out of credits"}}`)
 		case http.StatusForbidden:
 			w.WriteHeader(code)
-			_, _ = w.Write([]byte(`{"error":{"code":"no_access","message":"no access"}}`))
+			respond(f.t, w, `{"error":{"code":"no_access","message":"no access"}}`)
 		default:
 			w.WriteHeader(code)
 		}
@@ -189,7 +249,7 @@ func sortedKeys(m map[string][]string) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sort.Strings(keys)
+	slices.Sort(keys)
 	return keys
 }
 
@@ -206,7 +266,6 @@ type fakeConsole struct {
 	answers    []string
 	device     bytes.Buffer
 	transcript *bytes.Buffer // when set, the device's lines are recorded here too
-	reads      int
 }
 
 func (c *fakeConsole) Terminal() bool { return c.terminal }
@@ -217,14 +276,35 @@ func (c *fakeConsole) Device() io.Writer {
 	}
 	return &c.device
 }
-func (c *fakeConsole) ReadHidden() (string, error) { return c.next(true) }
-func (c *fakeConsole) ReadLine() (string, error)   { return c.next(false) }
 
-// next gives the next answer and leaves the device as a terminal would: a
-// visible answer echoed, then the line ended.
-func (c *fakeConsole) next(hidden bool) (string, error) {
-	c.reads++
-	defer c.Device().Write([]byte{'\n'})
+// ReadHidden gives the next answer without echoing it, then ends the line.
+func (c *fakeConsole) ReadHidden() (string, error) {
+	defer c.echo("\n")
+	return c.next()
+}
+
+// ReadLine gives the next answer, echoed as a terminal shows a visible answer, then ends the line.
+func (c *fakeConsole) ReadLine() (string, error) {
+	defer c.echo("\n")
+	a, err := c.next()
+	if err != nil {
+		return "", err
+	}
+	c.echo(a)
+	return a, nil
+}
+
+// echo writes s to the device and the transcript, as Device does; a write to
+// a bytes.Buffer does not fail.
+func (c *fakeConsole) echo(s string) {
+	c.device.WriteString(s)
+	if c.transcript != nil {
+		c.transcript.WriteString(s)
+	}
+}
+
+// next takes the next answer; ReadHidden and ReadLine leave the device as a terminal would.
+func (c *fakeConsole) next() (string, error) {
 	if len(c.answers) == 0 {
 		return "", io.EOF
 	}
@@ -236,16 +316,13 @@ func (c *fakeConsole) next(hidden bool) (string, error) {
 	case keyEOF:
 		return "", io.EOF
 	}
-	if !hidden {
-		_, _ = c.Device().Write([]byte(a))
-	}
 	return a, nil
 }
 
 // session is one command line and the world it runs in.
 type session struct {
 	args  []string
-	env   map[string]string // set for the run; the shared variables not named here are empty
+	env   map[string]string // the run's variables besides the harness's own; nothing comes from the process
 	saved *config.File      // the config file before the run; nil: no file
 	// rawConfig, when set, is the config file's content before the run.
 	rawConfig string
@@ -261,6 +338,9 @@ type session struct {
 	// openStdin makes stdin a pipe that is never closed: a run that reads it
 	// waits until stdinPatience runs out (outcome.hung).
 	openStdin bool
+	// deps, when set, changes the run's seams (the sftp program, ssh's
+	// presence) before it runs.
+	deps func(d *Deps)
 }
 
 // outcome is what a session's run did.
@@ -281,78 +361,41 @@ type outcome struct {
 	configPath, apiURL, home string
 }
 
-// clearedVars are cleared for every run unless a session sets them, so the
-// developer's own shell, or CI's, never leaks into a test.
-var clearedVars = []string{
-	"SALAD_API_KEY", "SALAD_ORGANIZATION", "SALAD_PROJECT", "SALAD_AI_GATEWAY_API_KEY", "SALAD_CLI_NO_PROMPT", "CI",
-	"SSH_CONNECTION", "SSH_TTY", "DISPLAY", "WAYLAND_DISPLAY", "WSL_DISTRO_NAME",
-}
-
-func (s session) run(t *testing.T) outcome {
+func (s session) run(t *testing.T) *outcome { //nolint:gocritic // tests build a session inline and run it once
 	t.Helper()
-	api := s.api
-	if api == nil {
-		api = newFakeAPI()
+	api := newFakeAPI()
+	if s.api != nil {
+		api = s.api.clone() // a session's fake is its own, so cases can share one setup
 	}
 	// The run's context, which the fake cancels at cancelOn; set before the
 	// server starts, so its handlers see it.
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	api.cancel = cancel
+	api.t = t
 	srv := httptest.NewServer(api)
 	defer srv.Close()
 
 	dir := t.TempDir()
 	cfgDir := filepath.Join(dir, "config")
-	t.Setenv("SALAD_CLI_CONFIG_DIR", cfgDir)
-	t.Setenv("SALAD_CLI_API_BASE_URL", srv.URL)
-	t.Setenv("SALAD_CLI_AI_GATEWAY_BASE_URL", srv.URL+"/gw")
-	for _, v := range clearedVars {
-		t.Setenv(v, "")
-	}
 	home := filepath.Join(dir, "home")
-	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
-		t.Fatal(err)
+	env := map[string]string{
+		"SALAD_CLI_CONFIG_DIR":          cfgDir,
+		"SALAD_CLI_API_BASE_URL":        srv.URL,
+		"SALAD_CLI_AI_GATEWAY_BASE_URL": srv.URL + "/gw",
+		"HOME":                          home,
+		"USERPROFILE":                   home,
 	}
-	if s.sshKey {
-		name := s.sshKeyName
-		if name == "" {
-			name = "id_ed25519.pub"
-		}
-		if err := os.WriteFile(filepath.Join(home, ".ssh", name), []byte("ssh-ed25519 AAAA test@host\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-	for k, v := range s.env {
-		t.Setenv(k, v)
-	}
-	if s.saved != nil {
-		if err := config.Save(*s.saved); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if s.rawConfig != "" {
-		if err := os.MkdirAll(cfgDir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(s.rawConfig), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	configPath, _ := config.Path()
-	oldOS := goos
-	goos = s.os
-	if goos == "" {
-		goos = "windows"
-	}
-	defer func() { goos = oldOS }()
+	maps.Copy(env, s.env)
+	d := testDeps(env)
+	setUpSessionHome(t, &s, home)
+	setUpSessionConfig(t, &s, d.Env, cfgDir)
+	configPath := must(config.Path(d.Env))(t)
 
 	stdin := tempFile(t, dir, "stdin", s.stdin)
 	var hold *os.File // the open end of a never-closed stdin
 	if s.openStdin {
-		stdin.Close()
+		noErr(t, stdin.Close())
 		r, w, err := os.Pipe()
 		if err != nil {
 			t.Fatal(err)
@@ -364,64 +407,97 @@ func (s session) run(t *testing.T) outcome {
 	fc := &fakeConsole{terminal: s.tty != nil, answers: append([]string(nil), s.tty...), transcript: &transcript}
 	var opened []string
 
-	oldIn, oldErr, oldErrOut, oldOut, oldCon, oldOpen, oldTee := os.Stdin, os.Stderr, errOut, output.Stdout, con, openPage, stderrTee
-	tee := io.MultiWriter(stderr, &transcript)
-	os.Stdin, os.Stderr, errOut, output.Stdout, con, stderrTee = stdin, stderr, tee, io.MultiWriter(&stdout, &transcript), fc, tee
-	openPage = func(url string) error { opened = append(opened, url); return nil }
-	oldBase := baseContext
-	baseContext = func() context.Context { return ctx }
-	defer func() { baseContext = oldBase }()
-	commandLine = s.args
-	// cobra keeps a command's context from an earlier in-process run and
-	// would hand it to this one, which Ctrl-C (the fake's cancel) could then
-	// not reach.
-	walkTree(rootCmd, func(c *cobra.Command) { c.SetContext(nil) }) //nolint:staticcheck // nil is what cobra checks for
-	done := make(chan int, 1)
-	go func() { done <- Execute() }()
-	var code int
-	hung := false
-	if hold != nil {
-		select {
-		case code = <-done:
-		case <-time.After(stdinPatience):
-			hung = true
-			hold.Close() // let the stuck read end so the run can finish
-			code = <-done
-		}
-		hold.Close()
-	} else {
-		code = <-done
+	d.Args = s.args
+	d.Stdin = stdin
+	d.Stdout = io.MultiWriter(&stdout, &transcript)
+	d.Stderr = io.MultiWriter(stderr, &transcript)
+	d.Console = fc
+	d.OpenPage = func(url string) error { opened = append(opened, url); return nil }
+	d.Env.GOOS = s.os
+	if d.Env.GOOS == "" {
+		d.Env.GOOS = "windows"
 	}
-	os.Stdin, os.Stderr, errOut, output.Stdout, con, openPage, stderrTee = oldIn, oldErr, oldErrOut, oldOut, oldCon, oldOpen, oldTee
-	resetRun()
-	stdin.Close()
-	stderr.Close()
+	if s.deps != nil {
+		s.deps(d)
+	}
+	done := make(chan int, 1)
+	go func() { done <- Run(ctx, d) }()
+	code, hung := waitForRun(t, done, hold)
+	noErr(t, stdin.Close())
+	noErr(t, stderr.Close())
 
-	errBytes, _ := os.ReadFile(stderr.Name())
-	after, err := config.Load()
+	errBytes := must(os.ReadFile(stderr.Name()))(t)
+	after, err := config.Load(d.Env)
 	if err != nil && s.rawConfig == "" {
 		t.Fatalf("the config file after the run: %v", err)
 	}
-	return outcome{
+	return &outcome{
 		code: code, stdout: stdout.String(), stderr: string(errBytes), device: fc.device.String(),
 		opened: opened, config: after, api: api, hung: hung, transcript: transcript.String(), configPath: configPath,
 		apiURL: srv.URL, home: home,
 	}
 }
 
-// resetRun puts back what a run leaves behind in the process: flags, the
-// output mode, the command line and the per-command notes.
-func resetRun() {
-	_ = output.SetMode("table")
-	rootCmd.SetArgs(nil)
-	commandLine = nil
-	resetFlags()
+// setUpSessionHome makes the run's home folder with its .ssh folder, and puts the session's public key there when
+// it has one.
+func setUpSessionHome(t *testing.T, s *session, home string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if !s.sshKey {
+		return
+	}
+	name := s.sshKeyName
+	if name == "" {
+		name = "id_ed25519.pub"
+	}
+	err := os.WriteFile(filepath.Join(home, ".ssh", name), []byte("ssh-ed25519 AAAA test@host\n"), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// setUpSessionConfig writes the config file the session starts with: saved through config.Save, then rawConfig as
+// is into cfgDir.
+func setUpSessionConfig(t *testing.T, s *session, env config.Env, cfgDir string) {
+	t.Helper()
+	if s.saved != nil {
+		if err := config.Save(env, *s.saved); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s.rawConfig != "" {
+		if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(s.rawConfig), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// waitForRun waits for the run's exit code on done. With hold, the open end of a never-closed stdin, it waits only
+// stdinPatience before calling the run hung and closing hold so a stuck read ends; hold is closed either way.
+func waitForRun(t *testing.T, done <-chan int, hold *os.File) (int, bool) {
+	t.Helper()
+	if hold == nil {
+		return <-done, false
+	}
+	select {
+	case code := <-done:
+		noErr(t, hold.Close())
+		return code, false
+	case <-time.After(stdinPatience):
+		noErr(t, hold.Close()) // let the stuck read end so the run can finish
+		return <-done, true
+	}
 }
 
 // tempFile creates dir/name holding content, open for reading and writing.
 func tempFile(t *testing.T, dir, name, content string) *os.File {
 	t.Helper()
-	f, err := os.Create(filepath.Join(dir, name))
+	f, err := os.Create(filepath.Join(dir, name)) //nolint:gosec // G304: dir is the run's temp folder, name a fixed one
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,19 +512,19 @@ func tempFile(t *testing.T, dir, name, content string) *os.File {
 
 // placeholders replaces the run's config path, fake API address and home
 // folder with <path>, <api> and <home>.
-func (o outcome) placeholders(s string) string {
+func (o *outcome) placeholders(s string) string {
 	s = strings.ReplaceAll(s, o.configPath, "<path>")
 	s = strings.ReplaceAll(s, o.apiURL, "<api>")
 	return strings.ReplaceAll(s, o.home, "<home>")
 }
 
 // all is everything a person or a log could see from the run.
-func (o outcome) all() string { return o.stdout + "\n" + o.stderr + "\n" + o.device }
+func (o *outcome) all() string { return o.stdout + "\n" + o.stderr + "\n" + o.device }
 
 // lines splits text into its non-empty lines.
 func lines(s string) []string {
 	var out []string
-	for _, l := range strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n") {
+	for l := range strings.SplitSeq(strings.ReplaceAll(s, "\r\n", "\n"), "\n") {
 		if strings.TrimSpace(l) != "" {
 			out = append(out, l)
 		}
@@ -457,7 +533,7 @@ func lines(s string) []string {
 }
 
 // errorDocument decodes the error document on the last stderr line.
-func (o outcome) errorDocument() (map[string]any, error) {
+func (o *outcome) errorDocument() (map[string]any, error) {
 	ls := lines(o.stderr)
 	if len(ls) == 0 {
 		return nil, errors.New("stderr is empty")
@@ -474,11 +550,70 @@ func (o outcome) errorDocument() (map[string]any, error) {
 }
 
 // document decodes stdout as one JSON document.
-func (o outcome) document(t *testing.T) map[string]any {
+func (o *outcome) document(t *testing.T) map[string]any {
 	t.Helper()
 	var doc map[string]any
 	if err := json.Unmarshal([]byte(o.stdout), &doc); err != nil {
 		t.Fatalf("stdout is not one JSON document: %v\n%s", err, o.stdout)
 	}
 	return doc
+}
+
+// respond writes body as an httptest handler's response. The handler runs on
+// its own goroutine, so a failed write is reported, not fatal.
+func respond(t *testing.T, w io.Writer, body string) {
+	t.Helper()
+	if _, err := io.WriteString(w, body); err != nil {
+		t.Errorf("writing the response: %v", err)
+	}
+}
+
+// must returns v and fails the test when err is set, on the test goroutine:
+// must(os.ReadFile(p))(t).
+func must[T any](v T, err error) func(*testing.T) T {
+	return func(t *testing.T) T {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+}
+
+// should is must for code off the test goroutine (a handler, a cleanup): it
+// reports err and carries on.
+func should[T any](v T, err error) func(*testing.T) T {
+	return func(t *testing.T) T {
+		t.Helper()
+		if err != nil {
+			t.Error(err)
+		}
+		return v
+	}
+}
+
+// noErr fails the test when err is set.
+func noErr(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// reportErr reports err without stopping the test, for a handler or a cleanup.
+func reportErr(t *testing.T, err error) {
+	t.Helper()
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+// assertAs returns v as a T and fails the test when it holds something else.
+func assertAs[T any](t *testing.T, v any) T { //nolint:ireturn // T is the concrete type the caller names
+	t.Helper()
+	x, ok := v.(T)
+	if !ok {
+		t.Fatalf("got %T, want %T", v, x)
+	}
+	return x
 }

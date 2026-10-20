@@ -14,6 +14,7 @@ import (
 )
 
 func TestMaskShowsTheLastFourInASCII(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ key, want string }{
 		{"", "(not set)"},
 		{"12345678", "****"},
@@ -30,8 +31,13 @@ func TestMaskShowsTheLastFourInASCII(t *testing.T) {
 }
 
 func TestFromTag(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct{ source, want string }{
-		{"flag", " (from --org)"}, {"env", " (from SALAD_ORGANIZATION)"}, {"config", " (from config)"}, {"default", ""}, {"", ""},
+		{"flag", " (from --org)"},
+		{"env", " (from SALAD_ORGANIZATION)"},
+		{"config", " (from config)"},
+		{"default", ""},
+		{"", ""},
 	} {
 		if got := fromTag(originOf(tc.source, "--org", "SALAD_ORGANIZATION")); got != tc.want {
 			t.Errorf("%s: %q, want %q", tc.source, got, tc.want)
@@ -45,6 +51,8 @@ func TestFromTag(t *testing.T) {
 // TestNameCheck covers every branch of the name check, as an error from a
 // flag or variable and as a retry line at a prompt.
 func TestNameCheck(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	for _, tc := range []struct {
 		kind, name, origin string
 		msg, hint, retry   string
@@ -55,7 +63,8 @@ func TestNameCheck(t *testing.T) {
 			"organization", "Acme Prod", "--org",
 			`invalid organization name "Acme Prod" (from --org)`,
 			"it looks like a display name; use the name from the portal URL, the part after /organizations/",
-			`"Acme Prod" is not a valid organization name. It looks like a display name; type the name from the portal URL, the part after /organizations/.`,
+			`"Acme Prod" is not a valid organization name. It looks like a display name; type the name from the ` +
+				`portal URL, the part after /organizations/.`,
 		},
 		{
 			"organization", "My-Org", "--org",
@@ -65,17 +74,21 @@ func TestNameCheck(t *testing.T) {
 		{
 			"organization", "1org", "SALAD_ORGANIZATION",
 			`invalid organization name "1org" (from SALAD_ORGANIZATION)`,
-			"names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending with a letter or digit",
-			`"1org" is not a valid organization name. Names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending with a letter or digit.`,
+			"names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending " +
+				"with a letter or digit",
+			`"1org" is not a valid organization name. Names are 2-63 characters: lowercase letters, digits and ` +
+				`hyphens, starting with a letter and ending with a letter or digit.`,
 		},
 		{
 			"organization", "org-", "config",
 			`invalid organization name "org-" (from config)`,
-			"names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending with a letter or digit", "",
+			"names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending " +
+				"with a letter or digit", "",
 		},
 		{
 			"organization", "a", "--org", `invalid organization name "a" (from --org)`,
-			"names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending with a letter or digit", "",
+			"names are 2-63 characters: lowercase letters, digits and hyphens, starting with a letter and ending " +
+				"with a letter or digit", "",
 		},
 		{
 			"organization", "acme_prod", "--org", `invalid organization name "acme_prod" (from --org)`,
@@ -85,21 +98,16 @@ func TestNameCheck(t *testing.T) {
 			"project", "Staging Env", "SALAD_PROJECT",
 			`invalid project name "Staging Env" (from SALAD_PROJECT)`,
 			"it looks like a display name; use the name from the portal URL, the part after /projects/",
-			`"Staging Env" is not a valid project name. It looks like a display name; type the name from the portal URL, the part after /projects/.`,
+			`"Staging Env" is not a valid project name. It looks like a display name; type the name from the portal ` +
+				`URL, the part after /projects/.`,
 		},
-		{"project", "STAGING", "--project", `invalid project name "STAGING" (from --project)`, `did you mean "staging"?`, ""},
+		{"project", "STAGING", "--project", `invalid project name "STAGING" (from ` +
+			`--project)`, `did you mean "staging"?`, ""},
 	} {
 		t.Run(tc.kind+" "+tc.name, func(t *testing.T) {
-			err := checkName(tc.kind, tc.name, tc.origin)
-			if tc.msg == "" {
-				if err != nil {
-					t.Fatalf("valid name rejected: %v", err)
-				}
-				return
-			}
-			if err == nil || err.Code != clierr.CodeInvalidInput || err.Kind != clierr.KindInvalidInput || err.Message != tc.msg || err.HintText() != tc.hint {
-				t.Errorf("got %+v hint %q\nwant %q / %q", err, err.HintText(), tc.msg, tc.hint)
-			}
+			t.Parallel()
+			run := app.clone(t)
+			wantNameCheck(t, run.checkName(tc.kind, tc.name, tc.origin), tc.msg, tc.hint)
 			if tc.retry != "" {
 				if got := nameRetry(tc.kind, tc.name, "some-key"); got != tc.retry {
 					t.Errorf("retry line:\n got %q\nwant %q", got, tc.retry)
@@ -109,23 +117,41 @@ func TestNameCheck(t *testing.T) {
 	}
 }
 
+// wantNameCheck checks the name check's answer: nil when msg is "", else an invalid_input error with msg and hint.
+func wantNameCheck(t *testing.T, err *clierr.Error, msg, hint string) {
+	t.Helper()
+	if msg == "" {
+		if err != nil {
+			t.Fatalf("valid name rejected: %v", err)
+		}
+		return
+	}
+	if err == nil || err.Code != clierr.CodeInvalidInput || err.Kind != clierr.KindInvalidInput ||
+		err.Message != msg ||
+		err.HintText() != hint {
+		t.Errorf("got %+v hint %q\nwant %q / %q", err, err.HintText(), msg, hint)
+	}
+}
+
 // TestNameRetryNeverQuotesAKey: a prompt answer that is the key just read,
 // or too long to be a name, is not quoted back.
 func TestNameRetryNeverQuotesAKey(t *testing.T) {
+	t.Parallel()
 	key := "salad_cloud_user_SecretKeyValue000H13m"
-	if got := nameRetry("organization", key, key); got != "That looks like the API key you just pasted, not an organization name." {
-		t.Errorf("key: %q", got)
-	}
-	if got := nameRetry("project", key, key); got != "That looks like the API key you just pasted, not a project name." {
-		t.Errorf("key, project: %q", got)
-	}
 	long := strings.Repeat("a", 64)
-	if got := nameRetry("organization", long, key); got != "That is not a valid organization name: names are at most 63 characters." {
-		t.Errorf("long: %q", got)
+	for _, tc := range []struct{ name, kind, answer, want string }{
+		{"key", "organization", key, "That looks like the API key you just pasted, not an organization name."},
+		{"key, project", "project", key, "That looks like the API key you just pasted, not a project name."},
+		{"long", "organization", long, "That is not a valid organization name: names are at most 63 characters."},
+	} {
+		if got := nameRetry(tc.kind, tc.answer, key); got != tc.want {
+			t.Errorf("%s: %q", tc.name, got)
+		}
 	}
 }
 
 func TestNormalizeKey(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		raw, want string
 		ok        bool
@@ -156,21 +182,27 @@ func TestNormalizeKey(t *testing.T) {
 }
 
 func TestMalformedKey(t *testing.T) {
+	t.Parallel()
 	err := malformedKey(labelAPIKey, "salad_cloud_user_000000000éDTb9", "SALAD_API_KEY")
 	if err.Code != clierr.CodeAuth || err.Kind != clierr.KindAuth ||
 		err.Message != "API key ****...DTb9 (from SALAD_API_KEY) contains characters an API key cannot have" ||
 		err.HintText() != "check for quotes or stray characters in it" {
 		t.Errorf("got %+v hint %q", err, err.HintText())
 	}
-	if got := malformedKeyRetry(labelAPIKey); got != "That API key contains characters an API key cannot have. Check for quotes or stray characters in it." {
+	wantRetry := "That API key contains characters an API key cannot have. " +
+		"Check for quotes or stray characters in it."
+	if got := malformedKeyRetry(labelAPIKey); got != wantRetry {
 		t.Errorf("retry: %q", got)
 	}
-	if got := malformedKey(labelGatewayKey, "sk-é-0000000EFGH", "stdin").Message; got != "AI Gateway key ****...EFGH (from stdin) contains characters an AI Gateway key cannot have" {
-		t.Errorf("gateway: %q", got)
+	gateway := malformedKey(labelGatewayKey, "sk-é-0000000EFGH", "stdin").Message
+	if gateway != "AI Gateway key ****...EFGH (from stdin) contains characters an AI Gateway key cannot have" {
+		t.Errorf("gateway: %q", gateway)
 	}
 }
 
 func TestOrgsClause(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	names := func(n int) []string {
 		out := make([]string, n)
 		for i := range out {
@@ -178,43 +210,58 @@ func TestOrgsClause(t *testing.T) {
 		}
 		return out
 	}
-	atATerminal(t, true, "linux", "table")
+	app.atATerminal(t, true, "linux", "table")
 	for _, tc := range []struct {
 		names []string
 		want  string
 	}{
 		{[]string{"my-org", "acme-prod"}, "your organizations: my-org, acme-prod"},
-		{names(10), "your organizations: org-01, org-02, org-03, org-04, org-05, org-06, org-07, org-08, org-09, org-10"},
-		{names(22), "your organizations: org-01, org-02, org-03, org-04, org-05, org-06, org-07, org-08, org-09, org-10 and 12 more; to list all, run saladcloud orgs list"},
+		{names(10), "your organizations: org-01, org-02, org-03, org-04, org-05, org-06, org-07, org-08, org-09, " +
+			"org-10"},
+		{names(22), "your organizations: org-01, org-02, org-03, org-04, org-05, org-06, org-07, org-08, org-09, " +
+			"org-10 and 12 more; to list all, run saladcloud orgs list"},
 		{nil, ""},
-		{[]string{}, ""},
+		{[]string{}, ""}, //nolint:revive // an empty list, not nil, is the case under test
 	} {
-		if got := orgsClause(tc.names); got != tc.want {
+		if got := app.orgsClause(tc.names); got != tc.want {
 			t.Errorf("%d names at a terminal:\n got %q\nwant %q", len(tc.names), got, tc.want)
 		}
 	}
 	for _, mode := range []string{"table", "json"} {
-		atATerminal(t, false, "linux", mode)
+		app.atATerminal(t, false, "linux", mode)
 		for _, n := range [][]string{names(2), names(22), nil} {
-			if got := orgsClause(n); got != "to list yours, run saladcloud orgs list" {
+			if got := app.orgsClause(n); got != "to list yours, run saladcloud orgs list" {
 				t.Errorf("no terminal, %s mode, %d names: %q", mode, len(n), got)
 			}
 		}
 	}
-	if got := hintClauses(orgsClause([]string{"my-org"}), "fix or remove SALAD_ORGANIZATION"); got != "to list yours, run saladcloud orgs list; fix or remove SALAD_ORGANIZATION" {
-		t.Errorf("hintClauses: %q", got)
+	clauses := hintClauses(app.orgsClause([]string{"my-org"}), "fix or remove SALAD_ORGANIZATION")
+	if clauses != "to list yours, run saladcloud orgs list; fix or remove SALAD_ORGANIZATION" {
+		t.Errorf("hintClauses: %q", clauses)
 	}
 }
 
-func TestConfigReady(t *testing.T) {
+// TestConfigReadyNoFile: a config file that does not exist yet is ready, and checking leaves nothing behind.
+func TestConfigReadyNoFile(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	dir := t.TempDir()
-	t.Setenv("SALAD_CLI_CONFIG_DIR", dir)
-	if err := configReady("login"); err != nil {
+	app.setenv("SALAD_CLI_CONFIG_DIR", dir)
+	if err := app.configReady("login"); err != nil {
 		t.Fatalf("no file yet: %v", err)
 	}
-	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+	if entries := must(os.ReadDir(dir))(t); len(entries) != 0 {
 		t.Errorf("the check left %d files behind", len(entries))
 	}
+}
+
+// TestConfigReadyCorruptFile: a config file that cannot be parsed is an error naming the command to run again,
+// and is left as it is.
+func TestConfigReadyCorruptFile(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
+	dir := t.TempDir()
+	app.setenv("SALAD_CLI_CONFIG_DIR", dir)
 	path := filepath.Join(dir, "config.json")
 	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)
@@ -224,16 +271,24 @@ func TestConfigReady(t *testing.T) {
 		{"use", "fix or delete it, then run saladcloud use again"},
 		{"ai-gateway login", "fix or delete it, then run saladcloud ai-gateway login again"},
 	} {
-		err := configReady(tc.command)
+		err := app.configReady(tc.command)
 		if err == nil || err.Code != clierr.CodeGeneric || err.Kind != clierr.KindAPIError ||
-			!strings.HasPrefix(err.Message, "cannot read the config file "+path+": invalid character") || err.HintText() != tc.hint {
+			!strings.HasPrefix(
+				err.Message,
+				"cannot read the config file "+path+": invalid character",
+			) || err.HintText() != tc.hint {
 			t.Errorf("corrupt, %s: %+v hint %q", tc.command, err, err.HintText())
 		}
 	}
-	if b, _ := os.ReadFile(path); string(b) != "{not json" {
+	if b := must(os.ReadFile(path))(t); string(b) != "{not json" { //nolint:gosec // the test's config file
 		t.Errorf("the corrupt file was changed: %q", b)
 	}
+}
 
+// TestConfigReadyReadOnlyFolder: a config folder this user cannot write is an error whose fix suits the command.
+func TestConfigReadyReadOnlyFolder(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("folder permissions do not stop this user from writing")
 	}
@@ -241,14 +296,18 @@ func TestConfigReady(t *testing.T) {
 	if err := os.Mkdir(ro, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(ro, 0o700) })
-	t.Setenv("SALAD_CLI_CONFIG_DIR", ro)
+	t.Cleanup(func() {
+		reportErr(t, os.Chmod(ro, 0o700)) //nolint:gosec // a directory: TempDir cleanup needs its x bit back
+	})
+	app.setenv("SALAD_CLI_CONFIG_DIR", ro)
 	for _, tc := range []struct{ command, hint string }{
-		{"login", "set SALAD_CLI_CONFIG_DIR to a writable folder, or set SALAD_API_KEY, SALAD_ORGANIZATION and SALAD_PROJECT instead of logging in"},
-		{"ai-gateway login", "set SALAD_CLI_CONFIG_DIR to a writable folder, or set SALAD_AI_GATEWAY_API_KEY instead of logging in"},
+		{"login", "set SALAD_CLI_CONFIG_DIR to a writable folder, or set SALAD_API_KEY, SALAD_ORGANIZATION and " +
+			"SALAD_PROJECT instead of logging in"},
+		{"ai-gateway login", "set SALAD_CLI_CONFIG_DIR to a writable folder, or set SALAD_AI_GATEWAY_API_KEY instead " +
+			"of logging in"},
 		{"use", "set SALAD_CLI_CONFIG_DIR to a writable folder, then run saladcloud use again"},
 	} {
-		err := configReady(tc.command)
+		err := app.configReady(tc.command)
 		want := "cannot write the config file " + filepath.Join(ro, "config.json") + ": permission denied"
 		if err == nil || err.Message != want || err.HintText() != tc.hint {
 			t.Errorf("read-only, %s: %+v hint %q", tc.command, err, err.HintText())
@@ -260,6 +319,7 @@ func TestConfigReady(t *testing.T) {
 // Backspace, cancels on Ctrl-C and ends on Ctrl-D or Ctrl-Z at the start of
 // a line, echoing only what is visible.
 func TestReadKeys(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name, keys, want, echo string
 		err                    error
@@ -279,9 +339,10 @@ func TestReadKeys(t *testing.T) {
 		{"escape kept, not echoed", "ab\x1b[Ac\r", "ab\x1b[Ac", "ab[Ac", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			var echo strings.Builder
 			got, err := (&keyReader{r: strings.NewReader(tc.keys)}).readLine(&echo)
-			if got != tc.want || !errors.Is(err, tc.err) && !(err == nil && tc.err == nil) || echo.String() != tc.echo {
+			if got != tc.want || !errors.Is(err, tc.err) && (err != nil || tc.err != nil) || echo.String() != tc.echo {
 				t.Errorf("got %q, %v, echo %q; want %q, %v, echo %q", got, err, echo.String(), tc.want, tc.err, tc.echo)
 			}
 		})
@@ -291,9 +352,11 @@ func TestReadKeys(t *testing.T) {
 // TestReadKeysCRLF: a line ending in \r\n is one Enter, so the next prompt
 // does not read an empty answer; a \n on its own still ends a line.
 func TestReadKeysCRLF(t *testing.T) {
+	t.Parallel()
 	k := &keyReader{r: strings.NewReader("key\r\nmy-org\r\n\nnext\r")}
-	var got []string
-	for i := 0; i < 4; i++ {
+	const lines = 4
+	got := make([]string, 0, lines)
+	for range lines {
 		line, err := k.readLine(io.Discard)
 		if err != nil {
 			t.Fatal(err)
@@ -306,6 +369,8 @@ func TestReadKeysCRLF(t *testing.T) {
 }
 
 func TestBrowserOffer(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	for _, tc := range []struct {
 		os  string
 		env []string
@@ -320,30 +385,32 @@ func TestBrowserOffer(t *testing.T) {
 		{"darwin", []string{"SSH_TTY", "/dev/ttys001"}, false},
 		{"windows", []string{"SSH_CONNECTION", "x"}, false},
 	} {
-		old := goos
-		goos = tc.os
+		old := app.Env.GOOS
+		app.Env.GOOS = tc.os
 		for _, v := range []string{"DISPLAY", "WAYLAND_DISPLAY", "SSH_CONNECTION", "SSH_TTY"} {
-			t.Setenv(v, "")
+			app.setenv(v, "")
 		}
 		for i := 0; i+1 < len(tc.env); i += 2 {
-			t.Setenv(tc.env[i], tc.env[i+1])
+			app.setenv(tc.env[i], tc.env[i+1])
 		}
 		want := "Paste it here, hidden:"
 		if tc.ok {
 			want = "Paste it here, hidden (press Enter to open the page in a browser):"
 		}
-		if got := keyPrompt(); browserVisible() != tc.ok || got != want {
-			t.Errorf("%s %v: visible %t, prompt %q", tc.os, tc.env, browserVisible(), got)
+		if got := app.keyPrompt(); app.browserVisible() != tc.ok || got != want {
+			t.Errorf("%s %v: visible %t, prompt %q", tc.os, tc.env, app.browserVisible(), got)
 		}
-		goos = old
+		app.Env.GOOS = old
 	}
 }
 
 func TestOpener(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	const url = "https://portal.salad.com/api-key"
-	t.Setenv("WSL_DISTRO_NAME", "")
-	old := goos
-	t.Cleanup(func() { goos = old })
+	app.setenv("WSL_DISTRO_NAME", "")
+	old := app.Env.GOOS
+	t.Cleanup(func() { app.Env.GOOS = old })
 	for _, tc := range []struct {
 		os, wsl, want string
 	}{
@@ -352,9 +419,9 @@ func TestOpener(t *testing.T) {
 		{"linux", "", "xdg-open " + url},
 		{"linux", "Ubuntu", "cmd.exe /c start  " + url},
 	} {
-		goos = tc.os
-		t.Setenv("WSL_DISTRO_NAME", tc.wsl)
-		name, args := opener(url)
+		app.Env.GOOS = tc.os
+		app.setenv("WSL_DISTRO_NAME", tc.wsl)
+		name, args := opener(app.Env, url)
 		if got := name + " " + strings.Join(args, " "); got != tc.want {
 			t.Errorf("%s (WSL %q): %q, want %q", tc.os, tc.wsl, got, tc.want)
 		}
@@ -362,16 +429,19 @@ func TestOpener(t *testing.T) {
 }
 
 func TestOpenOffered(t *testing.T) {
+	t.Parallel()
+	app := newTestRun(t)
 	const url = "https://portal.salad.com/api-key"
 	fc := &fakeConsole{terminal: true}
-	oldCon, oldOpen := con, openPage
-	t.Cleanup(func() { con, openPage = oldCon, oldOpen })
-	con = fc
-	openPage = func(string) error { return nil }
-	openOffered(url)
-	openPage = func(string) error { return errors.New("no opener") }
-	openOffered(url)
-	want := "Opening https://portal.salad.com/api-key in your browser.\nCould not open a browser; open https://portal.salad.com/api-key yourself.\n"
+	oldCon, oldOpen := app.Console, app.OpenPage
+	t.Cleanup(func() { app.Console, app.OpenPage = oldCon, oldOpen })
+	app.Console = fc
+	app.OpenPage = func(string) error { return nil }
+	app.openOffered(url)
+	app.OpenPage = func(string) error { return errors.New("no opener") }
+	app.openOffered(url)
+	want := "Opening https://portal.salad.com/api-key in your browser.\nCould not open a browser; open " +
+		"https://portal.salad.com/api-key yourself.\n"
 	if got := fc.device.String(); got != want {
 		t.Errorf("device:\n%s\nwant:\n%s", got, want)
 	}
@@ -380,11 +450,13 @@ func TestOpenOffered(t *testing.T) {
 // TestAskUntil: prompts and retry lines go to the terminal device, answers
 // are re-asked until accepted, and Ctrl-C or end of input end the exchange.
 func TestAskUntil(t *testing.T) {
-	old := con
-	t.Cleanup(func() { con = old })
+	t.Parallel()
+	app := newTestRun(t)
+	old := app.Console
+	t.Cleanup(func() { app.Console = old })
 	fc := &fakeConsole{terminal: true, answers: []string{"Acme Prod", "my-org"}}
-	con = fc
-	got, err := askUntil("Type an organization name:", false, func(a string) (bool, string, *clierr.Error) {
+	app.Console = fc
+	got, err := app.askUntil("Type an organization name:", func(a string) (bool, string, *clierr.Error) {
 		if !validName(a) {
 			return false, nameRetry("organization", a, ""), nil
 		}
@@ -394,14 +466,15 @@ func TestAskUntil(t *testing.T) {
 		t.Fatalf("got %q, %v", got, err)
 	}
 	want := "Type an organization name: Acme Prod\n" +
-		`"Acme Prod" is not a valid organization name. It looks like a display name; type the name from the portal URL, the part after /organizations/.` + "\n" +
-		"Type an organization name: my-org\n"
+		`"Acme Prod" is not a valid organization name. It looks like a display name; type the name from the portal ` +
+		`URL, the part after /organizations/.` + "\nType an organization name: my-org\n"
 	if fc.device.String() != want {
 		t.Errorf("device:\n%s\nwant:\n%s", fc.device.String(), want)
 	}
 	for _, end := range []string{keyCtrlC, keyEOF} {
-		con = &fakeConsole{terminal: true, answers: []string{end}}
-		if _, err := askUntil("Paste it here, hidden:", true, func(string) (bool, string, *clierr.Error) { return true, "", nil }); err == nil {
+		app.Console = &fakeConsole{terminal: true, answers: []string{end}}
+		_, endErr := app.askUntil("Paste it here:", func(string) (bool, string, *clierr.Error) { return true, "", nil })
+		if endErr == nil {
 			t.Errorf("%q ended nothing", end)
 		}
 	}

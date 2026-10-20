@@ -64,7 +64,7 @@ are the `saladcloud container-groups` commands.
   - Setting `queue_autoscaler` also changes `replicas` (1 to 0 with `min_replicas` 0); `update` warns.
   - `queues get` lists no container groups: `container_groups` is `[]` even while a connected group is running, so
     the GROUPS column of `queues list` shows `-` for an empty list.
-  - Cancelling a running job marks it `cancelled` and discards its output, but the instance still runs it to the end.
+  - Canceling a running job marks it `cancelled` and discards its output, but the instance still runs it to the end.
   - A stopped or deleted group's worker can take new jobs for some seconds afterwards. Such a job, like one whose
     instance was interrupted, reads `running` until its lease runs out (about 5.5 minutes) and a worker next asks
     for work; with no worker left on the queue, it stays `running`.

@@ -13,6 +13,7 @@ import (
 )
 
 func TestValidateAvailabilityFlags(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		f    availabilityFlags
@@ -26,7 +27,8 @@ func TestValidateAvailabilityFlags(t *testing.T) {
 		{"upper country ok", availabilityFlags{Countries: []string{"US"}}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cerr := validateAvailabilityFlags(tc.f)
+			t.Parallel()
+			cerr := validateAvailabilityFlags(&tc.f)
 			switch {
 			case tc.code == 0 && cerr != nil:
 				t.Errorf("unexpected error %v", cerr)
@@ -40,6 +42,7 @@ func TestValidateAvailabilityFlags(t *testing.T) {
 // --from's requirements are the base; explicit flags override them and
 // --gpu replaces the classes.
 func TestApplyAvailabilityFlagsOverFrom(t *testing.T) {
+	t.Parallel()
 	g := &shared.ContainerGroup{
 		Container: &shared.Container{Resources: &shared.ContainerResourceRequirements{
 			Cpu: ptr.To(int64(4)), Memory: ptr.To(int64(8192)), StorageAmount: ptr.To(2 * bytesPerGB),
@@ -48,32 +51,36 @@ func TestApplyAvailabilityFlagsOverFrom(t *testing.T) {
 		CountryCodes: []shared.CountryCode{"de"},
 	}
 	base := requirementsOf(g)
-	got := applyAvailabilityFlags(base, availabilityFlags{CPU: 8, CPUSet: true, Storage: 5, StorageOK: true, Countries: []string{"US"}}, []string{"b"})
+	got := applyAvailabilityFlags(
+		base,
+		&availabilityFlags{CPU: 8, CPUSet: true, Storage: 5, StorageOK: true, Countries: []string{"US"}},
+		[]string{"b"},
+	)
 	want := api.AvailabilityRequest{
-		GpuClasses: []string{"b"}, Cpu: ptr.To(int64(8)), Memory: ptr.To(int64(8192)),
+		GpuClasses: []string{"b"}, CPU: ptr.To(int64(8)), Memory: ptr.To(int64(8192)),
 		StorageAmount: ptr.To(5 * bytesPerGB), CountryCodes: []string{"us"},
 	}
-	if strings.Join(got.GpuClasses, ",") != "b" || *got.Cpu != *want.Cpu || *got.Memory != *want.Memory ||
+	if strings.Join(got.GpuClasses, ",") != "b" || *got.CPU != *want.CPU || *got.Memory != *want.Memory ||
 		*got.StorageAmount != *want.StorageAmount || strings.Join(got.CountryCodes, ",") != "us" {
 		t.Errorf("got %+v, want %+v", got, want)
 	}
-	if kept := applyAvailabilityFlags(base, availabilityFlags{}, nil); strings.Join(kept.GpuClasses, ",") != "a" ||
-		strings.Join(kept.CountryCodes, ",") != "de" {
+	kept := applyAvailabilityFlags(base, &availabilityFlags{}, nil)
+	if strings.Join(kept.GpuClasses, ",") != "a" || strings.Join(kept.CountryCodes, ",") != "de" {
 		t.Errorf("without flags the group's requirements stay: %+v", kept)
 	}
 }
 
 func TestOverloadWarning(t *testing.T) {
-	if w := overloadWarning("RTX 4090", true); !strings.HasPrefix(w, "warning:") || !strings.Contains(w, "RTX 4090") || !strings.Contains(w, "overloaded") {
+	t.Parallel()
+	w := overloadWarning("RTX 4090")
+	if !strings.HasPrefix(w, "warning:") || !strings.Contains(w, "RTX 4090") || !strings.Contains(w, "overloaded") {
 		t.Errorf("warning = %q", w)
-	}
-	if w := overloadWarning("x", false); w != "" {
-		t.Errorf("overloadWarning(false) = %q, want none", w)
 	}
 }
 
 // An all-zero answer is asked once more; a real answer is not.
 func TestAskTwiceIfZero(t *testing.T) {
+	t.Parallel()
 	answers := []*organizations.GpuAvailability{{OnCallGpu: ptr.To(int64(0))}, {AvailableGpuHigh: ptr.To(int64(7))}}
 	calls := 0
 	ask := func() (*organizations.GpuAvailability, *clierr.Error) {
@@ -81,15 +88,22 @@ func TestAskTwiceIfZero(t *testing.T) {
 		calls++
 		return a, nil
 	}
-	got, _ := askTwiceIfZero(ask, allZeroGpu)
+	got, cerr := askTwiceIfZero(ask, allZeroGpu)
+	if cerr != nil {
+		t.Fatal(cerr)
+	}
 	if calls != 2 || ptr.Deref(got.AvailableGpuHigh) != 7 {
 		t.Errorf("calls = %d, high = %v; want a second ask that answers 7", calls, got.AvailableGpuHigh)
 	}
 	calls = 1 // start at the good answer
-	if _, _ = askTwiceIfZero(ask, allZeroGpu); calls != 2 {
+	if _, cerr = askTwiceIfZero(ask, allZeroGpu); cerr != nil {
+		t.Fatal(cerr)
+	}
+	if calls != 2 {
 		t.Errorf("a real answer was asked again (calls = %d)", calls)
 	}
-	if !allZeroGpu(&organizations.GpuAvailability{}) || allZeroGpu(&organizations.GpuAvailability{AvailableGpuLow: ptr.To(int64(1))}) {
+	if !allZeroGpu(&organizations.GpuAvailability{}) ||
+		allZeroGpu(&organizations.GpuAvailability{AvailableGpuLow: ptr.To(int64(1))}) {
 		t.Error("allZeroGpu misjudged")
 	}
 	if !allZeroGpu(&organizations.GpuAvailability{OnCallGpu: ptr.To(int64(9))}) {

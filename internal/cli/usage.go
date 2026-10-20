@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"regexp"
 	"strconv"
 	"strings"
@@ -28,47 +29,73 @@ const (
 	annotationArgsWrapped = "saladcloud/args-wrapped"
 )
 
+// The flags that name a resource above a command's subject, and the instance flag of ssh, sftp and logs.
+const (
+	ancestorFlagGroup    = "container-group"
+	ancestorFlagQueue    = "queue"
+	ancestorFlagInstance = "instance"
+)
+
+// The Use of the list verbs and of the jobs noun under queues and inference.
+const (
+	cmdUseList = "list"
+	cmdUseJobs = "jobs"
+)
+
+// usageWordsPerSliceValue is the words flagWords renders for each value of a repeatable flag: its name and the value.
+const usageWordsPerSliceValue = 2
+
+// nearestFlagShortName is the longest flag name nearestFlag matches within one edit only, not two.
+const nearestFlagShortName = 4
+
 func annotate(c *cobra.Command, key, value string) {
 	if c.Annotations == nil {
-		c.Annotations = map[string]string{}
+		c.Annotations = make(map[string]string)
 	}
 	c.Annotations[key] = value
 }
 
 // addHiddenGroupFlag gives c the hidden -c that only ever produces the
 // corrected command: the group is c's argument (or part of cp's path).
-func addHiddenGroupFlag(c *cobra.Command) {
-	c.Flags().StringP("container-group", "c", "", "")
-	_ = c.Flags().MarkHidden("container-group")
+func (app *App) addHiddenGroupFlag(c *cobra.Command) {
+	c.Flags().StringVarP(&app.flags.group, ancestorFlagGroup, "c", "", "")
+	app.noteTreeErr(c.Flags().MarkHidden(ancestorFlagGroup))
 	annotate(c, annotationGroupIsArg, "true")
 }
 
 // wrapArgs puts the usage rules in front of every leaf's own Args check:
 // the hidden -c first, then the positional count, then the required flags
 // (before cobra's own check, so its phrasing never shows). Idempotent.
-func wrapArgs(root *cobra.Command) {
+func (app *App) wrapArgs(root *cobra.Command) {
 	walkCommands(root, func(c *cobra.Command) {
 		if c == root || c.HasSubCommands() || c.Args == nil || c.Annotations[annotationArgsWrapped] != "" {
 			return
 		}
-		orig := c.Args
-		c.Args = func(cmd *cobra.Command, args []string) error {
-			if cerr := groupGivenAsFlag(cmd, args); cerr != nil {
-				return cerr
-			}
-			if err := orig(cmd, args); err != nil {
-				if cerr, ok := err.(*clierr.Error); ok {
-					return cerr
-				}
-				return argsError(cmd, args, err)
-			}
-			if cerr := missingRequiredFlag(cmd); cerr != nil {
-				return cerr
-			}
-			return nil
-		}
+		c.Args = app.usageCheckedArgs(c.Args)
 		annotate(c, annotationArgsWrapped, "true")
 	})
+}
+
+// usageCheckedArgs is wrapArgs' Args check around a leaf's own, orig: the hidden -c, then orig's positional count in
+// the CLI's phrasing, then the required flags.
+func (app *App) usageCheckedArgs(orig cobra.PositionalArgs) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if cerr := app.groupGivenAsFlag(cmd, args); cerr != nil {
+			return cerr
+		}
+		if err := orig(cmd, args); err != nil {
+			var cerr *clierr.Error
+			if errors.As(err, &cerr) {
+				return cerr
+			}
+			return argsError(cmd, args, err)
+		}
+		//nolint:revive // if-return: returned directly, a nil *clierr.Error would be a non-nil error
+		if cerr := missingRequiredFlag(cmd); cerr != nil {
+			return cerr
+		}
+		return nil
+	}
 }
 
 func walkCommands(c *cobra.Command, fn func(*cobra.Command)) {
@@ -125,9 +152,9 @@ func flagPlaceholder(cmd *cobra.Command, f *pflag.Flag) string {
 		}
 	}
 	switch f.Name {
-	case "container-group":
+	case ancestorFlagGroup:
 		return "<group>"
-	case "instance":
+	case ancestorFlagInstance:
 		return "<id>"
 	}
 	return "<" + f.Name + ">"
@@ -168,25 +195,30 @@ func changedFlagWords(cmd *cobra.Command, skip ...string) []string {
 		if skipped[f.Name] || f.Hidden || !f.Changed { // Visit also walks flags an earlier parse set
 			return
 		}
-		name := flagSpelling(f)
-		switch v := f.Value.(type) {
-		case pflag.SliceValue:
-			for _, s := range v.GetSlice() {
-				words = append(words, name, shellWord(s))
-			}
-		default:
-			if f.Value.Type() == "bool" {
-				if f.Value.String() == "true" {
-					words = append(words, "--"+f.Name)
-				} else {
-					words = append(words, "--"+f.Name+"=false")
-				}
-				return
-			}
-			words = append(words, name, shellWord(f.Value.String()))
-		}
+		words = append(words, flagWords(f)...)
 	})
 	return words
+}
+
+// flagWords renders one flag as given, as words for changedFlagWords: each value of a repeatable flag after its
+// name, a bool as --name or --name=false, and any other flag as its name and value.
+func flagWords(f *pflag.Flag) []string {
+	name := flagSpelling(f)
+	if v, ok := f.Value.(pflag.SliceValue); ok {
+		values := v.GetSlice()
+		words := make([]string, 0, usageWordsPerSliceValue*len(values))
+		for _, s := range values {
+			words = append(words, name, shellWord(s))
+		}
+		return words
+	}
+	if f.Value.Type() == "bool" {
+		if f.Value.String() == "true" {
+			return []string{"--" + f.Name}
+		}
+		return []string{"--" + f.Name + "=false"}
+	}
+	return []string{name, shellWord(f.Value.String())}
 }
 
 // correctedLine is the command to type instead: cmd's full path, its
@@ -212,16 +244,21 @@ func correctedLine(cmd *cobra.Command, positionals []string, f *pflag.Flag, valu
 	return strings.Join(words, " ")
 }
 
+// usageArgSplit is a command line's arguments split at "--": the positionals before it, and the words after it.
+type usageArgSplit struct {
+	pos, dash []string
+}
+
 // splitDash separates the positionals before "--" from the words after it,
 // for a command whose Use takes a command after "--" (ssh).
-func splitDash(cmd *cobra.Command, args []string) (pos, dash []string) {
+func splitDash(cmd *cobra.Command, args []string) usageArgSplit {
 	if !strings.Contains(cmd.Use, "[-- <") {
-		return args, nil
+		return usageArgSplit{pos: args, dash: nil}
 	}
 	if n := cmd.ArgsLenAtDash(); n >= 0 && n <= len(args) {
-		return args[:n], args[n:]
+		return usageArgSplit{pos: args[:n], dash: args[n:]}
 	}
-	return args, nil
+	return usageArgSplit{pos: args, dash: nil}
 }
 
 // cobra's positional-count errors, and the bounds each states.
@@ -233,66 +270,95 @@ var (
 	rangeArgsRe = regexp.MustCompile(`^accepts between (\d+) and (\d+) arg\(s\), received \d+$`)
 )
 
+// errAccepts starts every positional-count error the CLI's own Args checks
+// return, worded like cobra's ("accepts 1 arg(s), received 2") so argBounds
+// reads them the same way.
+var errAccepts = errors.New("accepts")
+
+// usageArgBounds are the fewest and the most positionals a command takes.
+type usageArgBounds struct {
+	minArgs, maxArgs int
+}
+
 // argBounds reads the positional bounds from a cobra Args error; ok is
 // false for any other error.
-func argBounds(err error) (min, max int, ok bool) {
+func argBounds(err error) (usageArgBounds, bool) {
 	msg := err.Error()
-	atoi := func(s string) int { n, _ := strconv.Atoi(s); return n }
+	atoi := func(s string) int {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return 0 // not reached: the patterns match digits only
+		}
+		return n
+	}
 	switch {
 	case noArgsRe.MatchString(msg):
-		return 0, 0, true
+		return usageArgBounds{minArgs: 0, maxArgs: 0}, true
 	case exactArgsRe.MatchString(msg):
 		n := atoi(exactArgsRe.FindStringSubmatch(msg)[1])
-		return n, n, true
+		return usageArgBounds{minArgs: n, maxArgs: n}, true
 	case maxArgsRe.MatchString(msg):
-		return 0, atoi(maxArgsRe.FindStringSubmatch(msg)[1]), true
+		return usageArgBounds{minArgs: 0, maxArgs: atoi(maxArgsRe.FindStringSubmatch(msg)[1])}, true
 	case minArgsRe.MatchString(msg):
-		return atoi(minArgsRe.FindStringSubmatch(msg)[1]), int(^uint(0) >> 1), true
+		return usageArgBounds{minArgs: atoi(minArgsRe.FindStringSubmatch(msg)[1]), maxArgs: int(^uint(0) >> 1)}, true
 	case rangeArgsRe.MatchString(msg):
 		m := rangeArgsRe.FindStringSubmatch(msg)
-		return atoi(m[1]), atoi(m[2]), true
+		return usageArgBounds{minArgs: atoi(m[1]), maxArgs: atoi(m[2])}, true
 	}
-	return 0, 0, false
+	return usageArgBounds{}, false
 }
 
 // argsError rewrites a positional-count error: a missing argument names its
 // placeholder; one argument too many, where a flag would have taken it,
 // prints the corrected command; anything else names the stray argument.
 func argsError(cmd *cobra.Command, args []string, err error) *clierr.Error {
-	min, max, ok := argBounds(err)
+	bounds, ok := argBounds(err)
 	if !ok {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
 	}
-	pos, dash := splitDash(cmd, args)
-	if len(pos) < min {
+	minArgs, maxArgs := bounds.minArgs, bounds.maxArgs
+	split := splitDash(cmd, args)
+	pos, dash := split.pos, split.dash
+	if len(pos) < minArgs {
 		ph := "<argument>"
 		if names := positionalPlaceholders(cmd); len(pos) < len(names) {
 			ph = names[len(pos)]
 		}
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing argument: %s", ph).WithHint("run %s", usageLine(cmd))
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing argument: %s", ph).
+			WithHint("run %s", usageLine(cmd))
 	}
-	if name := cmd.Annotations[annotationFlagForArg]; name != "" && len(pos) == max+1 && !cmd.Flags().Changed(name) {
+	if name := cmd.Annotations[annotationFlagForArg]; name != "" && len(pos) == maxArgs+1 &&
+		!cmd.Flags().Changed(name) {
 		if f := cmd.Flags().Lookup(name); f != nil {
 			// A parent comes first (the old <parent> <leaf> order); the
 			// instance comes after the group it belongs to.
 			value, rest := pos[0], pos[1:]
-			if name == "instance" {
-				value, rest = pos[max], pos[:max]
+			if name == ancestorFlagInstance {
+				value, rest = pos[maxArgs], pos[:maxArgs]
 			}
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s takes the %s as %s, not as an argument",
-				commandName(cmd), flagNoun(name), flagSpelling(f)).WithHint("run %s", correctedLine(cmd, rest, f, value, dash))
+			return clierr.New(
+				clierr.CodeUsage,
+				clierr.KindUsage,
+				"%s takes the %s as %s, not as an argument",
+				commandName(
+					cmd,
+				),
+				flagNoun(name),
+				flagSpelling(f),
+			).WithHint("run %s", correctedLine(cmd, rest, f, value, dash))
 		}
 	}
 	extra := ""
-	if len(pos) > max {
-		extra = pos[max]
+	if len(pos) > maxArgs {
+		extra = pos[maxArgs]
 	}
-	return clierr.New(clierr.CodeUsage, clierr.KindUsage, `unexpected argument "%s"`, extra).WithHint("run %s", usageLine(cmd))
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage, `unexpected argument "%s"`, extra).
+		WithHint("run %s", usageLine(cmd))
 }
 
 // flagNoun is what a parent flag names, for "takes the group as -c".
 func flagNoun(flag string) string {
-	if flag == "container-group" {
+	if flag == ancestorFlagGroup {
 		return "group"
 	}
 	return flag
@@ -301,17 +367,30 @@ func flagNoun(flag string) string {
 // groupGivenAsFlag answers the hidden -c on a command whose group is its
 // argument: ssh, sftp and container-groups logs take the group as the
 // argument and the instance as --instance; cp names both in its path.
-func groupGivenAsFlag(cmd *cobra.Command, args []string) *clierr.Error {
-	if cmd.Annotations[annotationGroupIsArg] == "" || !cmd.Flags().Changed("container-group") {
+func (app *App) groupGivenAsFlag(cmd *cobra.Command, args []string) *clierr.Error {
+	if cmd.Annotations[annotationGroupIsArg] == "" || !cmd.Flags().Changed(ancestorFlagGroup) {
 		return nil
 	}
-	group, _ := cmd.Flags().GetString("container-group")
+	group := app.flags.group
 	if cmd.Name() == "cp" {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "cp takes the group in its remote path, not as -c").
-			WithHint("run %s", strings.Join(strings.Fields(cmd.CommandPath()), " ")+" "+shellWord(group)+"[/<instance>]:<path> <local-path>")
+			WithHint(
+				"run %s",
+				strings.Join(strings.Fields(cmd.CommandPath()), " ")+" "+shellWord(group)+
+					"[/<instance>]:<path> <local-path>",
+			)
 	}
-	pos, dash := splitDash(cmd, args)
-	inst := cmd.Flags().Lookup("instance")
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage,
+		"%s takes the group as its argument and the instance as --instance", commandName(cmd)).
+		WithHint("run %s", groupAsArgLine(cmd, args, group))
+}
+
+// groupAsArgLine is the command groupGivenAsFlag suggests: the group -c gave as the argument, the instance (from
+// --instance, or the argument given in its place) as --instance, the other flags as given, and anything after "--".
+func groupAsArgLine(cmd *cobra.Command, args []string, group string) string {
+	split := splitDash(cmd, args)
+	pos, dash := split.pos, split.dash
+	inst := cmd.Flags().Lookup(ancestorFlagInstance)
 	value := ""
 	if len(pos) > 0 && !inst.Changed {
 		value = pos[0]
@@ -323,7 +402,7 @@ func groupGivenAsFlag(cmd *cobra.Command, args []string) *clierr.Error {
 		words = append(words, "--instance", shellWord(value))
 	}
 	line := strings.Join(append(strings.Fields(cmd.CommandPath()), words...), " ")
-	if rest := changedFlagWords(cmd, "container-group", "instance"); len(rest) > 0 {
+	if rest := changedFlagWords(cmd, ancestorFlagGroup, ancestorFlagInstance); len(rest) > 0 {
 		line += " " + strings.Join(rest, " ")
 	}
 	if len(dash) > 0 {
@@ -333,8 +412,7 @@ func groupGivenAsFlag(cmd *cobra.Command, args []string) *clierr.Error {
 		}
 		line += " -- " + strings.Join(quoted, " ")
 	}
-	return clierr.New(clierr.CodeUsage, clierr.KindUsage,
-		"%s takes the group as its argument and the instance as --instance", commandName(cmd)).WithHint("run %s", line)
+	return line
 }
 
 // missingRequiredFlag is cobra's required-flag check in the CLI's phrasing,
@@ -371,18 +449,41 @@ func flagError(cmd *cobra.Command, err error) error {
 	if m := invalidValueRe.FindStringSubmatch(msg); m != nil {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, `invalid %s "%s": %s`, m[2], m[1], valueProblem(m[3]))
 	}
-	if m := needsValueRe.FindStringSubmatch(msg); m != nil {
-		var f *pflag.Flag
-		if m[1] != "" {
-			f = cmd.Flags().ShorthandLookup(m[1])
-		} else {
-			f = cmd.Flags().Lookup(m[2])
-		}
-		if f != nil {
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing value for %s",
-				flagWithPlaceholder(cmd, f)).WithHint("run %s", usageLine(cmd))
-		}
+	if cerr := usageMissingValueError(cmd, msg); cerr != nil {
+		return cerr
 	}
+	if cerr := usageWaitFlagError(cmd, msg); cerr != nil {
+		return cerr
+	}
+	if cerr := usageUnknownFlagError(cmd, msg); cerr != nil {
+		return cerr
+	}
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
+}
+
+// usageMissingValueError is flagError's answer to pflag's error msg for a flag of cmd given without its value, or
+// nil when msg is another error or names no flag of cmd.
+func usageMissingValueError(cmd *cobra.Command, msg string) *clierr.Error {
+	m := needsValueRe.FindStringSubmatch(msg)
+	if m == nil {
+		return nil
+	}
+	var f *pflag.Flag
+	if m[1] != "" {
+		f = cmd.Flags().ShorthandLookup(m[1])
+	} else {
+		f = cmd.Flags().Lookup(m[2])
+	}
+	if f == nil {
+		return nil
+	}
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage, "missing value for %s",
+		flagWithPlaceholder(cmd, f)).WithHint("run %s", usageLine(cmd))
+}
+
+// usageWaitFlagError is flagError's answer to --no-wait on a verb where waiting is opt-in, or --wait on one where it
+// is the default, or nil for any other error msg.
+func usageWaitFlagError(cmd *cobra.Command, msg string) *clierr.Error {
 	switch {
 	case msg == "unknown flag: --no-wait" && cmd.Flags().Lookup("wait") != nil:
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: --no-wait").
@@ -395,20 +496,32 @@ func flagError(cmd *cobra.Command, err error) error {
 		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: --wait").
 			WithHint("leave it out; %s %s by default, and --no-wait returns at once", commandName(cmd), waits)
 	}
-	if m := unknownFlagRe.FindStringSubmatch(msg); m != nil {
-		given, near := "-"+m[1], ""
-		if m[2] != "" {
-			given = "--" + m[2]
-			near = nearestFlag(cmd, m[2])
-		}
-		if near != "" {
-			return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: %s", given).
-				WithHint("did you mean --%s?; run %s, or to list its flags, run %s --help", near, usageLine(cmd), cmd.CommandPath())
-		}
-		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: %s", given).
-			WithHint("run %s, or to list its flags, run %s --help", usageLine(cmd), cmd.CommandPath())
+	return nil
+}
+
+// usageUnknownFlagError is flagError's answer to pflag's unknown-flag error msg, with the nearest spelling when one
+// is close, or nil for any other error.
+func usageUnknownFlagError(cmd *cobra.Command, msg string) *clierr.Error {
+	m := unknownFlagRe.FindStringSubmatch(msg)
+	if m == nil {
+		return nil
 	}
-	return clierr.New(clierr.CodeUsage, clierr.KindUsage, "%v", err)
+	given, near := "-"+m[1], ""
+	if m[2] != "" {
+		given = "--" + m[2]
+		near = nearestFlag(cmd, m[2])
+	}
+	if near != "" {
+		return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: %s", given).
+			WithHint(
+				"did you mean --%s?; run %s, or to list its flags, run %s --help",
+				near,
+				usageLine(cmd),
+				cmd.CommandPath(),
+			)
+	}
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage, "unknown flag: %s", given).
+		WithHint("run %s, or to list its flags, run %s --help", usageLine(cmd), cmd.CommandPath())
 }
 
 // unknownFlagRe matches pflag's unknown-flag errors, long and short.
@@ -419,7 +532,7 @@ var unknownFlagRe = regexp.MustCompile(`^unknown (?:shorthand )?flag: (?:'([a-zA
 // is as close.
 func nearestFlag(cmd *cobra.Command, name string) string {
 	limit := 2
-	if len(name) <= 4 {
+	if len(name) <= nearestFlagShortName {
 		limit = 1
 	}
 	best, bestDist, tie := "", limit+1, false
@@ -445,7 +558,7 @@ func nearestFlag(cmd *cobra.Command, name string) string {
 // waitUntil is what a verb's --wait waits for.
 func waitUntil(cmd *cobra.Command) string {
 	switch {
-	case cmd.Parent() != nil && cmd.Parent().Name() == "jobs":
+	case cmd.Parent() != nil && cmd.Parent().Name() == cmdUseJobs:
 		return "the job finishes"
 	case cmd.Name() == "stop":
 		return "the group is stopped"

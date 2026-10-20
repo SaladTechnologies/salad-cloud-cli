@@ -8,6 +8,7 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
@@ -31,6 +32,7 @@ func validCreateRequest() containergroups.ContainerGroupCreationRequest {
 }
 
 func TestValidateCreateRequestValid(t *testing.T) {
+	t.Parallel()
 	req := validCreateRequest()
 	if err := validateCreateRequest(&req); err != nil {
 		t.Fatalf("validateCreateRequest returned %v for a valid request", err)
@@ -38,6 +40,7 @@ func TestValidateCreateRequestValid(t *testing.T) {
 }
 
 func TestValidateCreateRequestMissingFields(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		field  string // the field named in the error message
 		mutate func(*containergroups.ContainerGroupCreationRequest)
@@ -48,14 +51,21 @@ func TestValidateCreateRequestMissingFields(t *testing.T) {
 		{"container.image", func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Image = nil }},
 		{"container.image", func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Image = ptr.To("") }},
 		{"container.resources", func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Resources = nil }},
-		{"container.resources.cpu", func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Resources.Cpu = nil }},
-		{"container.resources.memory", func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Resources.Memory = nil }},
+		{
+			"container.resources.cpu",
+			func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Resources.Cpu = nil },
+		},
+		{
+			"container.resources.memory",
+			func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Resources.Memory = nil },
+		},
 		{"replicas", func(r *containergroups.ContainerGroupCreationRequest) { r.Replicas = nil }},
 		{"restart_policy", func(r *containergroups.ContainerGroupCreationRequest) { r.RestartPolicy = nil }},
 		{"autostart_policy", func(r *containergroups.ContainerGroupCreationRequest) { r.AutostartPolicy = nil }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.field, func(t *testing.T) {
+			t.Parallel()
 			req := validCreateRequest()
 			tt.mutate(&req)
 			err := validateCreateRequest(&req)
@@ -78,6 +88,7 @@ func scalingAction(replicas int64, schedule string) shared.ContainerGroupScaling
 }
 
 func TestScheduledScalingString(t *testing.T) {
+	t.Parallel()
 	weekdayPair := []shared.ContainerGroupScalingAction{
 		scalingAction(2, "0 9 * * 1-5"),
 		scalingAction(0, "0 17 * * 1-5"),
@@ -98,12 +109,14 @@ func TestScheduledScalingString(t *testing.T) {
 			`enabled (1 action: 5 replicas @ "0 0 * * *")`,
 		},
 		{
-			"enabled with four actions caps at three", ptr.To(true),
+			"enabled with four actions caps at three",
+			ptr.To(true),
 			[]shared.ContainerGroupScalingAction{
 				scalingAction(1, "0 1 * * *"), scalingAction(2, "0 2 * * *"),
 				scalingAction(3, "0 3 * * *"), scalingAction(4, "0 4 * * *"),
 			},
-			`enabled (4 actions: 1 replicas @ "0 1 * * *"; 2 replicas @ "0 2 * * *"; 3 replicas @ "0 3 * * *"; and 1 more)`,
+			`enabled (4 actions: 1 replicas @ "0 1 * * *"; 2 replicas @ "0 2 * * *"; 3 replicas @ "0 3 * * *"; and 1 ` +
+				`more)`,
 		},
 		{"enabled without actions", ptr.To(true), nil, "enabled (no actions)"},
 		{"disabled with actions", ptr.To(false), weekdayPair, "disabled (2 actions configured)"},
@@ -117,6 +130,7 @@ func TestScheduledScalingString(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			g := &shared.ContainerGroup{
 				ScheduledScalingEnabled: tt.enabled,
 				ScalingActions:          tt.actions,
@@ -131,6 +145,7 @@ func TestScheduledScalingString(t *testing.T) {
 // TestWriteGroupDetailScheduledScalingRow pins the row's presence contract:
 // shown when the group has the flag or actions, absent otherwise.
 func TestWriteGroupDetailScheduledScalingRow(t *testing.T) {
+	t.Parallel()
 	with := &shared.ContainerGroup{
 		Name:                    ptr.To("demo"),
 		ScheduledScalingEnabled: ptr.To(true),
@@ -139,13 +154,13 @@ func TestWriteGroupDetailScheduledScalingRow(t *testing.T) {
 	without := &shared.ContainerGroup{Name: ptr.To("demo")}
 
 	var buf strings.Builder
-	writeGroupDetail(&buf, with)
+	writeGroupDetail(output.NewWriter(&buf), with)
 	if !strings.Contains(buf.String(), "Scheduled scaling\tenabled (1 action: 2 replicas @ \"0 9 * * 1-5\")") {
 		t.Errorf("detail lacks the Scheduled scaling row:\n%s", buf.String())
 	}
 
 	buf.Reset()
-	writeGroupDetail(&buf, without)
+	writeGroupDetail(output.NewWriter(&buf), without)
 	if strings.Contains(buf.String(), "Scheduled scaling") {
 		t.Errorf("detail has a Scheduled scaling row for a group without any:\n%s", buf.String())
 	}
@@ -161,6 +176,7 @@ func detailGroup(status shared.ContainerGroupStatus, autostart bool) *shared.Con
 }
 
 func TestWriteGroupDetailPendingAutostartNote(t *testing.T) {
+	t.Parallel()
 	note := `settles to "stopped" shortly (created without autostart)`
 
 	tests := []struct {
@@ -181,8 +197,9 @@ func TestWriteGroupDetailPendingAutostartNote(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var buf strings.Builder
-			writeGroupDetail(&buf, tt.group)
+			writeGroupDetail(output.NewWriter(&buf), tt.group)
 			got := strings.Contains(buf.String(), note)
 			if got != tt.wantNote {
 				t.Errorf("note present = %t, want %t\noutput:\n%s", got, tt.wantNote, buf.String())
@@ -197,6 +214,7 @@ func TestWriteGroupDetailPendingAutostartNote(t *testing.T) {
 // scheduled-scaling-enabled to false while leaving the actions configured,
 // so a schedule silently stops firing.
 func TestScheduledScalingResetStillWarns(t *testing.T) {
+	t.Parallel()
 	group := func(enabled bool) *shared.ContainerGroup {
 		return &shared.ContainerGroup{
 			Name:                    ptr.To("demo"),
@@ -211,13 +229,20 @@ func TestScheduledScalingResetStillWarns(t *testing.T) {
 		wantWarn bool
 	}{
 		{"unrelated patch flips the flag off", group(true), group(false), `{"replicas": 3}`, true},
-		{"patch that names the field is deliberate", group(true), group(false), `{"scheduled-scaling-enabled": false}`, false},
+		{
+			"patch that names the field is deliberate",
+			group(true),
+			group(false),
+			`{"scheduled-scaling-enabled": false}`,
+			false,
+		},
 		{"flag stayed on", group(true), group(true), `{"replicas": 3}`, false},
 		{"was already off", group(false), group(false), `{"replicas": 3}`, false},
 		{"pre-state unknown", nil, group(false), `{"replicas": 3}`, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			var buf strings.Builder
 			warnUnrequestedChanges(&buf, findUnrequestedChanges([]byte(tt.patch), tt.before, tt.after))
 			got := strings.Contains(buf.String(), "scheduled-scaling-enabled")

@@ -7,33 +7,32 @@ import (
 	"testing"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
-// runExecute runs Execute with args through the real command tree, capturing
-// stdout and stderr. It resets --output afterward because cobra keeps flag
-// values between executions in one process.
-func runExecute(t *testing.T, args ...string) (code int, stdout, stderr string) {
+// executeOutput is how one Run ended: its exit code, and what it wrote to stdout and stderr.
+type executeOutput struct {
+	code           int
+	stdout, stderr string
+}
+
+// runExecute runs Run with args through the real command tree, capturing
+// stdout and stderr. It resets the run's state afterward because cobra keeps
+// flag values between executions in one process.
+func (app *testRun) runExecute(t *testing.T, args ...string) executeOutput {
 	t.Helper()
 	var out, errBuf bytes.Buffer
-	oldOut, oldErr := output.Stdout, errOut
-	output.Stdout, errOut = &out, &errBuf
-	t.Cleanup(func() {
-		output.Stdout, errOut = oldOut, oldErr
-		_ = output.SetMode("table")
-		rootCmd.SetArgs(nil)
-		commandLine = nil
-		resetFlags()
-	})
-	commandLine = args
-	code = Execute()
-	return code, out.String(), errBuf.String()
+	d := app.Deps
+	d.Args, d.Stdout, d.Stderr = args, &out, &errBuf
+	code := Run(t.Context(), &d)
+	return executeOutput{code: code, stdout: out.String(), stderr: errBuf.String()}
 }
 
 // TestErrorDocumentIsNotHTMLEscaped: a placeholder in a message reads as
 // typed, not as the HTML-safe escape json.Marshal would write.
 func TestErrorDocumentIsNotHTMLEscaped(t *testing.T) {
-	_, _, stderr := runExecute(t, "container-groups", "scale", "sr-ex2", "-o", "json")
+	t.Parallel()
+	app := newTestRun(t)
+	stderr := app.runExecute(t, "container-groups", "scale", "sr-ex2", "-o", "json").stderr
 	escaped := `\` + "u003c"
 	if !strings.Contains(stderr, "<n>") || strings.Contains(stderr, escaped) {
 		t.Errorf("error document = %s, want <n> unescaped", stderr)
@@ -44,6 +43,7 @@ func TestErrorDocumentIsNotHTMLEscaped(t *testing.T) {
 // before PersistentPreRunE sets the output mode, so Execute must still report
 // an argument error as the one-line JSON error document under -o json.
 func TestCommandLineErrorsHonourJSONMode(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		args []string
@@ -59,38 +59,48 @@ func TestCommandLineErrorsHonourJSONMode(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			code, stdout, stderr := runExecute(t, tc.args...)
+			t.Parallel()
+			app := newTestRun(t)
+			run := app.runExecute(t, tc.args...)
+			code, stdout, stderr := run.code, run.stdout, run.stderr
 			if code != clierr.CodeUsage {
 				t.Errorf("exit = %d, want %d", code, clierr.CodeUsage)
 			}
 			if stdout != "" {
 				t.Errorf("stdout must be empty on error, got %q", stdout)
 			}
-			lines := strings.Split(strings.TrimRight(stderr, "\n"), "\n")
-			if len(lines) != 1 {
-				t.Fatalf("stderr = %q, want exactly one line", stderr)
-			}
-			var doc struct {
-				Error map[string]json.RawMessage `json:"error"`
-			}
-			if err := json.Unmarshal([]byte(lines[0]), &doc); err != nil {
-				t.Fatalf("stderr is not a JSON error document: %v\n%s", err, stderr)
-			}
-			for _, k := range []string{"exit_code", "kind", "message", "http_status"} {
-				if _, ok := doc.Error[k]; !ok {
-					t.Errorf("error key %q missing: %s", k, stderr)
-				}
-			}
-			if got := string(doc.Error["exit_code"]); got != "2" {
-				t.Errorf("exit_code = %s, want 2", got)
-			}
-			if got := string(doc.Error["kind"]); got != `"`+string(clierr.KindUsage)+`"` {
-				t.Errorf("kind = %s, want %q", got, clierr.KindUsage)
-			}
-			if got := string(doc.Error["http_status"]); got != "null" {
-				t.Errorf("http_status = %s, want null", got)
-			}
+			checkUsageErrorDocument(t, stderr)
 		})
+	}
+}
+
+// checkUsageErrorDocument checks that stderr is exactly one line, the JSON error document of a usage error that no
+// HTTP response caused.
+func checkUsageErrorDocument(t *testing.T, stderr string) {
+	t.Helper()
+	lines := strings.Split(strings.TrimRight(stderr, "\n"), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("stderr = %q, want exactly one line", stderr)
+	}
+	var doc struct {
+		Error map[string]json.RawMessage `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &doc); err != nil {
+		t.Fatalf("stderr is not a JSON error document: %v\n%s", err, stderr)
+	}
+	for _, k := range []string{"exit_code", "kind", "message", "http_status"} {
+		if _, ok := doc.Error[k]; !ok {
+			t.Errorf("error key %q missing: %s", k, stderr)
+		}
+	}
+	if got := string(doc.Error["exit_code"]); got != "2" {
+		t.Errorf("exit_code = %s, want 2", got)
+	}
+	if got := string(doc.Error["kind"]); got != `"`+string(clierr.KindUsage)+`"` {
+		t.Errorf("kind = %s, want %q", got, clierr.KindUsage)
+	}
+	if got := string(doc.Error["http_status"]); got != "null" {
+		t.Errorf("http_status = %s, want null", got)
 	}
 }
 
@@ -98,6 +108,7 @@ func TestCommandLineErrorsHonourJSONMode(t *testing.T) {
 // errors stay in table form — including an invalid -o, which cannot itself
 // select json.
 func TestCommandLineErrorsInTableMode(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name string
 		args []string
@@ -109,7 +120,10 @@ func TestCommandLineErrorsInTableMode(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			code, stdout, stderr := runExecute(t, tc.args...)
+			t.Parallel()
+			app := newTestRun(t)
+			run := app.runExecute(t, tc.args...)
+			code, stdout, stderr := run.code, run.stdout, run.stderr
 			if code != clierr.CodeUsage {
 				t.Errorf("exit = %d, want %d", code, clierr.CodeUsage)
 			}
@@ -118,7 +132,8 @@ func TestCommandLineErrorsInTableMode(t *testing.T) {
 			}
 			// One error line, and at most one hint line under it.
 			first, rest, _ := strings.Cut(strings.TrimRight(stderr, "\n"), "\n")
-			if !strings.HasPrefix(first, "saladcloud: error: ") || rest != "" && (!strings.HasPrefix(rest, "hint: ") || strings.Contains(rest, "\n")) {
+			if !strings.HasPrefix(first, "saladcloud: error: ") ||
+				rest != "" && (!strings.HasPrefix(rest, "hint: ") || strings.Contains(rest, "\n")) {
 				t.Errorf("stderr = %q, want one table-mode error line and at most one hint", stderr)
 			}
 		})
@@ -128,21 +143,33 @@ func TestCommandLineErrorsInTableMode(t *testing.T) {
 // Errors stay the one-line JSON document under -o yaml, so a script parses
 // one error shape in every machine mode.
 func TestErrorsAreJSONUnderYAML(t *testing.T) {
-	code, stdout, stderr := runExecute(t, "container-groups", "get", "-o", "yaml")
+	t.Parallel()
+	app := newTestRun(t)
+	run := app.runExecute(t, "container-groups", "get", "-o", "yaml")
+	code, stdout, stderr := run.code, run.stdout, run.stderr
 	if code != clierr.CodeUsage || stdout != "" {
 		t.Fatalf("exit %d stdout %q", code, stdout)
 	}
 	var doc map[string]map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(stderr)), &doc); err != nil || doc["error"]["kind"] != string(clierr.KindUsage) {
+	err := json.Unmarshal(
+		[]byte(strings.TrimSpace(stderr)),
+		&doc,
+	)
+	if err != nil ||
+		doc["error"]["kind"] != string(clierr.KindUsage) {
 		t.Errorf("stderr = %q, want the JSON error document", stderr)
 	}
 }
 
 // --version is 'version': the same document under -o json, wherever -o sits.
 func TestVersionFlag(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{{"--version", "-o", "json"}, {"-o", "json", "--version"}} {
 		t.Run(strings.Join(args, " "), func(t *testing.T) {
-			code, stdout, stderr := runExecute(t, args...)
+			t.Parallel()
+			app := newTestRun(t)
+			run := app.runExecute(t, args...)
+			code, stdout, stderr := run.code, run.stdout, run.stderr
 			var doc map[string]any
 			if code != clierr.CodeOK || json.Unmarshal([]byte(stdout), &doc) != nil {
 				t.Fatalf("exit %d, stdout %q, stderr %q", code, stdout, stderr)
@@ -153,7 +180,10 @@ func TestVersionFlag(t *testing.T) {
 		})
 	}
 	t.Run("table", func(t *testing.T) {
-		code, stdout, _ := runExecute(t, "--version")
+		t.Parallel()
+		app := newTestRun(t)
+		run := app.runExecute(t, "--version")
+		code, stdout := run.code, run.stdout
 		if code != clierr.CodeOK || !strings.HasPrefix(stdout, "saladcloud") {
 			t.Errorf("exit %d, stdout %q", code, stdout)
 		}

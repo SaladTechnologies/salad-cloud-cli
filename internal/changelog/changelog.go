@@ -40,10 +40,10 @@ func Parse(markdown string) []Release {
 		}
 		body = nil
 	}
-	for _, line := range strings.Split(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.ReplaceAll(markdown, "\r\n", "\n"), "\n") {
 		if m := headingRE.FindStringSubmatch(line); m != nil {
 			flush()
-			r := Release{Version: m[1]}
+			r := Release{Version: m[1], Date: nil, Body: "", Title: nil}
 			if t := strings.TrimSpace(m[3]); t != "" {
 				r.Title = &t
 			}
@@ -74,39 +74,37 @@ func Since(releases []Release, since string) ([]Release, error) {
 	if since == "" {
 		return releases, nil
 	}
-	if d, err := time.Parse("2006-01-02", since); err == nil {
-		var out []Release
-		for _, r := range releases {
-			if r.Unreleased() {
-				out = append(out, r)
-				continue
-			}
-			if r.Date == nil {
-				continue
-			}
-			rd, err := time.Parse("2006-01-02", *r.Date)
-			if err == nil && rd.After(d) {
-				out = append(out, r)
-			}
-		}
-		return out, nil
+	if d, err := time.Parse(time.DateOnly, since); err == nil {
+		return keepNewer(releases, func(r Release) bool { return datedAfter(r, d) }), nil
 	}
 	want, ok := parseSemver(since)
 	if !ok {
 		return nil, ErrBadSince
 	}
+	return keepNewer(releases, func(r Release) bool {
+		v, ok := parseSemver(r.Version)
+		return ok && compare(v, want) > 0
+	}), nil
+}
+
+// keepNewer is the releases newer reports true for, plus the Unreleased section, in their order.
+func keepNewer(releases []Release, newer func(Release) bool) []Release {
 	var out []Release
 	for _, r := range releases {
-		if r.Unreleased() {
-			out = append(out, r)
-			continue
-		}
-		v, ok := parseSemver(r.Version)
-		if ok && compare(v, want) > 0 {
+		if r.Unreleased() || newer(r) {
 			out = append(out, r)
 		}
 	}
-	return out, nil
+	return out
+}
+
+// datedAfter reports whether r has a date, and one after d.
+func datedAfter(r Release, d time.Time) bool {
+	if r.Date == nil {
+		return false
+	}
+	rd, err := time.Parse(time.DateOnly, *r.Date)
+	return err == nil && rd.After(d)
 }
 
 // Render prints releases back as markdown, for table (human) mode.
@@ -151,7 +149,7 @@ func parseSemver(s string) ([3]int, bool) {
 }
 
 func compare(a, b [3]int) int {
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if a[i] != b[i] {
 			if a[i] > b[i] {
 				return 1

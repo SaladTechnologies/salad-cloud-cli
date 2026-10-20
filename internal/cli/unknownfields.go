@@ -15,20 +15,19 @@
 // believing the write landed. classifyUnknown separates the cases by asking
 // the *other* SDK schemas where the field lives, so the advice is derived
 // from the model rather than from a hand-maintained list of gotchas.
+
 package cli
 
 import (
 	"fmt"
 	"io"
-	"os"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
-
-	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
+	"github.com/spf13/cobra"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -36,9 +35,10 @@ import (
 )
 
 // addAllowUnknownFlag registers --allow-unknown-fields on a -f command.
-func addAllowUnknownFlag(cmd *cobra.Command) {
-	cmd.Flags().Bool("allow-unknown-fields", false,
-		"send -f fields this CLI's API model doesn't recognize instead of rejecting them (forward-compat escape hatch; each is warned on stderr)")
+func addAllowUnknownFlag(cmd *cobra.Command, allow *bool) {
+	cmd.Flags().BoolVar(allow, "allow-unknown-fields", false,
+		"send -f fields this CLI's API model doesn't recognize instead of rejecting them "+
+			"(forward-compat escape hatch; each is warned on stderr)")
 }
 
 // unknownKind classifies why a field was rejected, which decides the advice.
@@ -65,26 +65,29 @@ const (
 // createOnlyReasons explains create-only fields whose reason is not obvious,
 // keyed by the top-level field: the advice replaces the generic "recreate
 // the group".
-var createOnlyReasons = map[string]string{
-	"queue_connection": "a group's queue connection is fixed when the group is created; to change it, run " +
-		"saladcloud container-groups create <new-name> --from <group> --queue <queue> --queue-port <n> --queue-path <path>",
+func createOnlyReasons() map[string]string {
+	return map[string]string{
+		"queue_connection": "a group's queue connection is fixed when the group is created; to change it, run " +
+			"saladcloud container-groups create <new-name> --from <group> " +
+			"--queue <queue> --queue-port <n> --queue-path <path>",
+	}
 }
 
 // createOnlyReason returns the specific advice for a create-only path, or "".
 func createOnlyReason(path string) string {
 	top, _, _ := strings.Cut(path, ".")
-	return createOnlyReasons[top]
+	return createOnlyReasons()[top]
 }
 
 // maxListedPaths caps how many field paths one grouped clause names.
 const maxListedPaths = 8
 
 // classifyUnknown places one rejected path against the create-request and
-// response schemas. requestPath is set for unknownRelocated and
-// unknownMisplaced.
-func classifyUnknown(path string) (kind unknownKind, requestPath string) {
-	createT := reflect.TypeOf(containergroups.ContainerGroupCreationRequest{})
-	responseT := reflect.TypeOf(shared.ContainerGroup{})
+// response schemas: it returns the kind, and the path requests take the
+// field at, which is set for unknownRelocated and unknownMisplaced.
+func classifyUnknown(path string) (unknownKind, string) {
+	createT := reflect.TypeFor[containergroups.ContainerGroupCreationRequest]()
+	responseT := reflect.TypeFor[shared.ContainerGroup]()
 
 	if input.FieldPathKnown(createT, path) {
 		return unknownCreateOnly, ""
@@ -130,12 +133,16 @@ func misplacedAt(createT reflect.Type, path string) string {
 
 // joinPaths renders a capped, comma-separated path list.
 func joinPaths(paths []string) string {
-	sort.Strings(paths)
+	slices.Sort(paths)
 	if len(paths) <= maxListedPaths {
 		return strings.Join(paths, ", ")
 	}
 	return fmt.Sprintf("%s and %d more", strings.Join(paths[:maxListedPaths], ", "), len(paths)-maxListedPaths)
 }
+
+// getResponseMinFields is how many response-only fields make rejectUnknowns
+// take a document for a get response sent back as a patch.
+const getResponseMinFields = 3
 
 // rejectUnknowns builds the strict-mode rejection. Advice is grouped by kind
 // rather than repeated per field: a document piped from `get -o json` trips
@@ -150,12 +157,45 @@ func joinPaths(paths []string) string {
 // API — the model is a pinned snapshot and the API may have moved. And when
 // the document looks like a `get` response, that diagnosis is the whole
 // message, because it is the one sentence the reader needs.
-func rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
+func (app *App) rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
 	if len(unknowns) == 0 {
 		return nil
 	}
-	var novel, createOnly, responseOnly []string
-	var relocated, misplaced, explained []string
+	groups := groupUnknowns(unknowns)
+	clauses := groups.clauses()
+
+	full := input.UnknownFieldsError("", unknowns, "")
+	if len(clauses) > 0 {
+		full = full.WithHint("%s", strings.Join(clauses, "; "))
+	}
+	// The commonest mistake, editing a `get` document and sending the whole
+	// thing back as a patch, gets only its diagnosis and the command to start
+	// from; the per-field list goes to --debug.
+	if responseOnly := groups.responseOnly; len(responseOnly) >= getResponseMinFields {
+		if app.debugLevel != api.DebugOff {
+			fprintf(app.errw(), "debug: %s; %s\n", full.Message, full.HintText())
+		}
+		return clierr.New(clierr.CodeInvalidInput, clierr.KindUnknownField,
+			"this document is a get response, not a patch (%d of its fields only responses carry)", len(responseOnly)).
+			WithHint("to get a document update -f accepts, run saladcloud container-groups get <group> --writable; " +
+				"--debug lists the fields")
+	}
+	return full
+}
+
+// unknownGroups are a rejected document's unknown fields, grouped by the
+// advice rejectUnknowns gives them. Typos (fields with a did-you-mean) are
+// in none of the groups: their description already carries the advice.
+type unknownGroups struct {
+	novel, createOnly, responseOnly []string // paths
+	relocated, misplaced, explained []string // one sentence per field
+	single                          bool     // the document has one unknown field
+}
+
+// groupUnknowns sorts unknowns into rejectUnknowns' advice groups.
+func groupUnknowns(unknowns []input.Unknown) unknownGroups {
+	var g unknownGroups
+	g.single = len(unknowns) == 1
 	for _, u := range unknowns {
 		if u.Hint != "" {
 			continue // a typo: the description already carries the did-you-mean, and the hatch must not be offered
@@ -164,74 +204,76 @@ func rejectUnknowns(unknowns []input.Unknown) *clierr.Error {
 		switch kind {
 		case unknownCreateOnly:
 			if reason := createOnlyReason(u.Path); reason != "" {
-				explained = append(explained, fmt.Sprintf(`"%s" is not in this CLI's update schema; %s`, u.Path, reason))
+				g.explained = append(
+					g.explained,
+					fmt.Sprintf(`"%s" is not in this CLI's update schema; %s`, //nolint:gocritic // as typed; %q escapes
+						u.Path, reason),
+				)
 				continue
 			}
-			createOnly = append(createOnly, u.Path)
+			g.createOnly = append(g.createOnly, u.Path)
 		case unknownResponseOnly:
-			responseOnly = append(responseOnly, u.Path)
+			g.responseOnly = append(g.responseOnly, u.Path)
 		case unknownRelocated:
-			relocated = append(relocated, fmt.Sprintf(`"%s" belongs at "%s" in requests`, u.Path, at))
+			g.relocated = append(g.relocated,
+				fmt.Sprintf(`"%s" belongs at "%s" in requests`, u.Path, at)) //nolint:gocritic // as typed; %q escapes
 		case unknownMisplaced:
-			misplaced = append(misplaced, fmt.Sprintf(`"%s" belongs at "%s"`, u.Path, at))
-		default:
-			novel = append(novel, u.Path)
+			g.misplaced = append(g.misplaced,
+				fmt.Sprintf(`"%s" belongs at "%s"`, u.Path, at)) //nolint:gocritic // as typed; %q escapes
+		case unknownNovel:
+			g.novel = append(g.novel, u.Path)
 		}
 	}
+	return g
+}
 
-	single := len(unknowns) == 1
+// clauses is the rejection's hint, one clause per group in a fixed order;
+// the escape hatch is offered only for novel fields.
+func (g *unknownGroups) clauses() []string {
 	var clauses []string
-	if len(createOnly) > 0 {
-		if len(createOnly) == 1 {
-			clauses = append(clauses, fmt.Sprintf(
-				`"%s" is not in this CLI's update schema (create accepts it); recreate the group to change it`, createOnly[0],
+	if len(g.createOnly) > 0 {
+		if len(g.createOnly) == 1 {
+			clauses = append(clauses, fmt.Sprintf( //nolint:gocritic // as typed; %q escapes
+				`"%s" is not in this CLI's update schema (create accepts it); recreate the group to change it`,
+				g.createOnly[0],
 			))
 		} else {
 			clauses = append(clauses, fmt.Sprintf(
-				"not in this CLI's update schema, though create accepts them (%s); recreate the group to change them", joinPaths(createOnly),
+				"not in this CLI's update schema, though create accepts them (%s); recreate the group to change them",
+				joinPaths(g.createOnly),
 			))
 		}
 	}
-	if len(responseOnly) > 0 {
-		if len(responseOnly) == 1 {
-			clauses = append(clauses, fmt.Sprintf(`"%s" is response-only in this CLI's API model and cannot be sent`, responseOnly[0]))
+	if len(g.responseOnly) > 0 {
+		if len(g.responseOnly) == 1 {
+			clauses = append(
+				clauses,
+				fmt.Sprintf( //nolint:gocritic // as typed; %q escapes
+					`"%s" is response-only in this CLI's API model and cannot be sent`,
+					g.responseOnly[0],
+				),
+			)
 		} else {
 			clauses = append(clauses, fmt.Sprintf(
-				"response-only in this CLI's API model and cannot be sent (%s)", joinPaths(responseOnly),
+				"response-only in this CLI's API model and cannot be sent (%s)", joinPaths(g.responseOnly),
 			))
 		}
 	}
-	clauses = append(clauses, explained...)
-	clauses = append(clauses, relocated...)
-	clauses = append(clauses, misplaced...)
-	if len(novel) > 0 {
-		if single {
+	clauses = append(clauses, g.explained...)
+	clauses = append(clauses, g.relocated...)
+	clauses = append(clauses, g.misplaced...)
+	if len(g.novel) > 0 {
+		if g.single {
 			// The description already names the one field; "unrecognized
 			// (x)" would say it a second time.
 			clauses = append(clauses, "re-run with --allow-unknown-fields to send it anyway")
 		} else {
 			clauses = append(clauses, fmt.Sprintf(
-				"unrecognized (%s); re-run with --allow-unknown-fields to send them anyway", joinPaths(novel),
+				"unrecognized (%s); re-run with --allow-unknown-fields to send them anyway", joinPaths(g.novel),
 			))
 		}
 	}
-
-	full := input.UnknownFieldsError("", unknowns, "")
-	if len(clauses) > 0 {
-		full.WithHint("%s", strings.Join(clauses, "; "))
-	}
-	// The commonest mistake, editing a `get` document and sending the whole
-	// thing back as a patch, gets only its diagnosis and the command to start
-	// from; the per-field list goes to --debug.
-	if len(responseOnly) >= 3 {
-		if api.Debugging() {
-			fmt.Fprintf(os.Stderr, "debug: %s; %s\n", full.Message, full.HintText())
-		}
-		return clierr.New(clierr.CodeInvalidInput, clierr.KindUnknownField,
-			"this document is a get response, not a patch (%d of its fields only responses carry)", len(responseOnly)).
-			WithHint("to get a document update -f accepts, run saladcloud container-groups get <group> --writable; --debug lists the fields")
-	}
-	return full
+	return clauses
 }
 
 // namingGroup fills the group into a rejection's get <group> --writable
@@ -258,31 +300,54 @@ func adviseUnknownShort(path string) string {
 	case unknownResponseOnly:
 		return "it is response-only in this CLI's API model"
 	case unknownRelocated:
-		return fmt.Sprintf(`requests take it at "%s"`, at)
+		return fmt.Sprintf(`requests take it at "%s"`, at) //nolint:gocritic // as typed; %q escapes
 	case unknownMisplaced:
-		return fmt.Sprintf(`it belongs at "%s"`, at)
+		return fmt.Sprintf(`it belongs at "%s"`, at) //nolint:gocritic // as typed; %q escapes
+	case unknownNovel:
 	}
 	return ""
 }
 
-// warnUnknowns reports each tolerated unknown field on w (stderr). Two cases
-// get a stronger warning than "sent anyway":
-//
-//   - createMode array fields are dropped, not passed through: create
-//     rebuilds arrays from its typed request.
-//   - a create-only, response-only or relocated field will be accepted by
-//     the API and silently ignored, so "sent to the API anyway" on its own
-//     would let the caller believe it took effect.
-func warnUnknowns(w io.Writer, unknowns []input.Unknown, createMode bool) {
+// warnUnknowns reports each tolerated unknown field of an update on w
+// (stderr), as warnUnknown does.
+func warnUnknowns(w io.Writer, unknowns []input.Unknown) {
 	for _, u := range unknowns {
-		if createMode && u.InArray {
-			fmt.Fprintf(w, "warning: %s; dropped, because create rebuilds array fields from its API model; set it with update -f instead\n", u.Desc)
-			continue
-		}
-		if advice := adviseUnknownShort(u.Path); advice != "" {
-			fmt.Fprintf(w, "warning: %s; sent to the API anyway (--allow-unknown-fields), but expect it to be ignored: %s\n", u.Desc, advice)
-			continue
-		}
-		fmt.Fprintf(w, "warning: %s; sent to the API anyway (--allow-unknown-fields)\n", u.Desc)
+		warnUnknown(w, u)
 	}
+}
+
+// warnCreateUnknowns is warnUnknowns for create, with one stronger warning:
+// array fields are dropped, not passed through, because create rebuilds
+// arrays from its typed request.
+func warnCreateUnknowns(w io.Writer, unknowns []input.Unknown) {
+	for _, u := range unknowns {
+		if u.InArray {
+			fprintf(
+				w,
+				"warning: %s; dropped, because create rebuilds array fields from its API model; "+
+					"set it with update -f instead\n",
+				u.Desc,
+			)
+			continue
+		}
+		warnUnknown(w, u)
+	}
+}
+
+// warnUnknown reports one tolerated unknown field on w (stderr). A
+// create-only, response-only or relocated field gets a stronger warning
+// than "sent anyway": the API will accept it and silently ignore it, so
+// "sent to the API anyway" on its own would let the caller believe it took
+// effect.
+func warnUnknown(w io.Writer, u input.Unknown) {
+	if advice := adviseUnknownShort(u.Path); advice != "" {
+		fprintf(
+			w,
+			"warning: %s; sent to the API anyway (--allow-unknown-fields), but expect it to be ignored: %s\n",
+			u.Desc,
+			advice,
+		)
+		return
+	}
+	fprintf(w, "warning: %s; sent to the API anyway (--allow-unknown-fields)\n", u.Desc)
 }

@@ -34,8 +34,14 @@ const richResponse = `{
   "scheduled-scaling-enabled": true,
   "scaling-actions": [{"replicas": 1, "schedule": "0 9 * * 1-5"}],
   "liveness_probe": null,
-  "startup_probe": {"tcp": {"port": 8080}, "initial_delay_seconds": 1, "period_seconds": 3, "timeout_seconds": 1, "success_threshold": 1, "failure_threshold": 3},
-  "networking": {"protocol": "http", "port": 8080, "auth": true, "dns": "x.salad.cloud", "load_balancer": "round_robin", "single_connection_limit": false, "client_request_timeout": 100, "server_response_timeout": 100},
+  "startup_probe": {
+    "tcp": {"port": 8080}, "initial_delay_seconds": 1, "period_seconds": 3, "timeout_seconds": 1,
+    "success_threshold": 1, "failure_threshold": 3
+  },
+  "networking": {
+    "protocol": "http", "port": 8080, "auth": true, "dns": "x.salad.cloud", "load_balancer": "round_robin",
+    "single_connection_limit": false, "client_request_timeout": 100, "server_response_timeout": 100
+  },
   "container": {
     "image": "docker.io/library/busybox:1.36",
     "hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -45,17 +51,29 @@ const richResponse = `{
     "environment_variables": {"A": "1", "weird.KEY-2": "x"},
     "resources": {"cpu": 1, "memory": 1024, "gpu_classes": [], "shm_size": 64}
   },
-  "current_state": {"status": "running", "description": null, "start_time": "2026-08-30T18:21:12.4390000Z", "finish_time": "0001-01-01T00:00:00Z", "instance_status_counts": {"allocating_count": 0, "creating_count": 0, "running_count": 2, "stopping_count": 0}}
+  "current_state": {
+    "status": "running", "description": null,
+    "start_time": "2026-08-30T18:21:12.4390000Z", "finish_time": "0001-01-01T00:00:00Z",
+    "instance_status_counts": {"allocating_count": 0, "creating_count": 0, "running_count": 2, "stopping_count": 0}
+  }
 }`
 
-func TestWritableDocument(t *testing.T) {
+// writableRichResponse is writableDocument of richResponse: the document,
+// the same as a map, and the paths it dropped.
+func writableRichResponse(t *testing.T) (any, map[string]any, []string) {
+	t.Helper()
 	doc, dropped, err := writableDocument(grp(t, richResponse))
 	if err != nil {
 		t.Fatalf("writableDocument: %v", err)
 	}
-	m := doc.(map[string]any)
+	return doc, assertAs[map[string]any](t, doc), dropped
+}
 
-	// Dropped: everything the patch schema cannot take.
+// TestWritableDocumentDrops: everything the patch schema cannot take is
+// dropped, and reported.
+func TestWritableDocumentDrops(t *testing.T) {
+	t.Parallel()
+	_, m, dropped := writableRichResponse(t)
 	for _, want := range []string{
 		"id", "name", "organization_name", "project_name", "pending_change", "version",
 		"create_time", "update_time", "autostart_policy", "restart_policy", "readme",
@@ -71,50 +89,63 @@ func TestWritableDocument(t *testing.T) {
 			t.Errorf("%q reported dropped but still present", path)
 		}
 	}
+}
 
-	// Kept: the patchable surface, values intact.
-	if m["replicas"] != float64(2) || m["display_name"] != "My App" {
-		t.Errorf("scalars not preserved: replicas=%v display_name=%v", m["replicas"], m["display_name"])
+// TestWritableDocumentKeeps: the patchable surface is kept with its values
+// intact, and priority is relocated under container.
+func TestWritableDocumentKeeps(t *testing.T) {
+	t.Parallel()
+	_, m, _ := writableRichResponse(t)
+	tests := []struct {
+		path string
+		want any
+	}{
+		{"replicas", 2},
+		{"display_name", "My App"},
+		{"scheduled-scaling-enabled", true},
+		{"scaling-actions", []any{map[string]any{"replicas": 1, "schedule": "0 9 * * 1-5"}}},
+		{"liveness_probe", nil}, // an explicit null
+		{"container.environment_variables", map[string]any{"A": "1", "weird.KEY-2": "x"}}, // verbatim
+		{
+			"container.image_caching",
+			true,
+		}, // patchable, even if the API ignores it
+		{"networking", map[string]any{"port": 8080}}, // only port
+		{"container.priority", "high"},               // relocated
 	}
-	if m["scheduled-scaling-enabled"] != true {
-		t.Errorf("scheduled-scaling-enabled = %v, want true", m["scheduled-scaling-enabled"])
+	for _, tt := range tests {
+		if got, ok := lookupPath(m, tt.path); !ok || !jsonEqual(got, tt.want) {
+			t.Errorf("%s = %v (present %v), want %v", tt.path, got, ok, tt.want)
+		}
 	}
-	if acts, _ := m["scaling-actions"].([]any); len(acts) != 1 {
-		t.Errorf("scaling-actions = %v, want one action", m["scaling-actions"])
-	}
-	if v, ok := m["liveness_probe"]; !ok || v != nil {
-		t.Errorf("liveness_probe = %v (present %v), want an explicit null", v, ok)
-	}
-	c := m["container"].(map[string]any)
-	if env, _ := c["environment_variables"].(map[string]any); env["A"] != "1" || env["weird.KEY-2"] != "x" {
-		t.Errorf("environment_variables not preserved verbatim: %v", c["environment_variables"])
-	}
-	if c["image_caching"] != true {
-		t.Errorf("image_caching (patchable, even if the API ignores it) dropped: %v", c["image_caching"])
-	}
-	if net, _ := m["networking"].(map[string]any); len(net) != 1 || net["port"] != float64(8080) {
-		t.Errorf("networking = %v, want only port", m["networking"])
-	}
-
-	// Relocated: priority moves under container and leaves the top level.
+	// Relocated: priority leaves the top level.
 	if _, top := m["priority"]; top {
 		t.Error("top-level priority survived; requests take container.priority")
 	}
-	if c["priority"] != "high" {
-		t.Errorf("container.priority = %v, want high (relocated)", c["priority"])
-	}
+}
 
-	// The round trip: the strict checker accepts the document as a patch.
+// TestWritableDocumentIsACleanPatch is the round trip: the strict checker
+// accepts the document as a patch.
+func TestWritableDocumentIsACleanPatch(t *testing.T) {
+	t.Parallel()
+	doc, _, _ := writableRichResponse(t)
 	b, err := json.Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if unknowns := input.UnknownFieldList(b, reflect.TypeOf(containergroups.ContainerGroupPatch{})); len(unknowns) != 0 {
+	unknowns := input.UnknownFieldList(
+		b,
+		reflect.TypeFor[containergroups.ContainerGroupPatch](),
+	)
+	if len(
+		unknowns,
+	) != 0 {
 		t.Errorf("writable document is not a clean patch: %+v", unknowns)
 	}
 }
 
 func TestSetAndDeletePath(t *testing.T) {
+	t.Parallel()
 	tree := map[string]any{"a": map[string]any{"b": 1}}
 	setPath(tree, "a.c.d", "x")
 	if v, ok := lookupPath(tree, "a.c.d"); !ok || v != "x" {

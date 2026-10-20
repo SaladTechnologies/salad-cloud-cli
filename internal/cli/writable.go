@@ -9,11 +9,12 @@
 // document the patch schema accepts, so `get --writable | update -f -`
 // round-trips cleanly and `jq` edits compose. It is derived from the SDK
 // types, not a hand-kept list, so it tracks the schema.
+
 package cli
 
 import (
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
@@ -38,7 +39,7 @@ func writableDocument(g *shared.ContainerGroup) (any, []string, error) {
 	// Relocate: a field that responses spell one way and requests another
 	// is moved to its request path before filtering, so it survives as the
 	// patch schema expects rather than being dropped as unknown.
-	for reqPath, respPath := range requestToResponsePath {
+	for reqPath, respPath := range requestToResponsePath() {
 		v, present := lookupPath(obj, respPath)
 		if !present {
 			continue
@@ -49,8 +50,8 @@ func writableDocument(g *shared.ContainerGroup) (any, []string, error) {
 		deletePath(obj, respPath)
 	}
 	var dropped []string
-	filtered := input.FilterTree(obj, reflect.TypeOf(containergroups.ContainerGroupPatch{}), "", &dropped)
-	sort.Strings(dropped)
+	filtered := input.FilterTree(obj, reflect.TypeFor[containergroups.ContainerGroupPatch](), "", &dropped)
+	slices.Sort(dropped)
 	return filtered, dropped, nil
 }
 
@@ -62,7 +63,7 @@ func setPath(tree map[string]any, path string, v any) {
 	for _, seg := range segs[:len(segs)-1] {
 		next, ok := cur[seg].(map[string]any)
 		if !ok {
-			next = map[string]any{}
+			next = make(map[string]any)
 			cur[seg] = next
 		}
 		cur = next

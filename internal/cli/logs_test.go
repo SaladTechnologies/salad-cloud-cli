@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -8,6 +9,7 @@ import (
 )
 
 func TestNoMatchNote(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                             string
 		scope                            logScope
@@ -20,10 +22,14 @@ func TestNoMatchNote(t *testing.T) {
 			want: `no log entries matched (group "my-cg", since 15m)`,
 		},
 		{
-			name:  "all filters",
-			scope: logScope{kind: scopeGroup, name: "my-cg"}, since: "2h",
-			instance: "8a2f13ba", severity: "warning", filter: "timeout",
-			want: `no log entries matched (group "my-cg", since 2h, instance "8a2f13ba", severity "warning", filter "timeout")`,
+			name:     "all filters",
+			scope:    logScope{kind: scopeGroup, name: "my-cg"},
+			since:    "2h",
+			instance: "8a2f13ba",
+			severity: "warning",
+			filter:   "timeout",
+			want: `no log entries matched (group "my-cg", since 2h, instance "8a2f13ba", severity "warning", filter ` +
+				`"timeout")`,
 		},
 		{
 			name:  "filter only",
@@ -44,6 +50,7 @@ func TestNoMatchNote(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := noMatchNote(tt.scope, tt.since, tt.instance, tt.severity, tt.filter)
 			if got != tt.want {
 				t.Errorf("noMatchNote = %q, want %q", got, tt.want)
@@ -55,6 +62,7 @@ func TestNoMatchNote(t *testing.T) {
 // TestFormatLogLineNamesItsSource: a query wider than one group must say
 // which project and group each line came from; a group query stays as it was.
 func TestFormatLogLineNamesItsSource(t *testing.T) {
+	t.Parallel()
 	e := logsq.Entry{
 		Time: "2026-10-01T12:00:00Z", Severity: "info", Text: "hello",
 		Project: "prod", Group: "api", InstanceID: "8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37",
@@ -65,13 +73,14 @@ func TestFormatLogLineNamesItsSource(t *testing.T) {
 		{scopeOrg, "2026-10-01 12:00:00Z  INFO     [prod/api/8a2f13ba] hello"},
 	}
 	for _, tt := range tests {
-		if got := formatLogLine(e, tt.scope); got != tt.want {
+		if got := formatLogLine(&e, tt.scope); got != tt.want {
 			t.Errorf("formatLogLine(%s) = %q, want %q", tt.scope, got, tt.want)
 		}
 	}
 	// A system event has no instance; the missing parts render as "-".
 	sys := logsq.Entry{Time: "2026-10-01T12:00:00Z", Severity: "info", Text: "Instance Running", Project: "prod"}
-	if got, want := formatLogLine(sys, scopeOrg), "2026-10-01 12:00:00Z  INFO     [prod/-/-] Instance Running"; got != want {
+	got, want := formatLogLine(&sys, scopeOrg), "2026-10-01 12:00:00Z  INFO     [prod/-/-] Instance Running"
+	if got != want {
 		t.Errorf("system event line = %q, want %q", got, want)
 	}
 }
@@ -80,8 +89,11 @@ func TestFormatLogLineNamesItsSource(t *testing.T) {
 // resolved against one group's instances, so without a group it is a usage
 // error before any client or API work.
 func TestLogsInstancePrefixNeedsGroup(t *testing.T) {
-	_, err := runRoot(t, "logs", "--instance", "8a2f")
-	cerr, ok := err.(*clierr.Error)
+	t.Parallel()
+	app := newTestRun(t)
+	_, err := app.runRoot(t, "logs", "--instance", "8a2f")
+	var cerr *clierr.Error
+	ok := errors.As(err, &cerr)
 	if !ok || cerr.Code != clierr.CodeUsage {
 		t.Fatalf("logs --instance <prefix> without a group = %v, want a usage error", err)
 	}
@@ -90,15 +102,18 @@ func TestLogsInstancePrefixNeedsGroup(t *testing.T) {
 // TestFormatLogLineReadsSystemEvents: a JSON entry with a message reads as
 // the message and its non-empty fields, not as raw JSON; seconds are enough.
 func TestFormatLogLineReadsSystemEvents(t *testing.T) {
+	t.Parallel()
 	e := logsq.Entry{
 		Time: "2026-10-03T23:06:26.8559213+00:00", Severity: "info", InstanceID: "bd0f69f5-0000",
 		JSON: map[string]any{"gpu_class_name": "", "message": "Instance Allocated"},
 	}
-	if got, want := formatLogLine(e, scopeGroup), "2026-10-03 23:06:26Z  INFO     [bd0f69f5] Instance Allocated"; got != want {
+	got, want := formatLogLine(&e, scopeGroup), "2026-10-03 23:06:26Z  INFO     [bd0f69f5] Instance Allocated"
+	if got != want {
 		t.Errorf("line = %q, want %q", got, want)
 	}
-	if got, want := jsonLogText(map[string]any{"message": "done", "code": 3.0, "who": "w"}), "done code=3 who=w"; got != want {
-		t.Errorf("jsonLogText = %q, want %q", got, want)
+	text := jsonLogText(map[string]any{"message": "done", "code": 3.0, "who": "w"})
+	if want := "done code=3 who=w"; text != want {
+		t.Errorf("jsonLogText = %q, want %q", text, want)
 	}
 	if got, want := jsonLogText(map[string]any{"status": 500.0}), `{"status":500}`; got != want {
 		t.Errorf("jsonLogText without a message = %q, want %q", got, want)
@@ -106,6 +121,7 @@ func TestFormatLogLineReadsSystemEvents(t *testing.T) {
 }
 
 func TestTimeCell(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"2026-10-03T14:37:17.7506105+00:00": "2026-10-03 14:37:17Z",
 		"2026-10-03T16:37:17+02:00":         "2026-10-03 14:37:17Z",
@@ -123,6 +139,7 @@ func TestTimeCell(t *testing.T) {
 // TestLogsScopeLine: table mode says what a logs query covers, because the
 // organization-wide default differs from every other command.
 func TestLogsScopeLine(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		scope logScope
 		want  string

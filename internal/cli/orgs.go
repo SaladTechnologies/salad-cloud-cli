@@ -2,8 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
-	"io"
 
 	"github.com/spf13/cobra"
 
@@ -19,45 +17,43 @@ const orgsLong = `This uses an organizations endpoint that is not part of the do
 so it may change without notice; if it does, this command may fail until the
 CLI catches up. The documented commands do not depend on it.`
 
-func init() {
+// orgsSingular is the orgs noun's singular alias.
+const orgsSingular = "org"
+
+// addOrgsCommands adds orgs.go's commands to the tree.
+func (app *App) addOrgsCommands(root *cobra.Command) {
 	orgsCmd := &cobra.Command{
 		Use:     "orgs",
-		Aliases: []string{"org", "organizations"},
+		Aliases: []string{orgsSingular, "organizations"},
 		Short:   "Your organizations (list, get)",
 		Long:    "The organizations the API key's account is a member of.\n\n" + orgsLong,
 	}
 
+	var listWatch watchOptions
 	listCmd := &cobra.Command{
-		Use:   "list",
+		Use:   verbNameList,
 		Short: "List your organizations",
 		Long:  "List the organizations the API key's account is a member of.\n\n" + orgsLong,
 		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			client, _, cerr := NewClient(cmd)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr
 			}
-			return runMaybeWatch(cmd, func(ctx context.Context) *clierr.Error {
-				orgs, cerr := client.ListOrganizations(ctx)
-				if cerr == nil {
-					cerr = unreadableListing(orgs)
-				}
+			return app.runMaybeWatch(cmd, listWatch, func(ctx context.Context) *clierr.Error {
+				orgs, cerr := listReadableOrganizations(ctx, client)
 				if cerr != nil {
 					return cerr
 				}
-				if err := output.Emit(orgs, func(w io.Writer) {
-					fmt.Fprintln(w, "NAME\tDISPLAY NAME\tCREATED")
-					for _, o := range orgs.Items {
-						fmt.Fprintf(w, "%s\t%s\t%s\n", ptr.Deref(o.OrganizationName), ptr.Deref(o.DisplayName), timeCell(o.CreateTime))
-					}
-				}); err != nil {
+				err := app.printer.Emit(orgs, func(w *output.Writer) { writeOrganizationList(w, orgs) })
+				if err != nil {
 					return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)
 				}
 				return nil
 			})
 		},
 	}
-	addWatchFlags(listCmd)
+	app.addWatchFlags(listCmd, &listWatch)
 	orgsCmd.AddCommand(listCmd)
 
 	orgsCmd.AddCommand(&cobra.Command{
@@ -69,33 +65,63 @@ name. It is looked up in the same listing orgs list prints.
 ` + orgsLong,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			client, _, cerr := NewClient(cmd)
-			if cerr != nil {
-				return cerr
-			}
-			orgs, cerr := client.ListOrganizations(cmd.Context())
-			if cerr == nil {
-				cerr = unreadableListing(orgs)
-			}
-			if cerr != nil {
-				return cerr
-			}
-			org := findOrganization(orgs, args[0])
-			if org == nil {
-				return clierr.New(clierr.CodeNotFound, clierr.KindNotFound,
-					`organization "%s" not found`, args[0]).WithHint("to list yours, run saladcloud orgs list")
-			}
-			return wrapErr(output.Emit(org, func(w io.Writer) {
-				row := func(k, v string) { fmt.Fprintf(w, "%s\t%s\n", k, v) }
-				row("Name", ptr.Deref(org.OrganizationName))
-				row("Display name", ptr.Deref(org.DisplayName))
-				row("ID", ptr.Deref(org.OrganizationID))
-				row("Created", timeCell(org.CreateTime))
-				row("Updated", timeCell(org.UpdateTime))
-			}))
+			return app.runOrgsGet(cmd, args[0])
 		},
 	})
-	Register(orgsCmd)
+	root.AddCommand(orgsCmd)
+}
+
+// runOrgsGet is orgs get's RunE: find the named organization in the
+// listing and emit it.
+func (app *App) runOrgsGet(cmd *cobra.Command, name string) error {
+	client, _, cerr := app.NewClient(cmd)
+	if cerr != nil {
+		return cerr
+	}
+	orgs, cerr := listReadableOrganizations(cmd.Context(), client)
+	if cerr != nil {
+		return cerr
+	}
+	org := findOrganization(orgs, name)
+	if org == nil {
+		return clierr.New(clierr.CodeNotFound, clierr.KindNotFound,
+			`organization "%s" not found`, name).WithHint("to list yours, run saladcloud orgs list")
+	}
+	return wrapErr(app.printer.Emit(org, func(w *output.Writer) {
+		row := func(k, v string) { w.Printf("%s\t%s\n", k, v) }
+		row("Name", ptr.Deref(org.OrganizationName))
+		row("Display name", ptr.Deref(org.DisplayName))
+		row("ID", ptr.Deref(org.OrganizationID))
+		row("Created", timeCell(org.CreateTime))
+		row("Updated", timeCell(org.UpdateTime))
+	}))
+}
+
+// listReadableOrganizations lists the account's organizations, failing on a
+// listing this CLI cannot read (unreadableListing).
+func listReadableOrganizations(ctx context.Context, client *api.Client) (*api.OrganizationList, *clierr.Error) {
+	orgs, cerr := client.ListOrganizations(ctx)
+	if cerr == nil {
+		cerr = unreadableListing(orgs)
+	}
+	if cerr != nil {
+		return nil, cerr
+	}
+	return orgs, nil
+}
+
+// writeOrganizationList writes orgs list's table.
+func writeOrganizationList(w *output.Writer, orgs *api.OrganizationList) {
+	w.Println("NAME\tDISPLAY NAME\tCREATED")
+	for _, o := range orgs.Items {
+		fprintf(
+			w,
+			"%s\t%s\t%s\n",
+			ptr.Deref(o.OrganizationName),
+			ptr.Deref(o.DisplayName),
+			timeCell(o.CreateTime),
+		)
+	}
 }
 
 // findOrganization returns the listed organization with the given URL
@@ -117,6 +143,7 @@ func unreadableListing(l *api.OrganizationList) *clierr.Error {
 	if l == nil || l.Usable() {
 		return nil
 	}
-	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "the list of your organizations came back in a form this CLI cannot read").
+	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
+		"the list of your organizations came back in a form this CLI cannot read").
 		WithHint("update the CLI, or report it at %s", version.IssuesURL)
 }

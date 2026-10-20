@@ -3,8 +3,8 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"testing"
 
@@ -16,62 +16,56 @@ type row struct {
 	State string `json:"state"`
 }
 
-// capture swaps Stdout for a buffer for the duration of the test and
-// restores mode/Stdout afterward.
-func capture(t *testing.T) *bytes.Buffer {
+// capture returns a Printer that renders into the returned buffer.
+func capture(t *testing.T) (*Printer, *bytes.Buffer) {
 	t.Helper()
 	var buf bytes.Buffer
-	prev := Stdout
-	Stdout = &buf
-	t.Cleanup(func() {
-		Stdout = prev
-		if err := SetMode("table"); err != nil {
-			t.Fatalf("resetting mode: %v", err)
-		}
-	})
-	return &buf
+	return NewPrinter(&buf), &buf
 }
 
 func TestSetMode(t *testing.T) {
-	t.Cleanup(func() { _ = SetMode("table") })
+	t.Parallel()
+	p, _ := capture(t)
 
-	if err := SetMode("json"); err != nil {
-		t.Fatalf(`SetMode("json") error: %v`, err)
+	if err := p.SetMode("json"); err != nil {
+		t.Fatalf(`p.SetMode("json") error: %v`, err)
 	}
-	if Mode() != "json" {
-		t.Errorf("Mode() = %q, want json", Mode())
+	if p.Mode() != "json" {
+		t.Errorf("p.Mode() = %q, want json", p.Mode())
 	}
-	if err := SetMode("table"); err != nil {
-		t.Fatalf(`SetMode("table") error: %v`, err)
+	if err := p.SetMode("table"); err != nil {
+		t.Fatalf(`p.SetMode("table") error: %v`, err)
 	}
-	if Mode() != "table" {
-		t.Errorf("Mode() = %q, want table", Mode())
+	if p.Mode() != "table" {
+		t.Errorf("p.Mode() = %q, want table", p.Mode())
 	}
 
-	err := SetMode("bogus")
+	err := p.SetMode("bogus")
 	if err == nil {
-		t.Fatal(`SetMode("bogus"): want error, got nil`)
+		t.Fatal(`p.SetMode("bogus"): want error, got nil`)
 	}
-	ce, ok := err.(*clierr.Error)
+	var ce *clierr.Error
+	ok := errors.As(err, &ce)
 	if !ok {
-		t.Fatalf(`SetMode("bogus") error type = %T, want *clierr.Error`, err)
+		t.Fatalf(`p.SetMode("bogus") error type = %T, want *clierr.Error`, err)
 	}
 	if ce.Code != clierr.CodeUsage || ce.Kind != clierr.KindUsage {
 		t.Errorf("SetMode error = code %d kind %q, want code %d kind usage", ce.Code, ce.Kind, clierr.CodeUsage)
 	}
-	if Mode() != "table" {
-		t.Errorf("Mode() after failed SetMode = %q, want table unchanged", Mode())
+	if p.Mode() != "table" {
+		t.Errorf("p.Mode() after failed SetMode = %q, want table unchanged", p.Mode())
 	}
 }
 
 func TestEmitJSON(t *testing.T) {
-	buf := capture(t)
-	if err := SetMode("json"); err != nil {
+	t.Parallel()
+	p, buf := capture(t)
+	if err := p.SetMode("json"); err != nil {
 		t.Fatal(err)
 	}
 
 	v := row{Name: "my-group", State: "running"}
-	if err := Emit(v, func(w io.Writer) { t.Error("table func must not be called in json mode") }); err != nil {
+	if err := p.Emit(v, func(_ *Writer) { t.Error("table func must not be called in json mode") }); err != nil {
 		t.Fatalf("Emit error: %v", err)
 	}
 
@@ -88,12 +82,13 @@ func TestEmitJSON(t *testing.T) {
 }
 
 func TestEmitTable(t *testing.T) {
-	buf := capture(t)
+	t.Parallel()
+	p, buf := capture(t)
 	// Default mode is table (capture's cleanup guarantees the reset).
 	v := row{Name: "my-group", State: "running"}
-	err := Emit(v, func(w io.Writer) {
-		fmt.Fprintf(w, "NAME\tSTATE\n")
-		fmt.Fprintf(w, "%s\t%s\n", v.Name, v.State)
+	err := p.Emit(v, func(w *Writer) {
+		w.Print("NAME\tSTATE\n")
+		w.Printf("%s\t%s\n", v.Name, v.State)
 	})
 	if err != nil {
 		t.Fatalf("Emit error: %v", err)
@@ -113,13 +108,14 @@ func TestEmitTable(t *testing.T) {
 }
 
 func TestStreamJSON(t *testing.T) {
-	buf := capture(t)
-	if err := SetMode("json"); err != nil {
+	t.Parallel()
+	p, buf := capture(t)
+	if err := p.SetMode("json"); err != nil {
 		t.Fatal(err)
 	}
 
 	for _, v := range []row{{"a", "running"}, {"b", "stopped"}} {
-		if err := Stream(v, "ignored in json mode"); err != nil {
+		if err := p.Stream(v, "ignored in json mode"); err != nil {
 			t.Fatalf("Stream error: %v", err)
 		}
 	}
@@ -139,8 +135,9 @@ func TestStreamJSON(t *testing.T) {
 }
 
 func TestStreamTable(t *testing.T) {
-	buf := capture(t)
-	if err := Stream(row{"a", "running"}, "2026-01-01 my log line"); err != nil {
+	t.Parallel()
+	p, buf := capture(t)
+	if err := p.Stream(row{"a", "running"}, "2026-01-01 my log line"); err != nil {
 		t.Fatalf("Stream error: %v", err)
 	}
 	if got, want := buf.String(), "2026-01-01 my log line\n"; got != want {
@@ -149,11 +146,12 @@ func TestStreamTable(t *testing.T) {
 }
 
 func TestEmitYAML(t *testing.T) {
-	buf := capture(t)
-	if err := SetMode("yaml"); err != nil {
+	t.Parallel()
+	p, buf := capture(t)
+	if err := p.SetMode("yaml"); err != nil {
 		t.Fatal(err)
 	}
-	if err := Emit(row{Name: "my-group", State: "running"}, nil); err != nil {
+	if err := p.Emit(row{Name: "my-group", State: "running"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if want := "name: my-group\nstate: running\n"; buf.String() != want {
@@ -164,12 +162,13 @@ func TestEmitYAML(t *testing.T) {
 // Stream in yaml mode is a YAML stream: each record its own document,
 // opened with ---.
 func TestStreamYAML(t *testing.T) {
-	buf := capture(t)
-	if err := SetMode("yaml"); err != nil {
+	t.Parallel()
+	p, buf := capture(t)
+	if err := p.SetMode("yaml"); err != nil {
 		t.Fatal(err)
 	}
 	for _, v := range []row{{"a", "running"}, {"b", "stopped"}} {
-		if err := Stream(v, ""); err != nil {
+		if err := p.Stream(v, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -182,53 +181,83 @@ func TestStreamYAML(t *testing.T) {
 // character, in keys and values, and decodes to the same document; yaml
 // keeps the characters as they are.
 func TestJSONIsASCII(t *testing.T) {
-	doc := map[string]any{"name": "Café 東京", "emoji": "🎉 ok", "Größe": "ü", "plain": "<a&b>"}
-	check := func(t *testing.T, out []byte) {
-		t.Helper()
-		for i, b := range out {
-			if b >= 0x80 {
-				t.Fatalf("byte %d is not ASCII: %q", i, out)
+	t.Parallel()
+	doc := map[string]any{
+		"name":  "Café 東京", //nolint:gosmopolitan // non-Latin text on purpose
+		"emoji": "🎉 ok",
+		"Größe": "ü",
+		"plain": "<a&b>",
+	}
+	isASCIIDoc := func(t *testing.T, out []byte) { t.Helper(); checkASCIIDoc(t, out, doc) }
+	for _, tc := range []struct {
+		name, mode string
+		render     func(p *Printer) error
+		check      func(t *testing.T, out []byte)
+	}{
+		{"json Emit", "json", func(p *Printer) error { return p.Emit(doc, nil) }, isASCIIDoc},
+		{"json Stream", "json", func(p *Printer) error { return p.Stream(doc, "") }, isASCIIDoc},
+		{"yaml Emit", "yaml", func(p *Printer) error { return p.Emit(doc, nil) }, checkYAMLKeepsCharacters},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			p, buf := capture(t)
+			if err := p.SetMode(tc.mode); err != nil {
+				t.Fatal(err)
 			}
-		}
-		var got map[string]any
-		if err := json.Unmarshal(out, &got); err != nil {
-			t.Fatal(err)
-		}
-		if fmt.Sprint(got) != fmt.Sprint(doc) {
-			t.Errorf("decoded %v, want %v", got, doc)
-		}
-		if !strings.Contains(string(out), "<a&b>") {
-			t.Errorf("ASCII escaped an ASCII character: %s", out)
-		}
+			if err := tc.render(p); err != nil {
+				t.Fatal(err)
+			}
+			tc.check(t, buf.Bytes())
+		})
 	}
-	for _, stream := range []bool{false, true} {
-		buf := capture(t)
-		if err := SetMode("json"); err != nil {
-			t.Fatal(err)
-		}
-		var err error
-		if stream {
-			err = Stream(doc, "")
-		} else {
-			err = Emit(doc, nil)
-		}
-		if err != nil {
-			t.Fatal(err)
-		}
-		check(t, buf.Bytes())
-	}
-	buf := capture(t)
-	if err := SetMode("yaml"); err != nil {
-		t.Fatal(err)
-	}
-	if err := Emit(doc, nil); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(buf.String(), "Café 東京") || !strings.Contains(buf.String(), "ü") {
-		t.Errorf("yaml changed the characters:\n%s", buf.String())
-	}
+}
+
+// TestASCIISurrogatePair: a character above U+FFFF is escaped as its UTF-16 surrogate pair.
+func TestASCIISurrogatePair(t *testing.T) {
+	t.Parallel()
 	bs := string(rune(92)) // a backslash
 	if got, want := string(ASCII([]byte(`"🎉"`))), `"`+bs+`ud83c`+bs+`udf89"`; got != want {
 		t.Errorf("ASCII = %s, want the surrogate pair %s", got, want)
+	}
+}
+
+// checkASCIIDoc checks that out is plain ASCII, decodes to doc, and leaves ASCII characters as they are.
+func checkASCIIDoc(t *testing.T, out []byte, doc map[string]any) {
+	t.Helper()
+	for i, b := range out {
+		if b >= 0x80 {
+			t.Fatalf("byte %d is not ASCII: %q", i, out)
+		}
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(got) != fmt.Sprint(doc) {
+		t.Errorf("decoded %v, want %v", got, doc)
+	}
+	if !strings.Contains(string(out), "<a&b>") {
+		t.Errorf("ASCII escaped an ASCII character: %s", out)
+	}
+}
+
+// checkYAMLKeepsCharacters checks that TestJSONIsASCII's yaml output keeps its non-ASCII characters as they are.
+func checkYAMLKeepsCharacters(t *testing.T, out []byte) {
+	t.Helper()
+	kept := "Café 東京" //nolint:gosmopolitan // non-Latin text on purpose
+	if !strings.Contains(string(out), kept) || !strings.Contains(string(out), "ü") {
+		t.Errorf("yaml changed the characters:\n%s", out)
+	}
+}
+
+// must returns v and fails the test when err is set, on the test goroutine:
+// must(os.ReadFile(p))(t).
+func must[T any](v T, err error) func(*testing.T) T {
+	return func(t *testing.T) T {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
 	}
 }

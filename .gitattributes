@@ -1,20 +1,50 @@
-# Store text with LF line endings; check scripts out with the endings their
-# interpreters need.
-*           text=auto
-*.go        text diff=golang
-*.mod       text
-*.sum       text
-*.md        text
-*.json      text
-*.yml       text
-*.yaml      text
-*.sh        text eol=lf
-*.ps1       text eol=lf
-*.bat       text eol=crlf
-*.cmd       text eol=crlf
-
-# Build and release output, should any ever be committed.
-*.exe       binary
-*.gz        binary
-*.zip       binary
-*.png       binary
+*                        text=auto
+*.bat                    text eol=crlf
+*.cmd                    text eol=crlf
+*.exe                    binary
+*.go                     text diff=golang
+*.gz                     binary
+*.json                   text
+*.jsonc                  text
+*.md                     text
+*.png                    binary
+*.ps1                    text eol=lf
+*.psd1                   text eol=lf
+*.psm1                   text eol=lf
+*.sh                     text eol=lf
+*.toml                   text
+*.yaml                   text
+*.yml                    text
+*.zip                    binary
+.editorconfig            text
+.gitattributes           text
+.gitconfig               text
+.gitignore               text
+.prettierignore          text
+.prettierrc              text
+ACKNOWLEDGMENTS          text
+AUTHORS                  text
+CHANGELOG                text
+CHANGES                  text
+CNAME                    text
+CODE_OF_CONDUCT          text
+CODEOWNERS               text
+CONTRIBUTING             text
+CONTRIBUTORS             text
+COPYING                  text
+COPYRIGHT                text
+Dockerfile*              text
+go.mod                   text
+go.sum                   text
+HISTORY                  text
+INSTALL                  text
+ISSUE_TEMPLATE           text
+justfile                 text
+LICENSE                  text
+NEWS                     text
+PULL_REQUEST_TEMPLATE    text
+README                   text
+RELEASES                 text
+SECURITY                 text
+SUPPORT                  text
+TODO                     text

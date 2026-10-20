@@ -5,14 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 
-	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/inferenceendpoints"
+
+	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 )
 
 // TestCheckUnknownFields drives the reflection walker against the real SDK
@@ -20,9 +20,10 @@ import (
 // that were silently accepted before strict.go existed (the SDK structs'
 // custom Unmarshaler bypasses yaml.UnmarshalStrict's field checking).
 func TestCheckUnknownFields(t *testing.T) {
-	createT := reflect.TypeOf(containergroups.ContainerGroupCreationRequest{})
-	patchT := reflect.TypeOf(containergroups.ContainerGroupPatch{})
-	jobT := reflect.TypeOf(inferenceendpoints.InferenceEndpointJobPrototype{})
+	t.Parallel()
+	createT := reflect.TypeFor[containergroups.ContainerGroupCreationRequest]()
+	patchT := reflect.TypeFor[containergroups.ContainerGroupPatch]()
+	jobT := reflect.TypeFor[inferenceendpoints.InferenceEndpointJobPrototype]()
 
 	tests := []struct {
 		name    string
@@ -33,26 +34,57 @@ func TestCheckUnknownFields(t *testing.T) {
 		{"clean create", `{"name":"a","replicas":1,"container":{"image":"b"}}`, createT, ""},
 		{"unknown top-level", `{"name":"a","bogus_field":1}`, createT, `unknown field "bogus_field" at the top level`},
 		{"unknown nested", `{"container":{"image":"b","bogus":1}}`, createT, `unknown field "bogus" in "container"`},
-		{"unknown two deep", `{"container":{"resources":{"cpu":1,"vram":8}}}`, createT, `unknown field "vram" in "container.resources"`},
-		{"unknown inside array element", `{"scaling-actions":[{"replicas":1,"schedule":"* * * * *","when":"noon"}]}`, createT, `unknown field "when" in "scaling-actions[0]"`},
+		{
+			"unknown two deep",
+			`{"container":{"resources":{"cpu":1,"vram":8}}}`,
+			createT,
+			`unknown field "vram" in "container.resources"`,
+		},
+		{
+			"unknown inside array element",
+			`{"scaling-actions":[{"replicas":1,"schedule":"* * * * *","when":"noon"}]}`,
+			createT,
+			`unknown field "when" in "scaling-actions[0]"`,
+		},
 		{"kebab-case gotcha gets a hint", `{"scaling_actions":[]}`, createT, `did you mean "scaling-actions"?`},
 		{"reverse hint", `{"restart-policy":"always"}`, createT, `did you mean "restart_policy"?`},
 		{"dropped letter gets a hint", `{"replica":1}`, createT, `did you mean "replicas"?`},
-		{"misspelling deep in the tree gets a hint", `{"container":{"enviroment_variables":{"A":"1"}}}`, createT, `did you mean "environment_variables"?`},
+		{
+			"misspelling deep in the tree gets a hint",
+			`{"container":{"enviroment_variables":{"A":"1"}}}`,
+			createT,
+			`did you mean "environment_variables"?`,
+		},
 		{"transposition gets a hint", `{"container":{"resources":{"memroy":1024}}}`, createT, `did you mean "memory"?`},
 		{"short key has a tight budget", `{"nam":"x"}`, createT, `did you mean "name"?`},
 		{"far-off key gets no hint", `{"bogus_field":1}`, createT, `unknown field "bogus_field" at the top level`},
-		{"env map keys are free-form", `{"container":{"environment_variables":{"ANY_KEY":"v","OTHER":null}}}`, createT, ""},
-		{"nullable probe recurses", `{"startup_probe":{"tcp":{"port":1},"bogus":1}}`, createT, `unknown field "bogus" in "startup_probe"`},
+		{
+			"env map keys are free-form",
+			`{"container":{"environment_variables":{"ANY_KEY":"v","OTHER":null}}}`,
+			createT,
+			"",
+		},
+		{
+			"nullable probe recurses",
+			`{"startup_probe":{"tcp":{"port":1},"bogus":1}}`,
+			createT,
+			`unknown field "bogus" in "startup_probe"`,
+		},
 		{"null values are fine", `{"display_name":null,"startup_probe":null}`, patchT, ""},
 		{"patch unknown", `{"bogus":1}`, patchT, `unknown field "bogus" at the top level`},
-		{"patch nested via nullable container", `{"container":{"image":"x","bogus":1}}`, patchT, `unknown field "bogus" in "container"`},
+		{
+			"patch nested via nullable container",
+			`{"container":{"image":"x","bogus":1}}`,
+			patchT,
+			`unknown field "bogus" in "container"`,
+		},
 		{"empty patch is not this check's problem", `{}`, patchT, ""},
 		{"any-typed input stays free-form", `{"input":{"url":"x","anything_goes":true,"nested":{"deep":1}}}`, jobT, ""},
 		{"but the prototype itself is checked", `{"inputs":{}}`, jobT, `unknown field "inputs"`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			cerr := CheckUnknownFields([]byte(tc.doc), tc.t)
 			if tc.wantErr == "" {
 				if cerr != nil {
@@ -73,7 +105,8 @@ func TestCheckUnknownFields(t *testing.T) {
 // TestUnknownFieldList covers lenient mode: all unknowns collected, array
 // membership flagged (create cannot graft those; update can).
 func TestUnknownFieldList(t *testing.T) {
-	createT := reflect.TypeOf(containergroups.ContainerGroupCreationRequest{})
+	t.Parallel()
+	createT := reflect.TypeFor[containergroups.ContainerGroupCreationRequest]()
 	doc := `{
 		"name": "a",
 		"top_unknown": 1,
@@ -84,7 +117,7 @@ func TestUnknownFieldList(t *testing.T) {
 	if len(unknowns) != 3 {
 		t.Fatalf("got %d unknowns, want 3: %+v", len(unknowns), unknowns)
 	}
-	byDesc := map[string]bool{} // desc fragment -> InArray
+	byDesc := make(map[string]bool) // desc fragment -> InArray
 	for _, u := range unknowns {
 		switch {
 		case strings.Contains(u.Desc, "top_unknown"):
@@ -107,6 +140,7 @@ func TestUnknownFieldList(t *testing.T) {
 // request (overlay) wins per key, the user's unknown fields (base) survive,
 // arrays replace wholesale.
 func TestMergeJSON(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, base, overlay, want string
 	}{
@@ -137,6 +171,7 @@ func TestMergeJSON(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got, cerr := MergeJSON([]byte(tc.base), []byte(tc.overlay))
 			if cerr != nil {
 				t.Fatalf("MergeJSON: %v", cerr)
@@ -159,14 +194,15 @@ func TestMergeJSON(t *testing.T) {
 // TestLoadLenient: unknown fields are returned rather than rejected, and
 // the raw document still carries them.
 func TestLoadLenient(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "def.json")
 	doc := `{"name":"demo","future_field":1,"container":{"image":"busybox"}}`
-	if err := os.WriteFile(path, []byte(doc), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	var req containergroups.ContainerGroupCreationRequest
-	raw, unknowns, cerr := LoadLenient(path, &req)
+	raw, unknowns, cerr := LoadLenient(path, nil, &req)
 	if cerr != nil {
 		t.Fatalf("LoadLenient: %v", cerr)
 	}
@@ -177,7 +213,7 @@ func TestLoadLenient(t *testing.T) {
 		t.Errorf("raw document lost the unknown field: %s", raw)
 	}
 	// And the strict loaders reject the same file with the unknown_field kind.
-	if err := Load(path, &req); err == nil || err.Kind != clierr.KindUnknownField {
+	if err := Load(path, nil, &req); err == nil || err.Kind != clierr.KindUnknownField {
 		t.Errorf("Load kind = %v, want %s", err, clierr.KindUnknownField)
 	}
 }
@@ -187,7 +223,8 @@ func TestLoadLenient(t *testing.T) {
 // their values, arrays and maps are walked against their element types,
 // and free-form fields pass through.
 func TestFilterTree(t *testing.T) {
-	patchT := reflect.TypeOf(containergroups.ContainerGroupPatch{})
+	t.Parallel()
+	patchT := reflect.TypeFor[containergroups.ContainerGroupPatch]()
 	doc := map[string]any{
 		"replicas":        float64(2),
 		"id":              "resp-only",
@@ -195,22 +232,23 @@ func TestFilterTree(t *testing.T) {
 		"scaling-actions": []any{map[string]any{"replicas": float64(1), "schedule": "* * * * *", "when": "noon"}},
 	}
 	var dropped []string
-	out := FilterTree(doc, patchT, "", &dropped).(map[string]any)
-	sort.Strings(dropped)
-	if want := []string{"container.hash", "id", "scaling-actions[0].when"}; strings.Join(dropped, ",") != strings.Join(want, ",") {
+	out := assertAs[map[string]any](t, FilterTree(doc, patchT, "", &dropped))
+	slices.Sort(dropped)
+	want := []string{"container.hash", "id", "scaling-actions[0].when"}
+	if strings.Join(dropped, ",") != strings.Join(want, ",") {
 		t.Errorf("dropped = %v, want %v", dropped, want)
 	}
 	if out["replicas"] != float64(2) {
 		t.Errorf("replicas = %v, want 2", out["replicas"])
 	}
-	c := out["container"].(map[string]any)
-	if c["image"] != "x" || c["environment_variables"].(map[string]any)["K"] != "v" {
+	c := assertAs[map[string]any](t, out["container"])
+	if c["image"] != "x" || assertAs[map[string]any](t, c["environment_variables"])["K"] != "v" {
 		t.Errorf("container not preserved: %v", c)
 	}
 	if _, has := c["hash"]; has {
 		t.Error("container.hash survived")
 	}
-	act := out["scaling-actions"].([]any)[0].(map[string]any)
+	act := assertAs[map[string]any](t, assertAs[[]any](t, out["scaling-actions"])[0])
 	if _, has := act["when"]; has || act["schedule"] != "* * * * *" {
 		t.Errorf("array element not filtered correctly: %v", act)
 	}
@@ -225,6 +263,7 @@ func TestFilterTree(t *testing.T) {
 // candidates yields no hint (an unconfident hint would withhold the escape
 // hatch from a field that might be real).
 func TestSuggestField(t *testing.T) {
+	t.Parallel()
 	fields := map[string]reflect.Type{
 		"replicas": nil, "name": nil, "scaling-actions": nil, "cpu": nil, "gpu": nil, "memory": nil,
 	}
@@ -247,6 +286,7 @@ func TestSuggestField(t *testing.T) {
 }
 
 func TestEditDistance(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		a, b string
 		want int
@@ -264,4 +304,14 @@ func TestEditDistance(t *testing.T) {
 			t.Errorf("editDistance(%q, %q) = %d, want %d", tt.a, tt.b, got, tt.want)
 		}
 	}
+}
+
+// assertAs returns v as a T and fails the test when it holds something else.
+func assertAs[T any](t *testing.T, v any) T { //nolint:ireturn // returns the caller's type parameter
+	t.Helper()
+	x, ok := v.(T)
+	if !ok {
+		t.Fatalf("got %T, want %T", v, x)
+	}
+	return x
 }
