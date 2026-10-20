@@ -97,12 +97,17 @@ type result struct {
 }
 
 // run invokes the CLI. It never fails the test on a nonzero exit: exit codes
-// are assertions here, not accidents.
+// are assertions here, not accidents. With SALAD_PROJECT unset the CLI is
+// given the project the suite uses (liveProject), so it never warns about an
+// assumed one and stderr carries only what a test checks.
 func runEnv(t *testing.T, extraEnv map[string]string, args ...string) result {
 	t.Helper()
 	//nolint:gosec // G204, G702: runs the CLI under test with the test's own arguments
 	cmd := exec.CommandContext(t.Context(), binPath(t), args...)
 	cmd.Env = os.Environ()
+	if os.Getenv("SALAD_PROJECT") == "" {
+		cmd.Env = append(cmd.Env, "SALAD_PROJECT="+liveProject())
+	}
 	for k, v := range extraEnv {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}

@@ -18,10 +18,10 @@ just fmt          # golangci-lint fmt (gci, gofumpt, golines), PSScriptAnalyzer,
 just lint         # golangci-lint, go mod tidy -diff and verify, govulncheck, go-licenses, PSScriptAnalyzer,
                   # ShellCheck, cspell
 just ci           # fmt-check, lint and test, as CI runs them
-just test-live    # live suite against the real API; needs SALAD_API_KEY and SALAD_ORGANIZATION (SALAD_PROJECT
-                  # optional), spends money, fails without them. Optional: SALAD_CLI_TEST_REQUIRE_SSH=1 fails the ssh
-                  # test instead of skipping it on a publickey denial, SALAD_AI_GATEWAY_API_KEY adds the
-                  # AI Gateway test, SALAD_CLI_TEST_AUDIO=<short wav> and SALAD_CLI_TEST_PHRASE=<words in it> add
+just test-live    # live suite against the real API; needs SALAD_API_KEY and SALAD_ORGANIZATION (SALAD_PROJECT optional:
+                  # default when unset), spends money, fails without them. Optional: SALAD_CLI_TEST_REQUIRE_SSH=1 fails
+                  # the ssh test instead of skipping it on a publickey denial, SALAD_AI_GATEWAY_API_KEY adds the AI
+                  # Gateway test, SALAD_CLI_TEST_AUDIO=<short wav> and SALAD_CLI_TEST_PHRASE=<words in it> add
                   # transcription, SALAD_CLI_TEST_AUDIO_FOREIGN=<short single-track non-English clip> adds the
                   # language_code and audio_stream_index test, SALAD_CLI_TEST_BIN=<path> tests another binary than
                   # dist/.

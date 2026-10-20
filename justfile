@@ -65,12 +65,12 @@ test-go:
 build:
     bash scripts/build.sh
 
-# The live suite needs SALAD_API_KEY and SALAD_ORGANIZATION (SALAD_PROJECT optional) and fails without them, so a pass
-# always means it ran. Optional: SALAD_CLI_TEST_REQUIRE_SSH=1 fails the ssh test instead of skipping it on a publickey
-# denial (set it for the pre-tag run); SALAD_AI_GATEWAY_API_KEY adds the AI Gateway test; SALAD_CLI_TEST_AUDIO=<short
-# wav> and SALAD_CLI_TEST_PHRASE=<words in it> add transcription; SALAD_CLI_TEST_AUDIO_FOREIGN=<short single-track
-# non-English clip> adds the language_code and audio_stream_index test; SALAD_CLI_TEST_BIN=<path> tests another binary
-# than dist/.
+# The live suite needs SALAD_API_KEY and SALAD_ORGANIZATION (SALAD_PROJECT optional: default when unset) and fails
+# without them, so a pass always means it ran. Optional: SALAD_CLI_TEST_REQUIRE_SSH=1 fails the ssh test instead of
+# skipping it on a publickey denial (set it for the pre-tag run); SALAD_AI_GATEWAY_API_KEY adds the AI Gateway test;
+# SALAD_CLI_TEST_AUDIO=<short wav> and SALAD_CLI_TEST_PHRASE=<words in it> add transcription;
+# SALAD_CLI_TEST_AUDIO_FOREIGN=<short single-track non-English clip> adds the language_code and audio_stream_index test;
+# SALAD_CLI_TEST_BIN=<path> tests another binary than dist/.
 
 # Run the live suite against the real API (spends money; see the notes above).
 test-live: build
