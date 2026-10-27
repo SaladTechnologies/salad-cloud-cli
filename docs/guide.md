@@ -543,6 +543,18 @@ onto it as its node next checks in, and old and new never run side by side.
 Each instance downloads the whole new image again, even on a machine that
 ran the previous version, so with one replica the gap lasts the full
 download plus your app's start-up.
+
+The platform checks a new version before any instance runs it: for an
+image, that the registry serves it. A version that fails is dropped, the
+group keeps running the one it had, and `update` exits 6 (kind
+`invalid_input`, stdout empty) with the platform's reason, such as
+`the API did not apply the container change to my-app: Version 2: Manifest Not Found`
+for a tag that does not exist. Registry credentials are never returned by
+the API, so a new private image needs them again: put
+`container.registry_authentication` in a `-f` file and pass it with
+`--image` (sent without them, a private image reads
+`Version 2: Image Not Found, Check Image Name And Tag`). When a patch changes
+the image without credentials, the error's hint says so.
 A resource change (`--cpu`, `--memory`, `--gpu`, `--storage`) moves only the
 instances whose machine no longer fits; replicas, the display name and
 autoscaling restart nothing. To avoid downtime, run the new version as a
@@ -653,7 +665,10 @@ Two different needs, two different mechanisms:
 - **`update` settles by default.** A patch that stages (an image change,
   say) returns `pending_change: true` and the response is still the
   previous config, so `update` polls until the change lands, then emits
-  the settled document and runs its write-verification checks. `--timeout`
+  the settled document and runs its write-verification checks. Their
+  findings are `warning:` and `note:` lines, except a container change the
+  platform rejected, which exits 6 with empty stdout (see
+  [Updating with flags](#updating-with-flags)). `--timeout`
   (default `2m`) caps the wait and exits 1
   with kind `wait_timeout` whose message says the patch itself was accepted
   and only verification timed out. `--no-wait` skips the wait and the
@@ -1181,7 +1196,7 @@ depend on them, so a change to a code is listed in the changelog.
 | 3 | authentication failed (401/403, or no key at all) |
 | 4 | not found (404) |
 | 5 | rate limited (429, after retries) |
-| 6 | invalid input: a value breaks a platform rule (400/422, or caught before the request), or a file you named cannot be read or parsed |
+| 6 | invalid input: a value breaks a platform rule (400/422, caught before the request, or a container change `update` saw the platform reject), or a file you named cannot be read or parsed |
 | 7 | network error (no HTTP response) |
 | 10 | not available: the AI Gateway declined the request for billing reasons (402) |
 | other | `container-groups ssh`, `sftp` or `cp`: the ssh/sftp child's own exit code, kind `child_exit` |
@@ -1255,7 +1270,7 @@ script can switch on it. A new failure mode maps onto an existing kind.
 | Kind | Exit code | Meaning |
 | --- | --- | --- |
 | `usage` | 2 | the command line is wrong: unknown flag or command, missing argument, unparseable value |
-| `invalid_input` | 6 | a value breaks a platform rule, or a file you named cannot be read or parsed; also the API's 400/422 |
+| `invalid_input` | 6 | a value breaks a platform rule, or a file you named cannot be read or parsed; also the API's 400/422, and a container change `update` saw the platform reject |
 | `unknown_field` | 6 | a definition, patch or job file has a field the API does not take (see [Forward compatibility](#forward-compatibility)) |
 | `auth` | 3 | no API key, or the API rejected it (401/403) |
 | `not_found` | 4 | the resource does not exist (404) |

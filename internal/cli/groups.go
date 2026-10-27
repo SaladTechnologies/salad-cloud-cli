@@ -657,7 +657,11 @@ func (app *App) addGroupsUpdateCommand(cg *cobra.Command) {
 		Long: `Update a container group from flags, a JSON or YAML merge patch file (-f),
 or both; flags win over the file. The change settles before the command
 returns (--no-wait returns at once), and the result is checked against what
-you asked for.
+you asked for. A container change the platform rejects (an image it cannot
+pull, say) exits 6 with the platform's reason, and the group keeps what it
+ran before. Registry credentials are never returned by the API, so a new
+private image needs them again in the -f file
+(container.registry_authentication).
 
 The flags are the create flags that can change on an existing group:
 --image, --cpu, --memory, --storage, --gpu (UUID or name; replaces the GPU
@@ -837,6 +841,8 @@ type patchSettle struct {
 // pending the response is the *previous* config, so neither the returned
 // document nor the diffs would describe what was written; --no-wait skips
 // the settle and says so on stderr. Both diffs no-op on a pending document.
+// Their findings are warnings, except a container change that did not land
+// (findContainerRejection), which is an error: exit 6, stdout empty.
 // intent, when non-nil, is what the caller asked for and is what the diffs
 // compare against; it differs from raw only when the wire patch must express
 // a request indirectly (update -e removing a variable by omission).
@@ -873,7 +879,13 @@ func (app *App) applyPatch(
 		)
 	}
 	// "Did what I asked for happen?" and "did anything else happen?".
-	warnIgnoredFields(app.errw(), findIgnoredFields(intent, before, group))
+	ignored := findIgnoredFields(intent, before, group)
+	warnIgnoredFields(app.errw(), ignored)
 	warnUnrequestedChanges(app.errw(), findUnrequestedChanges(intent, before, group))
+	// A container change that did not land fails the write: the group still
+	// runs what it ran before, which must not read as success.
+	if r, rejected := findContainerRejection(before, group, ignored); rejected {
+		return nil, containerRejectionError(name, intent, r)
+	}
 	return group, nil
 }

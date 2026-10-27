@@ -281,6 +281,7 @@ each call site to its row; a generic rewrap (`"%v"`) is exempt.
 | a container command over 100 words | 6 | API range | message | `the API allows at most` |
 | an empty container command word | 6 | the node drops empty words | message | `is empty; the platform drops empty command words` |
 | a container command starting with `-` | 6 | the node runs the first word as the program | hint | `start it with a program` |
+| an `update` container change the platform rejected or left as it was, once the change settles | 6 | the platform's check of the new version | message | `did not apply the container change` |
 | a file the user named cannot be read | 6 | the user's file | message | `cannot read` |
 | a file the user named cannot be parsed | 6 | the user's file | message | `cannot parse` |
 | an audio file that does not exist | 6 | the user's file | hint | `pass a local file path or an http(s) URL` |
