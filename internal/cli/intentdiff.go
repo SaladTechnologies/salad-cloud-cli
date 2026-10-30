@@ -6,13 +6,16 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/api"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/input"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
@@ -362,6 +365,130 @@ func warnIgnoredFields(w io.Writer, fields []ignoredField) {
 		}
 		fprintf(w, "warning:   %s: requested %s, still %s\n", f.Path, f.Requested, f.Actual)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// A container change that did not land.
+//
+// The API takes a container change with HTTP 200 and stages it as a new
+// version ("Version 2 is pending."), then checks it: for an image, that the
+// registry serves it. A version that fails is dropped: pending_change goes
+// false, the group keeps the version it had, and current_state.description
+// says why ("Version 2: Manifest Not Found"; for a private image sent without
+// its credentials, "Version 2: Image Not Found, Check Image Name And Tag").
+// Settling ends there, so the diff above sees the image still at its old
+// value, but a warning line on stderr under exit 0 is easy to miss and
+// invisible to a script. This is the one finding that fails the write.
+// ---------------------------------------------------------------------------
+
+// containerRejection is a container change that did not land: the container
+// fields the patch named that are still what they were (none when only the
+// description tells), and the description the write left on the group (""
+// when it left none, or the one there already).
+type containerRejection struct {
+	Fields      []ignoredField
+	Description string
+}
+
+// rejectedVersionPattern matches the description the API leaves on a group
+// whose staged version failed its checks, "Version 2: Manifest Not Found",
+// capturing the version.
+var rejectedVersionPattern = regexp.MustCompile(`^Version (\d+): \S`)
+
+// containerChangePath reports whether path is a field of the container
+// itself: its image, command, cpu, memory, GPU classes, storage or an
+// environment variable. One of these left as it was means the change did not
+// land; any other field the API ignores (image_caching always, priority on a
+// CPU-only group) keeps its warning, because the API drops those on every
+// write, rejected or not.
+func containerChangePath(path string) bool {
+	switch path {
+	case "container.image", "container.command", "container.resources.cpu", "container.resources.memory",
+		"container.resources.gpu_classes", "container.resources.storage_amount":
+		return true
+	}
+	return strings.HasPrefix(path, "container.environment_variables.")
+}
+
+// findContainerRejection reports a settled write whose container change did
+// not land, given what findIgnoredFields found. Either of two signals is
+// enough:
+//
+//   - A container field the patch named stayed exactly where it was (not
+//     moved somewhere else, which is normalization at worst).
+//   - The write left the API's report of a rejected version on the group:
+//     "Version N: <reason>" for an N above the version the group runs, which
+//     the group did not show before. Only a new one counts, because the
+//     report outlives the write: a later write that stages nothing leaves it
+//     in place, and a resend stages a new N.
+//
+// The second catches a rejection the diff cannot see, such as one for new
+// registry credentials, which no response carries. The guards are
+// findIgnoredFields': both states required, nothing while the change is
+// pending.
+func findContainerRejection(
+	before, after *shared.ContainerGroup,
+	ignored []ignoredField,
+) (containerRejection, bool) {
+	if before == nil || after == nil || ptr.Deref(after.PendingChange) {
+		return containerRejection{}, false
+	}
+	r := containerRejection{Fields: nil, Description: ""}
+	if reason := groupReason(after); reason != groupReason(before) {
+		r.Description = reason
+	}
+	for _, f := range ignored {
+		if !f.Moved && containerChangePath(f.Path) {
+			r.Fields = append(r.Fields, f)
+		}
+	}
+	if len(r.Fields) == 0 && !rejectedVersion(r.Description, ptr.Deref(after.Version)) {
+		return containerRejection{}, false
+	}
+	return r, true
+}
+
+// rejectedVersion reports whether description is the API's report of a
+// rejected version newer than running, the version the group runs.
+func rejectedVersion(description string, running int64) bool {
+	m := rejectedVersionPattern.FindStringSubmatch(description)
+	if m == nil {
+		return false
+	}
+	n, err := strconv.ParseInt(m[1], 10, 64)
+	return err == nil && n > running
+}
+
+// containerRejectionError is the error for a container change that did not
+// land: exit 6, as for any value the platform rejects after accepting the
+// request, with the API's reason in the message. A patch that changes the
+// image without registry credentials gets create --from's credential advice
+// in its hint, whatever registry the image names: Docker Hub has private
+// repositories too, so the hint is keyed on the failure, not on the registry.
+func containerRejectionError(name string, patch []byte, r containerRejection) *clierr.Error {
+	reason := ""
+	if r.Description != "" {
+		reason = ": " + r.Description
+	}
+	cerr := clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
+		"the API did not apply the container change to %s%s", name, reason)
+	if changesImageWithoutCredentials(patch) {
+		return cerr.WithHint("check the image name and tag; registry credentials are never returned by the API, " +
+			"so for a private image, pass them again with -f <file> holding container.registry_authentication")
+	}
+	return cerr.WithHint("to see what the group runs now, run saladcloud container-groups get %s", name)
+}
+
+// changesImageWithoutCredentials reports whether patch names
+// container.image and not container.registry_authentication.
+func changesImageWithoutCredentials(patch []byte) bool {
+	var doc any
+	if json.Unmarshal(patch, &doc) != nil {
+		return false
+	}
+	_, image := lookupPath(doc, "container.image")
+	_, credentials := lookupPath(doc, "container.registry_authentication")
+	return image && !credentials
 }
 
 // ---------------------------------------------------------------------------

@@ -6,6 +6,15 @@ may change, and every such change is listed here.
 
 ## [Unreleased]
 
+### Fixed
+
+- `container-groups update` now fails when the platform rejects the container change it asked for, such as an image tag
+  that does not exist or a private image it cannot pull. It used to exit 0 with the group still on its old image and
+  only a `warning:` line on stderr. It now exits 6 (kind `invalid_input`) with empty stdout and the platform's reason in
+  the message (`the API did not apply the container change to my-app: Version 2: Manifest Not Found`). When the patch
+  changed the image without `container.registry_authentication`, the hint says that a private image needs its registry
+  credentials again in the `-f` file, whatever registry it is on, Docker Hub included.
+
 ### Security
 
 - Release binaries and the container image are built with Go 1.27.3, whose certificate verification distrusts

@@ -11,8 +11,9 @@ are the `saladcloud container-groups` commands.
 - **`delete` is immediate and unconfirmed.** There is no prompt and no dry run, so it works unattended in scripts and
   agents. Confirm before you run it, and guard destructive automation in your own code.
 - **`update` and `scale` wait for the change to settle** before they return, so they can check the result against what
-  you asked for and warn on stderr when the API changed or ignored part of it. `--no-wait` returns at once and skips
-  the check.
+  you asked for and warn on stderr when the API changed or ignored part of it. A container change the platform
+  rejected is an error instead: exit 6 with its reason, and the group keeps what it ran before. `--no-wait` returns at
+  once and skips the check.
 - **The project falls back to `default`** when nothing sets one, and every command that uses it warns on stderr;
   `whoami` shows it as `none set, using "default"`. A saved project applies only to the saved organization. If the
   organization has no `default` project, commands exit 2 with "no valid project set". See
@@ -52,6 +53,15 @@ are the `saladcloud container-groups` commands.
 - **Changing the image, command, environment, probes or gateway settings restarts every instance** onto the new
   version as its node next checks in; old and new never run side by side. For no downtime, run the new version as a
   second group (see [Updating with flags](guide.md#updating-with-flags)).
+- **A container change is checked after the API accepts it.** The patch returns 200 and the change waits as a new
+  version (`Version 2 is pending.`); a version whose image the registry does not serve is then dropped, the group keeps
+  running the one it had, and its reason reads `Version 2: Manifest Not Found`. That reason stays on the group through
+  later writes until a new version replaces it. `update` exits 6 with the reason.
+- **A new private image needs its registry credentials again.** `update --image` with a new tag of a private Docker
+  Hub image, sent without `container.registry_authentication`, is rejected with `Image Not Found, Check Image Name And
+  Tag`, even though the group was created with credentials for that repository. Send the credentials with the new
+  image in the `-f` file; the CLI cannot resend them, because the API never returns them. The rejection's hint says so
+  for an image on any registry.
 - **Setting `replicas` puts scheduled scaling on hold**, whether through `scale`, `update`, or the portal. The CLI says
   so when it happens; `scale --keep-schedule` switches the schedule back on. See
   [Scheduled scaling](guide.md#scheduled-scaling).

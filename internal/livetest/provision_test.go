@@ -23,6 +23,7 @@ func TestGroupLifecycle(t *testing.T) { //nolint:paralleltest // writes to the l
 	settle(t, g)
 
 	lifecycleWritableRoundTrip(t, g)
+	lifecycleRejectedImage(t, g)
 	sched := lifecycleScaleHolds(t, g)
 	lifecycleKeepSchedule(t, g, sched)
 
@@ -98,6 +99,28 @@ func lifecycleWritableRoundTrip(t *testing.T, g string) {
 	if rt.Code != 0 ||
 		strings.Contains(rt.Stderr, "warning:") {
 		t.Errorf("get --writable | update -f round trip: exit %d, stderr %q", rt.Code, rt.Stderr)
+	}
+}
+
+// lifecycleRejectedImage updates g to an image tag that does not exist: the API accepts the patch, then drops the new
+// version once it settles (a stopped group's image is checked too), so update exits 6 with the platform's reason,
+// prints nothing on stdout, and leaves the image as it was.
+func lifecycleRejectedImage(t *testing.T, g string) {
+	t.Helper()
+	r := run(t, "container-groups", "update", g, "--image", "docker.io/library/busybox:no-such-tag-saladcloud-cli",
+		"-o", "json")
+	if r.Code != 6 || r.Stdout != "" {
+		t.Fatalf("update to a missing tag = exit %d, stdout %q; want 6 and nothing: %s", r.Code, r.Stdout, r.Stderr)
+	}
+	wants := []string{"did not apply the container change", "Not Found", "container.registry_authentication"}
+	for _, want := range wants {
+		if !strings.Contains(r.Stderr, want) {
+			t.Errorf("stderr is missing %q: %s", want, r.Stderr)
+		}
+	}
+	doc := oneDoc(t, run(t, "container-groups", "get", g, "-o", "json"))
+	if image := valueAs[map[string]any](doc["container"])["image"]; image != "docker.io/library/busybox:1.36" {
+		t.Errorf("image after the rejected update = %v, want the old one", image)
 	}
 }
 
