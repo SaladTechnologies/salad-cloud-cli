@@ -6,8 +6,10 @@ name: test
 # pre-tag step (see Settled decisions in AGENTS.md).
 
 # Every push and pull request runs it, and gh workflow run test.yml
-# [--ref <branch>] starts it by hand. A private copy of the repository runs
-# its jobs only when started by hand, because its Actions minutes are billed.
+# [--ref <branch>] starts it by hand. While the repository is private its
+# Actions minutes are billed, so a branch push runs nothing and a pull request
+# runs only test, lint and package, the checks main's ruleset requires;
+# install-scripts runs only when started by hand.
 # Run it before tagging; a version tag runs release.yml, which vets and tests
 # on Linux before it builds, so running this as well on the tag would
 # duplicate it.
@@ -22,7 +24,7 @@ permissions:
 
 jobs:
   test:
-    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.repository.private }}
+    if: ${{ github.event_name != 'push' || !github.event.repository.private }}
     strategy:
       fail-fast: false
       matrix:
@@ -55,7 +57,7 @@ jobs:
   lint:
     # just fmt-check lint: formatting, golangci-lint, govulncheck, licenses, PSScriptAnalyzer, ShellCheck, prettier and
     # cspell, at the versions in mise.toml and package-lock.json.
-    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.repository.private }}
+    if: ${{ github.event_name != 'push' || !github.event.repository.private }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -68,9 +70,10 @@ jobs:
   # The install scripts, run on each platform against archives goreleaser
   # packages from this commit and served locally, so they are tested before a
   # release exists. A tampered archive must be rejected. install-scripts is
-  # skipped whenever package is.
+  # skipped whenever package is, and on a private repository it runs only when
+  # started by hand.
   package:
-    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.repository.private }}
+    if: ${{ github.event_name != 'push' || !github.event.repository.private }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -101,6 +104,7 @@ jobs:
 
   install-scripts:
     needs: package
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.repository.private }}
     strategy:
       fail-fast: false
       matrix:
