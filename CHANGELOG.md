@@ -15,6 +15,13 @@ may change, and every such change is listed here.
   changed the image without `container.registry_authentication`, the hint says that a private image needs its registry
   credentials again in the `-f` file, whatever registry it is on, Docker Hub included.
 
+### Security
+
+- Release binaries and the container image are built with Go 1.27.3, whose certificate verification distrusts
+  compromised intermediate certificates when the CLI connects over HTTPS
+  ([GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809)). A `go install` build uses your own Go, so update it to get the
+  same fix.
+
 ## [0.1.0-beta.1] - 2026-10-21
 
 The first public beta of the SaladCloud CLI: a thin, non-interactive-first command-line wrapper over the SaladCloud
