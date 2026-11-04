@@ -4,6 +4,9 @@
 # section for it and that test.yml passed on main's tip, then asks, creates an annotated tag on origin/main and pushes
 # it, which starts .github/workflows/release.yml.
 #
+# This is the way in only until the release GitHub App is set up: then a release starts from the workflow (Actions →
+# Release → Run workflow), the tag ruleset lets only the App create tags, and this script goes.
+#
 #   just release v0.1.0
 set -euo pipefail
 

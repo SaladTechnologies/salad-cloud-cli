@@ -1,19 +1,32 @@
 name: Release
 
-# Pushing a version tag (v0.1.0, v0.2.0-rc.1, …; the scheme is under Releasing
-# in AGENTS.md, and `just release` makes one) builds every target with
-# goreleaser (.goreleaser.yaml), publishes a GitHub release with the archives,
-# checksums and SBOMs, the container image, and — when their tokens are set —
-# the Homebrew cask, Scoop manifest and winget pull request, then attests the
-# build provenance of every archive. A tag with a "-" is a pre-release. The
-# live suite is not run here by decision (see test.yml); run `just test-live`
-# before tagging.
+# A release starts here: an insider runs this workflow on main with the version
+# to ship (Actions → Release → Run workflow, or
 #
-# Tags are permanent, and re-running a failed run reuses the workflow as it was
-# at the tagged commit. So when a release fails in this workflow rather than in
-# the tagged code, fix the workflow on main and publish the same tag with it:
-# `gh workflow run release.yml -f tag=vX.Y.Z` builds that tag's code with
-# main's workflow. It refuses a tag that already has a GitHub release.
+#   gh workflow run release.yml --ref main -f version=v0.2.0 [-f commit=<sha>]
+#
+# ). verify checks the commit and builds it with no secrets and a read-only
+# token. Once it passes, publish waits for an insider to approve the release
+# environment, then creates the annotated v* tag with the release App's token
+# (the only actor the tag ruleset lets create tags), builds every target with
+# goreleaser (.goreleaser.yaml), and publishes a GitHub release with the
+# archives, checksums and SBOMs, the container image, and — when their tokens
+# are set — the Homebrew cask, Scoop manifest and winget pull request. It then
+# attests the build provenance of every archive. A version with a "-" is a
+# pre-release. The live suite is not run here by decision (see test.yml); run
+# `just test-live` on the commit before starting a release.
+#
+# Until the release App and the release environment are set up, a tag pushed
+# with `just release` releases too, through the same checks (the environment,
+# not yet protected, asks for no approval). That path closes on its own once
+# the tag ruleset lets only the App create tags; then remove the push trigger
+# and scripts/release.sh. A tag the App creates is pushed by a bot, so it does
+# not start a second release.
+#
+# Tags are permanent. When a release fails in this workflow rather than in the
+# tagged code, fix the workflow on main and run it again with the same version:
+# it finds the tag, builds that tag's code with main's workflow, and publishes
+# it. It refuses a version that already has a GitHub release.
 
 on:
   push:
@@ -21,56 +34,87 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
-      tag:
-        description: An existing release tag (vX.Y.Z) whose release did not publish
+      version:
+        description: The version to release (vX.Y.Z or vX.Y.Z-rc.N), as CHANGELOG.md's newest dated section names it
         required: true
         type: string
+      commit:
+        description: Full SHA of the main commit to release, the one the live suite ran on (empty for main's tip)
+        required: false
+        type: string
 
-permissions:
-  contents: write # the GitHub release
-  packages: write # the container image on ghcr.io
-  id-token: write # build provenance attestations
-  attestations: write
+permissions: {}
 
 concurrency:
-  group: release-${{ inputs.tag || github.ref_name }}
+  group: release-${{ inputs.version || github.ref_name }}
   cancel-in-progress: false
 
+env:
+  # The version being released: the one asked for, or the tag pushed.
+  VERSION: ${{ inputs.version || github.ref_name }}
+
 jobs:
-  release:
-    name: Build and Publish Release
+  verify:
+    name: Verify
+    # A run started by hand must be on main's workflow; a pushed tag releases
+    # unless a bot pushed it, which is this workflow's own publish job.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (github.event_name == 'push' &&
+      !endsWith(github.actor, '[bot]'))
     runs-on: ubuntu-latest
-    env:
-      # The tag being released: the one pushed, or the one asked for by hand.
-      TAG: ${{ inputs.tag || github.ref_name }}
-      GORELEASER_CURRENT_TAG: ${{ inputs.tag || github.ref_name }}
+    permissions:
+      actions: read # whether test.yml passed on the commit
+      contents: read
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
+      tagged: ${{ steps.commit.outputs.tagged }}
     steps:
+      - name: Check the version
+        # A release is vX.Y.Z, or vX.Y.Z-rc.N for a release candidate (see
+        # Releasing in AGENTS.md).
+        run: |
+          if ! printf '%s\n' "$VERSION" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?$'; then
+            echo "version '$VERSION' is not vX.Y.Z or vX.Y.Z-rc.N (see Releasing in AGENTS.md)" >&2
+            exit 1
+          fi
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
-          fetch-depth: 0 # goreleaser reads the tag and the commit date
-      - name: Check the tag
-        # A release tag is vX.Y.Z, or vX.Y.Z-rc.N for a release candidate, on a
-        # commit that is on main, with no GitHub release yet. Tags can be
-        # neither moved nor deleted, so a tag that breaks a rule stays, but
-        # releases nothing.
+          fetch-depth: 0 # the checks read main and the tags
+          persist-credentials: false
+      - name: Pick the commit, and check it is on main, unreleased and tested
+        # The tag's commit when the tag exists (a pushed tag, or a run that
+        # failed after creating it); otherwise the commit asked for, or main's
+        # tip.
+        id: commit
         env:
           GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ inputs.commit }}
         run: |
-          if ! printf '%s\n' "$TAG" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?$'; then
-            echo "tag '$TAG' is not vX.Y.Z or vX.Y.Z-rc.N (see Releasing in AGENTS.md)" >&2
+          if tagged=$(git rev-parse --verify --quiet "refs/tags/$VERSION^{commit}"); then
+            if [ -n "$COMMIT" ] && [ "$COMMIT" != "$tagged" ]; then
+              echo "tag $VERSION already exists on $tagged, not $COMMIT" >&2
+              exit 1
+            fi
+            sha=$tagged
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
+          else
+            sha=${COMMIT:-$GITHUB_SHA}
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+          git checkout --quiet --detach "$sha"
+          git merge-base --is-ancestor "$sha" origin/main || { echo "$sha is not on main" >&2; exit 1; }
+          if gh release view "$VERSION" > /dev/null 2>&1; then
+            echo "$VERSION already has a GitHub release; a release is permanent, so release the next version" >&2
             exit 1
           fi
-          commit=$(git rev-parse HEAD)
-          if ! git merge-base --is-ancestor "$commit" origin/main; then
-            echo "tag '$TAG' points at $commit, which is not on main" >&2
+          passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/test.yml/runs?head_sha=$sha&status=success" --jq .total_count)
+          if [ "$passed" = 0 ]; then
+            echo "test.yml has no successful run on $sha: gh workflow run test.yml --ref main, then start again" >&2
             exit 1
           fi
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "$TAG already has a GitHub release; delete it first to publish the tag again" >&2
-            exit 1
-          fi
+          git tag -f "$VERSION" # local only, so goreleaser stamps this version
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - name: Setup Go and just
         uses: ./.github/actions/setup-mise
         with:
@@ -79,8 +123,7 @@ jobs:
         run: just vet test
       - name: Check the version stamp
         # The binary goes outside the checkout: --clean empties dist/ first and
-        # --output does not create folders, and goreleaser will not release
-        # with stray files in the checkout.
+        # --output does not create folders.
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: "~> v2"
@@ -88,18 +131,19 @@ jobs:
         env:
           GOOS: linux
           GOARCH: amd64
-      - name: Compare the stamp with the tag
+          GORELEASER_CURRENT_TAG: ${{ env.VERSION }}
+      - name: Compare the stamp with the version
         run: |
           stamped=$("$RUNNER_TEMP/saladcloud" version -o json | jq -r .version)
-          if [ "$stamped" != "$TAG" ]; then
-            echo "binary reports version '$stamped', expected '$TAG'" >&2
+          if [ "$stamped" != "$VERSION" ]; then
+            echo "binary reports version '$stamped', expected '$VERSION'" >&2
             exit 1
           fi
       - name: Check the changelog has this release
         # Read through the binary, so this checks the CHANGELOG.md it embeds
         # (what `saladcloud changelog` serves), parsed the way it parses it.
         run: |
-          want=${TAG#v}
+          want=${VERSION#v}
           today=$(date -u +%F)
           log=$("$RUNNER_TEMP/saladcloud" changelog -o json)
           date=$(printf '%s' "$log" | jq -r --arg v "$want" '.items[] | select(.version == $v) | .date // empty')
@@ -113,6 +157,67 @@ jobs:
           if [ -n "$(printf '%s' "$log" | jq -r '.items[] | select(.version == "Unreleased") | .body')" ]; then
             echo "::warning::CHANGELOG.md's Unreleased section is not empty; did its entries belong in $want?"
           fi
+
+  publish:
+    name: Build and Publish Release
+    needs: verify
+    runs-on: ubuntu-latest
+    # Waits here until a release reviewer approves (whoever started the run
+    # may); only then does the job get the environment's secrets.
+    environment:
+      name: release
+      url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ env.VERSION }}
+    permissions:
+      contents: write # the GitHub release (the App token creates the tag)
+      packages: write # the container image on ghcr.io
+      id-token: write # build provenance attestations
+      attestations: write
+    env:
+      SHA: ${{ needs.verify.outputs.sha }}
+      GORELEASER_CURRENT_TAG: ${{ inputs.version || github.ref_name }} # a job's env cannot read env
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          fetch-depth: 0 # goreleaser reads the tag and the commit date
+          persist-credentials: false
+      - name: Check the release App is set up
+        if: needs.verify.outputs.tagged != 'true' && vars.RELEASE_APP_CLIENT_ID == ''
+        run: |
+          echo "the release App is not set up (no RELEASE_APP_CLIENT_ID), so this run cannot create $VERSION; push the tag with: just release $VERSION" >&2
+          exit 1
+      - name: Get a release App token
+        id: app-token
+        if: needs.verify.outputs.tagged != 'true'
+        # A token for this repository only, and only to write its contents,
+        # even when the App is installed on several.
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Create the tag
+        # The App is the tag ruleset's only bypass actor, so this is the one way
+        # a v* tag reaches the repository. Annotated, as `just release` makes
+        # them.
+        if: needs.verify.outputs.tagged != 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$VERSION" > /dev/null; then
+            object=$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="$VERSION" -f message="SaladCloud CLI ${VERSION#v}" \
+              -f object="$SHA" -f type=commit --jq .sha)
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$VERSION" -f sha="$object" > /dev/null
+          fi
+      - name: Check the tag is on the verified commit
+        run: |
+          git fetch --quiet --tags origin
+          test "$(git rev-parse "$VERSION^{commit}")" = "$SHA"
+      - name: Setup Go
+        uses: ./.github/actions/setup-mise
+        with:
+          tools: go
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - name: Set up Buildx
@@ -126,6 +231,8 @@ jobs:
       - name: Install syft (SBOMs)
         uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
       - name: Release
+        # goreleaser uploads every asset into a draft and publishes it last, so
+        # the release is complete before immutability locks it.
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: "~> v2"

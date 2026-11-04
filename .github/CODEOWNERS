@@ -1,4 +1,13 @@
-* @SaladTechnologies/saladcloud-compute
+* @SaladTechnologies/salad-cloud-cli-maintainers
 
-# Administrators must approve changes to code owners (and other GitHub-specific resources).
+# Review requests only: the main ruleset's required-reviewers rule, not this file, decides which changes need an
+# approval. Administrators are asked about changes to CI, release and install files, and to code owners.
 /.github/ @SaladTechnologies/admins
+/.goreleaser.yaml @SaladTechnologies/admins
+/Dockerfile @SaladTechnologies/admins
+/install.sh @SaladTechnologies/admins
+/install.ps1 @SaladTechnologies/admins
+/uninstall.sh @SaladTechnologies/admins
+/uninstall.ps1 @SaladTechnologies/admins
+/scripts/ @SaladTechnologies/admins
+/mise.toml @SaladTechnologies/admins

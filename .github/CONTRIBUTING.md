@@ -64,6 +64,9 @@ The development workflow, layout, and contracts are documented in [`AGENTS.md`](
 `npm ci` (prettier and cspell). In short, a change is done when `just ci` passes, and the docs and `CHANGELOG.md`
 reflect it.
 
+Pull requests from outside the SaladTechnologies organization run CI only after a maintainer approves the run, usually
+after a first look at the diff.
+
 Additionally, please consider taking a moment to read Miguel de Icaza's blog post titled
 [Open Source Contribution Etiquette](https://tirania.org/blog/archive/2010/Dec-31.html) and Ilya Grigorik's blog post
 titled [Don't "Push" Your Pull Requests](https://www.igvita.com/2011/12/19/dont-push-your-pull-requests/).
