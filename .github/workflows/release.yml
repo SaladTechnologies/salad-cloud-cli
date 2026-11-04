@@ -1,33 +1,87 @@
 name: Release
 
-# Pushing a version tag (v0.1.0-beta.1, v1.2.3, …) builds every target with
-# goreleaser (.goreleaser.yaml), publishes a GitHub release with the archives,
+# A release starts here, never from a laptop: an insider runs this workflow on
+# main with the version to ship (Actions → Release → Run workflow, or
+#
+#   gh workflow run release.yml --ref main -f version=v0.1.0-beta.2 [-f commit=<sha>]
+#
+# ). verify checks the commit and builds it with no secrets and a read-only
+# token. Once it passes, publish waits for an insider to approve the release
+# environment, then creates the v* tag with the release App's token (the only
+# actor the tag ruleset lets create tags), builds every target with goreleaser
+# (.goreleaser.yaml), and publishes a GitHub release with the archives,
 # checksums and SBOMs, the container image, and — when their tokens are set —
-# the Homebrew cask, Scoop manifest and winget pull request, then attests the
-# build provenance of every archive. A tag with a "-" is a pre-release. The
-# live suite is not run here by decision (see test.yml); run `just test-live`
-# before tagging.
+# the Homebrew cask, Scoop manifest and winget pull request. With immutable
+# releases on, the published release is locked. It then attests the build
+# provenance of every archive. A version with a "-" is a pre-release. The live
+# suite is not run here by decision (see test.yml); run `just test-live` on the
+# commit before starting a release.
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The version to release, as CHANGELOG.md's newest dated section names it (v0.1.0-beta.2)
+        required: true
+        type: string
+      commit:
+        description: Full SHA of the main commit to release, the one the live suite ran on (empty for main's tip)
+        required: false
+        type: string
 
-permissions:
-  contents: write # the GitHub release
-  packages: write # the container image on ghcr.io
-  id-token: write # build provenance attestations
-  attestations: write
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  VERSION: ${{ inputs.version }}
 
 jobs:
-  release:
-    name: Build and Publish Release
+  verify:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      actions: read # whether test.yml passed on the commit
+      contents: read
+    outputs:
+      sha: ${{ steps.commit.outputs.sha }}
     steps:
+      - name: Check the version
+        run: |
+          if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
+            echo "version '$VERSION' is not v<major>.<minor>.<patch>[-<pre-release>]" >&2
+            exit 1
+          fi
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # goreleaser reads the tag and the commit date
+          ref: ${{ inputs.commit || github.sha }}
+          fetch-depth: 0 # the checks read main and the tags
+          persist-credentials: false
+      - name: Check the commit is on main and test.yml passed on it
+        id: commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha=$(git rev-parse HEAD)
+          git merge-base --is-ancestor "$sha" origin/main || { echo "$sha is not on main" >&2; exit 1; }
+          passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/test.yml/runs?head_sha=$sha&status=success" --jq .total_count)
+          if [ "$passed" = 0 ]; then
+            echo "test.yml has no successful run on $sha: gh workflow run test.yml --ref main, then start again" >&2
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Check the tag is new, or already on this commit
+        run: |
+          if remote=$(git ls-remote --exit-code --tags origin "refs/tags/$VERSION"); then
+            if [ "${remote%%[[:space:]]*}" != "$(git rev-parse HEAD)" ]; then
+              echo "tag $VERSION already exists on another commit" >&2
+              exit 1
+            fi
+          fi
+          git tag -f "$VERSION" # local only, so goreleaser stamps this version
       - name: Setup Go and just
         uses: ./.github/actions/setup-mise
         with:
@@ -42,18 +96,18 @@ jobs:
         env:
           GOOS: linux
           GOARCH: amd64
-      - name: Compare the stamp with the tag
+      - name: Compare the stamp with the version
         run: |
           stamped=$(dist/check/saladcloud version -o json | jq -r .version)
-          if [ "$stamped" != "$GITHUB_REF_NAME" ]; then
-            echo "binary reports version '$stamped', expected '$GITHUB_REF_NAME'" >&2
+          if [ "$stamped" != "$VERSION" ]; then
+            echo "binary reports version '$stamped', expected '$VERSION'" >&2
             exit 1
           fi
       - name: Check the changelog has this release
         # Read through the binary, so this checks the CHANGELOG.md it embeds
         # (what `saladcloud changelog` serves), parsed the way it parses it.
         run: |
-          want=${GITHUB_REF_NAME#v}
+          want=${VERSION#v}
           today=$(date -u +%F)
           log=$(dist/check/saladcloud changelog -o json)
           date=$(printf '%s' "$log" | jq -r --arg v "$want" '.items[] | select(.version == $v) | .date // empty')
@@ -67,6 +121,51 @@ jobs:
           if [ -n "$(printf '%s' "$log" | jq -r '.items[] | select(.version == "Unreleased") | .body')" ]; then
             echo "::warning::CHANGELOG.md's Unreleased section is not empty; did its entries belong in $want?"
           fi
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    # Waits here until a release reviewer approves (whoever started the run
+    # may); only then does the job get the environment's secrets.
+    environment:
+      name: release
+      url: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ inputs.version }}
+    permissions:
+      contents: write # the GitHub release (the App token creates the tag)
+      packages: write # the container image on ghcr.io
+      id-token: write # build provenance attestations
+      attestations: write
+    env:
+      SHA: ${{ needs.verify.outputs.sha }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.verify.outputs.sha }}
+          fetch-depth: 0 # goreleaser reads the tag and the commit date
+          persist-credentials: false
+      - name: Setup Go
+        uses: ./.github/actions/setup-mise
+        with:
+          tools: go
+      - name: Get a release App token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Create the tag
+        # The App is the tag ruleset's only bypass actor, so this is the one way
+        # a v* tag reaches the repository. A re-run finds the tag already there.
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null; then
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$VERSION" -f sha="$SHA"
+          fi
+          git fetch --tags origin
+          test "$(git rev-parse "$VERSION^{commit}")" = "$SHA"
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - name: Set up Buildx
@@ -80,6 +179,8 @@ jobs:
       - name: Install syft (SBOMs)
         uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
       - name: Release
+        # goreleaser uploads every asset into a draft and publishes it last, so
+        # the release is complete before immutability locks it.
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: "~> v2"
@@ -90,7 +191,7 @@ jobs:
           SCOOP_BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
             dist/*.tar.gz

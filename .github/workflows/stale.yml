@@ -4,14 +4,15 @@ on:
   schedule:
     - cron: "0 10 * * *"
 
-permissions:
-  issues: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   stale:
     name: Handle Stale Items
     runs-on: ubuntu-latest
+    permissions:
+      issues: write # label and close stale issues
+      pull-requests: write # label and close stale pull requests
     steps:
       - name: Apply stale policy
         uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0

@@ -3,16 +3,15 @@ name: test
 # Offline suite on all three desktop platforms. The live suite
 # (internal/livetest, build tag "live") is deliberately not run here: it
 # needs an API key and spends money, and by decision it stays a manual
-# pre-tag step (see Settled decisions in AGENTS.md).
+# pre-release step (see Settled decisions in AGENTS.md).
 
 # Every push and pull request runs it, and gh workflow run test.yml
 # [--ref <branch>] starts it by hand. While the repository is private its
 # Actions minutes are billed, so a branch push runs nothing and a pull request
 # runs only test, lint and package, the checks main's ruleset requires;
 # install-scripts runs only when started by hand.
-# Run it before tagging; a version tag runs release.yml, which vets and tests
-# on Linux before it builds, so running this as well on the tag would
-# duplicate it.
+# release.yml releases a commit only after this workflow has passed on it, so
+# the run a push to main starts is all a release needs.
 on:
   push:
     branches: ["**"]

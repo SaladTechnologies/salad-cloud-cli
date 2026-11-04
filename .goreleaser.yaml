@@ -1,7 +1,8 @@
-# Release build for the SaladCloud CLI. release.yml runs it on a v* tag;
-# test.yml runs it against a local v0.0.0-ci tag to package the archives the
-# installer tests install from. Archive names, their top-level folder, and the
-# checksums.txt format are what install.sh and install.ps1 expect: keep them.
+# Release build for the SaladCloud CLI. release.yml runs it once it has created
+# the v* tag; test.yml runs it against a local v0.0.0-ci tag to package the
+# archives the installer tests install from. Archive names, their top-level
+# folder, and the checksums.txt format are what install.sh and install.ps1
+# expect: keep them.
 #
 # Publishers that need a repository or registry of their own (Homebrew tap,
 # Scoop bucket, winget, the container image) only upload when their token is

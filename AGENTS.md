@@ -54,14 +54,21 @@ and Dependabot bumps them; the mise version in `setup.sh` is bumped by hand, wit
 release's `SHASUMS256.txt`.
 
 Releasing: run `just test-live` with `SALAD_CLI_TEST_REQUIRE_SSH=1`, using the Windows build from a machine whose SSH
-key is registered on the account (so ssh and cp really run), open one `sftp` session by hand, run `test.yml` on the
-commit and see it pass, then push a `v*` tag. `.github/workflows/release.yml` checks that the binary's `version` matches
-the tag, then runs goreleaser (`.goreleaser.yaml`): reproducible archives for linux and darwin amd64/arm64 and windows
-amd64 (each with README, LICENSE, CHANGELOG, `docs/` and `completions/`), `checksums.txt`, SBOMs, the
-`ghcr.io/saladtechnologies/saladcloud` image, and a GitHub release (a pre-release when the tag has a `-`, e.g.
-`v0.1.0-beta.1`), followed by a build provenance attestation for every archive. The Homebrew cask, Scoop manifest and
-winget pull request publish only when `HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN` and `WINGET_TOKEN` are set as
-repository secrets (and their `SaladTechnologies/homebrew-tap`, `scoop-bucket` and `winget-pkgs` fork exist).
+key is registered on the account (so ssh and cp really run), open one `sftp` session by hand, and see `test.yml` pass on
+the commit, then start `.github/workflows/release.yml` on `main` (Actions → Release → Run workflow, or
+`gh workflow run release.yml --ref main -f version=v<x.y.z>`, with `-f commit=<sha>` when `main` has moved past the
+tested commit). Nobody pushes a tag: the tag rulesets let only the release GitHub App create one, and nobody move or
+delete one. Its `verify` job checks, with no secrets, that the commit is on `main` with `test.yml` green, that the
+binary's `version` matches, and that CHANGELOG.md has a dated section for it. `publish` then waits for someone in
+`engineering` or `salad-cloud-cli-maintainers` (whoever started it may) to approve the `release` environment, creates
+the tag with the App's token, and runs goreleaser (`.goreleaser.yaml`): reproducible archives for linux and darwin
+amd64/arm64 and windows amd64 (each with README, LICENSE, CHANGELOG, `docs/` and `completions/`), `checksums.txt`,
+SBOMs, the `ghcr.io/saladtechnologies/saladcloud` image, and a GitHub release (a pre-release when the version has a
+`-`, e.g. `v0.1.0-beta.1`), which immutable releases lock once published: a bad release is fixed by the next version,
+never by replacing it. A build provenance attestation for every archive follows. The Homebrew cask, Scoop manifest and
+winget pull request publish only when `HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN` and `WINGET_TOKEN` are set as secrets
+of the `release` environment (and their `SaladTechnologies/homebrew-tap`, `scoop-bucket` and `winget-pkgs` fork
+exist).
 `install.sh` and `install.ps1` at the repo root install from those releases; they depend on the archive names and the
 `checksums.txt` format goreleaser produces, and `test.yml` runs both against archives goreleaser packages from the
 commit (and against the latest published release, once there is one). `uninstall.sh` and `uninstall.ps1` undo them (the
@@ -385,7 +392,7 @@ Each of these was argued out; reopen one only with a reason the original did not
 - **No standalone `wait` verb.** `--wait` on create/start/stop and the settle-by-default writes cover every poll shape
   so far; revisit only if a third shape appears.
 - **The live suite is not run in CI.** It needs an API key and spends money, so `just test-live` is a manual step before
-  tagging.
+  each release.
 - **The CLI ships its own HTTP transport.** The SDK's transport validation rejects real responses (7-digit fractional
   timestamps, JSON nulls such as `current_state.description`); the SDK is used for types only. Regression tests are in
   `internal/api/rest_test.go`.
@@ -428,7 +435,7 @@ Each of these was argued out; reopen one only with a reason the original did not
    `say`/`hintLine` and prompts through `ask`/`tell` (a direct write to `app.errw()` must be table-mode only), and
    whether a person can be asked is `atTerminal()`, which counts `CI` and `SALAD_CLI_NO_PROMPT`; `term.IsTerminal` is
    for what a stream is (watch's stdout), so json mode and CI stay quiet.
-4. If it calls the API, add a case to `internal/livetest` and run it before tagging.
+4. If it calls the API, add a case to `internal/livetest` and run it before releasing.
 5. Update `docs/commands.md` (plus a section in `docs/guide.md` if the verb has semantics), the CHANGELOG, and
    `internal/agentdoc` only if the CLI's public contract for agents changed. CHANGELOG entries go under
    `## [Unreleased]` and name what changed for users, not how it is documented.
