@@ -4,7 +4,7 @@
 // jobs on queues and inference endpoints, and lists GPU classes with their
 // prices and availability.
 //
-// Install a prebuilt release (see the README), or build it with Go 1.25 or
+// Install a prebuilt release (see the README), or build it with Go 1.26 or
 // later:
 //
 //	go install github.com/saladtechnologies/salad-cloud-cli/cmd/saladcloud@latest

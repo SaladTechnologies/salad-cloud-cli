@@ -120,8 +120,7 @@ func keyPaths(typ reflect.Type, prefix string, open map[reflect.Type]bool, out *
 // keyPathFields appends the key path of every exported field of struct st not tagged "-", and the paths under it,
 // taking the fields of an untagged embedded struct as st's own.
 func keyPathFields(st reflect.Type, prefix string, open map[reflect.Type]bool, out *[]string) {
-	for i := range st.NumField() {
-		f := st.Field(i)
+	for f := range st.Fields() {
 		tag := f.Tag.Get("json")
 		name, _, _ := strings.Cut(tag, ",")
 		if tag == "-" {

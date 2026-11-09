@@ -9,7 +9,6 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 // samePatch compares two JSON documents structurally.
@@ -73,14 +72,14 @@ func TestBuildUpdatePatch(t *testing.T) {
 			name:    "-e merges into the current variables and the file's changes",
 			file:    `{"container":{"environment_variables":{"B":null,"C":"3"}}}`,
 			flags:   updateFlags{Env: []string{"A=9", "D=4", "E=x=y"}},
-			current: map[string]*string{"A": ptr.To("1"), "B": ptr.To("2"), "Z": ptr.To("26")},
+			current: map[string]*string{"A": new("1"), "B": new("2"), "Z": new("26")},
 			want:    `{"container":{"environment_variables":{"A":"9","C":"3","D":"4","E":"x=y","Z":"26"}}}`,
 		},
 		{
 			name:    "without -e the file's variables are sent as written",
 			file:    `{"container":{"environment_variables":{"X":"1"}}}`,
 			flags:   updateFlags{Image: "i", ImageSet: true},
-			current: map[string]*string{"OTHER": ptr.To("kept only by the server's own rule")},
+			current: map[string]*string{"OTHER": new("kept only by the server's own rule")},
 			want:    `{"container":{"image":"i","environment_variables":{"X":"1"}}}`,
 		},
 		{
@@ -167,7 +166,7 @@ func TestUpdateEnvRemovalIsNotReportedAsASideEffect(t *testing.T) {
 	t.Parallel()
 	file := []byte(`{"container":{"environment_variables":{"A":null}}}`)
 	flags := updateFlags{Env: []string{"C=3"}}
-	patch, cerr := buildUpdatePatch(file, &flags, map[string]*string{"A": ptr.To("1")})
+	patch, cerr := buildUpdatePatch(file, &flags, map[string]*string{"A": new("1")})
 	if cerr != nil {
 		t.Fatalf("buildUpdatePatch: %v", cerr)
 	}
@@ -195,7 +194,7 @@ func TestUpdateEnvRemovalIsNotReportedAsASideEffect(t *testing.T) {
 		t.Error("expected the wire patch alone to flag the removal; the test no longer covers the bug")
 	}
 	// Without a removal there is nothing to add: intent is the wire patch.
-	patch, cerr = buildUpdatePatch(nil, &updateFlags{Env: []string{"B=2"}}, map[string]*string{"A": ptr.To("1")})
+	patch, cerr = buildUpdatePatch(nil, &updateFlags{Env: []string{"B=2"}}, map[string]*string{"A": new("1")})
 	if cerr != nil {
 		t.Fatal(cerr)
 	}

@@ -442,8 +442,7 @@ func (app *App) configReady(command string) *clierr.Error {
 
 // readReason is why the config file could not be read, without its path.
 func readReason(err error) string {
-	var re *config.ReadError
-	if errors.As(err, &re) {
+	if re, ok := errors.AsType[*config.ReadError](err); ok {
 		return re.Reason()
 	}
 	return config.Reason(err)

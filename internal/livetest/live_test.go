@@ -115,8 +115,7 @@ func runEnv(t *testing.T, extraEnv map[string]string, args ...string) result {
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	err := cmd.Run()
 	code := 0
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
+	if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 		code = ee.ExitCode()
 	} else if err != nil {
 		t.Fatalf("running %v: %v", args, err)

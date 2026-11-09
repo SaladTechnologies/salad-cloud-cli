@@ -762,8 +762,7 @@ func (l *login) typeOrganization(ctx context.Context, def string) (string, *clie
 // endedAt turns what ended a prompt into login's error: an error from a
 // check is that error; Ctrl-C or end of input is the cancel.
 func (l *login) endedAt(err error) *clierr.Error {
-	var cerr *clierr.Error
-	if errors.As(err, &cerr) {
+	if cerr, ok := errors.AsType[*clierr.Error](err); ok {
 		return cerr
 	}
 	return l.canceled()

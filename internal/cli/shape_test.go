@@ -101,8 +101,7 @@ func assertShape(t *testing.T, path string, typ reflect.Type, doc any) {
 // exported field not tagged "-" present, the fields of an untagged embedded struct taken as st's own.
 func assertShapeFields(t *testing.T, path string, st reflect.Type, obj map[string]any) {
 	t.Helper()
-	for i := range st.NumField() {
-		f := st.Field(i)
+	for f := range st.Fields() {
 		tag := f.Tag.Get("json")
 		name, _, _ := strings.Cut(tag, ",")
 		if tag == "-" {

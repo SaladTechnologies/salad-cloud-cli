@@ -10,7 +10,6 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/util"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 // TestGpusGetNamesTheClass: 'gpus get' takes the class as its argument, so
@@ -33,7 +32,7 @@ func TestGpusGetNamesTheClass(t *testing.T) {
 
 func price(priority shared.ContainerGroupPriority, p string) organizationdata.GpuClassPrice {
 	return organizationdata.GpuClassPrice{
-		Price:    ptr.To(p),
+		Price:    new(p),
 		Priority: &util.Nullable[shared.ContainerGroupPriority]{Value: priority},
 	}
 }
@@ -48,11 +47,11 @@ func TestGpuNameCellTrims(t *testing.T) {
 		want string
 	}{
 		{"nil", nil, "-"},
-		{"empty", ptr.To(""), "-"},
-		{"whitespace only", ptr.To("  "), "-"},
-		{"clean", ptr.To("RTX 4090 (24 GB)"), "RTX 4090 (24 GB)"},
-		{"leading space", ptr.To(" RTX 5080 (16 GB)"), "RTX 5080 (16 GB)"},
-		{"trailing space", ptr.To("RTX 5080 (16 GB) "), "RTX 5080 (16 GB)"},
+		{"empty", new(""), "-"},
+		{"whitespace only", new("  "), "-"},
+		{"clean", new("RTX 4090 (24 GB)"), "RTX 4090 (24 GB)"},
+		{"leading space", new(" RTX 5080 (16 GB)"), "RTX 5080 (16 GB)"},
+		{"trailing space", new("RTX 5080 (16 GB) "), "RTX 5080 (16 GB)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -70,8 +69,8 @@ func TestPriceColumnAssembly(t *testing.T) {
 	list := organizationdata.GpuClassesList{
 		Items: []organizationdata.GpuClass{
 			{
-				Id:   ptr.To("id-4090"),
-				Name: ptr.To("RTX 4090 (24 GB)"),
+				Id:   new("id-4090"),
+				Name: new("RTX 4090 (24 GB)"),
 				Prices: []organizationdata.GpuClassPrice{
 					price(shared.CONTAINER_GROUP_PRIORITY_HIGH, "0.30"),
 					price(shared.CONTAINER_GROUP_PRIORITY_MEDIUM, "0.24"),
@@ -112,8 +111,8 @@ func TestFormatAllPrices(t *testing.T) {
 	t.Parallel()
 	prices := []organizationdata.GpuClassPrice{
 		price(shared.CONTAINER_GROUP_PRIORITY_BATCH, "0.08"),
-		{Price: ptr.To("0.99"), Priority: &util.Nullable[shared.ContainerGroupPriority]{IsNull: true}},
-		{Price: ptr.To("0.50"), Priority: &util.Nullable[shared.ContainerGroupPriority]{Value: "turbo"}},
+		{Price: new("0.99"), Priority: &util.Nullable[shared.ContainerGroupPriority]{IsNull: true}},
+		{Price: new("0.50"), Priority: &util.Nullable[shared.ContainerGroupPriority]{Value: "turbo"}},
 	}
 	want := "batch=0.08 (none)=0.99 turbo=0.50"
 	if got := formatAllPrices(prices); got != want {

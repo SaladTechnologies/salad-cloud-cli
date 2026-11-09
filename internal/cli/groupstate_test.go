@@ -9,22 +9,21 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/util"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 // failedGroup is a group the platform could not start, with its reason.
 func failedGroup(status shared.ContainerGroupStatus, reason *util.Nullable[string]) *shared.ContainerGroup {
 	return &shared.ContainerGroup{
-		Name:     ptr.To("my-app"),
-		Replicas: ptr.To(int64(2)),
+		Name:     new("my-app"),
+		Replicas: new(int64(2)),
 		Container: &shared.Container{
-			Image: ptr.To("ghcr.io/me/app:latest"),
+			Image: new("ghcr.io/me/app:latest"),
 		},
 		CurrentState: &shared.ContainerGroupState{
 			Status:      &status,
 			Description: reason,
 			InstanceStatusCounts: &shared.ContainerGroupInstanceStatusCount{
-				RunningCount: ptr.To(int64(1)),
+				RunningCount: new(int64(1)),
 			},
 		},
 	}

@@ -16,14 +16,14 @@ import (
 // testInstance builds a ContainerGroupInstance for resolution tests.
 // ip/port zero-values mean "no SSH endpoint".
 func testInstance(id, state, ip string, port int64) containergroups.ContainerGroupInstance {
-	inst := containergroups.ContainerGroupInstance{Id: ptr.To(id)}
+	inst := containergroups.ContainerGroupInstance{Id: new(id)}
 	if state != "" {
 		s := containergroups.TheContainerGroupInstanceState(state)
 		inst.State = &s
 	}
 	if ip != "" {
-		inst.SshIp = ptr.To(ip)
-		inst.SshPort = ptr.To(port)
+		inst.SshIp = new(ip)
+		inst.SshPort = new(port)
 	}
 	return inst
 }

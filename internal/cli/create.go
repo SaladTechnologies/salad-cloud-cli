@@ -167,22 +167,22 @@ func createResources(
 // its container's image, command and resources (--cpu, --memory, --storage).
 func createApplyContainerFlags(req *containergroups.ContainerGroupCreationRequest, opts *createFlags) *clierr.Error {
 	if opts.Name != "" {
-		req.Name = ptr.To(opts.Name)
+		req.Name = new(opts.Name)
 	}
 	if opts.DisplayName != "" {
-		req.DisplayName = ptr.To(opts.DisplayName)
+		req.DisplayName = new(opts.DisplayName)
 	}
 	if opts.Image != "" {
-		createContainer(req).Image = ptr.To(opts.Image)
+		createContainer(req).Image = new(opts.Image)
 	}
 	if opts.Command != nil {
 		createContainer(req).Command = &util.Nullable[[]string]{Value: opts.Command}
 	}
 	if opts.CPUSet {
-		createResources(req).Cpu = ptr.To(opts.CPU)
+		createResources(req).Cpu = new(opts.CPU)
 	}
 	if opts.MemorySet {
-		createResources(req).Memory = ptr.To(opts.Memory)
+		createResources(req).Memory = new(opts.Memory)
 	}
 	if opts.StorageSet {
 		if opts.Storage < 1 {
@@ -193,7 +193,7 @@ func createApplyContainerFlags(req *containergroups.ContainerGroupCreationReques
 				opts.Storage,
 			)
 		}
-		createResources(req).StorageAmount = ptr.To(opts.Storage * bytesPerGB)
+		createResources(req).StorageAmount = new(opts.Storage * bytesPerGB)
 	}
 	return nil
 }
@@ -257,7 +257,7 @@ func (app *App) createApplyQueueFlags(
 			WithHint("run the command again with MSYS_NO_PATHCONV=1 in front of it, or from PowerShell or cmd")
 	}
 	req.QueueConnection = &shared.ContainerGroupQueueConnection{
-		QueueName: ptr.To(opts.Queue), Port: ptr.To(opts.QueuePort), Path: ptr.To(opts.QueuePath),
+		QueueName: new(opts.Queue), Port: new(opts.QueuePort), Path: new(opts.QueuePath),
 	}
 	return nil
 }
@@ -266,7 +266,7 @@ func (app *App) createApplyQueueFlags(
 // --restart-policy and --no-autostart.
 func createApplySchedulingFlags(req *containergroups.ContainerGroupCreationRequest, opts *createFlags) *clierr.Error {
 	if opts.ReplicasSet {
-		req.Replicas = ptr.To(opts.Replicas)
+		req.Replicas = new(opts.Replicas)
 	}
 	if opts.Priority != "" {
 		p, cerr := parseGroupPriorityFlag(opts.Priority)
@@ -283,7 +283,7 @@ func createApplySchedulingFlags(req *containergroups.ContainerGroupCreationReque
 		req.RestartPolicy = &rp
 	}
 	if opts.NoAutostart {
-		req.AutostartPolicy = ptr.To(false)
+		req.AutostartPolicy = new(false)
 	}
 	return nil
 }
@@ -328,7 +328,7 @@ func createApplyEnvFlags(req *containergroups.ContainerGroupCreationRequest, opt
 			return cerr
 		}
 		k, v, _ := strings.Cut(kv, "=")
-		c.EnvironmentVariables[k] = ptr.To(v) // flag wins over the base, per key
+		c.EnvironmentVariables[k] = new(v) // flag wins over the base, per key
 	}
 	return nil
 }
@@ -399,13 +399,13 @@ func createApplyNetworkingFlags(
 			req.Networking = &containergroups.CreateContainerGroupNetworking{}
 		}
 		n := req.Networking
-		n.Port = ptr.To(opts.Port)
+		n.Port = new(opts.Port)
 		if n.Protocol == nil {
 			p := shared.CONTAINER_NETWORKING_PROTOCOL_HTTP
 			n.Protocol = &p
 		}
 		if n.Auth == nil {
-			n.Auth = ptr.To(true)
+			n.Auth = new(true)
 		}
 	}
 	if opts.NoAuth {
@@ -413,7 +413,7 @@ func createApplyNetworkingFlags(
 			return clierr.New(clierr.CodeUsage, clierr.KindUsage,
 				"--no-auth requires --port (or a base definition with networking)")
 		}
-		req.Networking.Auth = ptr.To(false)
+		req.Networking.Auth = new(false)
 	}
 	return nil
 }
@@ -430,21 +430,21 @@ func createFillDefaults(req *containergroups.ContainerGroupCreationRequest) {
 	if req.Container != nil {
 		r := createResources(req)
 		if r.Cpu == nil {
-			r.Cpu = ptr.To(int64(1))
+			r.Cpu = new(int64(1))
 		}
 		if r.Memory == nil {
-			r.Memory = ptr.To(int64(createDefaultMemoryMB))
+			r.Memory = new(int64(createDefaultMemoryMB))
 		}
 	}
 	if req.Replicas == nil {
-		req.Replicas = ptr.To(int64(1))
+		req.Replicas = new(int64(1))
 	}
 	if req.RestartPolicy == nil {
 		rp := shared.CONTAINER_RESTART_POLICY_ALWAYS
 		req.RestartPolicy = &rp
 	}
 	if req.AutostartPolicy == nil {
-		req.AutostartPolicy = ptr.To(true)
+		req.AutostartPolicy = new(true)
 	}
 	// Priority is deliberately NOT defaulted: omitted means the server picks.
 }

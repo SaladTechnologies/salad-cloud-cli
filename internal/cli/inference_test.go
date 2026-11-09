@@ -10,12 +10,11 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/inferenceendpoints"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 // jobWithStatus builds a minimal job in the given status.
 func jobWithStatus(id string, status inferenceendpoints.Status) *inferenceendpoints.InferenceEndpointJob {
-	j := &inferenceendpoints.InferenceEndpointJob{Id: ptr.To(id)}
+	j := &inferenceendpoints.InferenceEndpointJob{Id: new(id)}
 	j.SetStatus(status)
 	return j
 }

@@ -16,5 +16,5 @@ wrong at <https://github.com/SaladTechnologies/salad-cloud-cli/issues>.
 
 - Release binaries and the container image are built with Go 1.27.3, whose certificate verification distrusts
   compromised intermediate certificates when the CLI connects over HTTPS
-  ([GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809)). A `go install` build needs Go 1.25 or later and uses your own
+  ([GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809)). A `go install` build needs Go 1.26 or later and uses your own
   Go, so keep it up to date to get the same fix.

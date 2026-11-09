@@ -45,7 +45,7 @@ func TestApplyAvailabilityFlagsOverFrom(t *testing.T) {
 	t.Parallel()
 	g := &shared.ContainerGroup{
 		Container: &shared.Container{Resources: &shared.ContainerResourceRequirements{
-			Cpu: ptr.To(int64(4)), Memory: ptr.To(int64(8192)), StorageAmount: ptr.To(2 * bytesPerGB),
+			Cpu: new(int64(4)), Memory: new(int64(8192)), StorageAmount: new(2 * bytesPerGB),
 			GpuClasses: []string{"a"},
 		}},
 		CountryCodes: []shared.CountryCode{"de"},
@@ -57,8 +57,8 @@ func TestApplyAvailabilityFlagsOverFrom(t *testing.T) {
 		[]string{"b"},
 	)
 	want := api.AvailabilityRequest{
-		GpuClasses: []string{"b"}, CPU: ptr.To(int64(8)), Memory: ptr.To(int64(8192)),
-		StorageAmount: ptr.To(5 * bytesPerGB), CountryCodes: []string{"us"},
+		GpuClasses: []string{"b"}, CPU: new(int64(8)), Memory: new(int64(8192)),
+		StorageAmount: new(5 * bytesPerGB), CountryCodes: []string{"us"},
 	}
 	if strings.Join(got.GpuClasses, ",") != "b" || *got.CPU != *want.CPU || *got.Memory != *want.Memory ||
 		*got.StorageAmount != *want.StorageAmount || strings.Join(got.CountryCodes, ",") != "us" {
@@ -81,7 +81,7 @@ func TestOverloadWarning(t *testing.T) {
 // An all-zero answer is asked once more; a real answer is not.
 func TestAskTwiceIfZero(t *testing.T) {
 	t.Parallel()
-	answers := []*organizations.GpuAvailability{{OnCallGpu: ptr.To(int64(0))}, {AvailableGpuHigh: ptr.To(int64(7))}}
+	answers := []*organizations.GpuAvailability{{OnCallGpu: new(int64(0))}, {AvailableGpuHigh: new(int64(7))}}
 	calls := 0
 	ask := func() (*organizations.GpuAvailability, *clierr.Error) {
 		a := answers[calls]
@@ -103,10 +103,10 @@ func TestAskTwiceIfZero(t *testing.T) {
 		t.Errorf("a real answer was asked again (calls = %d)", calls)
 	}
 	if !allZeroGpu(&organizations.GpuAvailability{}) ||
-		allZeroGpu(&organizations.GpuAvailability{AvailableGpuLow: ptr.To(int64(1))}) {
+		allZeroGpu(&organizations.GpuAvailability{AvailableGpuLow: new(int64(1))}) {
 		t.Error("allZeroGpu misjudged")
 	}
-	if !allZeroGpu(&organizations.GpuAvailability{OnCallGpu: ptr.To(int64(9))}) {
+	if !allZeroGpu(&organizations.GpuAvailability{OnCallGpu: new(int64(9))}) {
 		t.Error("allZeroGpu counted the on-call count")
 	}
 }

@@ -232,8 +232,7 @@ func entryTimes(items []Entry) []time.Time {
 }
 
 func asCliErr(err error) *clierr.Error {
-	var ce *clierr.Error
-	if errors.As(err, &ce) {
+	if ce, ok := errors.AsType[*clierr.Error](err); ok {
 		return ce
 	}
 	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)

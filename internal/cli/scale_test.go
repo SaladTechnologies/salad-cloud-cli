@@ -8,7 +8,6 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 // TestValidateScaleReplicas pins the bounds and, importantly, that 0 is
@@ -112,8 +111,8 @@ func TestScalePatchIsTheUpdatePatch(t *testing.T) {
 // on before the write and the write put it on hold.
 func TestShouldReenableSchedule(t *testing.T) {
 	t.Parallel()
-	on := &shared.ContainerGroup{ScheduledScalingEnabled: ptr.To(true)}
-	off := &shared.ContainerGroup{ScheduledScalingEnabled: ptr.To(false)}
+	on := &shared.ContainerGroup{ScheduledScalingEnabled: new(true)}
+	off := &shared.ContainerGroup{ScheduledScalingEnabled: new(false)}
 	if !shouldReenableSchedule(on, off) {
 		t.Error("on -> off with --keep-schedule must re-enable")
 	}

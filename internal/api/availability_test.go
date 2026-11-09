@@ -42,7 +42,7 @@ func TestGetGpuAvailabilityRequest(t *testing.T) {
 
 	c := newTestClient(t, srv.URL)
 	avail, cerr := c.GetGpuAvailability(t.Context(), AvailabilityRequest{
-		GpuClasses: []string{"gpu-class-1"}, CPU: ptr.To(int64(4)), StorageAmount: ptr.To(int64(1 << 30)),
+		GpuClasses: []string{"gpu-class-1"}, CPU: new(int64(4)), StorageAmount: new(int64(1 << 30)),
 		CountryCodes: []string{"us"},
 	})
 	if cerr != nil {
@@ -83,7 +83,7 @@ func TestGetCPUAvailabilityDropsGpuClasses(t *testing.T) {
 	c := newTestClient(t, srv.URL)
 	avail, cerr := c.GetCPUAvailability(
 		t.Context(),
-		AvailabilityRequest{GpuClasses: []string{"x"}, Memory: ptr.To(int64(2048))},
+		AvailabilityRequest{GpuClasses: []string{"x"}, Memory: new(int64(2048))},
 	)
 	if cerr != nil {
 		t.Fatal(cerr)
