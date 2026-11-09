@@ -8,11 +8,23 @@ name: Release
 # build provenance of every archive. A tag with a "-" is a pre-release. The
 # live suite is not run here by decision (see test.yml); run `just test-live`
 # before tagging.
+#
+# Tags are permanent, and re-running a failed run reuses the workflow as it was
+# at the tagged commit. So when a release fails in this workflow rather than in
+# the tagged code, fix the workflow on main and publish the same tag with it:
+# `gh workflow run release.yml -f tag=vX.Y.Z` builds that tag's code with
+# main's workflow. It refuses a tag that already has a GitHub release.
 
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing release tag (vX.Y.Z) whose release did not publish
+        required: true
+        type: string
 
 permissions:
   contents: write # the GitHub release
@@ -20,26 +32,43 @@ permissions:
   id-token: write # build provenance attestations
   attestations: write
 
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   release:
     name: Build and Publish Release
     runs-on: ubuntu-latest
+    env:
+      # The tag being released: the one pushed, or the one asked for by hand.
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GORELEASER_CURRENT_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           fetch-depth: 0 # goreleaser reads the tag and the commit date
       - name: Check the tag
         # A release tag is vX.Y.Z, or vX.Y.Z-rc.N for a release candidate, on a
-        # commit that is on main. Tags can be neither moved nor deleted, so a
-        # tag that breaks either rule stays, but releases nothing.
+        # commit that is on main, with no GitHub release yet. Tags can be
+        # neither moved nor deleted, so a tag that breaks a rule stays, but
+        # releases nothing.
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if ! printf '%s\n' "$GITHUB_REF_NAME" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?$'; then
-            echo "tag '$GITHUB_REF_NAME' is not vX.Y.Z or vX.Y.Z-rc.N (see Releasing in AGENTS.md)" >&2
+          if ! printf '%s\n' "$TAG" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.[1-9][0-9]*)?$'; then
+            echo "tag '$TAG' is not vX.Y.Z or vX.Y.Z-rc.N (see Releasing in AGENTS.md)" >&2
             exit 1
           fi
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "tag '$GITHUB_REF_NAME' points at $GITHUB_SHA, which is not on main" >&2
+          commit=$(git rev-parse HEAD)
+          if ! git merge-base --is-ancestor "$commit" origin/main; then
+            echo "tag '$TAG' points at $commit, which is not on main" >&2
+            exit 1
+          fi
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "$TAG already has a GitHub release; delete it first to publish the tag again" >&2
             exit 1
           fi
       - name: Setup Go and just
@@ -49,27 +78,30 @@ jobs:
       - name: Vet and test
         run: just vet test
       - name: Check the version stamp
+        # The binary goes outside the checkout: --clean empties dist/ first and
+        # --output does not create folders, and goreleaser will not release
+        # with stray files in the checkout.
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: "~> v2"
-          args: build --clean --single-target --id saladcloud --output dist/check/saladcloud
+          args: build --clean --single-target --id saladcloud --output ${{ runner.temp }}/saladcloud
         env:
           GOOS: linux
           GOARCH: amd64
       - name: Compare the stamp with the tag
         run: |
-          stamped=$(dist/check/saladcloud version -o json | jq -r .version)
-          if [ "$stamped" != "$GITHUB_REF_NAME" ]; then
-            echo "binary reports version '$stamped', expected '$GITHUB_REF_NAME'" >&2
+          stamped=$("$RUNNER_TEMP/saladcloud" version -o json | jq -r .version)
+          if [ "$stamped" != "$TAG" ]; then
+            echo "binary reports version '$stamped', expected '$TAG'" >&2
             exit 1
           fi
       - name: Check the changelog has this release
         # Read through the binary, so this checks the CHANGELOG.md it embeds
         # (what `saladcloud changelog` serves), parsed the way it parses it.
         run: |
-          want=${GITHUB_REF_NAME#v}
+          want=${TAG#v}
           today=$(date -u +%F)
-          log=$(dist/check/saladcloud changelog -o json)
+          log=$("$RUNNER_TEMP/saladcloud" changelog -o json)
           date=$(printf '%s' "$log" | jq -r --arg v "$want" '.items[] | select(.version == $v) | .date // empty')
           if [ -z "$date" ]; then
             echo "CHANGELOG.md has no dated section for $want; add \"## [$want] - $today\" above the previous release" >&2

@@ -65,8 +65,12 @@ To release, merge a PR that turns `[Unreleased]` into `## [X.Y.Z] - <today>` (`r
 and warns on another date or a non-empty Unreleased), run `just test-live` with `SALAD_CLI_TEST_REQUIRE_SSH=1`, using
 the Windows build from a machine whose SSH key is registered on the account (so ssh and cp really run), open one `sftp`
 session by hand, then run `just release vX.Y.Z`: it checks the version, that the tag is new, the CHANGELOG section and
-`test.yml` on `main`'s tip, then creates and pushes the tag. If the release workflow fails after creating the GitHub
-release, delete that release (the tag stays) so the installers keep serving the one before, and fix forward.
+`test.yml` on `main`'s tip, then creates and pushes the tag. A release that fails in the workflow rather than in the
+tagged code is published again from the same tag: fix the workflow on `main`, then run
+`gh workflow run release.yml -f tag=vX.Y.Z`, which builds that tag's code with `main`'s workflow (re-running the failed
+run would reuse the workflow as it was at the tag). It refuses a tag that already has a GitHub release, so delete a
+half-made one first (the tag stays), which also keeps the installers on the release before. A fault in the tagged code
+is fixed forward in the next version.
 `.github/workflows/release.yml` checks the tag, and that the binary's `version` matches it, then runs goreleaser
 (`.goreleaser.yaml`): reproducible archives for linux and darwin amd64/arm64 and windows amd64 (each with README,
 LICENSE, CHANGELOG, `docs/` and `completions/`), `checksums.txt`, SBOMs, the `ghcr.io/saladtechnologies/saladcloud`
