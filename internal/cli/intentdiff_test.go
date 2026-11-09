@@ -7,8 +7,6 @@ import (
 	"testing"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
-
-	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 // grp builds a group from a JSON literal, so the fixtures read like the wire
@@ -190,12 +188,12 @@ func TestFindIgnoredFieldsSkipsPending(t *testing.T) {
 	t.Parallel()
 	before := grp(t, `{"name":"g","container":{"image":"x"}}`)
 	after := grp(t, `{"name":"g","container":{"image":"x"}}`)
-	after.PendingChange = ptr.To(true)
+	after.PendingChange = new(true)
 	if got := findIgnoredFields([]byte(`{"container":{"image":"y"}}`), before, after); got != nil {
 		t.Errorf("findIgnoredFields while pending = %v, want nil", got)
 	}
 	// Same inputs, settled: now it is a genuine dropped write.
-	after.PendingChange = ptr.To(false)
+	after.PendingChange = new(false)
 	if got := findIgnoredFields([]byte(`{"container":{"image":"y"}}`), before, after); len(got) != 1 {
 		t.Errorf("findIgnoredFields settled = %v, want 1 finding", got)
 	}
@@ -339,11 +337,11 @@ func TestFindUnrequestedChangesGuards(t *testing.T) {
 	t.Parallel()
 	before := grp(t, `{"name":"g","replicas":1,"scheduled-scaling-enabled":true}`)
 	after := grp(t, `{"name":"g","replicas":3,"scheduled-scaling-enabled":false}`)
-	after.PendingChange = ptr.To(true)
+	after.PendingChange = new(true)
 	if got := findUnrequestedChanges([]byte(`{"replicas":3}`), before, after); got != nil {
 		t.Errorf("pending = %v, want nil", got)
 	}
-	after.PendingChange = ptr.To(false)
+	after.PendingChange = new(false)
 	if got := findUnrequestedChanges([]byte(`{"replicas":3}`), nil, after); got != nil {
 		t.Errorf("nil before = %v, want nil", got)
 	}

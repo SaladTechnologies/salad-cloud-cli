@@ -288,16 +288,16 @@ func TestCreateGroupPreservesExplicitFalseOnTheWire(t *testing.T) {
 
 	falseVal := false
 	req := containergroups.ContainerGroupCreationRequest{
-		Name:            strPtr("my-app"),
-		Replicas:        int64Ptr(1),
+		Name:            new("my-app"),
+		Replicas:        new(int64(1)),
 		AutostartPolicy: &falseVal, // the other explicit false on this path
 		Container: &containergroups.ContainerConfiguration{
-			Image:        strPtr("docker.io/library/busybox:1.36"),
+			Image:        new("docker.io/library/busybox:1.36"),
 			ImageCaching: &falseVal,
 
 			Resources: &containergroups.CreateContainerResourceRequirements{
-				Cpu:    int64Ptr(1),
-				Memory: int64Ptr(1024),
+				Cpu:    new(int64(1)),
+				Memory: new(int64(1024)),
 			},
 		},
 	}
@@ -364,9 +364,6 @@ func TestCreateGroupRawSendsBodyVerbatim(t *testing.T) {
 		t.Errorf("wire body = %s, want the document verbatim: %s", gotBody, doc)
 	}
 }
-
-func strPtr(s string) *string { return &s }
-func int64Ptr(i int64) *int64 { return &i }
 
 // respond writes body as an httptest handler's response. The handler runs on
 // its own goroutine, so a failed write is reported, not fatal.

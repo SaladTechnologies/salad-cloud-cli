@@ -19,7 +19,6 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 // sshDedicatedKeyName is the key pair 'ssh-key setup' generates (no
@@ -309,7 +308,7 @@ func (k sshKeySetup) generate(ctx context.Context) error {
 	if err := app.GenerateKey(ctx, k.keyPath); err != nil {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "ssh-keygen failed: %v", err)
 	}
-	return k.show(k.keyPath+".pub", sshKeyActionGenerated, ptr.To(false))
+	return k.show(k.keyPath+".pub", sshKeyActionGenerated, new(false))
 }
 
 // show prints the public key at path and where to register it; action is sshKeyActionFound or

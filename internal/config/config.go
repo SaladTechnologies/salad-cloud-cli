@@ -66,8 +66,7 @@ func (e *ReadError) Reason() string { return Reason(e.Err) }
 // Reason is an error's cause without the path an os error wraps it in, and
 // without a final period (Windows ends its messages with one).
 func Reason(err error) string {
-	var pe *fs.PathError
-	if errors.As(err, &pe) {
+	if pe, ok := errors.AsType[*fs.PathError](err); ok {
 		err = pe.Err
 	}
 	return strings.TrimSuffix(err.Error(), ".")

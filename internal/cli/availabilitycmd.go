@@ -154,13 +154,13 @@ func applyAvailabilityFlags(
 		req.GpuClasses = gpuIDs
 	}
 	if f.CPUSet {
-		req.CPU = ptr.To(f.CPU)
+		req.CPU = new(f.CPU)
 	}
 	if f.MemorySet {
-		req.Memory = ptr.To(f.Memory)
+		req.Memory = new(f.Memory)
 	}
 	if f.StorageOK {
-		req.StorageAmount = ptr.To(f.Storage * bytesPerGB)
+		req.StorageAmount = new(f.Storage * bytesPerGB)
 	}
 	if len(f.Countries) > 0 {
 		if codes, cerr := normalizeCountries(f.Countries); cerr == nil { // checked pre-flight

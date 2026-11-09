@@ -407,8 +407,7 @@ func wrapErr(err error) error {
 	if err == nil {
 		return nil
 	}
-	var ce *clierr.Error
-	if errors.As(err, &ce) {
+	if ce, ok := errors.AsType[*clierr.Error](err); ok {
 		return ce
 	}
 	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "%v", err)

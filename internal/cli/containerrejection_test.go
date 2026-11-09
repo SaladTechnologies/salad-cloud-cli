@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 // TestFindContainerRejection: a container change that did not land is found
@@ -184,7 +183,7 @@ func TestFindContainerRejectionGuards(t *testing.T) {
 	if _, rejected := findContainerRejection(before, nil, field); rejected {
 		t.Error("rejected with no after-state")
 	}
-	after.PendingChange = ptr.To(true)
+	after.PendingChange = new(true)
 	if _, rejected := findContainerRejection(before, after, field); rejected {
 		t.Error("rejected while the change is pending")
 	}

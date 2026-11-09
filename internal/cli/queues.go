@@ -236,7 +236,7 @@ func (app *App) runQueuesCreate(cmd *cobra.Command, name string, fields queueFie
 		return cerr
 	}
 	q, cerr := client.CreateQueue(cmd.Context(), queues.QueuePrototype{
-		Name: ptr.To(name), DisplayName: displayName, Description: description,
+		Name: new(name), DisplayName: displayName, Description: description,
 	})
 	if cerr != nil {
 		return cerr

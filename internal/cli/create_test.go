@@ -19,7 +19,7 @@ import (
 // testGpuClasses is the fixture class list for resolver tests.
 func testGpuClasses() []organizationdata.GpuClass {
 	mk := func(name, id string) organizationdata.GpuClass {
-		return organizationdata.GpuClass{Name: ptr.To(name), Id: ptr.To(id)}
+		return organizationdata.GpuClass{Name: new(name), Id: new(id)}
 	}
 	return []organizationdata.GpuClass{
 		mk("RTX 3060 (12 GB)", "f51baccc-dc95-40fb-a5d1-6d0ee0db31d2"),
@@ -75,7 +75,7 @@ func TestValidateGroupName(t *testing.T) {
 func TestValidateCreateRequestBadName(t *testing.T) {
 	t.Parallel()
 	req := validCreateRequest()
-	req.Name = ptr.To("bad_NAME")
+	req.Name = new("bad_NAME")
 	err := validateCreateRequest(&req)
 	if err == nil {
 		t.Fatal("validateCreateRequest = nil for an invalid name")
@@ -140,8 +140,8 @@ func TestResolveGpuClassNameAmbiguousListsCandidates(t *testing.T) {
 func TestResolveGpuClassNameTrimsStoredAndInput(t *testing.T) {
 	t.Parallel()
 	classes := []organizationdata.GpuClass{
-		{Name: ptr.To(" RTX 5080 (16 GB)"), Id: ptr.To("id-5080")},
-		{Name: ptr.To("RTX 5080 Ti (16 GB)"), Id: ptr.To("id-5080ti")},
+		{Name: new(" RTX 5080 (16 GB)"), Id: new("id-5080")},
+		{Name: new("RTX 5080 Ti (16 GB)"), Id: new("id-5080ti")},
 	}
 	tests := []struct {
 		name   string
@@ -178,21 +178,21 @@ func TestResolveGpuClassNameTrimsStoredAndInput(t *testing.T) {
 func fileBase() containergroups.ContainerGroupCreationRequest {
 	rp := shared.CONTAINER_RESTART_POLICY_NEVER
 	return containergroups.ContainerGroupCreationRequest{
-		Name: ptr.To("from-file"),
+		Name: new("from-file"),
 		Container: &containergroups.ContainerConfiguration{
-			Image: ptr.To("docker.io/file/image:1"),
+			Image: new("docker.io/file/image:1"),
 			EnvironmentVariables: map[string]*string{
-				"A": ptr.To("file-a"),
-				"B": ptr.To("file-b"),
+				"A": new("file-a"),
+				"B": new("file-b"),
 			},
 			Resources: &containergroups.CreateContainerResourceRequirements{
-				Cpu:    ptr.To(int64(4)),
-				Memory: ptr.To(int64(2048)),
+				Cpu:    new(int64(4)),
+				Memory: new(int64(2048)),
 			},
 		},
-		Replicas:        ptr.To(int64(5)),
+		Replicas:        new(int64(5)),
 		RestartPolicy:   &rp,
-		AutostartPolicy: ptr.To(false),
+		AutostartPolicy: new(false),
 	}
 }
 
@@ -364,7 +364,7 @@ func TestBuildCreateRequestPortAndAuth(t *testing.T) {
 		base := fileBase()
 		proto := shared.CONTAINER_NETWORKING_PROTOCOL_HTTP
 		base.Networking = &containergroups.CreateContainerGroupNetworking{
-			Protocol: &proto, Port: ptr.To(int64(80)), Auth: ptr.To(true),
+			Protocol: &proto, Port: new(int64(80)), Auth: new(true),
 		}
 		return base
 	}
@@ -880,7 +880,7 @@ func TestBuildCreateRequestAutostartTrueBaseSurvives(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
 	base := fileBase()
-	base.AutostartPolicy = ptr.To(true) // file said autostart: true
+	base.AutostartPolicy = new(true) // file said autostart: true
 	req, cerr := app.buildCreateRequest(&base, &createFlags{
 		HasBase:  true,
 		Gpus:     []string{"11111111-1111-1111-1111-111111111111"},

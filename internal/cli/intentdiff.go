@@ -896,8 +896,8 @@ func droppedCreateObject(leaf patchLeaf, trees *createTrees, dropped map[string]
 // dropped it.
 func responseHasField(key string) bool {
 	t := reflect.TypeFor[shared.ContainerGroup]()
-	for i := range t.NumField() {
-		if name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ","); name != "" && name != "-" && name == key {
+	for field := range t.Fields() {
+		if name, _, _ := strings.Cut(field.Tag.Get("json"), ","); name != "" && name != "-" && name == key {
 			return true
 		}
 	}

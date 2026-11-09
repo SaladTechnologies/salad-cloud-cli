@@ -341,8 +341,7 @@ func (app *App) runChildWith(stdout, stderr io.Writer, name string, args []strin
 	if err == nil {
 		return nil
 	}
-	var ee *exec.ExitError
-	if errors.As(err, &ee) {
+	if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 		code := ee.ExitCode()
 		if code <= 0 { // -1: killed by a signal, no real exit code
 			code = clierr.CodeGeneric

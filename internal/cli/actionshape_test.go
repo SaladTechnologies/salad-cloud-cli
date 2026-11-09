@@ -165,8 +165,8 @@ func TestActionResultJSONTags(t *testing.T) {
 // actionResultTags maps the json name of each tagged field of struct typ to its full json tag.
 func actionResultTags(typ reflect.Type) map[string]string {
 	tags := make(map[string]string) // json name -> full tag
-	for i := range typ.NumField() {
-		raw := typ.Field(i).Tag.Get("json")
+	for field := range typ.Fields() {
+		raw := field.Tag.Get("json")
 		if raw == "" || raw == "-" {
 			continue
 		}

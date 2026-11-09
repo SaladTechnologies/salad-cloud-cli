@@ -9,7 +9,6 @@ import (
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
 // validCreateRequest builds a request that passes validateCreateRequest;
@@ -17,17 +16,17 @@ import (
 func validCreateRequest() containergroups.ContainerGroupCreationRequest {
 	policy := shared.CONTAINER_RESTART_POLICY_ALWAYS
 	return containergroups.ContainerGroupCreationRequest{
-		Name: ptr.To("demo"),
+		Name: new("demo"),
 		Container: &containergroups.ContainerConfiguration{
-			Image: ptr.To("docker.io/library/busybox:1.36"),
+			Image: new("docker.io/library/busybox:1.36"),
 			Resources: &containergroups.CreateContainerResourceRequirements{
-				Cpu:    ptr.To(int64(1)),
-				Memory: ptr.To(int64(1024)),
+				Cpu:    new(int64(1)),
+				Memory: new(int64(1024)),
 			},
 		},
-		Replicas:        ptr.To(int64(1)),
+		Replicas:        new(int64(1)),
 		RestartPolicy:   &policy,
-		AutostartPolicy: ptr.To(true),
+		AutostartPolicy: new(true),
 	}
 }
 
@@ -46,10 +45,10 @@ func TestValidateCreateRequestMissingFields(t *testing.T) {
 		mutate func(*containergroups.ContainerGroupCreationRequest)
 	}{
 		{"name", func(r *containergroups.ContainerGroupCreationRequest) { r.Name = nil }},
-		{"name", func(r *containergroups.ContainerGroupCreationRequest) { r.Name = ptr.To("") }},
+		{"name", func(r *containergroups.ContainerGroupCreationRequest) { r.Name = new("") }},
 		{"container", func(r *containergroups.ContainerGroupCreationRequest) { r.Container = nil }},
 		{"container.image", func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Image = nil }},
-		{"container.image", func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Image = ptr.To("") }},
+		{"container.image", func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Image = new("") }},
 		{"container.resources", func(r *containergroups.ContainerGroupCreationRequest) { r.Container.Resources = nil }},
 		{
 			"container.resources.cpu",
@@ -84,7 +83,7 @@ func TestValidateCreateRequestMissingFields(t *testing.T) {
 
 // scalingAction builds one fixture action.
 func scalingAction(replicas int64, schedule string) shared.ContainerGroupScalingAction {
-	return shared.ContainerGroupScalingAction{Replicas: ptr.To(replicas), Schedule: ptr.To(schedule)}
+	return shared.ContainerGroupScalingAction{Replicas: new(replicas), Schedule: new(schedule)}
 }
 
 func TestScheduledScalingString(t *testing.T) {
@@ -100,17 +99,17 @@ func TestScheduledScalingString(t *testing.T) {
 		want    string
 	}{
 		{
-			"enabled with actions", ptr.To(true), weekdayPair,
+			"enabled with actions", new(true), weekdayPair,
 			`enabled (2 actions: 2 replicas @ "0 9 * * 1-5"; 0 replicas @ "0 17 * * 1-5")`,
 		},
 		{
-			"enabled with one action", ptr.To(true),
+			"enabled with one action", new(true),
 			[]shared.ContainerGroupScalingAction{scalingAction(5, "0 0 * * *")},
 			`enabled (1 action: 5 replicas @ "0 0 * * *")`,
 		},
 		{
 			"enabled with four actions caps at three",
-			ptr.To(true),
+			new(true),
 			[]shared.ContainerGroupScalingAction{
 				scalingAction(1, "0 1 * * *"), scalingAction(2, "0 2 * * *"),
 				scalingAction(3, "0 3 * * *"), scalingAction(4, "0 4 * * *"),
@@ -118,15 +117,15 @@ func TestScheduledScalingString(t *testing.T) {
 			`enabled (4 actions: 1 replicas @ "0 1 * * *"; 2 replicas @ "0 2 * * *"; 3 replicas @ "0 3 * * *"; and 1 ` +
 				`more)`,
 		},
-		{"enabled without actions", ptr.To(true), nil, "enabled (no actions)"},
-		{"disabled with actions", ptr.To(false), weekdayPair, "disabled (2 actions configured)"},
+		{"enabled without actions", new(true), nil, "enabled (no actions)"},
+		{"disabled with actions", new(false), weekdayPair, "disabled (2 actions configured)"},
 		{
 			"nil flag with actions counts as disabled", nil,
 			[]shared.ContainerGroupScalingAction{scalingAction(2, "0 9 * * 1-5")},
 			"disabled (1 action configured)",
 		},
 		{"neither means no row", nil, nil, ""},
-		{"disabled without actions means no row", ptr.To(false), nil, ""},
+		{"disabled without actions means no row", new(false), nil, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -147,11 +146,11 @@ func TestScheduledScalingString(t *testing.T) {
 func TestWriteGroupDetailScheduledScalingRow(t *testing.T) {
 	t.Parallel()
 	with := &shared.ContainerGroup{
-		Name:                    ptr.To("demo"),
-		ScheduledScalingEnabled: ptr.To(true),
+		Name:                    new("demo"),
+		ScheduledScalingEnabled: new(true),
 		ScalingActions:          []shared.ContainerGroupScalingAction{scalingAction(2, "0 9 * * 1-5")},
 	}
-	without := &shared.ContainerGroup{Name: ptr.To("demo")}
+	without := &shared.ContainerGroup{Name: new("demo")}
 
 	var buf strings.Builder
 	writeGroupDetail(output.NewWriter(&buf), with)
@@ -169,8 +168,8 @@ func TestWriteGroupDetailScheduledScalingRow(t *testing.T) {
 // detailGroup builds a minimal group for writeGroupDetail tests.
 func detailGroup(status shared.ContainerGroupStatus, autostart bool) *shared.ContainerGroup {
 	return &shared.ContainerGroup{
-		Name:            ptr.To("demo"),
-		AutostartPolicy: ptr.To(autostart),
+		Name:            new("demo"),
+		AutostartPolicy: new(autostart),
 		CurrentState:    &shared.ContainerGroupState{Status: &status},
 	}
 }
@@ -188,7 +187,7 @@ func TestWriteGroupDetailPendingAutostartNote(t *testing.T) {
 		{"pending with autostart gets no note", detailGroup(shared.CONTAINER_GROUP_STATUS_PENDING, true), false},
 		{"stopped without autostart gets no note", detailGroup(shared.CONTAINER_GROUP_STATUS_STOPPED, false), false},
 		{"nil autostart policy gets no note", &shared.ContainerGroup{
-			Name: ptr.To("demo"),
+			Name: new("demo"),
 			CurrentState: func() *shared.ContainerGroupState {
 				s := shared.CONTAINER_GROUP_STATUS_PENDING
 				return &shared.ContainerGroupState{Status: &s}
@@ -217,8 +216,8 @@ func TestScheduledScalingResetStillWarns(t *testing.T) {
 	t.Parallel()
 	group := func(enabled bool) *shared.ContainerGroup {
 		return &shared.ContainerGroup{
-			Name:                    ptr.To("demo"),
-			ScheduledScalingEnabled: ptr.To(enabled),
+			Name:                    new("demo"),
+			ScheduledScalingEnabled: new(enabled),
 		}
 	}
 	tests := []struct {

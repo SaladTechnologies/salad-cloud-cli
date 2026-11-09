@@ -40,7 +40,7 @@ Other ways to install:
 - **Manual download:** the archives and `checksums.txt` are on each
   [release](https://github.com/SaladTechnologies/salad-cloud-cli/releases). Every archive carries a build provenance
   attestation: `gh attestation verify <archive> --repo SaladTechnologies/salad-cloud-cli`.
-- **With Go 1.25 or later**, on any platform Go supports:
+- **With Go 1.26 or later**, on any platform Go supports:
   `go install github.com/saladtechnologies/salad-cloud-cli/cmd/saladcloud@latest`
 - **From source:** `just build` (needs bash, Go and [just](https://just.systems); `mise install` sets up both) writes
   `dist/<os>-<arch>/saladcloud`.

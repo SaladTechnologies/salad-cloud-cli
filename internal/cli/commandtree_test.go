@@ -111,8 +111,8 @@ func TestPickInstanceNotesTheChoice(t *testing.T) {
 	t.Parallel()
 	running := containergroups.THE_CONTAINER_GROUP_INSTANCE_STATE_RUNNING
 	instances := []containergroups.ContainerGroupInstance{
-		{Id: ptr.To("8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37"), State: &running},
-		{Id: ptr.To("1111aaaa-01c2-4a29-9c4d-52c7e5a44e37"), State: &running},
+		{Id: new("8a2f13ba-01c2-4a29-9c4d-52c7e5a44e37"), State: &running},
+		{Id: new("1111aaaa-01c2-4a29-9c4d-52c7e5a44e37"), State: &running},
 	}
 	var picked bytes.Buffer
 	inst, cerr := pickInstance(&picked, instances, "my-app", "")

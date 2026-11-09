@@ -24,7 +24,7 @@ type waitStep struct {
 // statusStep scripts a poll observing the given status (no instance counts).
 func statusStep(status shared.ContainerGroupStatus) waitStep {
 	return waitStep{group: &shared.ContainerGroup{
-		Name:         ptr.To("demo"),
+		Name:         new("demo"),
 		CurrentState: &shared.ContainerGroupState{Status: &status},
 	}}
 }
@@ -222,14 +222,14 @@ func TestWaitProgressDedupsUnchangedLines(t *testing.T) {
 	t.Parallel()
 	app := newTestRun(t)
 	counts := &shared.ContainerGroupInstanceStatusCount{
-		AllocatingCount: ptr.To(int64(2)),
-		CreatingCount:   ptr.To(int64(1)),
-		RunningCount:    ptr.To(int64(0)),
-		StoppingCount:   ptr.To(int64(0)),
+		AllocatingCount: new(int64(2)),
+		CreatingCount:   new(int64(1)),
+		RunningCount:    new(int64(0)),
+		StoppingCount:   new(int64(0)),
 	}
 	pending := shared.CONTAINER_GROUP_STATUS_PENDING
 	withCounts := waitStep{group: &shared.ContainerGroup{
-		Name:         ptr.To("demo"),
+		Name:         new("demo"),
 		CurrentState: &shared.ContainerGroupState{Status: &pending, InstanceStatusCounts: counts},
 	}}
 	cerr, h := app.runWait(t, []waitStep{
@@ -376,8 +376,8 @@ func TestWaitForGroupSettlePredicate(t *testing.T) {
 	running := shared.CONTAINER_GROUP_STATUS_RUNNING
 	step := func(pending bool) waitStep {
 		return waitStep{group: &shared.ContainerGroup{
-			Name:          ptr.To("demo"),
-			PendingChange: ptr.To(pending),
+			Name:          new("demo"),
+			PendingChange: new(pending),
 			CurrentState:  &shared.ContainerGroupState{Status: &running},
 		}}
 	}
@@ -409,7 +409,7 @@ func TestInstanceCountSummaryEmpty(t *testing.T) {
 	}
 	zero := &shared.ContainerGroup{CurrentState: &shared.ContainerGroupState{
 		InstanceStatusCounts: &shared.ContainerGroupInstanceStatusCount{
-			AllocatingCount: ptr.To(int64(0)),
+			AllocatingCount: new(int64(0)),
 		},
 	}}
 	if got := instanceCountSummary(zero); got != "" {
@@ -425,8 +425,8 @@ func TestSettleTimeoutSaysPatchAccepted(t *testing.T) {
 	app := newTestRun(t)
 	running := shared.CONTAINER_GROUP_STATUS_RUNNING
 	pending := waitStep{group: &shared.ContainerGroup{
-		Name:          ptr.To("demo"),
-		PendingChange: ptr.To(true),
+		Name:          new("demo"),
+		PendingChange: new(true),
 		CurrentState:  &shared.ContainerGroupState{Status: &running},
 	}}
 	ctx, cancel := context.WithCancel(t.Context())

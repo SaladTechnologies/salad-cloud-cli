@@ -84,8 +84,7 @@ func (app *App) usageCheckedArgs(orig cobra.PositionalArgs) cobra.PositionalArgs
 			return cerr
 		}
 		if err := orig(cmd, args); err != nil {
-			var cerr *clierr.Error
-			if errors.As(err, &cerr) {
+			if cerr, ok := errors.AsType[*clierr.Error](err); ok {
 				return cerr
 			}
 			return argsError(cmd, args, err)

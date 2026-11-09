@@ -22,7 +22,7 @@ func TestDescribeNotFound(t *testing.T) {
 				Code:       clierr.CodeNotFound,
 				Kind:       clierr.KindNotFound,
 				Message:    "Not Found",
-				HTTPStatus: ptr.To(404),
+				HTTPStatus: new(404),
 			},
 			want: `container group "demo" not found in acme/prod`,
 		},
@@ -32,7 +32,7 @@ func TestDescribeNotFound(t *testing.T) {
 				Code:       clierr.CodeNotFound,
 				Kind:       clierr.KindNotFound,
 				Message:    "",
-				HTTPStatus: ptr.To(404),
+				HTTPStatus: new(404),
 			},
 			want: `container group "demo" not found in acme/prod`,
 		},
@@ -42,7 +42,7 @@ func TestDescribeNotFound(t *testing.T) {
 				Code:       clierr.CodeNotFound,
 				Kind:       clierr.KindNotFound,
 				Message:    "HTTP 404",
-				HTTPStatus: ptr.To(404),
+				HTTPStatus: new(404),
 			},
 			want: `container group "demo" not found in acme/prod`,
 		},
@@ -52,7 +52,7 @@ func TestDescribeNotFound(t *testing.T) {
 				Code:       clierr.CodeNotFound,
 				Kind:       clierr.KindNotFound,
 				Message:    "HTTP 404 (non-JSON error response)",
-				HTTPStatus: ptr.To(404),
+				HTTPStatus: new(404),
 			},
 			want: `container group "demo" not found in acme/prod`,
 		},
@@ -62,7 +62,7 @@ func TestDescribeNotFound(t *testing.T) {
 				Code:       clierr.CodeNotFound,
 				Kind:       clierr.KindNotFound,
 				Message:    "Not Found (type: project_not_found_exception)",
-				HTTPStatus: ptr.To(404),
+				HTTPStatus: new(404),
 			},
 			want: `container group "demo" not found in acme/prod`,
 		},
@@ -72,7 +72,7 @@ func TestDescribeNotFound(t *testing.T) {
 				Code:       clierr.CodeNotFound,
 				Kind:       clierr.KindNotFound,
 				Message:    "The container group was deleted on 2026-01-01",
-				HTTPStatus: ptr.To(404),
+				HTTPStatus: new(404),
 			},
 			want: `The container group was deleted on 2026-01-01 (container group "demo" not found in acme/prod)`,
 		},
@@ -124,7 +124,7 @@ func TestGroupNotFoundEverywhere(t *testing.T) {
 
 func TestDescribeNotFoundNon404Untouched(t *testing.T) {
 	t.Parallel()
-	in := &clierr.Error{Code: clierr.CodeAuth, Kind: clierr.KindAuth, Message: "Unauthorized", HTTPStatus: ptr.To(401)}
+	in := &clierr.Error{Code: clierr.CodeAuth, Kind: clierr.KindAuth, Message: "Unauthorized", HTTPStatus: new(401)}
 	got := describeNotFound(in, "", `container group "%s" not found in %s/%s`, "demo", "acme", "prod")
 	if got != in {
 		t.Error("non-404 error was not returned unchanged")
@@ -147,7 +147,7 @@ func TestDescribeNotFoundDoesNotMutateInput(t *testing.T) {
 		Code:       clierr.CodeNotFound,
 		Kind:       clierr.KindNotFound,
 		Message:    "Not Found",
-		HTTPStatus: ptr.To(404),
+		HTTPStatus: new(404),
 	}
 	if out := describeNotFound(in, "", `container group "%s" not found in %s/%s`, "demo", "acme", "prod"); out == in {
 		t.Error("describeNotFound returned its input, not a copy")
