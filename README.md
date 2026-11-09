@@ -29,11 +29,11 @@ irm https://raw.githubusercontent.com/SaladTechnologies/salad-cloud-cli/main/ins
 Both scripts download the newest release for your machine, verify it against the release's `checksums.txt`, and install
 `saladcloud`: to `~/.local/bin` on macOS and Linux (they tell you if that is not on your `PATH`), and to
 `%LOCALAPPDATA%\Programs\saladcloud` on Windows, which is added to your user `PATH`. Both read the same variables:
-`SALAD_CLI_VERSION` (for example `v0.1.0-beta.1`) pins a release, `SALAD_CLI_INSTALL_DIR` chooses the folder,
-`SALAD_CLI_REPO` and `SALAD_CLI_DOWNLOAD_URL` point at another repository or a mirror of its release files,
-`SALAD_CLI_NO_MODIFY_PATH=1` leaves your Windows user `PATH` alone, and `GITHUB_TOKEN` is sent when looking up the
-latest release, to avoid GitHub's rate limit. Prebuilt binaries cover Linux amd64 and arm64, macOS arm64 and amd64, and
-Windows amd64 (which also runs on Windows 11 on ARM under emulation).
+`SALAD_CLI_VERSION` (for example `v0.1.0`) pins a release, `SALAD_CLI_INSTALL_DIR` chooses the folder, `SALAD_CLI_REPO`
+and `SALAD_CLI_DOWNLOAD_URL` point at another repository or a mirror of its release files, `SALAD_CLI_NO_MODIFY_PATH=1`
+leaves your Windows user `PATH` alone, and `GITHUB_TOKEN` is sent when looking up the latest release, to avoid GitHub's
+rate limit. Prebuilt binaries cover Linux amd64 and arm64, macOS arm64 and amd64, and Windows amd64 (which also runs on
+Windows 11 on ARM under emulation).
 
 Other ways to install:
 

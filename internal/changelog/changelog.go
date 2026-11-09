@@ -7,9 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/mod/semver"
 )
 
 // Release is one "## [version] - date" section of the changelog.
@@ -67,7 +68,8 @@ var ErrBadSince = errors.New("--since must be a date (YYYY-MM-DD) or a version (
 
 // Since filters releases to those newer than the cutoff. The cutoff is either
 // a date (releases dated strictly after it) or a version (releases with a
-// strictly greater semver). The Unreleased section is always included, since
+// strictly greater semver, pre-releases included: 0.2.0-rc.1 comes after
+// 0.1.0 and before 0.2.0). The Unreleased section is always included, since
 // by definition the caller has not seen it. An empty since returns everything.
 func Since(releases []Release, since string) ([]Release, error) {
 	since = strings.TrimSpace(strings.TrimPrefix(since, "v"))
@@ -77,14 +79,24 @@ func Since(releases []Release, since string) ([]Release, error) {
 	if d, err := time.Parse(time.DateOnly, since); err == nil {
 		return keepNewer(releases, func(r Release) bool { return datedAfter(r, d) }), nil
 	}
-	want, ok := parseSemver(since)
-	if !ok {
+	want := semverOf(since)
+	if want == "" {
 		return nil, ErrBadSince
 	}
 	return keepNewer(releases, func(r Release) bool {
-		v, ok := parseSemver(r.Version)
-		return ok && compare(v, want) > 0
+		v := semverOf(r.Version)
+		return v != "" && semver.Compare(v, want) > 0
 	}), nil
+}
+
+// semverOf is version as golang.org/x/mod/semver takes it ("v" first; "1" and "1.2" stand for 1.0.0 and 1.2.0), or
+// "" when it is not a semantic version.
+func semverOf(version string) string {
+	v := "v" + strings.TrimPrefix(version, "v")
+	if !semver.IsValid(v) {
+		return ""
+	}
+	return v
 }
 
 // keepNewer is the releases newer reports true for, plus the Unreleased section, in their order.
@@ -126,36 +138,4 @@ func Render(releases []Release) string {
 		b.WriteString("\n")
 	}
 	return b.String()
-}
-
-func parseSemver(s string) ([3]int, bool) {
-	var v [3]int
-	s = strings.TrimPrefix(s, "v")
-	if i := strings.IndexAny(s, "-+"); i >= 0 { // drop pre-release / build metadata
-		s = s[:i]
-	}
-	parts := strings.Split(s, ".")
-	if len(parts) < 1 || len(parts) > 3 {
-		return v, false
-	}
-	for i, p := range parts {
-		n, err := strconv.Atoi(p)
-		if err != nil || n < 0 {
-			return v, false
-		}
-		v[i] = n
-	}
-	return v, true
-}
-
-func compare(a, b [3]int) int {
-	for i := range 3 {
-		if a[i] != b[i] {
-			if a[i] > b[i] {
-				return 1
-			}
-			return -1
-		}
-	}
-	return 0
 }

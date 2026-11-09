@@ -65,6 +65,11 @@ test-go:
 build:
     bash scripts/build.sh
 
+# Tag a release (vX.Y.Z, or vX.Y.Z-rc.N for a release candidate) on main after checking it against Releasing in
+# AGENTS.md; pushing the tag starts the release workflow.
+release version:
+    bash scripts/release.sh "{{ version }}"
+
 # The live suite needs SALAD_API_KEY and SALAD_ORGANIZATION (SALAD_PROJECT optional: default when unset) and fails
 # without them, so a pass always means it ran. Optional: SALAD_CLI_TEST_REQUIRE_SSH=1 fails the ssh test instead of
 # skipping it on a publickey denial (set it for the pre-tag run); SALAD_AI_GATEWAY_API_KEY adds the AI Gateway test;
