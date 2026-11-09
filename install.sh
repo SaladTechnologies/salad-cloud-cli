@@ -6,7 +6,7 @@
 # Downloads the release archive for this machine, verifies it against the
 # release's checksums.txt, and installs the binary. Environment, all optional:
 #
-#   SALAD_CLI_VERSION       release tag, e.g. v0.1.0-beta.1 (default: the latest
+#   SALAD_CLI_VERSION       release tag, e.g. v0.1.0 (default: the latest
 #                            release, or the newest pre-release while there is none)
 #   SALAD_CLI_INSTALL_DIR   where to put the binary (default: $HOME/.local/bin)
 #   SALAD_CLI_REPO          GitHub repository (default: SaladTechnologies/salad-cloud-cli)
@@ -96,8 +96,8 @@ newest_from_api() {
 }
 
 if [ -z "${VERSION}" ]; then
-  # The latest full release first; during the beta every release is a
-  # pre-release, so fall back to the newest release of any kind.
+  # The latest full release first; while there is none (only release
+  # candidates), fall back to the newest release of any kind.
   VERSION=$(latest_from_redirect)
   [ -n "${VERSION}" ] || VERSION=$(newest_from_api)
   [ -n "${VERSION}" ] || die "could not find a release of ${REPO}; set SALAD_CLI_VERSION to choose one"

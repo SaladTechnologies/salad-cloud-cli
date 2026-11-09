@@ -105,6 +105,44 @@ func TestSince(t *testing.T) {
 	}
 }
 
+// TestSincePreReleases: pre-release versions order as SemVer does (0.2.0-rc.1 after 0.1.0 and before 0.2.0, beta.11
+// after beta.2), so --since a pre-release keeps the releases after it.
+func TestSincePreReleases(t *testing.T) {
+	t.Parallel()
+	rs := Parse(`## [Unreleased]
+
+## [0.2.0] - 2026-12-01
+
+## [0.2.0-rc.2] - 2026-11-20
+
+## [0.2.0-rc.1] - 2026-11-15
+
+## [0.1.0] - 2026-11-09
+
+## [0.1.0-beta.11] - 2026-11-01
+
+## [0.1.0-beta.2] - 2026-10-20
+`)
+	for _, c := range []struct{ since, want string }{
+		{"0.2.0", "Unreleased"},
+		{"0.2.0-rc.1", "Unreleased,0.2.0,0.2.0-rc.2"},
+		{"v0.1.0", "Unreleased,0.2.0,0.2.0-rc.2,0.2.0-rc.1"},
+		{"0.1.0-beta.11", "Unreleased,0.2.0,0.2.0-rc.2,0.2.0-rc.1,0.1.0"},
+		{"0.1.0-beta.2", "Unreleased,0.2.0,0.2.0-rc.2,0.2.0-rc.1,0.1.0,0.1.0-beta.11"},
+	} {
+		t.Run(c.since, func(t *testing.T) {
+			t.Parallel()
+			got, err := Since(rs, c.since)
+			if err != nil || versions(got) != c.want {
+				t.Errorf("since %q = %s (%v), want %s", c.since, versions(got), err, c.want)
+			}
+		})
+	}
+	if _, err := Since(rs, "0.1.0-"); !errors.Is(err, ErrBadSince) {
+		t.Errorf("since 0.1.0-: err = %v, want ErrBadSince", err)
+	}
+}
+
 func TestRenderRoundTrips(t *testing.T) {
 	t.Parallel()
 	rs := Parse(sample)

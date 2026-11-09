@@ -7,7 +7,7 @@
 # PATH. Works in Windows PowerShell 5.1 and PowerShell 7. Environment, all
 # optional:
 #
-#   SALAD_CLI_VERSION         release tag, e.g. v0.1.0-beta.1 (default: the latest
+#   SALAD_CLI_VERSION         release tag, e.g. v0.1.0 (default: the latest
 #                              release, or the newest pre-release while there is none)
 #   SALAD_CLI_INSTALL_DIR     where to put the binary (default: %LOCALAPPDATA%\Programs\saladcloud)
 #   SALAD_CLI_REPO            GitHub repository (default: SaladTechnologies/salad-cloud-cli)
@@ -57,8 +57,8 @@ function Install-Saladcloud {
 
     if (-not $version) {
         # The latest full release first, from where github.com/<repo>/releases/latest
-        # redirects (no API call, no rate limit); during the beta every release
-        # is a pre-release, which that skips, so fall back to the newest
+        # redirects (no API call, no rate limit); while there is none (only
+        # release candidates, which that skips), fall back to the newest
         # release of any kind through the API.
         try {
             $req = [Net.HttpWebRequest]::Create("https://github.com/$repo/releases/latest")

@@ -96,11 +96,13 @@ changelog:
   disable: true
 
 release:
-  # A tag with a "-" (v0.1.0-beta.1) is a pre-release.
+  # A tag with a "-" (v0.2.0-rc.1) is a pre-release. Every 0.x release is a
+  # beta (the CLI stays on major version 0 until it leaves the beta), so its
+  # notes say so whether or not it is a pre-release.
   prerelease: auto
   name_template: "SaladCloud CLI {{ .Tag }}"
   header: |
-    {{- if .Prerelease }}
+    {{- if or (eq .Major 0) .Prerelease }}
     **This is a beta release of the SaladCloud CLI: expect bugs and changes.** Please report bugs and anything surprising at https://github.com/{{ .Env.GITHUB_REPOSITORY }}/issues/new/choose and include the output of `saladcloud version`.
     {{ end }}
     Install or upgrade to this release with `curl -fsSL https://raw.githubusercontent.com/{{ .Env.GITHUB_REPOSITORY }}/{{ .Tag }}/install.sh | SALAD_CLI_VERSION={{ .Tag }} sh` on macOS and Linux, or `$env:SALAD_CLI_VERSION='{{ .Tag }}'; irm https://raw.githubusercontent.com/{{ .Env.GITHUB_REPOSITORY }}/{{ .Tag }}/install.ps1 | iex` on Windows; both verify it against `checksums.txt`. Without `SALAD_CLI_VERSION` they install the latest release. Every archive carries a build provenance attestation: `gh attestation verify <archive> --repo {{ .Env.GITHUB_REPOSITORY }}`. See [CHANGELOG.md](https://github.com/{{ .Env.GITHUB_REPOSITORY }}/blob/{{ .Tag }}/CHANGELOG.md) for what changed.
@@ -114,7 +116,7 @@ homebrew_casks:
       owner: SaladTechnologies
       name: homebrew-tap
       token: '{{ envOrDefault "HOMEBREW_TAP_TOKEN" "" }}'
-    skip_upload: '{{ if envOrDefault "HOMEBREW_TAP_TOKEN" "" }}false{{ else }}true{{ end }}'
+    skip_upload: '{{ if and (envOrDefault "HOMEBREW_TAP_TOKEN" "") (not .Prerelease) }}false{{ else }}true{{ end }}'
     completions:
       bash: completions/saladcloud.bash
       zsh: completions/saladcloud.zsh
@@ -129,7 +131,7 @@ scoops:
       owner: SaladTechnologies
       name: scoop-bucket
       token: '{{ envOrDefault "SCOOP_BUCKET_TOKEN" "" }}'
-    skip_upload: '{{ if envOrDefault "SCOOP_BUCKET_TOKEN" "" }}false{{ else }}true{{ end }}'
+    skip_upload: '{{ if and (envOrDefault "SCOOP_BUCKET_TOKEN" "") (not .Prerelease) }}false{{ else }}true{{ end }}'
 
 winget:
   - name: saladcloud
@@ -149,7 +151,7 @@ winget:
           owner: microsoft
           name: winget-pkgs
           branch: master
-    skip_upload: '{{ if envOrDefault "WINGET_TOKEN" "" }}false{{ else }}true{{ end }}'
+    skip_upload: '{{ if and (envOrDefault "WINGET_TOKEN" "") (not .Prerelease) }}false{{ else }}true{{ end }}'
 
 dockers_v2:
   - id: saladcloud

@@ -53,21 +53,34 @@ and by hand with `gh workflow run test.yml` (`--ref <branch>` for another branch
 and Dependabot bumps them; the mise version in `setup.sh` is bumped by hand, with each archive's sum from the
 release's `SHASUMS256.txt`.
 
-Releasing: run `just test-live` with `SALAD_CLI_TEST_REQUIRE_SSH=1`, using the Windows build from a machine whose SSH
-key is registered on the account (so ssh and cp really run), open one `sftp` session by hand, run `test.yml` on the
-commit and see it pass, then push a `v*` tag. `.github/workflows/release.yml` checks that the binary's `version` matches
-the tag, then runs goreleaser (`.goreleaser.yaml`): reproducible archives for linux and darwin amd64/arm64 and windows
-amd64 (each with README, LICENSE, CHANGELOG, `docs/` and `completions/`), `checksums.txt`, SBOMs, the
-`ghcr.io/saladtechnologies/saladcloud` image, and a GitHub release (a pre-release when the tag has a `-`, e.g.
-`v0.1.0-beta.1`), followed by a build provenance attestation for every archive. The Homebrew cask, Scoop manifest and
-winget pull request publish only when `HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN` and `WINGET_TOKEN` are set as
-repository secrets (and their `SaladTechnologies/homebrew-tap`, `scoop-bucket` and `winget-pkgs` fork exist).
-`install.sh` and `install.ps1` at the repo root install from those releases; they depend on the archive names and the
-`checksums.txt` format goreleaser produces, and `test.yml` runs both against archives goreleaser packages from the
-commit (and against the latest published release, once there is one). `uninstall.sh` and `uninstall.ps1` undo them (the
-binary, the Windows user `PATH` entry, and with `SALAD_CLI_PURGE=1` the config file), and `test.yml` runs them after
-each install. The CLI is in beta: `internal/version.Stage` drives the notice in `--help`, `version`, and the `agent
-init` block; drop it there when the CLI leaves beta.
+Releasing. Versions follow SemVer and are tagged `vMAJOR.MINOR.PATCH`. The CLI stays on major version 0 while it is in
+beta (SemVer's 0.y.z, where anything may change): a release with a new feature or any breaking change bumps MINOR, one
+with only fixes bumps PATCH, and leaving the beta is `v1.0.0` (v2 and later would need a `/v2` module path). The one
+suffix is `-rc.N` (`v0.2.0-rc.1`), a release candidate published to try a release before calling it done. A tag goes
+only on a commit on `main` that passed `test.yml`, is annotated, and is permanent: the tag rulesets let nobody move or
+delete one, so a bad release is followed by the next version rather than a new tag of the same one, and `release.yml`
+refuses a tag of another form or one that is not on `main`. There are no maintenance branches: fixes land on `main` and
+ship in the next version.
+To release, merge a PR that turns `[Unreleased]` into `## [X.Y.Z] - <today>` (`release.yml` fails without that section
+and warns on another date or a non-empty Unreleased), run `just test-live` with `SALAD_CLI_TEST_REQUIRE_SSH=1`, using
+the Windows build from a machine whose SSH key is registered on the account (so ssh and cp really run), open one `sftp`
+session by hand, then run `just release vX.Y.Z`: it checks the version, that the tag is new, the CHANGELOG section and
+`test.yml` on `main`'s tip, then creates and pushes the tag. If the release workflow fails after creating the GitHub
+release, delete that release (the tag stays) so the installers keep serving the one before, and fix forward.
+`.github/workflows/release.yml` checks the tag, and that the binary's `version` matches it, then runs goreleaser
+(`.goreleaser.yaml`): reproducible archives for linux and darwin amd64/arm64 and windows amd64 (each with README,
+LICENSE, CHANGELOG, `docs/` and `completions/`), `checksums.txt`, SBOMs, the `ghcr.io/saladtechnologies/saladcloud`
+image (also tagged `latest` unless it is a pre-release), and a GitHub release (a pre-release when the tag has a `-`),
+followed by a build provenance attestation for every archive. The Homebrew cask, Scoop manifest and winget pull request
+publish only for releases that are not pre-releases, and only when `HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN` and
+`WINGET_TOKEN` are set as repository secrets (and their `SaladTechnologies/homebrew-tap`, `scoop-bucket` and
+`winget-pkgs` fork exist). `install.sh` and `install.ps1` at the repo root install from those releases; they depend on
+the archive names and the `checksums.txt` format goreleaser produces, and `test.yml` runs both against archives
+goreleaser packages from the commit (and against the latest published release, once there is one). `uninstall.sh` and
+`uninstall.ps1` undo them (the binary, the Windows user `PATH` entry, and with `SALAD_CLI_PURGE=1` the config file), and
+`test.yml` runs them after each install. The CLI is in beta: `internal/version.Stage` drives the notice in `--help`,
+`version`, and the `agent init` block, and the release notes carry a beta notice for every 0.x release; drop `Stage`
+and release `v1.0.0` when the CLI leaves beta.
 
 ## Layout
 
