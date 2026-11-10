@@ -610,6 +610,12 @@ API deviates from clean merge-patch behavior:
   document, so back-to-back updates work; `--no-wait` returns the
   pre-settle response instead and prints a note that the change was not
   verified.
+- **A probe is replaced whole, not merged**: a patch that names one field of
+  a probe, such as `{"readiness_probe":{"http":{"port":80}}}`, is rejected
+  for the fields it leaves out (exit 6; a partial startup probe has drawn an
+  HTTP 500, exit 1, instead). Send the whole probe, as `get --writable` gives
+  it, including an HTTP probe's `headers` list, which the API requires even
+  when it is empty.
 - **`autostart_policy` is create-time only and cannot be patched**: it is
   not part of the patch schema, so an `update` document containing it is
   rejected as an unknown field (exit 6). It is a one-shot "start on create"

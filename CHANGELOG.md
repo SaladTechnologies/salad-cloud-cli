@@ -6,6 +6,11 @@ may change, and every such change is listed here.
 
 ## [Unreleased]
 
+### Fixed
+
+- `container-groups get --writable` keeps the empty lists a group has, such as an HTTP probe's `headers`, so `update -f`
+  takes its document back. Before, the API rejected a group with an HTTP probe with `Headers field is required`.
+
 ## [0.1.0] - 2026-11-09
 
 The first public beta of the SaladCloud CLI: a thin, non-interactive-first command-line wrapper over the SaladCloud

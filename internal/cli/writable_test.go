@@ -14,7 +14,8 @@ import (
 // A response document with every kind of field the filter must handle:
 // response-only scalars, a response-only object, create-only fields, the
 // priority relocation, a free-form map, a nullable probe holding null, an
-// array, and networking's mostly-unpatchable object.
+// array, empty lists (an HTTP probe's headers, which the API requires even
+// empty), and networking's mostly-unpatchable object.
 const richResponse = `{
   "id": "0b1d3c2a-9f4e-4a7b-8c6d-5e4f3a2b1c0d",
   "name": "my-app",
@@ -34,6 +35,10 @@ const richResponse = `{
   "scheduled-scaling-enabled": true,
   "scaling-actions": [{"replicas": 1, "schedule": "0 9 * * 1-5"}],
   "liveness_probe": null,
+  "readiness_probe": {
+    "http": {"headers": [], "path": "/health", "port": 8080, "scheme": "http"}, "initial_delay_seconds": 0,
+    "period_seconds": 5, "timeout_seconds": 2, "success_threshold": 1, "failure_threshold": 3
+  },
   "startup_probe": {
     "tcp": {"port": 8080}, "initial_delay_seconds": 1, "period_seconds": 3, "timeout_seconds": 1,
     "success_threshold": 1, "failure_threshold": 3
@@ -112,6 +117,9 @@ func TestWritableDocumentKeeps(t *testing.T) {
 		}, // patchable, even if the API ignores it
 		{"networking", map[string]any{"port": 8080}}, // only port
 		{"container.priority", "high"},               // relocated
+		// Empty lists the SDK's omitempty tags drop: update -f must send the probe's back, or the API rejects it.
+		{"readiness_probe.http.headers", json.RawMessage(`[]`)},
+		{"container.resources.gpu_classes", json.RawMessage(`[]`)},
 	}
 	for _, tt := range tests {
 		if got, ok := lookupPath(m, tt.path); !ok || !jsonEqual(got, tt.want) {

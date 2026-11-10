@@ -382,6 +382,21 @@ func TestCreateFrom(t *testing.T) { //nolint:paralleltest // writes to the live 
 		t.Errorf("create --from warned: %q", r.Stderr)
 	}
 	checkCreateFromCopy(t, r, cp)
+	writableProbeRoundTrip(t, src)
+}
+
+// writableProbeRoundTrip feeds get --writable of g, whose HTTP probe has an empty headers list, back through update -f:
+// the document must carry the empty list, which the API requires.
+func writableProbeRoundTrip(t *testing.T, g string) {
+	t.Helper()
+	wr := run(t, "container-groups", "get", g, "--writable")
+	if wr.Code != 0 {
+		t.Fatalf("get --writable exit %d: %s", wr.Code, wr.Stderr)
+	}
+	rt := run(t, "container-groups", "update", g, "-f", liveTempFile(t, "writable.json", wr.Stdout))
+	if rt.Code != 0 || strings.Contains(rt.Stderr, "warning:") {
+		t.Errorf("get --writable | update -f with an HTTP probe: exit %d, stderr %q", rt.Code, rt.Stderr)
+	}
 }
 
 // checkCreateFromCopy checks that create --from's document r carries every non-default setting of

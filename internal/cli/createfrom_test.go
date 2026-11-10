@@ -114,9 +114,19 @@ func TestCopyDocument(t *testing.T) {
 			t.Errorf("%s = %#v, want %#v", path, got, want)
 		}
 	}
+	checkEmptyHeaders(t, doc)
 	env, _ := lookupPath(doc, "container.environment_variables")
 	if assertAs[map[string]any](t, env)["weird.KEY-2"] != "x" {
 		t.Errorf("env var with a dotted key not copied: %v", env)
+	}
+}
+
+// checkEmptyHeaders checks that a document sent back to the API keeps the source's empty HTTP probe headers list,
+// which the API requires.
+func checkEmptyHeaders(t *testing.T, doc map[string]any) {
+	t.Helper()
+	if got, ok := lookupPath(doc, "readiness_probe.http.headers"); !ok || !jsonEqual(got, json.RawMessage(`[]`)) {
+		t.Errorf("readiness_probe.http.headers = %#v (present %v), want []", got, ok)
 	}
 }
 
