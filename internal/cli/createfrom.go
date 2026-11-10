@@ -20,7 +20,6 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/input"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
@@ -93,19 +92,9 @@ var errUnexpectedGroupDocument = errors.New("unexpected group document")
 // takes create's default (or --no-autostart). A displayName other than ""
 // replaces the source's display name (see copyDisplayName).
 func copyDocument(g *shared.ContainerGroup, displayName string) (json.RawMessage, error) {
-	// MarshalRequest, not toTree: the API returns empty lists ([] probe
-	// headers among them) and the copy must send them back.
-	b, err := output.MarshalRequest(g)
+	obj, err := requestTree(g)
 	if err != nil {
-		return nil, fmt.Errorf("encoding the source group: %w", err)
-	}
-	var tree any
-	if err = json.Unmarshal(b, &tree); err != nil {
-		return nil, fmt.Errorf("decoding the source group: %w", err)
-	}
-	obj, ok := tree.(map[string]any)
-	if !ok {
-		return nil, errUnexpectedGroupDocument
+		return nil, err
 	}
 	copyRelocateResponseFields(obj)
 	delete(obj, "autostart_policy")

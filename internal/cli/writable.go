@@ -13,6 +13,8 @@
 package cli
 
 import (
+	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -21,6 +23,7 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/input"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/output"
 )
 
 // writableDocument renders g as a patch document: the known
@@ -28,13 +31,9 @@ import (
 // does not know removed. It returns the document tree and the sorted dotted
 // paths that were dropped, for the stderr summary.
 func writableDocument(g *shared.ContainerGroup) (any, []string, error) {
-	tree, err := toTree(g)
+	obj, err := requestTree(g)
 	if err != nil {
 		return nil, nil, err
-	}
-	obj, ok := tree.(map[string]any)
-	if !ok {
-		return tree, nil, nil
 	}
 	// Relocate: a field that responses spell one way and requests another
 	// is moved to its request path before filtering, so it survives as the
@@ -53,6 +52,25 @@ func writableDocument(g *shared.ContainerGroup) (any, []string, error) {
 	filtered := input.FilterTree(obj, reflect.TypeFor[containergroups.ContainerGroupPatch](), "", &dropped)
 	slices.Sort(dropped)
 	return filtered, dropped, nil
+}
+
+// requestTree decodes g into a generic tree to send back to the API, as get --writable and create --from do. It
+// encodes with output.MarshalRequest, not toTree: the API returns empty lists, and a write must send some of them
+// back. A probe is written whole, and the API rejects an HTTP probe without its headers list, even an empty one.
+func requestTree(g *shared.ContainerGroup) (map[string]any, error) {
+	b, err := output.MarshalRequest(g)
+	if err != nil {
+		return nil, fmt.Errorf("encoding the group: %w", err)
+	}
+	var tree any
+	if err = json.Unmarshal(b, &tree); err != nil {
+		return nil, fmt.Errorf("decoding the group: %w", err)
+	}
+	obj, ok := tree.(map[string]any)
+	if !ok {
+		return nil, errUnexpectedGroupDocument
+	}
+	return obj, nil
 }
 
 // setPath assigns v at a dotted path in a generic tree, creating
