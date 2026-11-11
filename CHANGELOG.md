@@ -21,6 +21,9 @@ may change, and every such change is listed here.
   A project that is missing from an organization the key can see is still skipped, and the warning now names the
   organization. `--projects`, `create --from` and `availability --from` also report a rejected API key the way every
   other command does.
+- In Git Bash, `container-groups ssh <group> -- <command>` stops with a usage error (exit 2) when a word of the command
+  was rewritten into a Windows path (`-- ls /opt` arrives as `ls C:/Program Files/Git/opt`), as `create` already does
+  for a container command. Before, it ran the command on the rewritten path.
 
 ### Security
 

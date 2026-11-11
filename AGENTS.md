@@ -233,7 +233,7 @@ each call site to its row; a generic rewrap (`"%v"`) is exempt.
 | `cp` with no remote side | 2 | structure | message | `no remote side` |
 | a `cp` path Git Bash rewrote as a path list | 2 | structure | message | `rewritten by Git Bash` |
 | a `--queue-path` Git Bash rewrote into a Windows path | 2 | structure | message | `turns a leading / into a Windows path` |
-| a container command word Git Bash rewrote into a Windows path | 2 | structure | message | `turns a leading / into a Windows path` |
+| a container command word, or an `ssh` command word after `--`, Git Bash rewrote into a Windows path | 2 | structure | message | `turns a leading / into a Windows path` |
 | `create`/`update` with `--` and nothing after it | 2 | missing value | message | `nothing after --` |
 | malformed `use` target | 2 | structure | message | `invalid target` |
 | unknown config key | 2 | the CLI's own keys | message | `unknown config key` |

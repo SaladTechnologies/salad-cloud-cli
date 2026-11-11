@@ -411,7 +411,8 @@ saladcloud container-groups delete my-batch
 - `cp -r` copies into a destination directory that exists; see
   `saladcloud container-groups cp --help`.
 - In Git Bash, put `MSYS_NO_PATHCONV=1` in front of the `ssh` and `cp`
-  commands, or the paths are rewritten.
+  commands, or the paths are rewritten; the CLI stops with a usage error
+  when it receives a rewritten one.
 - The group runs, and is billed, until `delete`.
 
 #### Iterating on a new image
