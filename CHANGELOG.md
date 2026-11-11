@@ -11,6 +11,13 @@ may change, and every such change is listed here.
 - `container-groups get --writable` keeps the empty lists a group has, such as an HTTP probe's `headers`, so `update -f`
   takes its document back. Before, the API rejected a group with an HTTP probe with `Headers field is required`.
 
+### Security
+
+- Release binaries and the container image are built with Go 1.27.4, which fixes a crash in Go's HTTP/1 server
+  ([GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859)). The CLI runs no HTTP server, so it was not exposed, but
+  vulnerability scanners flag binaries built with an earlier Go. A `go install` build uses your own Go, so keep it up to
+  date to get the same fix.
+
 ## [0.1.0] - 2026-11-09
 
 The first public beta of the SaladCloud CLI: a thin, non-interactive-first command-line wrapper over the SaladCloud
