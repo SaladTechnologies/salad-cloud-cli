@@ -2,7 +2,7 @@ module github.com/saladtechnologies/salad-cloud-cli
 
 go 1.26.0
 
-toolchain go1.27.3
+toolchain go1.27.4
 
 // Prettier and cSpell live here; nothing under it is part of this module.
 ignore ./node_modules
