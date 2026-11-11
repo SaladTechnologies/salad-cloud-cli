@@ -411,7 +411,8 @@ saladcloud container-groups delete my-batch
 - `cp -r` copies into a destination directory that exists; see
   `saladcloud container-groups cp --help`.
 - In Git Bash, put `MSYS_NO_PATHCONV=1` in front of the `ssh` and `cp`
-  commands, or the paths are rewritten.
+  commands, or the paths are rewritten; the CLI stops with a usage error
+  when it receives a rewritten one.
 - The group runs, and is billed, until `delete`.
 
 #### Iterating on a new image
@@ -1157,7 +1158,9 @@ coding agents read for project instructions, so an agent working in the
 repository knows to use this CLI, how it authenticates, that setup is yours
 (it asks you to run `saladcloud login` in your own terminal and never asks
 for a key in the chat), that an error's `hint` is its fix, its exit codes,
-and where the SaladCloud skills are:
+which arguments are positional and which are flags, and where the SaladCloud
+skills are. Root `--help` points agents at `saladcloud agent init --print`,
+which shows the block without writing it:
 
 ```sh
 saladcloud agent init                 # AGENTS.md, or CLAUDE.md when run under Claude Code

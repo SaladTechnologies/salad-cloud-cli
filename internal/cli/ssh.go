@@ -456,6 +456,11 @@ func (app *App) runSSH(cmd *cobra.Command, args []string, o *sshOptions) error {
 			"--config prints Host blocks and cannot be combined with a -- command",
 		)
 	}
+	// Git Bash turns a remote path such as /opt into C:/Program Files/Git/opt
+	// before the CLI sees it; the remote command would run on the wrong path.
+	if cerr := app.checkCommandRewrites(command); cerr != nil {
+		return cerr
+	}
 
 	client, _, cerr := app.NewClient(cmd)
 	if cerr != nil {

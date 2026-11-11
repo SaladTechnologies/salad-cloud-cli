@@ -10,6 +10,7 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
+	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 	"github.com/saladtechnologies/salad-cloud-cli/internal/ptr"
 )
 
@@ -396,5 +397,22 @@ func TestRunChildHints(t *testing.T) {
 		cerr.HintText() != "macOS includes it at /usr/bin/saladcloud-test-no-such-ssh; check that /usr/bin is on "+
 			"your PATH" {
 		t.Errorf("missing: %+v hint %q", cerr, cerr.HintText())
+	}
+}
+
+// TestSSHCommandGitBash: under Git Bash, a remote command word Git Bash rewrote into a Windows path is a usage error
+// before any request. (Which words are checked is TestValidateCommandGitBash's: the same check.)
+func TestSSHCommandGitBash(t *testing.T) {
+	t.Parallel()
+	o := session{
+		args:  []string{"cg", "ssh", "my-app", "--", "ls", "C:/Program-Files/Git/opt"},
+		saved: &config.File{APIKey: testAPIKey, Organization: "my-org", Project: "default"},
+		env:   map[string]string{"MSYSTEM": "MINGW64"},
+	}.run(t)
+	if o.code != 2 || !strings.Contains(o.stderr, `command word "C:/Program-Files/Git/opt" was rewritten by Git Bash`) {
+		t.Errorf("exit %d, want 2 and the rewrite error:\n%s", o.code, o.stderr)
+	}
+	if reqs := o.api.Requests(); len(reqs) != 0 {
+		t.Errorf("requests before the check: %v", reqs)
 	}
 }

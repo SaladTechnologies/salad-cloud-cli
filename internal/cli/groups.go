@@ -424,6 +424,9 @@ func listGroupsInCurrentProject(ctx context.Context, client *api.Client) ([]shar
 
 // listGroupsInProjects lists the container groups of each --projects
 // project in turn; a project that is not found is skipped with a warning.
+// Each project's client checks the organization after a 404, as the
+// command's own does, so an organization the key cannot see fails the
+// command as the organization instead of skipping every project.
 func (app *App) listGroupsInProjects(
 	ctx context.Context,
 	res *config.Resolved,
@@ -437,10 +440,13 @@ func (app *App) listGroupsInProjects(
 		if cerr != nil {
 			return nil, cerr
 		}
+		app.hookClient(ctx, pc, &r)
 		groups, lerr := pc.ListGroups(ctx)
 		if lerr != nil {
-			if lerr.Code == clierr.CodeNotFound {
-				fprintf(app.errw(), "warning: project \"%s\" not found, skipped\n", proj)
+			// A final not-found is the organization check's answer.
+			if lerr.Code == clierr.CodeNotFound && !lerr.IsFinal() {
+				fprintf(app.errw(), "warning: project \"%s\" not found in organization %s, skipped\n",
+					proj, res.Organization)
 				continue
 			}
 			return nil, lerr
