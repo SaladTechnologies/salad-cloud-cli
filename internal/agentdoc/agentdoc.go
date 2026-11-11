@@ -71,8 +71,9 @@ const body = `## SaladCloud
   is "default", with a stderr warning; set it). Never print their values. ` +
 	"`saladcloud whoami`" + ` shows what resolved and where from.
 - Container groups live under ` + "`saladcloud container-groups`" + ` (alias ` + "`cg`" + `). A command's target is its
-  one positional and its parents are flags (` + "`cg instances restart <id> -c <group>`" + `). One group's
-  logs: ` + "`cg logs <group>`" + `; ` + "`saladcloud logs`" + ` alone searches the organization.
+  one positional and its parents are flags (` + "`cg instances list -c <group>`" + `); ` + "`cg ssh <group>`" + `,
+  ` + "`cg sftp <group>`" + ` and ` + "`cg logs <group>`" + ` take the instance as ` + "`--instance`" + `. ` +
+	"`saladcloud logs`" + ` alone searches the organization.
   ` + "`saladcloud availability --gpu <class>`" + ` costs platform queries (one per class, one more for several): ` +
 	`call it once before ` + "`cg create`" + `.
 - Writes verify themselves: read the ` + "`warning:`" + `/` + "`note:`" + ` stderr lines after ` +

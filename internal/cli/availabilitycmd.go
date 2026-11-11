@@ -363,7 +363,7 @@ func (app *App) availabilityFrom(
 	if err != nil {
 		return api.AvailabilityRequest{}, err
 	}
-	app.warnOnAssumedProject(src, &r)
+	app.hookClient(ctx, src, &r)
 	g, err := src.GetGroup(ctx, fromGroup)
 	if err != nil {
 		return api.AvailabilityRequest{}, groupNotFound(err, fromGroup, src.Org(), src.Project())

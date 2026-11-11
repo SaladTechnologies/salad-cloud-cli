@@ -276,7 +276,7 @@ func (app *App) fromFetchSource(
 	if cerr != nil {
 		return nil, cerr
 	}
-	app.warnOnAssumedProject(src, source)
+	app.hookClient(cmd.Context(), src, source)
 	g, cerr := src.GetGroup(cmd.Context(), group)
 	if cerr != nil {
 		return nil, groupNotFound(cerr, group, src.Org(), src.Project())

@@ -38,6 +38,8 @@ func TestBlockShape(t *testing.T) {
 		"`container-groups delete` is immediate and unconfirmed",
 		"`saladcloud container-groups` (alias `cg`)",
 		"`cg logs <group>`",
+		"its parents are flags (`cg instances list -c <group>`)",
+		"take the instance as `--instance`",
 		"`saladcloud availability --gpu <class>` costs platform queries (one per class, one more for several): call " +
 			"it once",
 		"The CLI is a beta release",

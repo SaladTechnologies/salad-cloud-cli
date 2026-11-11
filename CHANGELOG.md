@@ -6,10 +6,21 @@ may change, and every such change is listed here.
 
 ## [Unreleased]
 
+### Changed
+
+- Root `--help` says which arguments are positional and which are flags, and points coding agents at
+  `saladcloud agent init --print`. The block `agent init` writes now names the exception: `cg ssh`, `cg sftp` and
+  `cg logs` take the group as their argument and the instance as `--instance`.
+
 ### Fixed
 
 - `container-groups get --writable` keeps the empty lists a group has, such as an HTTP probe's `headers`, so `update -f`
   takes its document back. Before, the API rejected a group with an HTTP probe with `Headers field is required`.
+- `container-groups list --projects` reports an organization the API key cannot see as `organization "<org>" not found`
+  (exit 4). Before, it skipped every named project with `warning: project "<project>" not found, skipped` and exited 0.
+  A project that is missing from an organization the key can see is still skipped, and the warning now names the
+  organization. `--projects`, `create --from` and `availability --from` also report a rejected API key the way every
+  other command does.
 
 ### Security
 

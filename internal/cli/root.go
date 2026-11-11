@@ -59,7 +59,13 @@ Get started:
   saladcloud doctor    check that everything works
 
 Scripts and CI set SALAD_API_KEY, SALAD_ORGANIZATION and SALAD_PROJECT instead of logging in.
-Coding agents: ask the user to run saladcloud login in their own terminal; never ask for a key in the chat.
+Coding agents: read saladcloud agent init --print for this CLI's rules; ask the user to run
+saladcloud login in their own terminal; never ask for a key in the chat.
+
+A command takes what it acts on as its one argument and every resource above
+it as a flag (--org, --project, -c <group>): container-groups instances list
+-c <group>. container-groups ssh, sftp and logs take the group as the argument
+and the instance as --instance.
 
 This is a ` + version.Stage + ` release: expect bugs and changes. Report them at ` + version.IssuesURL +
 			`, with the output of saladcloud version.
@@ -444,12 +450,19 @@ func (app *App) NewClient(cmd *cobra.Command) (*api.Client, config.Resolved, *cl
 	if cerr != nil {
 		return nil, res, cerr
 	}
-	app.warnOnAssumedProject(client, &res)
+	app.hookClient(cmd.Context(), client, &res)
+	return client, res, nil
+}
+
+// hookClient gives client, built from res, the checks every command's client makes: the assumed-project warning, the
+// error for a rejected key, and the organization check after a 404 under the organization, so a client for another
+// project reports a key or an organization the way the command's own client does.
+func (app *App) hookClient(ctx context.Context, client *api.Client, res *config.Resolved) {
+	app.warnOnAssumedProject(client, res)
+	keyFrom := originOf(res.APIKeySource, "", envAPIKey)
 	saved := app.savedConfig()
 	client.OnRejected = func() *clierr.Error { return keyRejected(res.APIKey, keyFrom, saved.APIKey) }
-	ctx := cmd.Context()
-	client.OnOrgGone = func() *clierr.Error { return app.organizationGone(ctx, &res) }
-	return client, res, nil
+	client.OnOrgGone = func() *clierr.Error { return app.organizationGone(ctx, res) }
 }
 
 // newClientCheckNames is NewClient's check of the resolved names: a name from a flag or variable that cannot be a URL
