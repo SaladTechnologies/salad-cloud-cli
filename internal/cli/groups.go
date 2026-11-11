@@ -652,6 +652,7 @@ type groupsUpdateOptions struct {
 	allowUnknown bool
 	flags        updateFlags
 	settle       settleOptions
+	ready        readyOptions
 }
 
 // addGroupsUpdateCommand adds container-groups update to the tree.
@@ -682,9 +683,18 @@ and queue connection cannot change after create.
 Words after -- replace the container command, which runs in place of the
 image's ENTRYPOINT and CMD, so it starts with the program; unlike cg ssh,
 there is no shell. Put saladcloud's own flags before --. To go back to the
-image's own command, send a patch file with {"container": {"command": []}}.`,
+image's own command, send a patch file with {"container": {"command": []}}.
+
+A change to the image, command, environment or resources makes a new
+version, and the instances restart onto it after the command returns,
+pulling the image again. --wait-ready waits for that too: until every
+replica runs the new version and is ready, and with --ready-for until they
+have stayed ready that long. --timeout then caps the whole wait (default 1h).`,
 		Example: `  # Roll out a new image
   saladcloud container-groups update my-app --image ghcr.io/me/app:v2
+
+  # Roll out a new image and wait until it has served for 5 minutes
+  saladcloud container-groups update my-app --image ghcr.io/me/app:v2 --wait-ready --ready-for 5m
 
   # Add or change one variable, keeping the others
   saladcloud container-groups update my-app -e LOG_LEVEL=debug
@@ -711,6 +721,9 @@ image's own command, send a patch file with {"container": {"command": []}}.`,
 	addUpdateFlags(updateCmd, &updateOpts.flags)
 	addAllowUnknownFlag(updateCmd, &updateOpts.allowUnknown)
 	addSettleFlags(updateCmd, &updateOpts.settle)
+	updateCmd.Flags().Lookup("timeout").Usage = "give up after this long (exit 1; the patch was already accepted); " +
+		"caps the settle, and with --wait-ready the whole wait (default 1h there)"
+	addReadyFlags(updateCmd, &updateOpts.ready)
 	cg.AddCommand(updateCmd)
 }
 
@@ -722,7 +735,7 @@ func (app *App) runGroupsUpdate(cmd *cobra.Command, opts *groupsUpdateOptions, a
 		return cerr
 	}
 	warnCommand(app.errw(), cmd, command.words)
-	wait, timeout, cerr := opts.settle.values()
+	wait, timeout, cerr := updateWaits(cmd, opts)
 	if cerr != nil {
 		return cerr // pre-flight: a bad --timeout must not patch anything
 	}
@@ -751,12 +764,53 @@ func (app *App) runGroupsUpdate(cmd *cobra.Command, opts *groupsUpdateOptions, a
 		}
 		raw, intent = patch.wire, patch.intent
 	}
-	settle := patchSettle{wait: wait, timeout: timeout, doneMsg: "update settled"}
-	group, err := app.applyPatch(cmd, client, args[0], raw, intent, settle)
+	settle := patchSettle{wait: wait, timeout: timeout, doneMsg: "update settled", waitReady: opts.ready.wait}
+	group, err := app.updateApply(cmd, client, args[0], raw, intent, settle, opts.ready)
 	if err != nil {
 		return err
 	}
 	return wrapErr(app.printer.Emit(group, func(w *output.Writer) { writeGroupDetail(w, group) }))
+}
+
+// updateWaits is update's waiting, checked pre-flight: whether to settle, and the --timeout in effect, which is 1h
+// under --wait-ready when none is given.
+func updateWaits(cmd *cobra.Command, opts *groupsUpdateOptions) (bool, time.Duration, *clierr.Error) {
+	wait, timeout, cerr := opts.settle.values()
+	if cerr != nil {
+		return false, 0, cerr
+	}
+	if rerr := opts.ready.check(opts.settle.noWait); rerr != nil {
+		return false, 0, rerr
+	}
+	if opts.ready.wait && !cmd.Flags().Changed("timeout") {
+		timeout = readyDefaultTimeout
+	}
+	return wait, timeout, nil
+}
+
+// updateApply applies update's patch through applyPatch and, under --wait-ready, waits for the replicas on the new
+// version; one --timeout covers both. It returns the group document to emit.
+func (app *App) updateApply(
+	cmd *cobra.Command,
+	client *api.Client,
+	name string,
+	raw, intent []byte,
+	settle patchSettle,
+	ready readyOptions,
+) (*shared.ContainerGroup, error) {
+	deadline := time.Now().Add(settle.timeout)
+	group, err := app.applyPatch(cmd, client, name, raw, intent, settle)
+	if err != nil {
+		return nil, err
+	}
+	if !ready.wait {
+		return group, nil
+	}
+	final, cerr := app.runReadyWait(cmd, client, name, group, ready, settle.timeout, deadline)
+	if cerr != nil {
+		return nil, cerr
+	}
+	return final, nil
 }
 
 // updateCheckFlags is update's flags, checked pre-flight: their values, and
@@ -827,12 +881,14 @@ func updateCurrentEnv(
 }
 
 // patchSettle is how applyPatch settles a patch: whether to wait (unless
-// --no-wait), for how long, and the table-mode line when it has settled (""
-// for none).
+// --no-wait), for how long, the table-mode line when it has settled (""
+// for none), and whether update's --wait-ready follows (which drops the
+// new-version note's pointer to it).
 type patchSettle struct {
-	wait    bool
-	timeout time.Duration
-	doneMsg string
+	wait      bool
+	timeout   time.Duration
+	doneMsg   string
+	waitReady bool
 }
 
 // applyPatch is the one write path for merge patches: update -f and scale
@@ -893,5 +949,25 @@ func (app *App) applyPatch(
 	if r, rejected := findContainerRejection(before, group, ignored); rejected {
 		return nil, containerRejectionError(name, intent, r)
 	}
+	if note := settle.newVersionNote(name, before, group); note != "" {
+		fprintln(app.errw(), note)
+	}
 	return group, nil
+}
+
+// newVersionNote is the stderr note for a write that made a new version of a group with replicas to move: the
+// settled document still describes the instances that run the old one, which start over on the new version only as
+// their nodes check in. It points at --wait-ready unless that is already waiting. "" when the version did not change
+// (or either document is unknown), and for a stopped group or one without replicas.
+func (s patchSettle) newVersionNote(name string, before, after *shared.ContainerGroup) string {
+	if before == nil || after == nil || ptr.Deref(after.Version) <= ptr.Deref(before.Version) ||
+		ptr.Deref(after.Replicas) <= 0 || groupStatus(after) == string(shared.CONTAINER_GROUP_STATUS_STOPPED) {
+		return ""
+	}
+	note := fmt.Sprintf("note: %s is now version %d; its instances move onto it as their nodes check in, "+
+		"pulling the image again", name, ptr.Deref(after.Version))
+	if !s.waitReady {
+		note += "; to wait until they are ready, pass --wait-ready"
+	}
+	return note
 }

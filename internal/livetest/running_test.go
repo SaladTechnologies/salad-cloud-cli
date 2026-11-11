@@ -55,6 +55,9 @@ func TestRunningLifecycle(t *testing.T) { //nolint:paralleltest // writes to the
 	// Remote access, while we have a running instance to talk to.
 	t.Run("ssh", func(t *testing.T) { testSSH(t, g) })
 
+	// After ssh: the new instance this rolls out to can take a minute to get its SSH endpoint.
+	runningWaitReady(t, g)
+
 	if r := run(t, "container-groups", "stop", g, "--wait", "--timeout", "5m"); r.Code != 0 {
 		t.Errorf("stop --wait exit %d: %s", r.Code, r.Stderr)
 	}
@@ -289,8 +292,40 @@ type runningInstanceList struct {
 
 // runningInstance is one instance of a runningInstanceList.
 type runningInstance struct {
-	ID    string `json:"id"`
-	State string `json:"state"`
+	ID      string `json:"id"`
+	State   string `json:"state"`
+	Version int64  `json:"version"`
+	Ready   bool   `json:"ready"`
+}
+
+// runningWaitReady: update --wait-ready returns only once the replicas run the new version and are ready, and the
+// update says the instances move onto it. An environment change makes the new version; one replica keeps batch
+// capacity from deciding how long it takes.
+func runningWaitReady(t *testing.T, g string) {
+	t.Helper()
+	r := run(t, "container-groups", "update", g, "--replicas", "1", "-e", "SALAD_CLI_LIVE_READY=1",
+		"--wait-ready", "--timeout", "15m", "-o", "json")
+	if r.Code != 0 {
+		t.Fatalf("update --wait-ready exit %d: %s", r.Code, r.Stderr)
+	}
+	if !strings.Contains(r.Stderr, "is now version") {
+		t.Errorf("no new-version note on stderr: %s", r.Stderr)
+	}
+	version := int64(valueAs[float64](oneDoc(t, r)["version"]))
+	r = run(t, "container-groups", "instances", "list", "-c", g, "-o", "json")
+	if r.Code != 0 {
+		t.Fatalf("instances list exit %d: %s", r.Code, r.Stderr)
+	}
+	var doc runningInstanceList
+	if err := json.Unmarshal([]byte(r.Stdout), &doc); err != nil {
+		t.Fatalf("instances list: %v", err)
+	}
+	for _, i := range doc.Instances {
+		if i.Version >= version && i.State == "running" && i.Ready {
+			return
+		}
+	}
+	t.Errorf("--wait-ready returned, but no instance runs version %d and is ready: %s", version, r.Stdout)
 }
 
 // firstRunningInstance returns the id of one running instance of g, so a
