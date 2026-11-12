@@ -126,7 +126,7 @@ func (app *App) runScale(cmd *cobra.Command, opts *scaleOptions, name string) er
 			name,
 			patch,
 			nil,
-			patchSettle{wait: wait, timeout: timeout, doneMsg: doneMsg},
+			patchSettle{wait: wait, timeout: timeout, doneMsg: doneMsg, waitReady: false},
 		)
 	}
 	var before *shared.ContainerGroup

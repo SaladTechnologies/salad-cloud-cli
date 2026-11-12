@@ -218,6 +218,9 @@ each call site to its row; a generic rewrap (`"%v"`) is exempt.
 | `--writable` with `--watch` | 2 | flag combination | message | `--writable and --watch cannot be combined` |
 | `--timeout` of zero or less | 2 | the CLI's own wait | message | `--timeout must be greater than zero` |
 | `--wait` with `--no-autostart` | 2 | flag combination | message | `--wait cannot be combined with --no-autostart` |
+| `update --wait-ready` with `--no-wait` | 2 | flag combination | message | `--wait-ready and --no-wait cannot be combined` |
+| `update --ready-for` without `--wait-ready` | 2 | flag combination | message | `--ready-for requires --wait-ready` |
+| negative `update --ready-for` | 2 | the CLI's own wait | message | `--ready-for must be zero or more` |
 | `--no-auth` without `--port` | 2 | flag combination | message | `--no-auth requires --port` |
 | `--queue`, `--queue-port`, `--queue-path` not all given | 2 | flag combination | message | `go together` |
 | `create` without `--image`, `-f` or `--from` | 2 | missing flag | message | `missing required flag: --image` |
@@ -399,8 +402,9 @@ Each of these was argued out; reopen one only with a reason the original did not
   for some patches and not others, which teaches people to ignore them.
 - **No `edit` verb; `get --writable` instead.** An editor is the one verb with no scripted use; agents need a patchable
   document, which `--writable` gives without an editor or TTY.
-- **No standalone `wait` verb.** `--wait` on create/start/stop and the settle-by-default writes cover every poll shape
-  so far; revisit only if a third shape appears.
+- **No standalone `wait` verb.** `--wait` on create/start/stop, the settle-by-default writes, and `update --wait-ready`
+  (the third shape: the replicas on the new version and ready) cover every poll shape so far; each is a flag on the
+  write it follows. A new shape gets a flag too, not a verb.
 - **The live suite is not run in CI.** It needs an API key and spends money, so `just test-live` is a manual step before
   tagging.
 - **The CLI ships its own HTTP transport.** The SDK's transport validation rejects real responses (7-digit fractional

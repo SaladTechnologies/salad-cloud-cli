@@ -6,6 +6,16 @@ may change, and every such change is listed here.
 
 ## [Unreleased]
 
+### Added
+
+- `container-groups update --wait-ready` waits, after the change settles, until every replica runs the group's new
+  version, is running and is ready; `--ready-for 5m` also requires them to stay ready that long. `--timeout` then caps
+  the whole wait and defaults to `1h`. A rollout that is still pulling at the deadline exits 1 (`wait_timeout`) with a
+  message that says the update was applied and where the replicas were.
+- `container-groups update` says on stderr when the change made a new version of a group with replicas
+  (`note: my-app is now version 3; its instances move onto it as their nodes check in, ...`): the settled document still
+  shows the instances that run the old one.
+
 ### Changed
 
 - Root `--help` says which arguments are positional and which are flags, and points coding agents at

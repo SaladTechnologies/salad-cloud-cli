@@ -684,6 +684,27 @@ Two different needs, two different mechanisms:
   nothing compares what you asked for with what the API did, so it is the
   one write path where a silently discarded or altered field goes
   unreported.
+- **`update --wait-ready`** waits for the rollout too. Settling means the
+  platform took the change; when it makes a new version (the image, command,
+  environment, resources), `update` says so on stderr
+  (`note: my-app is now version 3; its instances move onto it as their nodes check in, …`),
+  and the instances then start over on it, pulling the image again, which
+  for a large image takes many minutes. With `--wait-ready`, `update` keeps
+  polling (every 10s) until every replica runs the new version, is running,
+  and is ready (passes its readiness probe, or has started when the group
+  has none); `--ready-for 5m` also requires them to stay ready that long,
+  starting over if one drops. `--timeout` then caps the settle and this
+  wait together, and defaults to `1h`. On success it emits the group as last
+  read; past `--timeout` it exits 1 with kind `wait_timeout`, empty stdout,
+  and a message that says the update was applied and where the replicas
+  were (`0 of 1 replicas ready on version 3 (instances: downloading 1)`). A
+  group that stops or fails meanwhile ends the wait at once (`group_stopped`,
+  `group_failed`). Table mode prints a progress line when the replicas'
+  states change, and once a minute while they do not.
+
+  ```sh
+  saladcloud container-groups update my-app --image ghcr.io/me/app:v2 --wait-ready --ready-for 5m
+  ```
 - **`--wait` / `--timeout`** (on `create`, `start`, `stop`) is for
   scripts, CI, and agents: block until the group reaches the verb's goal
   (`running` for create/start, `stopped` for stop), then exit 0. Polls every 5s; `--timeout` (default `10m`) caps
@@ -1290,9 +1311,9 @@ script can switch on it. A new failure mode maps onto an existing kind.
 | `internal` | 1 | the CLI could not encode or copy its own data; a CLI bug, worth reporting |
 | `interrupted` | 1 | Ctrl-C during a wait (`--wait`, an `update`/`scale` settle, `inference transcribe`), a prompt or a request; end of input at a prompt; "n" at `ssh-key setup`'s generate prompt (`<command> canceled`, for example `container-groups list canceled`); what the server already received goes ahead. `logs --follow` and `--watch` end with exit 0 instead |
 | `wait_timeout` | 1 | a wait ran past `--timeout`; the server keeps going |
-| `group_stopped` | 1 | a wait for running saw the group stop instead |
-| `group_failed` | 1 | a wait for running saw the group fail |
-| `group_succeeded` | 1 | a wait for running saw the group's containers exit successfully |
+| `group_stopped` | 1 | a wait for running, or `update --wait-ready`, saw the group stop instead |
+| `group_failed` | 1 | a wait for running, or `update --wait-ready`, saw the group fail |
+| `group_succeeded` | 1 | a wait for running, or `update --wait-ready`, saw the group's containers exit successfully |
 | `job_failed` | 1 | `inference jobs create --wait` or `queues jobs create --wait` saw the job fail |
 | `job_canceled` | 1 | `inference jobs create --wait`, `queues jobs create --wait`, `inference transcribe` or `inference transcription-lite` saw the job canceled |
 | `transcription_failed` | 1 | a transcription job failed, or finished with an error in its output |
