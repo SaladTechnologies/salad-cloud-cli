@@ -15,3 +15,10 @@ updates:
     schedule:
       interval: weekly
     labels: [dependencies]
+  # The Dockerfile's base image, pinned by digest. Like the others, its version
+  # updates wait out GitHub's default 3-day cooldown; security updates don't.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    labels: [dependencies]

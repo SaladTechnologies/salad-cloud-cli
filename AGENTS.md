@@ -59,32 +59,40 @@ with only fixes bumps PATCH, and leaving the beta is `v1.0.0` (v2 and later woul
 suffix is `-rc.N` (`v0.2.0-rc.1`), a release candidate published to try a release before calling it done. A tag goes
 only on a commit on `main` that passed `test.yml`, is annotated, and is permanent: the tag rulesets let nobody move or
 delete one, so a bad release is followed by the next version rather than a new tag of the same one, and `release.yml`
-refuses a tag of another form or one that is not on `main`. There are no maintenance branches: fixes land on `main` and
-ship in the next version.
+refuses a version of another form or a commit that is not on `main`. There are no maintenance branches: fixes land on
+`main` and ship in the next version.
 To release, merge a PR that turns `[Unreleased]` into `## [X.Y.Z] - <today>` (`release.yml` fails without that section
 and warns on another date or a non-empty Unreleased), run `just test-live` with `SALAD_CLI_TEST_REQUIRE_SSH=1`, using
 the Windows build from a machine whose SSH key is registered on the account (so ssh and cp really run), open one `sftp`
-session by hand, then run `just release vX.Y.Z`: it checks the version, that the tag is new, the CHANGELOG section and
-`test.yml` on `main`'s tip, then creates and pushes the tag. A release that fails in the workflow rather than in the
-tagged code is published again from the same tag: fix the workflow on `main`, then run
-`gh workflow run release.yml -f tag=vX.Y.Z`, which builds that tag's code with `main`'s workflow (re-running the failed
-run would reuse the workflow as it was at the tag). It refuses a tag that already has a GitHub release, so delete a
-half-made one first (the tag stays), which also keeps the installers on the release before. A fault in the tagged code
-is fixed forward in the next version.
-`.github/workflows/release.yml` checks the tag, and that the binary's `version` matches it, then runs goreleaser
-(`.goreleaser.yaml`): reproducible archives for linux and darwin amd64/arm64 and windows amd64 (each with README,
-LICENSE, CHANGELOG, `docs/` and `completions/`), `checksums.txt`, SBOMs, the `ghcr.io/saladtechnologies/saladcloud`
-image (also tagged `latest` unless it is a pre-release), and a GitHub release (a pre-release when the tag has a `-`),
-followed by a build provenance attestation for every archive. The Homebrew cask, Scoop manifest and winget pull request
-publish only for releases that are not pre-releases, and only when `HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN` and
-`WINGET_TOKEN` are set as repository secrets (and their `SaladTechnologies/homebrew-tap`, `scoop-bucket` and
-`winget-pkgs` fork exist). `install.sh` and `install.ps1` at the repo root install from those releases; they depend on
-the archive names and the `checksums.txt` format goreleaser produces, and `test.yml` runs both against archives
-goreleaser packages from the commit (and against the latest published release, once there is one). `uninstall.sh` and
-`uninstall.ps1` undo them (the binary, the Windows user `PATH` entry, and with `SALAD_CLI_PURGE=1` the config file), and
-`test.yml` runs them after each install. The CLI is in beta: `internal/version.Stage` drives the notice in `--help`,
-`version`, and the `agent init` block, and the release notes carry a beta notice for every 0.x release; drop `Stage`
-and release `v1.0.0` when the CLI leaves beta.
+session by hand, then start `.github/workflows/release.yml` on `main` (Actions → Release → Run workflow, or
+`gh workflow run release.yml --ref main -f version=vX.Y.Z`, with `-f commit=<sha>` when `main` has moved past the
+tested commit). Its `verify` job checks, with no secrets and a read-only token, the version's form, that the commit is
+on `main` with `test.yml` green and no GitHub release yet, that the binary's `version` matches, and that CHANGELOG.md
+has a dated section for it. `publish` then waits for someone in `engineering` or `salad-cloud-cli-maintainers` (whoever
+started it may) to approve the `release` environment, and creates the tag with the release GitHub App's token: the tag
+rulesets let only the App create one. Until the App and the `release` environment are set up, `just release vX.Y.Z` is
+the way in: it checks the version, that the tag is new, the CHANGELOG section and `test.yml` on `main`'s tip, then
+creates and pushes the tag, and the push runs the same workflow, which then has no tag to create. That path closes once
+the tag ruleset lets only the App create tags; then the push trigger and `scripts/release.sh` go. A tag the App pushes
+starts no second run. A release that fails in the workflow rather than in the tagged code is published again from the
+same tag: fix the workflow on `main`, then run it again with the same version, which finds the tag and builds that
+tag's code with `main`'s workflow (re-running the failed run would reuse the workflow as it was at the tag). It refuses
+a version that already has a GitHub release, so delete a half-made one first (the tag stays), which also keeps the
+installers on the release before. A fault in the tagged code is fixed forward in the next version.
+goreleaser (`.goreleaser.yaml`) builds reproducible archives for linux and darwin amd64/arm64 and windows amd64 (each
+with README, LICENSE, CHANGELOG, `docs/` and `completions/`), `checksums.txt`, SBOMs, the
+`ghcr.io/saladtechnologies/saladcloud` image (also tagged `latest` unless it is a pre-release), and a GitHub release (a
+pre-release when the tag has a `-`), followed by a build provenance attestation for every archive. The Homebrew cask,
+Scoop manifest and winget pull request publish only for releases that are not pre-releases, and only when
+`HOMEBREW_TAP_TOKEN`, `SCOOP_BUCKET_TOKEN` and `WINGET_TOKEN` are set as secrets of the repository or the `release`
+environment (and their `SaladTechnologies/homebrew-tap`, `scoop-bucket` and `winget-pkgs` fork exist). `install.sh`
+and `install.ps1` at the repo root install from those releases; they depend on the archive names and the
+`checksums.txt` format goreleaser produces, and `test.yml` runs both against archives goreleaser packages from the
+commit (and against the latest published release, once there is one). `uninstall.sh` and `uninstall.ps1` undo them (the
+binary, the Windows user `PATH` entry, and with `SALAD_CLI_PURGE=1` the config file), and `test.yml` runs them after
+each install. The CLI is in beta: `internal/version.Stage` drives the notice in `--help`, `version`, and the `agent
+init` block, and the release notes carry a beta notice for every 0.x release; drop `Stage` and release `v1.0.0` when
+the CLI leaves beta.
 
 ## Layout
 
@@ -406,7 +414,7 @@ Each of these was argued out; reopen one only with a reason the original did not
   (the third shape: the replicas on the new version and ready) cover every poll shape so far; each is a flag on the
   write it follows. A new shape gets a flag too, not a verb.
 - **The live suite is not run in CI.** It needs an API key and spends money, so `just test-live` is a manual step before
-  tagging.
+  each release.
 - **The CLI ships its own HTTP transport.** The SDK's transport validation rejects real responses (7-digit fractional
   timestamps, JSON nulls such as `current_state.description`); the SDK is used for types only. Regression tests are in
   `internal/api/rest_test.go`.
@@ -449,7 +457,7 @@ Each of these was argued out; reopen one only with a reason the original did not
    `say`/`hintLine` and prompts through `ask`/`tell` (a direct write to `app.errw()` must be table-mode only), and
    whether a person can be asked is `atTerminal()`, which counts `CI` and `SALAD_CLI_NO_PROMPT`; `term.IsTerminal` is
    for what a stream is (watch's stdout), so json mode and CI stay quiet.
-4. If it calls the API, add a case to `internal/livetest` and run it before tagging.
+4. If it calls the API, add a case to `internal/livetest` and run it before releasing.
 5. Update `docs/commands.md` (plus a section in `docs/guide.md` if the verb has semantics), the CHANGELOG, and
    `internal/agentdoc` only if the CLI's public contract for agents changed. CHANGELOG entries go under
    `## [Unreleased]` and name what changed for users, not how it is documented.
