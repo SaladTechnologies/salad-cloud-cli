@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -91,7 +92,33 @@ func newHTTPClient(timeout time.Duration, d debugger) *http.Client {
 	if t, ok := base.(*http.Transport); ok {
 		base = t.Clone()
 	}
-	return &http.Client{Timeout: timeout, Transport: debugTransport{base: base, debugger: d}}
+	return &http.Client{
+		Timeout:       timeout,
+		Transport:     debugTransport{base: base, debugger: d},
+		CheckRedirect: checkRedirect,
+	}
+}
+
+// maxRedirects is how many redirects one request follows: net/http's own limit, which a client with a CheckRedirect
+// has to keep for itself.
+const maxRedirects = 10
+
+// errTooManyRedirects ends a request that was redirected maxRedirects times.
+var errTooManyRedirects = errors.New("stopped after 10 redirects")
+
+// checkRedirect follows a redirect as net/http does, except that a request leaving the host and scheme the first
+// one went to carries no credential. net/http drops Authorization on the way to another domain but keeps every
+// other header, Salad-Api-Key included, and keeps both on the way from https to http.
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= maxRedirects {
+		return errTooManyRedirects
+	}
+	if first := via[0].URL; req.URL.Host != first.Host || req.URL.Scheme != first.Scheme {
+		for name := range redactedHeaders() {
+			req.Header.Del(name)
+		}
+	}
+	return nil
 }
 
 // debugTransport logs each request at the --debug level, then hands it to

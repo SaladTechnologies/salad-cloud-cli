@@ -23,6 +23,7 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -170,7 +171,41 @@ func sshTargetOf(inst *containergroups.ContainerGroupInstance, group string) (ss
 				group,
 			)
 	}
+	if !sshEndpointUsable(ptr.Deref(inst.Id), *inst.SshIp, *inst.SshPort) {
+		return sshTarget{}, clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
+			"the API's SSH endpoint for instance %s of container group %s is not an address and a port",
+			strconv.Quote(ptr.Deref(inst.Id)), group)
+	}
 	return sshTarget{InstanceID: ptr.Deref(inst.Id), IP: *inst.SshIp, Port: *inst.SshPort}, nil
+}
+
+// The shapes the CLI accepts before a value becomes part of an ssh or sftp command line or of the ssh_config text
+// --config prints: an address or host name, an instance ID, and a user name. None can start with "-" (ssh would read
+// it as an option) or hold a space or a line break (a second ssh_config directive).
+var (
+	sshHostRe       = regexp.MustCompile(`^[A-Za-z0-9:][A-Za-z0-9.:-]*$`)
+	sshInstanceIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+	sshUserRe       = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*$`)
+)
+
+// maxPort is the highest TCP port.
+const maxPort = 65535
+
+// sshEndpointUsable reports whether an instance's ID (which may be empty) and relay endpoint, as the API sent them,
+// have the shapes of an ID, an address and a port.
+func sshEndpointUsable(instanceID, ip string, port int64) bool {
+	return sshHostRe.MatchString(ip) && port >= 1 && port <= maxPort &&
+		(instanceID == "" || sshInstanceIDRe.MatchString(instanceID))
+}
+
+// checkSSHUser refuses a --user that is not a user name. ssh and sftp are given <user>@<address>, which they read as
+// an option when it starts with "-", and --config writes the name into ssh_config text.
+func checkSSHUser(user string) *clierr.Error {
+	if sshUserRe.MatchString(user) {
+		return nil
+	}
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage, "invalid --user %s", strconv.Quote(user)).
+		WithHint("give the container user's name: letters, digits, '.', '_' and '-', not starting with '.' or '-'")
 }
 
 // hostKeyOptions are the ssh -o options every relay connection carries:
@@ -264,7 +299,8 @@ func (app *App) renderSSHConfigIdentity(
 		if inst.State == nil || *inst.State != containergroups.THE_CONTAINER_GROUP_INSTANCE_STATE_RUNNING {
 			continue
 		}
-		if inst.SshIp == nil || inst.SshPort == nil {
+		if inst.SshIp == nil || inst.SshPort == nil ||
+			!sshEndpointUsable(ptr.Deref(inst.Id), *inst.SshIp, *inst.SshPort) {
 			continue
 		}
 		fprintf(&b, "\nHost %s\n    HostName %s\n    Port %d\n    User %s\n    StrictHostKeyChecking accept-new\n",
@@ -459,6 +495,9 @@ func (app *App) runSSH(cmd *cobra.Command, args []string, o *sshOptions) error {
 	// Git Bash turns a remote path such as /opt into C:/Program Files/Git/opt
 	// before the CLI sees it; the remote command would run on the wrong path.
 	if cerr := app.checkCommandRewrites(command); cerr != nil {
+		return cerr
+	}
+	if cerr := checkSSHUser(o.user); cerr != nil {
 		return cerr
 	}
 

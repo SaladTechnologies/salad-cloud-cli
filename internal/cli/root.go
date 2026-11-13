@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -274,9 +275,25 @@ func (app *App) noteTreeErr(err error) {
 	}
 }
 
-// apiOptions is how the run's API clients are built.
+// apiOptions is how the run's API clients are built. Every client is built from them, so this is where the run
+// warns, once, about base-URL variables that send its requests to another machine.
 func (app *App) apiOptions() api.Options {
+	app.warnRemoteBaseURLs()
 	return api.Options{Getenv: app.Env.Getenv, Debug: app.debugLevel, DebugOut: app.errw(), Backoff: nil, Now: nil}
+}
+
+// warnRemoteBaseURLs writes one warning: line, in every output mode, for each base-URL variable that names a
+// server on another machine: that server is sent the key. The variables are test knobs, so one set in a shell
+// that is not running a test was most likely put there by something else (a project's env file, a CI setting).
+func (app *App) warnRemoteBaseURLs() {
+	overrides := api.RemoteBaseURLs(app.Env.Getenv)
+	if len(overrides) == 0 || !app.baseURLWarned.CompareAndSwap(false, true) {
+		return
+	}
+	for _, o := range overrides {
+		fprintf(app.errw(), "warning: %s is set, so requests and the key they carry go to %s, not to SaladCloud\n",
+			o.Env, strconv.Quote(o.Host))
+	}
 }
 
 // canceledByCtrlC reports whether ce is a request Ctrl-C stopped, or any

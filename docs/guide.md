@@ -131,7 +131,7 @@ this CLI reads:
 | `SALAD_CLI_CONFIG_DIR` | the folder the config file is in |
 | `SALAD_CLI_NO_PROMPT` | set to anything: behave as if there is no terminal, so nothing prompts, picks for you or opens a browser |
 | `CI` | set to anything but empty, `false` or `0`: the same as `SALAD_CLI_NO_PROMPT` |
-| `SALAD_CLI_API_BASE_URL`, `SALAD_CLI_STORAGE_BASE_URL`, `SALAD_CLI_AI_GATEWAY_BASE_URL` | test knobs, not settings: point the CLI at a stand-in server |
+| `SALAD_CLI_API_BASE_URL`, `SALAD_CLI_STORAGE_BASE_URL`, `SALAD_CLI_AI_GATEWAY_BASE_URL` | test knobs, not settings: point the CLI at a stand-in server, which is sent your key. One on another machine draws a stderr `warning:` on every command and must be https (exit 2 otherwise); http is accepted for localhost |
 
 "At a terminal" means stdin is a terminal and neither `SALAD_CLI_NO_PROMPT`
 nor `CI` says otherwise. Some agent harnesses and CI systems run commands

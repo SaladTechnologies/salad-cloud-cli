@@ -243,6 +243,7 @@ each call site to its row; a generic rewrap (`"%v"`) is exempt.
 | `cp` with two remote sides | 2 | structure | message | `both sides are remote` |
 | `cp` with no remote side | 2 | structure | message | `no remote side` |
 | a `cp` path Git Bash rewrote as a path list | 2 | structure | message | `rewritten by Git Bash` |
+| a `cp` path with a line break or another control character | 2 | structure | message | `holds a control character` |
 | a `--queue-path` Git Bash rewrote into a Windows path | 2 | structure | message | `turns a leading / into a Windows path` |
 | a container command word, or an `ssh` command word after `--`, Git Bash rewrote into a Windows path | 2 | structure | message | `turns a leading / into a Windows path` |
 | `create`/`update` with `--` and nothing after it | 2 | missing value | message | `nothing after --` |
@@ -250,6 +251,8 @@ each call site to its row; a generic rewrap (`"%v"`) is exempt.
 | unknown config key | 2 | the CLI's own keys | message | `unknown config key` |
 | `config set <key> -` with empty stdin | 2 | missing value | message | `value on stdin` |
 | `ssh --config` with a `--` command | 2 | flag combination | message | `--config prints Host blocks` |
+| `--user` on `ssh`, `sftp` or `cp` that is not a user name | 2 | structure | message | `invalid --user` |
+| a base-URL variable (`SALAD_CLI_API_BASE_URL`, `SALAD_CLI_STORAGE_BASE_URL`, `SALAD_CLI_AI_GATEWAY_BASE_URL`) that is not an https URL, or an http one on localhost | 2 | the CLI's own setting | message | `must be an https URL` |
 | `logs --until` with `--follow` | 2 | flag combination | message | `--until cannot be combined with --follow` |
 | `logs --until` not after `--since` | 2 | structure | message | `must be after --since` |
 | `logs --poll-interval` below 5s | 2 | the CLI's own minimum | message | `--poll-interval must be` |
