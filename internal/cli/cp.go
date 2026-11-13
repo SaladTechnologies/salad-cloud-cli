@@ -136,7 +136,16 @@ func (app *App) buildSFTPArgs(t sshTarget, user, identity, batchPath string) []s
 	if batchPath != "" {
 		args = append(args, "-b", batchPath)
 	}
-	return append(args, user+"@"+t.IP)
+	return append(args, user+"@"+sftpHost(t.IP))
+}
+
+// sftpHost is an address as sftp takes it in <user>@<host>: an IPv6 address in brackets, since sftp reads a colon
+// as the start of a path.
+func sftpHost(host string) string {
+	if strings.Contains(host, ":") {
+		return "[" + host + "]"
+	}
+	return host
 }
 
 // cpOptions are the flags of 'container-groups cp'.
@@ -273,8 +282,7 @@ func (p *cpPlan) sftpBatch() string {
 
 // cpPlanOf parses cp's two arguments, of which exactly one must be remote.
 func (app *App) cpPlanOf(args []string) (cpPlan, *clierr.Error) {
-	// The paths go to sftp in a batch file, one command per line, where a line that starts with "!" runs a local
-	// command: a path with a line break in it must never get that far.
+	// The paths go to sftp in a batch file, one command per line, which cannot carry a control character.
 	for _, arg := range args {
 		if strings.ContainsFunc(arg, unicode.IsControl) {
 			return cpPlan{}, clierr.New(clierr.CodeUsage, clierr.KindUsage,

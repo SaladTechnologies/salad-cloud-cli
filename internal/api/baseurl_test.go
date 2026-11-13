@@ -13,8 +13,8 @@ import (
 	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 )
 
-// TestCheckBaseURL: a base-URL variable is accepted when it is https, or http on this machine, and refused as a
-// usage error otherwise, since the key would cross the network unencrypted.
+// TestCheckBaseURL: a base-URL variable is accepted when it is https, or http on this machine, and is a usage
+// error otherwise.
 func TestCheckBaseURL(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
@@ -25,10 +25,11 @@ func TestCheckBaseURL(t *testing.T) {
 		{"https://api.example.com/api/public", true},
 		{"http://127.0.0.1:8080", true},
 		{"http://localhost:8080/v1", true},
-		{"http://stand-in.localhost", true},
+		{"http://LOCALHOST:8080", true},
 		{"http://[::1]:8080", true},
 		{"http://api.example.com", false},
 		{"http://192.168.1.20:8080", false},
+		{"http://stand-in.localhost", false},
 		{"http://localhost.example.com", false},
 		{"api.example.com", false},
 		{"ftp://api.example.com", false},
@@ -46,28 +47,30 @@ func TestCheckBaseURL(t *testing.T) {
 	}
 }
 
-// TestClientsRefuseAnUnencryptedBaseURL: neither client is built for a server that would get its key over http.
-func TestClientsRefuseAnUnencryptedBaseURL(t *testing.T) {
+// TestClientsCheckTheirBaseURLs: each client checks the variables it reads, and the error's hint names the
+// variable to remove.
+func TestClientsCheckTheirBaseURLs(t *testing.T) {
 	t.Parallel()
 	res := &config.Resolved{APIKey: "test-key", GatewayAPIKey: "gateway-key"}
-	for _, name := range baseURLVars() {
-		t.Run(name, func(t *testing.T) {
+	for _, v := range baseURLVars() {
+		t.Run(v.env, func(t *testing.T) {
 			t.Parallel()
-			opts := testOptions(map[string]string{name: "http://api.example.com"})
+			opts := testOptions(map[string]string{v.env: "http://api.example.com"})
 			var cerr *clierr.Error
-			if name == envGatewayBaseURL {
+			if v.env == envGatewayBaseURL {
 				_, cerr = NewGateway(res, opts)
 			} else {
 				_, cerr = New(res, opts)
 			}
-			if cerr == nil || cerr.Code != clierr.CodeUsage || !strings.Contains(cerr.Message, name) {
-				t.Errorf("error = %v, want a usage error naming %s", cerr, name)
+			if cerr == nil || cerr.Code != clierr.CodeUsage || !strings.Contains(cerr.HintText(), "remove "+v.env) {
+				t.Errorf("error = %v, want a usage error whose hint names %s", cerr, v.env)
 			}
 		})
 	}
 }
 
-// TestRemoteBaseURLs: only a variable that names a server on another machine is reported, by its host.
+// TestRemoteBaseURLs: only a variable that names an https server on another machine is reported, by its host and
+// with what goes there.
 func TestRemoteBaseURLs(t *testing.T) {
 	t.Parallel()
 	// A URL can carry a user and password, which the host reported must leave out.
@@ -83,8 +86,12 @@ func TestRemoteBaseURLs(t *testing.T) {
 		envGatewayBaseURL: "https://gateway.example.com/v1",
 	}))
 	want := []BaseURLOverride{
-		{Env: envAPIBaseURL, Host: "api.example.com:8443"},
-		{Env: envGatewayBaseURL, Host: "gateway.example.com"},
+		{Env: envAPIBaseURL, Host: "api.example.com:8443", Carries: "requests and the API key"},
+		{
+			Env:     envGatewayBaseURL,
+			Host:    "gateway.example.com",
+			Carries: "AI Gateway requests and the AI Gateway key",
+		},
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("RemoteBaseURLs = %+v, want %+v", got, want)
@@ -113,19 +120,13 @@ func (l *keyLog) at(path string) (string, bool) {
 	return key, ok
 }
 
-// TestRedirectToAnotherHostCarriesNoKey: a redirect within the server keeps the key, and one to another server
-// arrives without it.
+// TestRedirectToAnotherHostCarriesNoKey: a redirect within the server keeps the key; one to another server arrives
+// without it, and so does a redirect from there back to the first.
 func TestRedirectToAnotherHostCarriesNoKey(t *testing.T) {
 	t.Parallel()
+	const quotas, moved, away, back = "/organizations/my-org/quotas", "/moved", "/away", "/back"
 	seen := &keyLog{mu: sync.Mutex{}, keys: make(map[string]string)}
-	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		seen.note(r)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{}`)) //nolint:errcheck // a test server's reply
-	}))
-	t.Cleanup(other.Close)
-	const quotas, moved, away = "/organizations/my-org/quotas", "/moved", "/away"
-	var first *httptest.Server
+	var first, other *httptest.Server
 	first = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen.note(r)
 		switch r.URL.Path {
@@ -133,16 +134,38 @@ func TestRedirectToAnotherHostCarriesNoKey(t *testing.T) {
 			http.Redirect(w, r, first.URL+moved, http.StatusTemporaryRedirect)
 		case moved:
 			http.Redirect(w, r, other.URL+away, http.StatusTemporaryRedirect)
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{}`)) //nolint:errcheck // a test server's reply
 		}
 	}))
 	t.Cleanup(first.Close)
+	other = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen.note(r)
+		http.Redirect(w, r, first.URL+back, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(other.Close)
 
 	if _, cerr := newRestTestClient(t, first.URL).GetQuotas(t.Context()); cerr != nil {
 		t.Fatalf("GetQuotas: %v", cerr)
 	}
-	for path, want := range map[string]string{quotas: "test-key", moved: "test-key", away: ""} {
+	for path, want := range map[string]string{quotas: "test-key", moved: "test-key", away: "", back: ""} {
 		if got, ok := seen.at(path); !ok || got != want {
 			t.Errorf("request to %s carried key %q (made: %v), want %q", path, got, ok, want)
 		}
+	}
+}
+
+// TestRedirectsStopAtTheLimit: a server that redirects forever is given up on after maxRedirects.
+func TestRedirectsStopAtTheLimit(t *testing.T) {
+	t.Parallel()
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, srv.URL+"/again", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(srv.Close)
+	_, cerr := newRestTestClient(t, srv.URL).GetQuotas(t.Context())
+	if cerr == nil || !strings.Contains(cerr.Message, errTooManyRedirects.Error()) {
+		t.Errorf("error = %v, want %q", cerr, errTooManyRedirects)
 	}
 }

@@ -3,7 +3,6 @@ package api
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -104,16 +103,17 @@ func newHTTPClient(timeout time.Duration, d debugger) *http.Client {
 const maxRedirects = 10
 
 // errTooManyRedirects ends a request that was redirected maxRedirects times.
-var errTooManyRedirects = errors.New("stopped after 10 redirects")
+var errTooManyRedirects = fmt.Errorf("stopped after %d redirects", maxRedirects)
 
-// checkRedirect follows a redirect as net/http does, except that a request leaving the host and scheme the first
-// one went to carries no credential. net/http drops Authorization on the way to another domain but keeps every
-// other header, Salad-Api-Key included, and keeps both on the way from https to http.
+// checkRedirect follows a redirect as net/http does, and sends a credential only while every request so far,
+// this one included, went to the host and scheme of the first.
 func checkRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= maxRedirects {
 		return errTooManyRedirects
 	}
-	if first := via[0].URL; req.URL.Host != first.Host || req.URL.Scheme != first.Scheme {
+	first := via[0].URL
+	elsewhere := func(r *http.Request) bool { return r.URL.Host != first.Host || r.URL.Scheme != first.Scheme }
+	if elsewhere(req) || slices.ContainsFunc(via, elsewhere) {
 		for name := range redactedHeaders() {
 			req.Header.Del(name)
 		}

@@ -27,6 +27,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/spf13/cobra"
@@ -134,7 +135,7 @@ func resolveSSHInstancePrefix(
 	default:
 		ids := make([]string, len(matches))
 		for i, m := range matches {
-			ids[i] = ptr.Deref(m.Id)
+			ids[i] = shownInstanceID(ptr.Deref(m.Id))
 		}
 		return nil, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
 			`instance ID prefix "%s" is ambiguous in container group %s`, prefix, group).
@@ -153,7 +154,7 @@ func pickInstance(
 ) (*containergroups.ContainerGroupInstance, *clierr.Error) {
 	inst, cerr := resolveSSHInstance(instances, group, prefix)
 	if cerr == nil && prefix == "" {
-		fprintf(w, "note: using instance %s\n", ptr.Deref(inst.Id))
+		fprintf(w, "note: using instance %s\n", shownInstanceID(ptr.Deref(inst.Id)))
 	}
 	return inst, cerr
 }
@@ -165,7 +166,7 @@ func sshTargetOf(inst *containergroups.ContainerGroupInstance, group string) (ss
 	if inst.SshIp == nil || inst.SshPort == nil || *inst.SshIp == "" {
 		return sshTarget{}, clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
 			"the platform has not assigned an SSH endpoint to instance %s of container group %s yet",
-			ptr.Deref(inst.Id), group).
+			shownInstanceID(ptr.Deref(inst.Id)), group).
 			WithHint(
 				"retry in a minute, or to check its SSH column, run saladcloud container-groups instances list -c %s",
 				group,
@@ -174,14 +175,13 @@ func sshTargetOf(inst *containergroups.ContainerGroupInstance, group string) (ss
 	if !sshEndpointUsable(ptr.Deref(inst.Id), *inst.SshIp, *inst.SshPort) {
 		return sshTarget{}, clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
 			"the API's SSH endpoint for instance %s of container group %s is not an address and a port",
-			strconv.Quote(ptr.Deref(inst.Id)), group)
+			shownInstanceID(ptr.Deref(inst.Id)), group)
 	}
 	return sshTarget{InstanceID: ptr.Deref(inst.Id), IP: *inst.SshIp, Port: *inst.SshPort}, nil
 }
 
-// The shapes the CLI accepts before a value becomes part of an ssh or sftp command line or of the ssh_config text
-// --config prints: an address or host name, an instance ID, and a user name. None can start with "-" (ssh would read
-// it as an option) or hold a space or a line break (a second ssh_config directive).
+// The shapes of the values that go into an ssh or sftp command line and into the ssh_config text --config prints:
+// an address or host name, an instance ID, and a user name, each one word.
 var (
 	sshHostRe       = regexp.MustCompile(`^[A-Za-z0-9:][A-Za-z0-9.:-]*$`)
 	sshInstanceIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
@@ -198,8 +198,16 @@ func sshEndpointUsable(instanceID, ip string, port int64) bool {
 		(instanceID == "" || sshInstanceIDRe.MatchString(instanceID))
 }
 
-// checkSSHUser refuses a --user that is not a user name. ssh and sftp are given <user>@<address>, which they read as
-// an option when it starts with "-", and --config writes the name into ssh_config text.
+// shownInstanceID is an instance ID as a message shows it: as it is when it has an ID's shape, quoted otherwise, so
+// a message stays on its one line.
+func shownInstanceID(id string) string {
+	if sshInstanceIDRe.MatchString(id) {
+		return id
+	}
+	return strconv.Quote(id)
+}
+
+// checkSSHUser is the check of --user on ssh, sftp and cp: it must be a user name.
 func checkSSHUser(user string) *clierr.Error {
 	if sshUserRe.MatchString(user) {
 		return nil
@@ -299,8 +307,12 @@ func (app *App) renderSSHConfigIdentity(
 		if inst.State == nil || *inst.State != containergroups.THE_CONTAINER_GROUP_INSTANCE_STATE_RUNNING {
 			continue
 		}
-		if inst.SshIp == nil || inst.SshPort == nil ||
-			!sshEndpointUsable(ptr.Deref(inst.Id), *inst.SshIp, *inst.SshPort) {
+		if inst.SshIp == nil || inst.SshPort == nil {
+			continue
+		}
+		if !sshEndpointUsable(ptr.Deref(inst.Id), *inst.SshIp, *inst.SshPort) {
+			fprintf(app.errw(), "warning: left out instance %s: its SSH endpoint is not an address and a port\n",
+				shownInstanceID(ptr.Deref(inst.Id)))
 			continue
 		}
 		fprintf(&b, "\nHost %s\n    HostName %s\n    Port %d\n    User %s\n    StrictHostKeyChecking accept-new\n",
@@ -312,7 +324,7 @@ func (app *App) renderSSHConfigIdentity(
 			fprintf(&b, "    HostKeyAlias %s\n", hostKeyAlias(id))
 		}
 		if identity != "" {
-			fprintf(&b, "    IdentityFile %s\n", identity)
+			fprintf(&b, "    IdentityFile %s\n", sshConfigQuote(identity))
 		}
 		n++
 	}
@@ -325,6 +337,17 @@ func sshConfigQuote(v string) string {
 		return `"` + v + `"`
 	}
 	return v
+}
+
+// checkConfigIdentity is the check of the identity file path --config writes: ssh_config has no way to write a path
+// that holds a control character or a double quote.
+func checkConfigIdentity(path string) *clierr.Error {
+	if !strings.ContainsFunc(path, unicode.IsControl) && !strings.Contains(path, `"`) {
+		return nil
+	}
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage,
+		"identity file path %s cannot be written to ssh_config", strconv.Quote(path)).
+		WithHint("it holds a control character or a double quote; pass another key with --identity")
 }
 
 // runChild runs a program with the CLI's stdio attached (interactive TTY
@@ -521,14 +544,22 @@ func (app *App) sshPrintConfig(
 	group string,
 	o *sshOptions,
 ) error {
+	identity := app.resolveIdentity(o.identity)
+	if cerr := checkConfigIdentity(identity); cerr != nil {
+		return cerr
+	}
 	if o.instance != "" {
 		inst, err := resolveSSHInstance(instances, group, o.instance)
 		if err != nil {
 			return err
 		}
+		// The one instance asked for: say why it has no block, as ssh would.
+		if _, err := sshTargetOf(inst, group); err != nil {
+			return err
+		}
 		instances = []containergroups.ContainerGroupInstance{*inst}
 	}
-	text, n := app.renderSSHConfigIdentity(group, instances, o.user, app.resolveIdentity(o.identity))
+	text, n := app.renderSSHConfigIdentity(group, instances, o.user, identity)
 	if n == 0 {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
 			"no running SSH-ready instances in container group %s", group).

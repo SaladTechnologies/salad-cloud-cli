@@ -46,6 +46,10 @@ may change, and every such change is listed here.
   name localhost (exit 2 otherwise), and one that names another machine prints a `warning:` on stderr.
 - `--user` on `container-groups ssh`, `sftp` and `cp` must be a user name, and `cp` refuses a path with a control
   character (both exit 2).
+- `container-groups ssh`, `sftp` and `cp` refuse an SSH endpoint from the API that is not an address and a port (exit
+  1), and `ssh --config` leaves such an instance out with a `warning:`.
+- `container-groups ssh --config` quotes an identity file path that holds a space, and refuses one with a control
+  character or a double quote (exit 2).
 
 ## [0.1.0] - 2026-11-09
 

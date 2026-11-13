@@ -51,7 +51,7 @@ func NewGateway(res *config.Resolved, opts Options) (*Gateway, *clierr.Error) {
 		return nil, clierr.New(clierr.CodeAuth, clierr.KindAuth, "no AI Gateway key set").
 			WithHint("run saladcloud ai-gateway login in a terminal, or set SALAD_AI_GATEWAY_API_KEY")
 	}
-	if err := checkBaseURL(envGatewayBaseURL, opts.Getenv(envGatewayBaseURL)); err != nil {
+	if err := CheckGatewayBaseURL(opts.Getenv); err != nil {
 		return nil, err
 	}
 	return buildGateway(res.GatewayAPIKey, opts), nil
