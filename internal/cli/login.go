@@ -210,6 +210,11 @@ func (app *App) newLogin(orgFlag, projectFlag string) (*login, *clierr.Error) {
 			}
 		}
 	}
+	// Before any prompt: where the key would go.
+	if cerr := api.CheckAPIBaseURLs(app.Env.Getenv); cerr != nil {
+		return nil, cerr
+	}
+	app.warnRemoteBaseURLs()
 	if cerr := app.configReady(loginCmdName); cerr != nil {
 		return nil, cerr
 	}

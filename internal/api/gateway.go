@@ -51,6 +51,9 @@ func NewGateway(res *config.Resolved, opts Options) (*Gateway, *clierr.Error) {
 		return nil, clierr.New(clierr.CodeAuth, clierr.KindAuth, "no AI Gateway key set").
 			WithHint("run saladcloud ai-gateway login in a terminal, or set SALAD_AI_GATEWAY_API_KEY")
 	}
+	if err := CheckGatewayBaseURL(opts.Getenv); err != nil {
+		return nil, err
+	}
 	return buildGateway(res.GatewayAPIKey, opts), nil
 }
 
@@ -73,7 +76,7 @@ func buildGateway(key string, opts Options) *Gateway {
 // gatewayBaseURL is the gateway base URL in effect: the default, or
 // SALAD_CLI_AI_GATEWAY_BASE_URL (for tests).
 func gatewayBaseURL(getenv func(string) string) string {
-	if override := getenv("SALAD_CLI_AI_GATEWAY_BASE_URL"); override != "" {
+	if override := getenv(envGatewayBaseURL); override != "" {
 		return strings.TrimRight(override, "/")
 	}
 	return DefaultGatewayURL

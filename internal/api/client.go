@@ -75,15 +75,19 @@ type Client struct {
 // (CodeAuth error otherwise) but does NOT require org/project — some
 // commands don't need them; use RequireOrg/RequireProject in those that do.
 // The base URL can be overridden via the SALAD_CLI_API_BASE_URL environment
-// variable (for testing).
+// variable (for testing), which must be https unless it names this machine
+// (see baseurl.go).
 func New(res *config.Resolved, opts Options) (*Client, *clierr.Error) {
 	if res.APIKey == "" {
 		return nil, clierr.New(clierr.CodeAuth, clierr.KindAuth, "no API key set").
 			WithHint("run saladcloud login in a terminal, or set SALAD_API_KEY")
 	}
 	baseURL := DefaultBaseURL
-	if override := opts.Getenv("SALAD_CLI_API_BASE_URL"); override != "" {
+	if override := opts.Getenv(envAPIBaseURL); override != "" {
 		baseURL = override
+	}
+	if err := CheckAPIBaseURLs(opts.Getenv); err != nil {
+		return nil, err
 	}
 	return &Client{
 		org:              res.Organization,

@@ -23,9 +23,11 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 	"github.com/spf13/cobra"
@@ -133,7 +135,7 @@ func resolveSSHInstancePrefix(
 	default:
 		ids := make([]string, len(matches))
 		for i, m := range matches {
-			ids[i] = ptr.Deref(m.Id)
+			ids[i] = shownInstanceID(ptr.Deref(m.Id))
 		}
 		return nil, clierr.New(clierr.CodeInvalidInput, clierr.KindInvalidInput,
 			`instance ID prefix "%s" is ambiguous in container group %s`, prefix, group).
@@ -152,7 +154,7 @@ func pickInstance(
 ) (*containergroups.ContainerGroupInstance, *clierr.Error) {
 	inst, cerr := resolveSSHInstance(instances, group, prefix)
 	if cerr == nil && prefix == "" {
-		fprintf(w, "note: using instance %s\n", ptr.Deref(inst.Id))
+		fprintf(w, "note: using instance %s\n", shownInstanceID(ptr.Deref(inst.Id)))
 	}
 	return inst, cerr
 }
@@ -164,13 +166,54 @@ func sshTargetOf(inst *containergroups.ContainerGroupInstance, group string) (ss
 	if inst.SshIp == nil || inst.SshPort == nil || *inst.SshIp == "" {
 		return sshTarget{}, clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
 			"the platform has not assigned an SSH endpoint to instance %s of container group %s yet",
-			ptr.Deref(inst.Id), group).
+			shownInstanceID(ptr.Deref(inst.Id)), group).
 			WithHint(
 				"retry in a minute, or to check its SSH column, run saladcloud container-groups instances list -c %s",
 				group,
 			)
 	}
+	if !sshEndpointUsable(ptr.Deref(inst.Id), *inst.SshIp, *inst.SshPort) {
+		return sshTarget{}, clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
+			"the API's SSH endpoint for instance %s of container group %s is not an address and a port",
+			shownInstanceID(ptr.Deref(inst.Id)), group)
+	}
 	return sshTarget{InstanceID: ptr.Deref(inst.Id), IP: *inst.SshIp, Port: *inst.SshPort}, nil
+}
+
+// The shapes of the values that go into an ssh or sftp command line and into the ssh_config text --config prints:
+// an address or host name, an instance ID, and a user name, each one word.
+var (
+	sshHostRe       = regexp.MustCompile(`^[A-Za-z0-9:][A-Za-z0-9.:-]*$`)
+	sshInstanceIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
+	sshUserRe       = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]*$`)
+)
+
+// maxPort is the highest TCP port.
+const maxPort = 65535
+
+// sshEndpointUsable reports whether an instance's ID (which may be empty) and relay endpoint, as the API sent them,
+// have the shapes of an ID, an address and a port.
+func sshEndpointUsable(instanceID, ip string, port int64) bool {
+	return sshHostRe.MatchString(ip) && port >= 1 && port <= maxPort &&
+		(instanceID == "" || sshInstanceIDRe.MatchString(instanceID))
+}
+
+// shownInstanceID is an instance ID as a message shows it: as it is when it has an ID's shape, quoted otherwise, so
+// a message stays on its one line.
+func shownInstanceID(id string) string {
+	if sshInstanceIDRe.MatchString(id) {
+		return id
+	}
+	return strconv.Quote(id)
+}
+
+// checkSSHUser is the check of --user on ssh, sftp and cp: it must be a user name.
+func checkSSHUser(user string) *clierr.Error {
+	if sshUserRe.MatchString(user) {
+		return nil
+	}
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage, "invalid --user %s", strconv.Quote(user)).
+		WithHint("give the container user's name: letters, digits, '.', '_' and '-', not starting with '.' or '-'")
 }
 
 // hostKeyOptions are the ssh -o options every relay connection carries:
@@ -267,6 +310,11 @@ func (app *App) renderSSHConfigIdentity(
 		if inst.SshIp == nil || inst.SshPort == nil {
 			continue
 		}
+		if !sshEndpointUsable(ptr.Deref(inst.Id), *inst.SshIp, *inst.SshPort) {
+			fprintf(app.errw(), "warning: left out instance %s: its SSH endpoint is not an address and a port\n",
+				shownInstanceID(ptr.Deref(inst.Id)))
+			continue
+		}
 		fprintf(&b, "\nHost %s\n    HostName %s\n    Port %d\n    User %s\n    StrictHostKeyChecking accept-new\n",
 			sshConfigAlias(group, ptr.Deref(inst.Id)), *inst.SshIp, *inst.SshPort, user)
 		if kh := app.KnownHostsPath(); kh != "" {
@@ -276,7 +324,7 @@ func (app *App) renderSSHConfigIdentity(
 			fprintf(&b, "    HostKeyAlias %s\n", hostKeyAlias(id))
 		}
 		if identity != "" {
-			fprintf(&b, "    IdentityFile %s\n", identity)
+			fprintf(&b, "    IdentityFile %s\n", sshConfigQuote(identity))
 		}
 		n++
 	}
@@ -289,6 +337,17 @@ func sshConfigQuote(v string) string {
 		return `"` + v + `"`
 	}
 	return v
+}
+
+// checkConfigIdentity is the check of the identity file path --config writes: ssh_config has no way to write a path
+// that holds a control character or a double quote.
+func checkConfigIdentity(path string) *clierr.Error {
+	if !strings.ContainsFunc(path, unicode.IsControl) && !strings.Contains(path, `"`) {
+		return nil
+	}
+	return clierr.New(clierr.CodeUsage, clierr.KindUsage,
+		"identity file path %s cannot be written to ssh_config", strconv.Quote(path)).
+		WithHint("it holds a control character or a double quote; pass another key with --identity")
 }
 
 // runChild runs a program with the CLI's stdio attached (interactive TTY
@@ -442,6 +501,18 @@ func sshOneArgBeforeDash(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// checkSSHFlags is the checks ssh makes of its flags before any request: --user and, with --config, the identity
+// file path it would write.
+func (app *App) checkSSHFlags(o *sshOptions) *clierr.Error {
+	if cerr := checkSSHUser(o.user); cerr != nil {
+		return cerr
+	}
+	if o.useConfig {
+		return checkConfigIdentity(app.resolveIdentity(o.identity))
+	}
+	return nil
+}
+
 // runSSH opens a session (or runs the -- command) on an instance of the group, or with --config prints Host blocks.
 func (app *App) runSSH(cmd *cobra.Command, args []string, o *sshOptions) error {
 	pos, command := args, []string(nil)
@@ -459,6 +530,9 @@ func (app *App) runSSH(cmd *cobra.Command, args []string, o *sshOptions) error {
 	// Git Bash turns a remote path such as /opt into C:/Program Files/Git/opt
 	// before the CLI sees it; the remote command would run on the wrong path.
 	if cerr := app.checkCommandRewrites(command); cerr != nil {
+		return cerr
+	}
+	if cerr := app.checkSSHFlags(o); cerr != nil {
 		return cerr
 	}
 
@@ -485,6 +559,10 @@ func (app *App) sshPrintConfig(
 	if o.instance != "" {
 		inst, err := resolveSSHInstance(instances, group, o.instance)
 		if err != nil {
+			return err
+		}
+		// The one instance asked for: say why it has no block, as ssh would.
+		if _, err := sshTargetOf(inst, group); err != nil {
 			return err
 		}
 		instances = []containergroups.ContainerGroupInstance{*inst}

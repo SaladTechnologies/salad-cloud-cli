@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -135,7 +136,16 @@ func (app *App) buildSFTPArgs(t sshTarget, user, identity, batchPath string) []s
 	if batchPath != "" {
 		args = append(args, "-b", batchPath)
 	}
-	return append(args, user+"@"+t.IP)
+	return append(args, user+"@"+sftpHost(t.IP))
+}
+
+// sftpHost is an address as sftp takes it in <user>@<host>: an IPv6 address in brackets, since sftp reads a colon
+// as the start of a path.
+func sftpHost(host string) string {
+	if strings.Contains(host, ":") {
+		return "[" + host + "]"
+	}
+	return host
 }
 
 // cpOptions are the flags of 'container-groups cp'.
@@ -202,6 +212,9 @@ set it up, run saladcloud ssh-key setup.`,
 
 // runCp copies between the local path and the remote side of args, one sftp batch command.
 func (app *App) runCp(cmd *cobra.Command, args []string, o *cpOptions) error {
+	if userErr := checkSSHUser(o.user); userErr != nil {
+		return userErr
+	}
 	plan, cerr := app.cpPlanOf(args)
 	if cerr != nil {
 		return cerr
@@ -269,6 +282,13 @@ func (p *cpPlan) sftpBatch() string {
 
 // cpPlanOf parses cp's two arguments, of which exactly one must be remote.
 func (app *App) cpPlanOf(args []string) (cpPlan, *clierr.Error) {
+	// The paths go to sftp in a batch file, one command per line, which cannot carry a control character.
+	for _, arg := range args {
+		if strings.ContainsFunc(arg, unicode.IsControl) {
+			return cpPlan{}, clierr.New(clierr.CodeUsage, clierr.KindUsage,
+				"path %s holds a control character, which an sftp batch file cannot carry", strconv.Quote(arg))
+		}
+	}
 	srcSpec, cerr := app.parseRemoteSpec(args[0])
 	if cerr != nil {
 		return cpPlan{}, cerr
