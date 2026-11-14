@@ -222,13 +222,10 @@ func TestConfigIdentity(t *testing.T) {
 	if want := "    IdentityFile \"" + spaced + "\"\n"; !strings.Contains(text, want) {
 		t.Errorf("--config output lacks %q:\n%s", want, text)
 	}
-	err := app.sshPrintConfig(
-		instances,
-		"my-app",
-		&sshOptions{user: "root", identity: "key\nmore", instance: "", useConfig: true},
-	)
-	if err == nil || !strings.Contains(err.Error(), "cannot be written to ssh_config") {
-		t.Errorf("--config with a two-line identity path = %v, want the identity error", err)
+	// With no key set, so before ssh builds a client.
+	got := app.runExecute(t, "container-groups", "ssh", "my-app", "--config", "-i", `ke"y`)
+	if got.code != clierr.CodeUsage || !strings.Contains(got.stderr, "cannot be written to ssh_config") {
+		t.Errorf("exit %d, stderr %q; want exit 2 and the identity error", got.code, got.stderr)
 	}
 }
 

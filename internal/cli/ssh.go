@@ -501,6 +501,18 @@ func sshOneArgBeforeDash(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// checkSSHFlags is the checks ssh makes of its flags before any request: --user and, with --config, the identity
+// file path it would write.
+func (app *App) checkSSHFlags(o *sshOptions) *clierr.Error {
+	if cerr := checkSSHUser(o.user); cerr != nil {
+		return cerr
+	}
+	if o.useConfig {
+		return checkConfigIdentity(app.resolveIdentity(o.identity))
+	}
+	return nil
+}
+
 // runSSH opens a session (or runs the -- command) on an instance of the group, or with --config prints Host blocks.
 func (app *App) runSSH(cmd *cobra.Command, args []string, o *sshOptions) error {
 	pos, command := args, []string(nil)
@@ -520,7 +532,7 @@ func (app *App) runSSH(cmd *cobra.Command, args []string, o *sshOptions) error {
 	if cerr := app.checkCommandRewrites(command); cerr != nil {
 		return cerr
 	}
-	if cerr := checkSSHUser(o.user); cerr != nil {
+	if cerr := app.checkSSHFlags(o); cerr != nil {
 		return cerr
 	}
 
@@ -544,10 +556,6 @@ func (app *App) sshPrintConfig(
 	group string,
 	o *sshOptions,
 ) error {
-	identity := app.resolveIdentity(o.identity)
-	if cerr := checkConfigIdentity(identity); cerr != nil {
-		return cerr
-	}
 	if o.instance != "" {
 		inst, err := resolveSSHInstance(instances, group, o.instance)
 		if err != nil {
@@ -559,7 +567,7 @@ func (app *App) sshPrintConfig(
 		}
 		instances = []containergroups.ContainerGroupInstance{*inst}
 	}
-	text, n := app.renderSSHConfigIdentity(group, instances, o.user, identity)
+	text, n := app.renderSSHConfigIdentity(group, instances, o.user, app.resolveIdentity(o.identity))
 	if n == 0 {
 		return clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
 			"no running SSH-ready instances in container group %s", group).
