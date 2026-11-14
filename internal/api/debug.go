@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -105,18 +106,26 @@ const maxRedirects = 10
 // errTooManyRedirects ends a request that was redirected maxRedirects times.
 var errTooManyRedirects = fmt.Errorf("stopped after %d redirects", maxRedirects)
 
-// checkRedirect follows a redirect as net/http does, and sends a credential only while every request so far,
-// this one included, went to the host and scheme of the first.
+// errBodyRedirected ends a request whose body a redirect would send to another host.
+var errBodyRedirected = errors.New("stopped at a redirect that would send the request body to another host")
+
+// checkRedirect follows a redirect as net/http does, and sends a credential or a request body only while every
+// request so far, this one included, went to the host and scheme of the first. net/http has already given req the
+// body it would send (after a 307 or 308), so its length says whether there is one.
 func checkRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= maxRedirects {
 		return errTooManyRedirects
 	}
 	first := via[0].URL
 	elsewhere := func(r *http.Request) bool { return r.URL.Host != first.Host || r.URL.Scheme != first.Scheme }
-	if elsewhere(req) || slices.ContainsFunc(via, elsewhere) {
-		for name := range redactedHeaders() {
-			req.Header.Del(name)
-		}
+	if !elsewhere(req) && !slices.ContainsFunc(via, elsewhere) {
+		return nil
+	}
+	if req.ContentLength != 0 {
+		return errBodyRedirected
+	}
+	for name := range redactedHeaders() {
+		req.Header.Del(name)
 	}
 	return nil
 }

@@ -41,7 +41,7 @@ may change, and every such change is listed here.
   ([GO-2026-6859](https://pkg.go.dev/vuln/GO-2026-6859)). The CLI runs no HTTP server, so it was not exposed, but
   vulnerability scanners flag binaries built with an earlier Go. A `go install` build uses your own Go, so keep it up to
   date to get the same fix.
-- A redirect to another host no longer carries the API key or the AI Gateway key.
+- A redirect to another host no longer carries the API key, the AI Gateway key or the request's body.
 - `SALAD_CLI_API_BASE_URL`, `SALAD_CLI_STORAGE_BASE_URL` and `SALAD_CLI_AI_GATEWAY_BASE_URL` must be https unless they
   name localhost (exit 2 otherwise), and one that names another machine prints a `warning:` on stderr.
 - `--user` on `container-groups ssh`, `sftp` and `cp` must be a user name, and `cp` refuses a path with a control

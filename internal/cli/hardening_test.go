@@ -300,8 +300,8 @@ func TestLoginsCheckBaseURLBeforeAsking(t *testing.T) {
 	}
 }
 
-// TestGatewayLoginKeepsAnErrorsOwnHint: a failed key check that carries its own fix keeps it; one without gets the
-// nothing-was-saved hint.
+// TestGatewayLoginKeepsAnErrorsOwnHint: a usage error that carries its own fix keeps it; any other failed key
+// check, hinted or not, gets the nothing-was-saved hint.
 func TestGatewayLoginKeepsAnErrorsOwnHint(t *testing.T) {
 	t.Parallel()
 	g := &gatewayLogin{
@@ -313,13 +313,19 @@ func TestGatewayLoginKeepsAnErrorsOwnHint(t *testing.T) {
 		credits:  true,
 		app:      newTestRun(t).App,
 	}
-	own := g.failed(clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "it failed").WithHint("do this instead"))
-	if own.HintText() != "do this instead" {
-		t.Errorf("hint = %q, want the error's own", own.HintText())
+	own := g.failed(
+		clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s", "a setting is wrong").WithHint("fix the setting"),
+	)
+	if own.HintText() != "fix the setting" {
+		t.Errorf("hint = %q, want the usage error's own", own.HintText())
 	}
-	bare := g.failed(clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "it failed"))
-	if !strings.Contains(bare.HintText(), "nothing was saved") {
-		t.Errorf("hint = %q, want the nothing-was-saved hint", bare.HintText())
+	for _, cerr := range []*clierr.Error{
+		clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "it failed"),
+		clierr.New(clierr.CodeNotFound, clierr.KindNotFound, "no such model").WithHint("list the models"),
+	} {
+		if got := g.failed(cerr).HintText(); !strings.Contains(got, "nothing was saved") {
+			t.Errorf("hint for %q = %q, want the nothing-was-saved hint", cerr.Message, got)
+		}
 	}
 }
 

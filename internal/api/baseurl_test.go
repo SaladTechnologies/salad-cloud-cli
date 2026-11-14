@@ -1,6 +1,9 @@
 package api
 
 import (
+	"encoding/json"
+	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -153,6 +156,52 @@ func TestRedirectToAnotherHostCarriesNoKey(t *testing.T) {
 		if got, ok := seen.at(path); !ok || got != want {
 			t.Errorf("request to %s carried key %q (made: %v), want %q", path, got, ok, want)
 		}
+	}
+}
+
+// TestRedirectToAnotherHostCarriesNoBody: a request with a body stops at a redirect to another server, which gets no
+// request at all; the same redirect within the server is followed with the body.
+func TestRedirectToAnotherHostCarriesNoBody(t *testing.T) {
+	t.Parallel()
+	const groups = "/organizations/my-org/projects/default/containers"
+	var mu sync.Mutex
+	bodies := make(map[string]string) // "other" or a path on the first server -> the body it received
+	note := func(where string, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("reading the body sent to %s: %v", where, err)
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		bodies[where] = string(body)
+	}
+	other := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { note("other", r) }))
+	t.Cleanup(other.Close)
+	var first *httptest.Server
+	first = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		note(r.URL.Path, r)
+		switch r.URL.Path {
+		case groups:
+			http.Redirect(w, r, first.URL+"/moved", http.StatusTemporaryRedirect)
+		case "/moved":
+			http.Redirect(w, r, other.URL+"/away", http.StatusPermanentRedirect)
+		}
+	}))
+	t.Cleanup(first.Close)
+
+	const sent = `{"name":"my-app"}`
+	_, cerr := newRestTestClient(t, first.URL).CreateGroupRaw(t.Context(), json.RawMessage(sent))
+	if cerr == nil || !strings.Contains(cerr.Message, errBodyRedirected.Error()) {
+		t.Errorf("error = %v, want %q", cerr, errBodyRedirected)
+	}
+	mu.Lock()
+	got := maps.Clone(bodies)
+	mu.Unlock()
+	if _, reached := got["other"]; reached {
+		t.Errorf("the other server received a request, with body %q", got["other"])
+	}
+	if got[groups] != sent || got["/moved"] != sent {
+		t.Errorf("bodies received by the first server = %v, want %q at both paths", got, sent)
 	}
 }
 

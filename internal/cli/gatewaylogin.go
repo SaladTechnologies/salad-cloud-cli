@@ -205,7 +205,7 @@ func (g *gatewayLogin) canceled() *clierr.Error {
 
 // failed is a check that failed for another reason than the key: Ctrl-C
 // reads as canceled, a 403 is the key's missing access, anything else says
-// nothing was saved, unless it carries its own fix.
+// nothing was saved, unless it is a usage error with its own fix.
 func (g *gatewayLogin) failed(cerr *clierr.Error) *clierr.Error {
 	switch {
 	case cerr.IsCancel():
@@ -219,8 +219,8 @@ func (g *gatewayLogin) failed(cerr *clierr.Error) *clierr.Error {
 			fromTag(g.keyFrom),
 		).WithStatus(http.StatusForbidden).
 			WithHint("check that you are still a member of its organization; if you are, contact support")
-	case cerr.Hint != nil:
-		return cerr
+	case cerr.Code == clierr.CodeUsage && cerr.Hint != nil:
+		return cerr // a setting login cannot fix by running again
 	case cerr.Code == clierr.CodeRateLimited:
 		return cerr.WithHint("nothing was saved; run saladcloud ai-gateway login again in a minute")
 	}

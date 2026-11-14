@@ -253,7 +253,7 @@ each call site to its row; a generic rewrap (`"%v"`) is exempt.
 | `ssh --config` with a `--` command | 2 | flag combination | message | `--config prints Host blocks` |
 | `--user` on `ssh`, `sftp` or `cp` that is not a user name | 2 | structure | message | `invalid --user` |
 | an identity file path with a control character or a double quote, on `ssh --config` | 2 | structure | message | `cannot be written to ssh_config` |
-| a base-URL variable (`SALAD_CLI_API_BASE_URL`, `SALAD_CLI_STORAGE_BASE_URL`, `SALAD_CLI_AI_GATEWAY_BASE_URL`) that is not an https URL, or an http one on localhost | 2 | the CLI's own setting | message | `must be an https URL` |
+| a base-URL variable (`SALAD_CLI_API_BASE_URL`, `SALAD_CLI_STORAGE_BASE_URL`, `SALAD_CLI_AI_GATEWAY_BASE_URL`) that is neither an https URL nor an http URL on localhost | 2 | the CLI's own setting | message | `must be an https URL` |
 | `logs --until` with `--follow` | 2 | flag combination | message | `--until cannot be combined with --follow` |
 | `logs --until` not after `--since` | 2 | structure | message | `must be after --since` |
 | `logs --poll-interval` below 5s | 2 | the CLI's own minimum | message | `--poll-interval must be` |
