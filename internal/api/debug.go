@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -91,7 +92,55 @@ func newHTTPClient(timeout time.Duration, d debugger) *http.Client {
 	if t, ok := base.(*http.Transport); ok {
 		base = t.Clone()
 	}
-	return &http.Client{Timeout: timeout, Transport: debugTransport{base: base, debugger: d}}
+	return &http.Client{
+		Timeout:       timeout,
+		Transport:     debugTransport{base: base, debugger: d},
+		CheckRedirect: checkRedirect,
+	}
+}
+
+// maxRedirects is how many redirects one request follows: net/http's own limit, which a client with a CheckRedirect
+// has to keep for itself.
+const maxRedirects = 10
+
+// errTooManyRedirects ends a request that was redirected maxRedirects times.
+var errTooManyRedirects = fmt.Errorf("stopped after %d redirects", maxRedirects)
+
+// errBodyRedirected ends a request whose body a redirect would send to another host.
+var errBodyRedirected = errors.New("stopped at a redirect that would send the request body to another host")
+
+// redirectHeaders are the headers a request keeps once a redirect has taken it to another host: what the client
+// accepts and what it is. Everything else is dropped, so a credential header never has to be listed here, and
+// neither does the Referer net/http adds, which holds the URL of the request before.
+func redirectHeaders() map[string]bool {
+	return map[string]bool{"Accept": true, "User-Agent": true}
+}
+
+// checkRedirect follows a redirect as net/http does, and sends a request body, or any header but redirectHeaders,
+// only while every request so far, this one included, went to the host and scheme of the first. net/http has
+// already given req the headers and the body it would send (a body after a 307 or 308), so its length says whether
+// there is one.
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= maxRedirects {
+		return errTooManyRedirects
+	}
+	first := via[0].URL
+	elsewhere := func(r *http.Request) bool { return r.URL.Host != first.Host || r.URL.Scheme != first.Scheme }
+	if !elsewhere(req) && !slices.ContainsFunc(via, elsewhere) {
+		return nil
+	}
+	if req.ContentLength != 0 {
+		return errBodyRedirected
+	}
+	// delete, not Header.Del: Del removes the key's canonical form, which leaves a header stored under another
+	// spelling in place.
+	keep := redirectHeaders()
+	for name := range req.Header {
+		if !keep[http.CanonicalHeaderKey(name)] {
+			delete(req.Header, name)
+		}
+	}
+	return nil
 }
 
 // debugTransport logs each request at the --debug level, then hands it to

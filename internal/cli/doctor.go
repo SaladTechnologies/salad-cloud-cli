@@ -240,6 +240,10 @@ func (d *doctorRun) reachableRow(ctx context.Context) checkResult {
 	if override != "" {
 		base, shown = override, override
 	}
+	// A base URL no client is built for fails here, where the row names the server, not on the rows that need one.
+	if cerr := api.CheckAPIBaseURLs(app.Env.Getenv); cerr != nil {
+		return row("api-reachable", checkFail, cerr.Message, cerr.HintText())
+	}
 	probeCtx, cancel := context.WithTimeout(ctx, doctorProbeTimeout)
 	defer cancel()
 	if _, err := api.Probe(probeCtx, base+"/organizations/doctor-probe/gpu-classes", app.apiOptions()); err != nil {

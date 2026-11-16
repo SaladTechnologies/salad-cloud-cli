@@ -128,6 +128,11 @@ func (app *App) newGatewayLogin(cmd *cobra.Command, keyFlag string) (*gatewayLog
 		return nil, clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s is empty", "--api-key").
 			WithHint("check that the variable you passed is set")
 	}
+	// Before any prompt: where the key would go.
+	if cerr := api.CheckGatewayBaseURL(app.Env.Getenv); cerr != nil {
+		return nil, cerr
+	}
+	app.warnRemoteBaseURLs()
 	if cerr := app.configReady("ai-gateway login"); cerr != nil {
 		return nil, cerr
 	}

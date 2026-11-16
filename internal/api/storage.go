@@ -28,7 +28,7 @@ const storageTimeout = 10 * time.Minute
 
 // storageBaseURL resolves the S4 base URL, honoring the test override.
 func storageBaseURL(getenv func(string) string) string {
-	if override := getenv("SALAD_CLI_STORAGE_BASE_URL"); override != "" {
+	if override := getenv(envStorageBaseURL); override != "" {
 		return override
 	}
 	return DefaultStorageBaseURL

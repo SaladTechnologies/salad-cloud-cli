@@ -69,6 +69,8 @@ type App struct {
 	flags         runFlags
 	debugLevel    api.DebugLevel
 	assumedWarned atomic.Bool
+	// baseURLWarned is set once the run has looked for base-URL variables to warn about.
+	baseURLWarned atomic.Bool
 	// treeErrs are the errors from building the command tree. Marking a flag
 	// required or hidden, or giving it completion, fails only for a flag the
 	// command does not define or completion given twice: a bug, which Run
@@ -107,6 +109,7 @@ func newApp(d *Deps) *App {
 		},
 		debugLevel:    api.DebugOff,
 		assumedWarned: atomic.Bool{},
+		baseURLWarned: atomic.Bool{},
 		treeErrs:      nil,
 	}
 }

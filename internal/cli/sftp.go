@@ -37,6 +37,9 @@ ssh-key setup.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			group := args[0]
+			if cerr := checkSSHUser(user); cerr != nil {
+				return cerr
+			}
 			client, _, cerr := app.NewClient(cmd)
 			if cerr != nil {
 				return cerr

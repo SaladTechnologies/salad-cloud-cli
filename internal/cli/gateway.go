@@ -205,7 +205,7 @@ every key, so no AI Gateway key is needed; with one set, it is sent.`,
 func (app *App) runGatewayModelsList(cmd *cobra.Command) error {
 	g, _, cerr := app.newGateway()
 	if cerr != nil && cerr.Code == clierr.CodeAuth {
-		g, cerr = api.NewPublicGateway(app.apiOptions()), nil
+		g, cerr = api.NewPublicGateway(app.apiOptions())
 	}
 	if cerr != nil {
 		return cerr
