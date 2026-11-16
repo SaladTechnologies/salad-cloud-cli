@@ -6,6 +6,8 @@ may change, and every such change is listed here.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-16
+
 ### Added
 
 - `container-groups update --wait-ready` waits, after the change settles, until every replica runs the group's new
