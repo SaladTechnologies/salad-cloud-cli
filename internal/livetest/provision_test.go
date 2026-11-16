@@ -336,7 +336,10 @@ func containerCommandClear(t *testing.T, g string) {
 }
 
 // TestCreateFrom copies a stopped group whose settings are all non-default,
-// so a field that fails to come across shows up as the default.
+// so a field that fails to come across shows up as the default. Priority is
+// left out: the source is CPU-only, and the platform keeps a CPU-only group at
+// batch priority (it accepts high on create, then resets it on the first
+// update).
 func TestCreateFrom(t *testing.T) { //nolint:paralleltest // writes to the live account, one at a time
 	time.Sleep(createSpacing)
 	src, cp := name("from-src"), name("from-copy")
@@ -352,7 +355,7 @@ func TestCreateFrom(t *testing.T) { //nolint:paralleltest // writes to the live 
 	)
 	created := run(t, "container-groups", "create", src, "--image", "docker.io/library/busybox:1.36", "-f", probe,
 		"--restart-policy", "never", "--port", "8080", "--no-auth", "-e", "MODE=prod",
-		"--priority", "high", "--replicas", "2", "--no-autostart")
+		"--replicas", "2", "--no-autostart")
 	if created.Code != 0 {
 		t.Fatalf("create source exit %d: %s", created.Code, created.Stderr)
 	}
@@ -386,9 +389,11 @@ func TestCreateFrom(t *testing.T) { //nolint:paralleltest // writes to the live 
 }
 
 // writableProbeRoundTrip feeds get --writable of g, whose HTTP probe has an empty headers list, back through update -f:
-// the document must carry the empty list, which the API requires.
+// the document must carry the empty list, which the API requires. It settles g first: a group created moments before
+// can still be pending, and update rejects a patch then.
 func writableProbeRoundTrip(t *testing.T, g string) {
 	t.Helper()
+	settle(t, g)
 	wr := run(t, "container-groups", "get", g, "--writable")
 	if wr.Code != 0 {
 		t.Fatalf("get --writable exit %d: %s", wr.Code, wr.Stderr)
@@ -421,7 +426,6 @@ type createFromDoc struct {
 	Name           string                    `json:"name"`
 	DisplayName    string                    `json:"display_name"`
 	RestartPolicy  string                    `json:"restart_policy"`
-	Priority       string                    `json:"priority"`
 	Replicas       int                       `json:"replicas"`
 	Networking     createFromNetworking      `json:"networking"`
 	Container      createFromContainer       `json:"container"`
@@ -449,17 +453,12 @@ type createFromHTTPProbe struct {
 	Path string `json:"path"`
 }
 
-// checkCreateFromSettings checks the copied restart policy, priority, replicas, networking and environment, with the
+// checkCreateFromSettings checks the copied restart policy, replicas, networking and environment, with the
 // copy's own EXTRA variable added.
 func checkCreateFromSettings(t *testing.T, got *createFromDoc) {
 	t.Helper()
-	if got.RestartPolicy != "never" || got.Priority != "high" || got.Replicas != 2 {
-		t.Errorf(
-			"restart_policy/priority/replicas = %q/%q/%d, want never/high/2",
-			got.RestartPolicy,
-			got.Priority,
-			got.Replicas,
-		)
+	if got.RestartPolicy != "never" || got.Replicas != 2 {
+		t.Errorf("restart_policy/replicas = %q/%d, want never/2", got.RestartPolicy, got.Replicas)
 	}
 	if got.Networking.Port != 8080 || got.Networking.Auth {
 		t.Errorf("networking = %+v, want port 8080 with auth off", got.Networking)
