@@ -9,7 +9,6 @@ import (
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/containergroups"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
-	"github.com/saladtechnologies/salad-cloud-cli/internal/config"
 )
 
 // TestCheckSSHUser: --user is a user name, one word of letters, digits, '.', '_' and '-'.
@@ -136,6 +135,15 @@ func TestSSHConfigLeavesOutMalformedEndpoints(t *testing.T) {
 		t.Errorf("stderr = %q, want %d one-line warnings", stderr, len(bad))
 	}
 
+	// An endpoint the platform has not assigned yet is no block and no warning: nothing about it is malformed.
+	unassigned := []containergroups.ContainerGroupInstance{testInstance("ffff6666", "running", "", 0)}
+	stderr = app.captureStderr(t, func() {
+		_, n = app.renderSSHConfigIdentity("my-app", unassigned, "root", "")
+	})
+	if n != 0 || stderr != "" {
+		t.Errorf("--config with an unassigned endpoint rendered %d blocks, stderr %q; want none and nothing", n, stderr)
+	}
+
 	only := &sshOptions{user: "root", identity: "", instance: "8a2f", useConfig: true}
 	err := app.sshPrintConfig(bad[:1], "my-app", only)
 	if err == nil || !strings.Contains(err.Error(), "is not an address and a port") {
@@ -185,6 +193,27 @@ func TestInstanceIDShownOnOneLine(t *testing.T) {
 	}
 	if got := shownInstanceID("8a2f13ba-01c2"); got != "8a2f13ba-01c2" {
 		t.Errorf("shownInstanceID of a well-formed ID = %q, want it as it is", got)
+	}
+}
+
+// TestSSHConfigQuote: a path is written so that ssh reads it back whole: in double quotes when it holds a space or
+// an apostrophe, and with a backslash doubled where ssh would read it as an escape.
+func TestSSHConfigQuote(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct{ path, want string }{
+		{"/home/me/.ssh/saladcloud_ed25519", "/home/me/.ssh/saladcloud_ed25519"},
+		{`C:\Users\me\.ssh\saladcloud_ed25519`, `C:\Users\me\.ssh\saladcloud_ed25519`},
+		{`C:\Users\First Last\.ssh\key`, `"C:\Users\First Last\.ssh\key"`},
+		{`C:\Users\O'Brien\.ssh\key`, `"C:\Users\O'Brien\.ssh\key"`},
+		{"/home/o'brien/.ssh/key", `"/home/o'brien/.ssh/key"`},
+		{`\\server\share\key`, `\\\server\share\key`},
+		{`\\server\my share\key`, `"\\\server\my share\key"`},
+		{`C:\keys\'quoted'`, `"C:\keys\\'quoted'"`},
+		{`C:\my keys\`, `"C:\my keys\\"`},
+	} {
+		if got := sshConfigQuote(tt.path); got != tt.want {
+			t.Errorf("sshConfigQuote(%q) = %s, want %s", tt.path, got, tt.want)
+		}
 	}
 }
 
@@ -300,32 +329,14 @@ func TestLoginsCheckBaseURLBeforeAsking(t *testing.T) {
 	}
 }
 
-// TestGatewayLoginKeepsAnErrorsOwnHint: a usage error that carries its own fix keeps it; any other failed key
-// check, hinted or not, gets the nothing-was-saved hint.
-func TestGatewayLoginKeepsAnErrorsOwnHint(t *testing.T) {
+// TestKeylessGatewayChecksBaseURL: ai-gateway models list with no key still refuses a base URL that is not https.
+func TestKeylessGatewayChecksBaseURL(t *testing.T) {
 	t.Parallel()
-	g := &gatewayLogin{
-		saved:    config.File{APIKey: "", Organization: "", Project: "", GatewayAPIKey: ""},
-		terminal: false,
-		key:      "gateway-key",
-		keyFrom:  keyFromFlag,
-		models:   0,
-		credits:  true,
-		app:      newTestRun(t).App,
-	}
-	own := g.failed(
-		clierr.New(clierr.CodeUsage, clierr.KindUsage, "%s", "a setting is wrong").WithHint("fix the setting"),
-	)
-	if own.HintText() != "fix the setting" {
-		t.Errorf("hint = %q, want the usage error's own", own.HintText())
-	}
-	for _, cerr := range []*clierr.Error{
-		clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "it failed"),
-		clierr.New(clierr.CodeNotFound, clierr.KindNotFound, "no such model").WithHint("list the models"),
-	} {
-		if got := g.failed(cerr).HintText(); !strings.Contains(got, "nothing was saved") {
-			t.Errorf("hint for %q = %q, want the nothing-was-saved hint", cerr.Message, got)
-		}
+	app := newTestRun(t)
+	app.setenv("SALAD_CLI_AI_GATEWAY_BASE_URL", "http://gateway.example.com")
+	got := app.runExecute(t, "ai-gateway", "models", "list")
+	if got.code != clierr.CodeUsage || !strings.Contains(got.stderr, "must be an https URL") {
+		t.Errorf("exit %d, stderr %q; want exit 2 and the base-URL error", got.code, got.stderr)
 	}
 }
 

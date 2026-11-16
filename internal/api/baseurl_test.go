@@ -61,6 +61,9 @@ func TestClientsCheckTheirBaseURLs(t *testing.T) {
 			opts := testOptions(map[string]string{v.env: "http://api.example.com"})
 			var cerr *clierr.Error
 			if v.env == envGatewayBaseURL {
+				if _, public := NewPublicGateway(opts); public == nil || public.Code != clierr.CodeUsage {
+					t.Errorf("NewPublicGateway error = %v, want a usage error", public)
+				}
 				_, cerr = NewGateway(res, opts)
 			} else {
 				_, cerr = New(res, opts)
@@ -156,6 +159,80 @@ func TestRedirectToAnotherHostCarriesNoKey(t *testing.T) {
 		if got, ok := seen.at(path); !ok || got != want {
 			t.Errorf("request to %s carried key %q (made: %v), want %q", path, got, ok, want)
 		}
+	}
+}
+
+// TestRedirectToAnotherHostCarriesOnlyPlainHeaders: each client's request, redirected to another server, arrives
+// there with neither key and without the Referer net/http adds (the URL of the request before), and still says what
+// the client is.
+func TestRedirectToAnotherHostCarriesOnlyPlainHeaders(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name string
+		call func(t *testing.T, baseURL string) *clierr.Error
+	}{
+		{"api", func(t *testing.T, baseURL string) *clierr.Error {
+			t.Helper()
+			_, cerr := newRestTestClient(t, baseURL).GetQuotas(t.Context())
+			return cerr
+		}},
+		{"storage", func(t *testing.T, baseURL string) *clierr.Error {
+			t.Helper()
+			return newRestTestClient(t, baseURL).DeleteFile(t.Context(), "a.mp3")
+		}},
+		{"gateway", func(t *testing.T, baseURL string) *clierr.Error {
+			t.Helper()
+			_, cerr := newTestGateway(t, baseURL).ListModels(t.Context())
+			return cerr
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			checkRedirectedHeaders(t, tt.call)
+		})
+	}
+}
+
+// checkRedirectedHeaders runs call against a server that redirects every request to another server, and checks the
+// headers each one received.
+func checkRedirectedHeaders(t *testing.T, call func(t *testing.T, baseURL string) *clierr.Error) {
+	t.Helper()
+	var mu sync.Mutex
+	var sent, arrived http.Header // what the first server and the other one received
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		arrived = r.Header.Clone()
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{}`)) //nolint:errcheck // a test server's reply
+	}))
+	t.Cleanup(other.Close)
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		sent = r.Header.Clone()
+		mu.Unlock()
+		http.Redirect(w, r, other.URL+"/away", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(first.Close)
+
+	if cerr := call(t, first.URL); cerr != nil {
+		t.Fatalf("the redirected request failed: %v", cerr)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if sent.Get("Salad-Api-Key") == "" && sent.Get("Authorization") == "" {
+		t.Errorf("the first server received no key: %v", sent)
+	}
+	if arrived == nil {
+		t.Fatal("the other server received no request")
+	}
+	for _, name := range []string{"Salad-Api-Key", "Authorization", "Referer"} {
+		if got := arrived.Get(name); got != "" {
+			t.Errorf("the other server received %s: %q", name, got)
+		}
+	}
+	if arrived.Get("User-Agent") != userAgent() {
+		t.Errorf("the other server received User-Agent %q, want %q", arrived.Get("User-Agent"), userAgent())
 	}
 }
 

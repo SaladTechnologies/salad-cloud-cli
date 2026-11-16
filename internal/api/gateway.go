@@ -58,8 +58,14 @@ func NewGateway(res *config.Resolved, opts Options) (*Gateway, *clierr.Error) {
 }
 
 // NewPublicGateway builds a Gateway with no key, for the one public route:
-// the model list answers anyone the same.
-func NewPublicGateway(opts Options) *Gateway { return buildGateway("", opts) }
+// the model list answers anyone the same. The base URL is checked as
+// NewGateway checks it.
+func NewPublicGateway(opts Options) (*Gateway, *clierr.Error) {
+	if err := CheckGatewayBaseURL(opts.Getenv); err != nil {
+		return nil, err
+	}
+	return buildGateway("", opts), nil
+}
 
 // buildGateway is a Gateway for key ("" for none) built with opts.
 func buildGateway(key string, opts Options) *Gateway {

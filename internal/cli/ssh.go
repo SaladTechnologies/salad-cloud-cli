@@ -304,10 +304,7 @@ func (app *App) renderSSHConfigIdentity(
 	n := 0
 	for i := range instances {
 		inst := &instances[i]
-		if inst.State == nil || *inst.State != containergroups.THE_CONTAINER_GROUP_INSTANCE_STATE_RUNNING {
-			continue
-		}
-		if inst.SshIp == nil || inst.SshPort == nil {
+		if !runningWithEndpoint(inst) {
 			continue
 		}
 		if !sshEndpointUsable(ptr.Deref(inst.Id), *inst.SshIp, *inst.SshPort) {
@@ -331,12 +328,30 @@ func (app *App) renderSSHConfigIdentity(
 	return b.String(), n
 }
 
-// sshConfigQuote quotes an ssh_config value that contains spaces.
+// runningWithEndpoint reports whether inst is running and the platform has assigned it an SSH endpoint: an empty
+// address is one not assigned yet, as sshTargetOf reads it.
+func runningWithEndpoint(inst *containergroups.ContainerGroupInstance) bool {
+	return inst.State != nil && *inst.State == containergroups.THE_CONTAINER_GROUP_INSTANCE_STATE_RUNNING &&
+		inst.SshIp != nil && inst.SshPort != nil && *inst.SshIp != ""
+}
+
+// sshConfigQuote writes a path as one ssh_config value. ssh reads a space as the end of a value and an apostrophe
+// as the start of a quoted one, so a path that holds either goes in double quotes, where both are plain. In or out
+// of quotes ssh reads a backslash before a backslash or a quote as an escape, so a backslash there, or one that
+// would end up before the closing quote, is doubled: a UNC path keeps both of its leading backslashes. A path with
+// a double quote cannot be written (checkConfigIdentity).
 func sshConfigQuote(v string) string {
-	if strings.ContainsAny(v, " \t") {
-		return `"` + v + `"`
+	var b strings.Builder
+	for i := range len(v) {
+		b.WriteByte(v[i])
+		if v[i] == '\\' && (i+1 == len(v) || v[i+1] == '\\' || v[i+1] == '\'') {
+			b.WriteByte('\\')
+		}
 	}
-	return v
+	if strings.ContainsAny(v, " \t'") {
+		return `"` + b.String() + `"`
+	}
+	return b.String()
 }
 
 // checkConfigIdentity is the check of the identity file path --config writes: ssh_config has no way to write a path

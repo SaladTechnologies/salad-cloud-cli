@@ -109,9 +109,17 @@ var errTooManyRedirects = fmt.Errorf("stopped after %d redirects", maxRedirects)
 // errBodyRedirected ends a request whose body a redirect would send to another host.
 var errBodyRedirected = errors.New("stopped at a redirect that would send the request body to another host")
 
-// checkRedirect follows a redirect as net/http does, and sends a credential or a request body only while every
-// request so far, this one included, went to the host and scheme of the first. net/http has already given req the
-// body it would send (after a 307 or 308), so its length says whether there is one.
+// redirectHeaders are the headers a request keeps once a redirect has taken it to another host: what the client
+// accepts and what it is. Everything else is dropped, so a credential header never has to be listed here, and
+// neither does the Referer net/http adds, which holds the URL of the request before.
+func redirectHeaders() map[string]bool {
+	return map[string]bool{"Accept": true, "User-Agent": true}
+}
+
+// checkRedirect follows a redirect as net/http does, and sends a request body, or any header but redirectHeaders,
+// only while every request so far, this one included, went to the host and scheme of the first. net/http has
+// already given req the headers and the body it would send (a body after a 307 or 308), so its length says whether
+// there is one.
 func checkRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= maxRedirects {
 		return errTooManyRedirects
@@ -124,8 +132,11 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 	if req.ContentLength != 0 {
 		return errBodyRedirected
 	}
-	for name := range redactedHeaders() {
-		req.Header.Del(name)
+	keep := redirectHeaders()
+	for name := range req.Header {
+		if !keep[http.CanonicalHeaderKey(name)] {
+			req.Header.Del(name)
+		}
 	}
 	return nil
 }
