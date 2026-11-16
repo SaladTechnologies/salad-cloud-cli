@@ -132,10 +132,12 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 	if req.ContentLength != 0 {
 		return errBodyRedirected
 	}
+	// delete, not Header.Del: Del removes the key's canonical form, which leaves a header stored under another
+	// spelling in place.
 	keep := redirectHeaders()
 	for name := range req.Header {
 		if !keep[http.CanonicalHeaderKey(name)] {
-			req.Header.Del(name)
+			delete(req.Header, name)
 		}
 	}
 	return nil

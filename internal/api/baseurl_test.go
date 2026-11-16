@@ -282,6 +282,30 @@ func TestRedirectToAnotherHostCarriesNoBody(t *testing.T) {
 	}
 }
 
+// TestRedirectDropsHeadersWhateverTheirSpelling: a header stored under a spelling net/http would not give it, as a
+// direct write to the header map leaves it, is dropped at a redirect to another host like any other, and one of
+// redirectHeaders is kept under whatever spelling it has.
+func TestRedirectDropsHeadersWhateverTheirSpelling(t *testing.T) {
+	t.Parallel()
+	first, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://api.example.com/a", http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://elsewhere.example.com/b", http.NoBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next.Header["salad-api-key"] = []string{"test-key"}
+	next.Header["authorization"] = []string{"Bearer test-key"}
+	next.Header["user-agent"] = []string{userAgent()}
+	if err := checkRedirect(next, []*http.Request{first}); err != nil {
+		t.Fatalf("checkRedirect: %v", err)
+	}
+	if want := (http.Header{"user-agent": {userAgent()}}); !maps.EqualFunc(next.Header, want, slices.Equal) {
+		t.Errorf("headers after the redirect = %v, want %v", next.Header, want)
+	}
+}
+
 // TestRedirectsStopAtTheLimit: a server that redirects forever is given up on after maxRedirects.
 func TestRedirectsStopAtTheLimit(t *testing.T) {
 	t.Parallel()
