@@ -638,8 +638,12 @@ func (app *App) transcribeCreateJob(
 ) (*inferenceendpoints.InferenceEndpointJob, *clierr.Error) {
 	job, cerr := client.CreateInferenceJob(ctx, endpoint, inferenceendpoints.InferenceEndpointJobPrototype{Input: in})
 	if cerr != nil {
-		if remote != "" && (o.keepUpload || client.DeleteFile(ctx, remote) != nil) {
+		// A create that may have been applied keeps the upload: the job it made, if any, reads it.
+		if remote != "" && (o.keepUpload || cerr.MayHaveApplied() || client.DeleteFile(ctx, remote) != nil) {
 			app.keptUploadNote(remote)
+		}
+		if cerr.MayHaveApplied() {
+			return nil, cerr.WithHint("%s", jobUnsureHint("saladcloud inference jobs list --endpoint "+endpoint))
 		}
 		return nil, endpointNotFound(cerr, endpoint, client.Org())
 	}

@@ -114,29 +114,37 @@ func (app *App) waitForReady(
 		readySince: time.Time{}, last: "no reading yet", lastProgress: "", lastPrinted: time.Time{},
 	}
 	for {
-		g, done, cerr := app.readyPoll(ctx, d, &s)
+		pollCtx, cancel := pollContext(ctx, d.now(), deadline)
+		g, done, cerr := app.readyPoll(ctx, pollCtx, d, &s)
+		timedOut := pollTimedOut(ctx, pollCtx, cerr)
+		cancel()
+		if timedOut {
+			return nil, readyTimedOut(&s)
+		}
 		if done || cerr != nil {
 			return g, cerr
 		}
-		if !d.now().Before(deadline) {
+		wait, ok := nextSleep(poll, d.now(), deadline)
+		if !ok {
 			return nil, readyTimedOut(&s)
 		}
-		if err := d.sleep(ctx, poll); err != nil {
+		if err := d.sleep(ctx, wait); err != nil {
 			return nil, waitInterrupted()
 		}
 	}
 }
 
-// readyPoll is one poll of waitForReady: it reads the group and its instances and reports whether the wait is done,
-// with the group document when it is.
+// readyPoll is one poll of waitForReady: it reads the group and its instances under pollCtx, the poll's own context,
+// and reports whether the wait is done, with the group document when it is. ctx is the wait's, for telling Ctrl-C
+// from the poll's own deadline; a read the deadline cut short ends the wait without a warning.
 func (app *App) readyPoll(
-	ctx context.Context,
+	ctx, pollCtx context.Context,
 	d readyDeps,
 	s *readyWait,
 ) (*shared.ContainerGroup, bool, *clierr.Error) {
-	g, cerr := d.group(ctx)
+	g, cerr := d.group(pollCtx)
 	if cerr != nil {
-		return nil, false, readyPollFailed(ctx, s.w, cerr)
+		return nil, false, readyPollFailed(ctx, pollCtx, s.w, cerr)
 	}
 	switch status := shared.ContainerGroupStatus(groupStatus(g)); status {
 	case shared.CONTAINER_GROUP_STATUS_STOPPED, shared.CONTAINER_GROUP_STATUS_FAILED,
@@ -151,9 +159,9 @@ func (app *App) readyPoll(
 	if want <= 0 {
 		return g, true, nil // nothing to wait for
 	}
-	instances, cerr := d.instances(ctx)
+	instances, cerr := d.instances(pollCtx)
 	if cerr != nil {
-		return nil, false, readyPollFailed(ctx, s.w, cerr)
+		return nil, false, readyPollFailed(ctx, pollCtx, s.w, cerr)
 	}
 	ready := readyOnVersion(instances, s.version)
 	s.last = fmt.Sprintf("%d of %d replicas ready on version %d%s", ready, want, s.version,
@@ -176,11 +184,15 @@ func (app *App) readyPoll(
 	return nil, false, nil
 }
 
-// readyPollFailed is the ready wait's answer to a failed read: Ctrl-C ends it as interrupted, and otherwise it is
-// waitPollFailed's (an error that waiting cannot fix ends the wait; a transient one warns and keeps polling).
-func readyPollFailed(ctx context.Context, w io.Writer, cerr *clierr.Error) *clierr.Error {
+// readyPollFailed is the ready wait's answer to a failed read: Ctrl-C ends it as interrupted; a read the poll's own
+// deadline cut short is returned as it is, without a warning, for waitForReady to report the timeout; otherwise it
+// is waitPollFailed's (an error that waiting cannot fix ends the wait; a transient one warns and keeps polling).
+func readyPollFailed(ctx, pollCtx context.Context, w io.Writer, cerr *clierr.Error) *clierr.Error {
 	if ctx.Err() != nil {
 		return waitInterrupted()
+	}
+	if pollTimedOut(ctx, pollCtx, cerr) {
+		return cerr
 	}
 	return waitPollFailed(w, cerr)
 }
@@ -203,7 +215,9 @@ func readyTimedOut(s *readyWait) *clierr.Error {
 	return clierr.New(clierr.CodeGeneric, clierr.KindWaitTimeout,
 		"update applied, but %s was not ready within --timeout %s: %s", s.group, s.timeout, s.last).
 		WithHint("to see its instances, run saladcloud container-groups instances list -c %s; "+
-			"the rollout continues server-side, so retry with a longer --timeout while it is still pulling", s.group)
+			"the rollout continues server-side, and running update again sends the change again "+
+			"(an image, environment or command change then makes another new version and restarts the replicas)",
+			s.group)
 }
 
 // readyOnVersion counts the instances that run version or a later one, are running, and are ready. An instance

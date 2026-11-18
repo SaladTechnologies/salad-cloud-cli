@@ -709,8 +709,8 @@ Two different needs, two different mechanisms:
   scripts, CI, and agents: block until the group reaches the verb's goal
   (`running` for create/start, `stopped` for stop), then exit 0. Polls every 5s; `--timeout` (default `10m`) caps
   the wait and exits 1 with kind `wait_timeout` — the group keeps going
-  server-side, so check `saladcloud container-groups get <group>` or retry with a longer
-  `--timeout`. Ctrl-C exits 1 with kind `interrupted` and empty stdout (the
+  server-side, so check `saladcloud container-groups get <group>`; the last poll is at the deadline, and a
+  request in flight then gets a few seconds to answer. Ctrl-C exits 1 with kind `interrupted` and empty stdout (the
   server continues regardless); a second Ctrl-C kills the CLI at once.
   A wait for `running` does not sit out the timeout on a group that cannot
   get there: once the group has been seen `pending` or `deploying` (for
@@ -1292,6 +1292,23 @@ will exit 1 even when the command succeeded (the CLI prints a stderr note);
 through a terminal, so its stderr is mixed into stdout and programs may add
 color; move files with `cp`, not `ssh -- cat`.
 
+### When a write fails
+
+A write that failed without an answer that says whether the API acted on it (a 5xx such as a gateway's 504, a 408, a
+dropped connection, a timeout or a response that could not be read, or Ctrl-C while the request was in flight) may
+still have been applied, or may be applied later: a gateway can time out while the platform goes ahead. Its message
+ends `the request may have reached the API, so the change may have been applied`, and its hint says how to check
+before you send it again. Kind and exit code are those of the failure (`api_error`, `network`, `interrupted`). A
+refused request (another 4xx, or a 429 after the CLI's retries), one whose error shows the API never acted on it (the
+host did not resolve, the connection or a proxy refused it, the TLS handshake failed, or the API answered with a
+redirect) and a read say nothing of the sort. The rule errs toward saying it: a write stopped before it was sent in
+some other way, such as Ctrl-C while connecting, may also say so, and checking first costs one `get`.
+
+Check before retrying. Sending `update` again is not harmless: the platform makes a new version from any image,
+environment or command change, even to the value the group already has, and the replicas restart onto it. A job
+create sent again makes a second job. `scale` sets a count, so sending it again is safe. A timed-out wait
+(`wait_timeout`) is different: the write was applied, and its hint says how to check on it, never to send it again.
+
 ### Error kinds
 
 Every error document's `kind` is one of these; the set is closed, so a
@@ -1305,11 +1322,11 @@ script can switch on it. A new failure mode maps onto an existing kind.
 | `auth` | 3 | no API key, or the API rejected it (401/403) |
 | `not_found` | 4 | the resource does not exist (404) |
 | `rate_limited` | 5 | the API kept answering 429 after the CLI's retries |
-| `network` | 7 | no HTTP response: DNS, connection, timeout, TLS |
+| `network` | 7 | no HTTP response: DNS, connection, timeout, TLS. A write that failed this way says the change may have been applied, unless the error shows the request never left this machine (see [When a write fails](#when-a-write-fails)) |
 | `not_available` | 10 | the AI Gateway declined the request for billing reasons (402) |
-| `api_error` | 1 | any other API failure (other 4xx, 5xx, an undecodable response), local I/O on files the CLI chose, or a `doctor` check failed |
+| `api_error` | 1 | any other API failure (other 4xx, 5xx, an undecodable response), local I/O on files the CLI chose, or a `doctor` check failed. A write that got a 5xx, a 408 or an undecodable response says the change may have been applied (see [When a write fails](#when-a-write-fails)) |
 | `internal` | 1 | the CLI could not encode or copy its own data; a CLI bug, worth reporting |
-| `interrupted` | 1 | Ctrl-C during a wait (`--wait`, an `update`/`scale` settle, `inference transcribe`), a prompt or a request; end of input at a prompt; "n" at `ssh-key setup`'s generate prompt (`<command> canceled`, for example `container-groups list canceled`); what the server already received goes ahead. `logs --follow` and `--watch` end with exit 0 instead |
+| `interrupted` | 1 | Ctrl-C during a wait (`--wait`, an `update`/`scale` settle, `inference transcribe`), a prompt or a request; end of input at a prompt; "n" at `ssh-key setup`'s generate prompt (`<command> canceled`, for example `container-groups list canceled`); what the server already received goes ahead, and a write in flight adds that the change may have been applied, with a hint. `logs --follow` and `--watch` end with exit 0 instead |
 | `wait_timeout` | 1 | a wait ran past `--timeout`; the server keeps going |
 | `group_stopped` | 1 | a wait for running, or `update --wait-ready`, saw the group stop instead |
 | `group_failed` | 1 | a wait for running, or `update --wait-ready`, saw the group fail |

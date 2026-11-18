@@ -34,6 +34,12 @@ are the `saladcloud container-groups` commands.
 
 ## Platform behavior to know about
 
+- **A write that timed out may still land.** After a gateway timeout (504) or a dropped connection the platform can
+  apply the change anyway, sometimes later. The CLI says the change may have been applied; check with `get` before
+  you send it again. See [When a write fails](guide.md#when-a-write-fails).
+- **Sending the same container change again restarts the replicas.** An image, environment or command change makes a
+  new version even when the value equals what the group already has, and its replicas move onto it, pulling the image
+  again.
 - **Deleted container group names are never released.** Names are unique within an organization and project,
   including against deleted groups, so re-using a name returns `name_conflict`. Pick a new name.
 - **A group created with autostart can come up `stopped`, with no reason given.** The create response says `pending`,

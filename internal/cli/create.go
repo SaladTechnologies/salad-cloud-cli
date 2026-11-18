@@ -663,6 +663,10 @@ func (app *App) runCreate(cmd *cobra.Command, o *createOptions, base *createBase
 	}
 	group, cerr := c.CreateGroupRaw(cmd.Context(), sent)
 	if cerr != nil {
+		if cerr.MayHaveApplied() {
+			return cerr.WithHint("to see whether it was created, run saladcloud container-groups get %s; "+
+				"if it exists, running create again fails with a name conflict", ptr.Deref(req.Name))
+		}
 		return cerr
 	}
 	if q := req.QueueConnection; q != nil {

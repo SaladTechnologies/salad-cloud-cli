@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 	"github.com/spf13/cobra"
@@ -56,6 +57,31 @@ func shouldReenableSchedule(before, after *shared.ContainerGroup) bool {
 		return false
 	}
 	return ptr.Deref(before.ScheduledScalingEnabled) && !ptr.Deref(after.ScheduledScalingEnabled)
+}
+
+// scaleUnsureHint is scale's hint for a write that may have been applied, given the group before it. Setting replicas
+// makes no new version, so sending it again is safe. With --keep-schedule, though, a second run finds the schedule
+// already on hold and leaves it there, so the hint also says how to switch it back on.
+func scaleUnsureHint(name string, opts *scaleOptions) func(before *shared.ContainerGroup) string {
+	return func(before *shared.ContainerGroup) string {
+		hint := fmt.Sprintf("to see whether it was applied, run saladcloud container-groups get %s%s; "+
+			"setting %s again is safe", name, groupWas(before), replicas(opts.replicas))
+		if opts.keepSchedule {
+			hint += fmt.Sprintf("; if scheduled scaling is now on hold, to switch it back on, run saladcloud "+
+				"container-groups update %s -f <file>, the file setting scheduled-scaling-enabled to true", name)
+		}
+		return hint
+	}
+}
+
+// reenableUnsureHint is scale --keep-schedule's hint for the second write, switching scheduled scaling back on, when
+// it may have been applied: the replicas are set, and sending this write again is safe.
+func reenableUnsureHint(name string) func(*shared.ContainerGroup) string {
+	return func(*shared.ContainerGroup) string {
+		return fmt.Sprintf("to see whether scheduled scaling is back on, run saladcloud container-groups get %s; "+
+			"the replicas are set, and to switch it on again, run saladcloud container-groups update %s -f <file>, "+
+			"the file setting scheduled-scaling-enabled to true", name, name)
+	}
 }
 
 // replicas renders a replica count: "1 replica", "3 replicas".
@@ -119,14 +145,25 @@ func (app *App) runScale(cmd *cobra.Command, opts *scaleOptions, name string) er
 	if cerr != nil {
 		return cerr
 	}
-	write := func(patch []byte, doneMsg string) (*shared.ContainerGroup, error) {
+	var write scaleWrite = func(
+		patch []byte,
+		doneMsg string,
+		unsure func(*shared.ContainerGroup) string,
+	) (*shared.ContainerGroup, error) {
 		return app.applyPatch(
 			cmd,
 			client,
 			name,
 			patch,
 			nil,
-			patchSettle{wait: wait, timeout: timeout, doneMsg: doneMsg, waitReady: false},
+			patchSettle{
+				wait:       wait,
+				timeout:    timeout,
+				doneMsg:    doneMsg,
+				waitReady:  false,
+				deadline:   time.Time{},
+				unsureHint: unsure,
+			},
 		)
 	}
 	var before *shared.ContainerGroup
@@ -136,12 +173,12 @@ func (app *App) runScale(cmd *cobra.Command, opts *scaleOptions, name string) er
 		}
 	}
 	// No settle line: the one success line below says it.
-	group, err := write(scalePatch(n), "")
+	group, err := write(scalePatch(n), "", scaleUnsureHint(name, opts))
 	if err != nil {
 		return err
 	}
 	if keep {
-		if err := app.scaleKeepSchedule(before, group, write); err != nil {
+		if err := app.scaleKeepSchedule(before, group, name, write); err != nil {
 			return err
 		}
 	}
@@ -151,16 +188,26 @@ func (app *App) runScale(cmd *cobra.Command, opts *scaleOptions, name string) er
 	}))
 }
 
+// scaleWrite is one of scale's writes: a patch, its settle line ("" for none), and its hint should it fail in a way
+// that may have applied it.
+type scaleWrite func(
+	patch []byte,
+	doneMsg string,
+	unsure func(*shared.ContainerGroup) string,
+) (*shared.ContainerGroup, error)
+
 // scaleKeepSchedule is --keep-schedule after the replicas write: switch the
 // schedule back on through write when the write put it on hold, or note
 // that there was none to keep.
 func (app *App) scaleKeepSchedule(
 	before, after *shared.ContainerGroup,
-	write func(patch []byte, doneMsg string) (*shared.ContainerGroup, error),
+	name string,
+	write scaleWrite,
 ) error {
 	switch {
 	case shouldReenableSchedule(before, after):
-		if _, err := write(reenableSchedulePatch(), "scheduled scaling re-enabled"); err != nil {
+		_, err := write(reenableSchedulePatch(), "scheduled scaling re-enabled", reenableUnsureHint(name))
+		if err != nil {
 			return err
 		}
 		fprintln(app.errw(), "note: scheduled scaling re-enabled (--keep-schedule)")

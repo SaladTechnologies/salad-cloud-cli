@@ -310,7 +310,10 @@ func TestNewVersionNote(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			settle := patchSettle{wait: true, timeout: time.Minute, doneMsg: "", waitReady: tc.waitReady}
+			settle := patchSettle{
+				wait: true, timeout: time.Minute, doneMsg: "", waitReady: tc.waitReady,
+				deadline: time.Time{}, unsureHint: nil,
+			}
 			if got := settle.newVersionNote("demo", tc.before, tc.after); got != tc.want {
 				t.Errorf("note = %q\nwant   %q", got, tc.want)
 			}

@@ -622,6 +622,9 @@ func (app *App) runQueueJobCreate(cmd *cobra.Command, o *jobCreateOptions) error
 	}
 	job, cerr := client.CreateQueueJob(cmd.Context(), queue, proto)
 	if cerr != nil {
+		if cerr.MayHaveApplied() {
+			return cerr.WithHint("%s", jobUnsureHint("saladcloud queues jobs list --queue "+queue))
+		}
 		return queueNotFound(cerr, queue, client)
 	}
 	if !wait {

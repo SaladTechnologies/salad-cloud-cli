@@ -205,16 +205,17 @@ func waitForJobTerminal[J any](
 	deadline := progress.start.Add(timeout)
 	lastStatus := "-"
 	for {
-		job, cerr := d.get(ctx)
+		pollCtx, cancel := pollContext(ctx, d.now(), deadline)
+		job, cerr := d.get(pollCtx)
+		timedOut := pollTimedOut(ctx, pollCtx, cerr)
+		cancel()
 		switch {
-		case cerr != nil && ctx.Err() != nil:
-			return nil, jobWaitInterrupted()
+		case timedOut:
+			return nil, jobWaitTimedOut(timeout, id, d.where, lastStatus, d.check)
 		case cerr != nil:
-			if jobWaitErrorIsFinal(cerr) {
-				return nil, cerr
+			if end := jobPollFailed(ctx, cerr, progress.w); end != nil {
+				return nil, end
 			}
-			// Transient (network, 5xx, rate limit): note it, keep polling.
-			fprintf(progress.w, "warning: %s (still waiting)\n", cerr.Message)
 		default:
 			view := d.view(job)
 			status, lastEvent := view.status, view.lastEvent
@@ -224,28 +225,37 @@ func waitForJobTerminal[J any](
 			}
 			progress.report(status, d.now)
 		}
-		if !d.now().Before(deadline) {
-			return nil, clierr.New(clierr.CodeGeneric, clierr.KindWaitTimeout,
-				"timed out after %s waiting for job %s %s (last status: %s)", timeout, id, d.where, lastStatus).
-				WithHint(
-					"retry with a longer --timeout, or to check on the job, run %s; the job continues server-side",
-					d.check,
-				)
+		wait, ok := nextSleep(poll, d.now(), deadline)
+		if !ok {
+			return nil, jobWaitTimedOut(timeout, id, d.where, lastStatus, d.check)
 		}
-		if err := d.sleep(ctx, poll); err != nil {
+		if err := d.sleep(ctx, wait); err != nil {
 			return nil, jobWaitInterrupted()
 		}
 	}
 }
 
-// jobWaitErrorIsFinal says whether an error reading a job ends the wait; any other (network, 5xx, rate limit) is
-// transient, and the wait keeps polling.
-func jobWaitErrorIsFinal(cerr *clierr.Error) bool {
-	switch cerr.Code {
-	case clierr.CodeNotFound, clierr.CodeAuth, clierr.CodeUsage, clierr.CodeInvalidInput:
-		return true
+// jobPollFailed is a job wait's answer to a failed read that its poll's deadline did not cut short: Ctrl-C ends it as
+// interrupted, an error waiting cannot fix as itself; anything else (network, 5xx, rate limit) is transient, noted on
+// w, and nil, to keep polling.
+func jobPollFailed(ctx context.Context, cerr *clierr.Error, w io.Writer) *clierr.Error {
+	switch {
+	case ctx.Err() != nil:
+		return jobWaitInterrupted()
+	case waitErrorIsFinal(cerr):
+		return cerr
 	}
-	return false
+	fprintf(w, "warning: %s (still waiting)\n", cerr.Message)
+	return nil
+}
+
+// jobWaitTimedOut is the error for a job wait that ran out of time: the job goes on, and creating it again would make
+// a second one.
+func jobWaitTimedOut(timeout time.Duration, id, where, lastStatus, check string) *clierr.Error {
+	return clierr.New(clierr.CodeGeneric, clierr.KindWaitTimeout,
+		"timed out after %s (--timeout) waiting for job %s %s (last status: %s)", timeout, id, where, lastStatus).
+		WithHint("to check on the job, run %s; the job continues server-side, "+
+			"and creating it again makes a second job", check)
 }
 
 // jobWaitEnd says whether a job in status has ended, and for a job that ended failed or canceled, the error naming
@@ -680,6 +690,9 @@ func (app *App) runInferenceJobsCreate(cmd *cobra.Command, o *jobCreateOptions) 
 	}
 	job, cerr := client.CreateInferenceJob(cmd.Context(), endpoint, proto)
 	if cerr != nil {
+		if cerr.MayHaveApplied() {
+			return cerr.WithHint("%s", jobUnsureHint("saladcloud inference jobs list --endpoint "+endpoint))
+		}
 		return endpointNotFound(cerr, endpoint, client.Org())
 	}
 	if !wait {
@@ -693,6 +706,12 @@ func (app *App) runInferenceJobsCreate(cmd *cobra.Command, o *jobCreateOptions) 
 		return cerr
 	}
 	return wrapErr(app.printer.Emit(final, func(w *output.Writer) { writeJobDetail(w, final) }))
+}
+
+// jobUnsureHint is the hint of a job create that may have been applied: how to look for the job, and that sending
+// it again makes a second job.
+func jobUnsureHint(list string) string {
+	return "to see whether the job was created, run " + list + "; creating it again makes a second job"
 }
 
 // inferenceJobPrototype is the job prototype 'inference jobs create' sends: the -f file, which must carry an input,
