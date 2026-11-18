@@ -23,8 +23,9 @@ may change, and every such change is listed here.
 
 ### Changed
 
-- A response whose status arrived but whose body was cut off is now `api_error` (exit 1) with its `http_status`, not
-  `network` (exit 7), which the guide keeps for requests that got no HTTP response.
+- A response whose status arrived but whose body was cut off now reports that status, with its `http_status`, and its
+  kind and exit code (`api_error`, exit 1, for a 2xx or 5xx; `not_found`, exit 4, for a 404), not `network` (exit 7),
+  which the guide keeps for requests that got no HTTP response. This covers the AI Gateway and storage uploads too.
 
 ## [0.2.0] - 2026-11-16
 
