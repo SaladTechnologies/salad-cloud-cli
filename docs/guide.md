@@ -1299,10 +1299,10 @@ dropped connection, a timeout or a response that could not be read, or Ctrl-C wh
 still have been applied, or may be applied later: a gateway can time out while the platform goes ahead. Its message
 ends `the request may have reached the API, so the change may have been applied`, and its hint says how to check
 before you send it again. Kind and exit code are those of the failure (`api_error`, `network`, `interrupted`). A
-refused request (another 4xx, or a 429 after the CLI's retries), one whose error shows it never left this machine (the
-host did not resolve, the connection was refused, the certificate failed) and a read say nothing of the sort. The rule
-errs toward saying it: a write stopped before it was sent in some other way (Ctrl-C while connecting, a proxy that
-refused it, a TLS handshake that failed) may also say so, and checking first costs one `get`.
+refused request (another 4xx, or a 429 after the CLI's retries), one whose error shows the API never acted on it (the
+host did not resolve, the connection or a proxy refused it, the TLS handshake failed, or the API answered with a
+redirect) and a read say nothing of the sort. The rule errs toward saying it: a write stopped before it was sent in
+some other way, such as Ctrl-C while connecting, may also say so, and checking first costs one `get`.
 
 Check before retrying. Sending `update` again is not harmless: the platform makes a new version from any image,
 environment or command change, even to the value the group already has, and the replicas restart onto it. A job

@@ -252,19 +252,34 @@ func (c *Client) send(
 	return reply{status: resp.StatusCode, body: respBody, reached: true}, nil
 }
 
-// neverSent reports whether err, from a request that got no response, says the request never left this machine: the
-// host's name did not resolve, the connection was refused or never made, or the server's certificate failed
-// verification. Any other failure may have come after the API received the request.
+// neverSent reports whether err, from a request that got no response, says the API never acted on the request: the
+// host's name did not resolve, the connection was refused or never made, a proxy refused it, the TLS handshake
+// failed (the certificate, an alert, a server that does not speak TLS, or the handshake timing out), or the CLI
+// stopped at a redirect, which is the API's answer that it did not act. Any other failure may have come after the
+// API received the request. Each case is certain; one it misses only adds a false "may have been applied".
 func neverSent(err error) bool {
 	var dnsErr *net.DNSError
 	var opErr *net.OpError
+	return errors.As(err, &dnsErr) ||
+		(errors.As(err, &opErr) && (opErr.Op == "dial" || opErr.Op == "proxyconnect")) ||
+		tlsHandshakeFailed(err) ||
+		errors.Is(err, errBodyRedirected) || errors.Is(err, errTooManyRedirects)
+}
+
+// tlsHandshakeFailed reports whether err is a TLS handshake that failed, which comes before any byte of the request:
+// a certificate that failed verification, an alert from the server, a server that does not speak TLS (net/http's
+// ErrSchemeMismatch, or a record header that is not TLS), or net/http's handshake timeout (an unexported type, so
+// matched by its fixed text).
+func tlsHandshakeFailed(err error) bool {
 	var certErr *tls.CertificateVerificationError
 	var unknownAuthority x509.UnknownAuthorityError
 	var invalidCert x509.CertificateInvalidError
 	var hostname x509.HostnameError
-	return errors.As(err, &dnsErr) || (errors.As(err, &opErr) && opErr.Op == "dial") ||
-		errors.As(err, &certErr) || errors.As(err, &unknownAuthority) || errors.As(err, &invalidCert) ||
-		errors.As(err, &hostname)
+	var alert tls.AlertError
+	var recordHeader tls.RecordHeaderError
+	return errors.As(err, &certErr) || errors.As(err, &unknownAuthority) || errors.As(err, &invalidCert) ||
+		errors.As(err, &hostname) || errors.As(err, &alert) || errors.As(err, &recordHeader) ||
+		errors.Is(err, http.ErrSchemeMismatch) || strings.Contains(err.Error(), "net/http: TLS handshake timeout")
 }
 
 // decodeSuccess decodes a 2xx response body into a new T; an empty body is the zero T (mutating verbs return 202

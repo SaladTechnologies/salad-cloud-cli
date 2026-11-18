@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"errors"
@@ -246,6 +247,13 @@ func TestNeverSent(t *testing.T) {
 		{"refused", &net.OpError{Op: "dial", Err: errors.New("connection refused")}, true},
 		{"unknown authority", x509.UnknownAuthorityError{}, true},
 		{"hostname", x509.HostnameError{}, true},
+		{"proxy refused", &net.OpError{Op: "proxyconnect", Err: errors.New("407 Proxy Authentication Required")}, true},
+		{"tls alert", tls.AlertError(70), true},
+		{"not tls", tls.RecordHeaderError{Msg: "first record does not look like a TLS handshake"}, true},
+		{"plain http on https", http.ErrSchemeMismatch, true},
+		{"handshake timeout", errors.New("net/http: TLS handshake timeout"), true},
+		{"redirect with a body", errBodyRedirected, true},
+		{"too many redirects", errTooManyRedirects, true},
 		{"expired", x509.CertificateInvalidError{}, true},
 		{"read reset", &net.OpError{Op: "read", Err: errors.New("connection reset by peer")}, false},
 		{"eof", io.ErrUnexpectedEOF, false},
@@ -258,6 +266,19 @@ func TestNeverSent(t *testing.T) {
 				t.Errorf("neverSent(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestWriteToAPlainHTTPServerIsNotMarked: an https URL answered by a server that does not speak TLS fails in the
+// handshake, before the request is sent, so the write is not marked.
+func TestWriteToAPlainHTTPServerIsNotMarked(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(statusHandler(http.StatusOK))
+	t.Cleanup(srv.Close)
+	c := newRestTestClient(t, strings.Replace(srv.URL, "http://", "https://", 1))
+	_, cerr := c.UpdateGroupRaw(t.Context(), "my-app", []byte(`{"replicas":2}`))
+	if cerr == nil || cerr.Kind != clierr.KindNetwork || cerr.MayHaveApplied() {
+		t.Fatalf("error = %+v, want an unmarked network error", cerr)
 	}
 }
 
