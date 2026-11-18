@@ -6,6 +6,8 @@ may change, and every such change is listed here.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-18
+
 ### Fixed
 
 - A write that failed without saying whether it was applied (a 5xx such as a gateway's 504, a 408, a dropped connection
