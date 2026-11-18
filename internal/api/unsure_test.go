@@ -249,7 +249,7 @@ func TestNeverSent(t *testing.T) {
 		{"expired", x509.CertificateInvalidError{}, true},
 		{"read reset", &net.OpError{Op: "read", Err: errors.New("connection reset by peer")}, false},
 		{"eof", io.ErrUnexpectedEOF, false},
-		{"timeout", context.DeadlineExceeded, false},
+		{"timeout", context.DeadlineExceeded, false}, // may have come after the request was sent: marked, to be safe
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

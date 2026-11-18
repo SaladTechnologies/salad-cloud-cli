@@ -1299,8 +1299,10 @@ dropped connection, a timeout or a response that could not be read, or Ctrl-C wh
 still have been applied, or may be applied later: a gateway can time out while the platform goes ahead. Its message
 ends `the request may have reached the API, so the change may have been applied`, and its hint says how to check
 before you send it again. Kind and exit code are those of the failure (`api_error`, `network`, `interrupted`). A
-refused request (another 4xx, or a 429 after the CLI's retries), one that never left this machine (the host did not
-resolve, the connection was refused, the certificate failed) and a read say nothing of the sort.
+refused request (another 4xx, or a 429 after the CLI's retries), one whose error shows it never left this machine (the
+host did not resolve, the connection was refused, the certificate failed) and a read say nothing of the sort. The rule
+errs toward saying it: a write stopped before it was sent in some other way (Ctrl-C while connecting, a proxy that
+refused it, a TLS handshake that failed) may also say so, and checking first costs one `get`.
 
 Check before retrying. Sending `update` again is not harmless: the platform makes a new version from any image,
 environment or command change, even to the value the group already has, and the replicas restart onto it. A job
@@ -1320,7 +1322,7 @@ script can switch on it. A new failure mode maps onto an existing kind.
 | `auth` | 3 | no API key, or the API rejected it (401/403) |
 | `not_found` | 4 | the resource does not exist (404) |
 | `rate_limited` | 5 | the API kept answering 429 after the CLI's retries |
-| `network` | 7 | no HTTP response: DNS, connection, timeout, TLS. A write whose connection failed after it was made says the change may have been applied (see [When a write fails](#when-a-write-fails)) |
+| `network` | 7 | no HTTP response: DNS, connection, timeout, TLS. A write that failed this way says the change may have been applied, unless the error shows the request never left this machine (see [When a write fails](#when-a-write-fails)) |
 | `not_available` | 10 | the AI Gateway declined the request for billing reasons (402) |
 | `api_error` | 1 | any other API failure (other 4xx, 5xx, an undecodable response), local I/O on files the CLI chose, or a `doctor` check failed. A write that got a 5xx, a 408 or an undecodable response says the change may have been applied (see [When a write fails](#when-a-write-fails)) |
 | `internal` | 1 | the CLI could not encode or copy its own data; a CLI bug, worth reporting |
