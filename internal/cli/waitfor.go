@@ -10,6 +10,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -34,7 +35,35 @@ const (
 	// observed to settle in 0-45 s, so this is sized for verification, not
 	// for a deploy.
 	settleDefaultTimeout = 2 * time.Minute
+
+	// minPollBudget is the least time a wait gives one poll's requests. A wait's last poll is at its deadline, so
+	// it gets this much past it; without it, that poll would have no time at all and the wait could never see its
+	// goal reached at the end.
+	minPollBudget = 5 * time.Second
 )
+
+// pollContext is the context for one poll of a wait that ends at deadline: the time left, or minPollBudget when less
+// is left, so a slow request cannot carry the wait far past its deadline.
+func pollContext(ctx context.Context, now, deadline time.Time) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, max(deadline.Sub(now), minPollBudget))
+}
+
+// pollExpired reports whether a poll's own deadline ended it (rather than Ctrl-C, which cancels the parent). Read it
+// before calling the poll's cancel function, which makes every context report canceled.
+func pollExpired(parent, poll context.Context) bool {
+	return parent.Err() == nil && errors.Is(poll.Err(), context.DeadlineExceeded)
+}
+
+// nextSleep is how long a wait that ends at deadline sleeps before its next poll: poll, or the time left when less
+// is left, so the last poll is at the deadline rather than up to a whole interval past it. ok is false once the
+// deadline has passed.
+func nextSleep(poll time.Duration, now, deadline time.Time) (time.Duration, bool) {
+	left := deadline.Sub(now)
+	if left <= 0 {
+		return 0, false
+	}
+	return min(poll, left), true
+}
 
 // goalSettle is the waitForGroup goal for "pending_change is false". It is
 // named because its timeout is worded differently from the others: by the
@@ -171,6 +200,21 @@ func (app *App) waitForGroup(
 	target groupWaitGoal,
 	timeout, poll time.Duration,
 ) (*shared.ContainerGroup, *clierr.Error) {
+	return app.waitForGroupUntil(ctx, d, group, target, timeout, time.Time{}, poll)
+}
+
+// waitForGroupUntil is waitForGroup ending at deadline, the time timeout runs out for a wait that shares its
+// --timeout with what came before it; a zero deadline is timeout from now. The first poll is made whatever the
+// deadline, so even a wait that starts late reads the group once.
+func (app *App) waitForGroupUntil(
+	ctx context.Context,
+	d waitDeps,
+	group string,
+	target groupWaitGoal,
+	timeout time.Duration,
+	deadline time.Time,
+	poll time.Duration,
+) (*shared.ContainerGroup, *clierr.Error) {
 	stderr := d.progress
 	if stderr == nil {
 		stderr = app.errw()
@@ -185,17 +229,26 @@ func (app *App) waitForGroup(
 		lastProgress: "",
 		lastPrinted:  time.Time{},
 	}
-	deadline := s.start.Add(timeout)
+	if deadline.IsZero() {
+		deadline = s.start.Add(timeout)
+	}
 	for {
-		g, cerr := d.get(ctx)
+		pollCtx, cancel := pollContext(ctx, d.now(), deadline)
+		g, cerr := d.get(pollCtx)
+		timedOut := pollTimedOut(ctx, pollCtx, cerr)
+		cancel()
+		if timedOut {
+			return nil, waitTimedOut(group, target.goal, timeout, s.lastStatus)
+		}
 		final, ferr := app.waitObserve(ctx, &s, g, cerr, target)
 		if final != nil || ferr != nil {
 			return final, ferr
 		}
-		if !d.now().Before(deadline) {
+		wait, ok := nextSleep(poll, d.now(), deadline)
+		if !ok {
 			return nil, waitTimedOut(group, target.goal, timeout, s.lastStatus)
 		}
-		if err := d.sleep(ctx, poll); err != nil {
+		if err := d.sleep(ctx, wait); err != nil {
 			return nil, waitInterrupted()
 		}
 	}
@@ -250,14 +303,31 @@ func (app *App) waitObserve(
 // them; anything else is transient (network, 5xx, rate limit), noted on w,
 // and nil, to keep polling.
 func waitPollFailed(w io.Writer, cerr *clierr.Error) *clierr.Error {
-	switch cerr.Code {
-	case clierr.CodeNotFound, clierr.CodeAuth, clierr.CodeUsage, clierr.CodeInvalidInput:
+	switch {
+	case waitErrorIsFinal(cerr):
 		return cerr
 	default:
 		// Transient (network, 5xx, rate limit): note it, keep polling.
 		fprintf(w, "warning: %s (still waiting)\n", cerr.Message)
 		return nil
 	}
+}
+
+// pollTimedOut reports whether a poll's read failed because the poll's own deadline ended it (not Ctrl-C, and not an
+// error waiting cannot fix, which is reported as itself). Call it before the poll's cancel function.
+func pollTimedOut(ctx, pollCtx context.Context, cerr *clierr.Error) bool {
+	return cerr != nil && pollExpired(ctx, pollCtx) && !waitErrorIsFinal(cerr)
+}
+
+// waitErrorIsFinal says whether an error reading what a wait waits on ends it, because waiting longer cannot fix
+// it (not found, auth, usage, invalid input); any other is transient. A final error that arrives as a poll's
+// deadline passes is reported as itself, not as the timeout.
+func waitErrorIsFinal(cerr *clierr.Error) bool {
+	switch cerr.Code {
+	case clierr.CodeNotFound, clierr.CodeAuth, clierr.CodeUsage, clierr.CodeInvalidInput:
+		return true
+	}
+	return false
 }
 
 // waitProgressLine writes the table-mode progress line for g when the
@@ -280,14 +350,14 @@ func waitTimedOut(group, goal string, timeout time.Duration, lastStatus string) 
 		// only the verification ran out of time. Say so, or a
 		// script will retry a patch that already landed.
 		return clierr.New(clierr.CodeGeneric, clierr.KindWaitTimeout,
-			"patch accepted (HTTP 200), but %s is still pending after %s; not verified", group, timeout).
-			WithHint("retry with a longer --timeout, or to check on the group, "+
-				"run saladcloud container-groups get %s", group)
+			"patch accepted (HTTP 200), but %s is still pending after --timeout %s; not verified", group, timeout).
+			WithHint("to check on the group, run saladcloud container-groups get %s; "+
+				"the change was accepted, so do not send it again", group)
 	}
 	return clierr.New(clierr.CodeGeneric, clierr.KindWaitTimeout,
-		"timed out after %s waiting for %s to %s (last status: %s)", timeout, group, goal, lastStatus).
-		WithHint("retry with a longer --timeout, or to check on the group, "+
-			"run saladcloud container-groups get %s; the group continues server-side", group)
+		"timed out after %s (--timeout) waiting for %s to %s (last status: %s)", timeout, group, goal, lastStatus).
+		WithHint("to check on the group, run saladcloud container-groups get %s; "+
+			"the group continues server-side", group)
 }
 
 // waitForGroupStatus is waitForGroup with the goal "status == target",
@@ -417,9 +487,21 @@ func (app *App) runGroupWait(
 	target groupWaitGoal,
 	timeout time.Duration,
 ) (*shared.ContainerGroup, error) {
+	return app.runGroupWaitUntil(cmd, client, group, doneMsg, target, timeout, time.Time{})
+}
+
+// runGroupWaitUntil is runGroupWait ending at deadline (waitForGroupUntil).
+func (app *App) runGroupWaitUntil(
+	cmd *cobra.Command,
+	client *api.Client,
+	group, doneMsg string,
+	target groupWaitGoal,
+	timeout time.Duration,
+	deadline time.Time,
+) (*shared.ContainerGroup, error) {
 	ctx := cmd.Context() // canceled by the one signal handler in Execute
 	start := time.Now()
-	final, cerr := app.waitForGroup(ctx, liveWaitDeps(client, group), group, target, timeout, waitPoll)
+	final, cerr := app.waitForGroupUntil(ctx, liveWaitDeps(client, group), group, target, timeout, deadline, waitPoll)
 	if cerr != nil {
 		return nil, cerr
 	}

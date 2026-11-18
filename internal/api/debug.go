@@ -184,14 +184,23 @@ func (d debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if d.level >= DebugBodies && resp.Body != nil {
 		body, rerr := io.ReadAll(resp.Body)
 		d.closeBody(resp.Body)
-		resp.Body = io.NopCloser(bytes.NewReader(body))
 		if rerr != nil {
-			return nil, fmt.Errorf("reading the response for --debug: %w", rerr)
+			// Hand the caller the status, and the read error after the part that arrived, as it would have got
+			// without --debug: a write's status says whether it may have been applied.
+			d.debugf("debug: < (body cut off after %d bytes: %v)\n", len(body), rerr)
+			resp.Body = io.NopCloser(io.MultiReader(bytes.NewReader(body), failingReader{err: rerr}))
+			return resp, nil
 		}
+		resp.Body = io.NopCloser(bytes.NewReader(body))
 		d.debugf("debug: < %s\n", redactBody(body))
 	}
 	return resp, nil
 }
+
+// failingReader is an [io.Reader] that returns err: the read error of a response body --debug=body already read.
+type failingReader struct{ err error }
+
+func (r failingReader) Read([]byte) (int, error) { return 0, r.err }
 
 // bodyNotShown stands in for a request body --debug=body cannot read without consuming it.
 const bodyNotShown = "(body not shown)"

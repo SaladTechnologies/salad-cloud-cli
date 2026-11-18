@@ -5,11 +5,14 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -45,53 +48,143 @@ func Probe(ctx context.Context, target string, opts Options) (int, error) {
 	return resp.StatusCode, nil
 }
 
+// restRequest is one API request: its method, path, Content-Type ("" means application/json), body, and whether it
+// is a write, whose failure after it reached the API is marked MarkMayHaveApplied.
+type restRequest struct {
+	method, path, contentType string
+	body                      any
+	write                     bool
+}
+
 // restJSON performs one API request and decodes the JSON response into T.
 // contentType is used when body != nil ("" means application/json). 429s are
 // retried up to len(c.backoff) times, context-aware. Empty 2xx bodies
 // decode to the zero T (mutating verbs return 202 with no body). A 404 under
 // an assumed project that does not exist becomes AssumedProjectMissing.
+//
+// Every method but GET is taken to be a write: a write that fails after the request reached the API is marked
+// MarkMayHaveApplied. A POST that only reads (a query) goes through restQuery instead.
 func restJSON[T any](ctx context.Context, c *Client, method, path, contentType string, body any) (*T, *clierr.Error) {
-	out, err := doRestJSON[T](ctx, c, method, path, contentType, body)
+	req := restRequest{
+		method:      method,
+		path:        path,
+		contentType: contentType,
+		body:        body,
+		write:       method != http.MethodGet,
+	}
+	return rest[T](ctx, c, req)
+}
+
+// restQuery is restJSON for a POST that only reads (log and availability queries), so its failures are never marked
+// as a write that may have applied.
+func restQuery[T any](ctx context.Context, c *Client, path string, body any) (*T, *clierr.Error) {
+	return rest[T](ctx, c, restRequest{method: http.MethodPost, path: path, contentType: "", body: body, write: false})
+}
+
+// rest is restJSON for req.
+func rest[T any](ctx context.Context, c *Client, req restRequest) (*T, *clierr.Error) {
+	out, err := doRestJSON[T](ctx, c, req)
 	if err != nil && err.HTTPStatus != nil && *err.HTTPStatus == http.StatusUnauthorized && c.OnRejected != nil {
 		return nil, c.OnRejected()
 	}
 	if err != nil && err.Code == clierr.CodeNotFound {
-		if gerr := c.orgGone(ctx, path); gerr != nil {
+		if gerr := c.orgGone(ctx, req.path); gerr != nil {
 			return nil, gerr
 		}
-		if perr := c.assumedProjectMissing(ctx, method, path); perr != nil {
+		if perr := c.assumedProjectMissing(ctx, req.method, req.path); perr != nil {
 			return nil, perr
 		}
 	}
 	return out, err
 }
 
-// doRestJSON is restJSON without the assumed-project check.
-func doRestJSON[T any](ctx context.Context, c *Client, method, path, contentType string, body any) (*T, *clierr.Error) {
-	payload, cerr := encodeBody(body)
+// doRestJSON is rest without the assumed-project check.
+func doRestJSON[T any](ctx context.Context, c *Client, req restRequest) (*T, *clierr.Error) {
+	payload, cerr := encodeBody(req.body)
 	if cerr != nil {
 		return nil, cerr
 	}
-	endpoint := c.baseURL + path
+	endpoint := c.baseURL + req.path
 
 	for attempt := 0; ; attempt++ {
-		status, respBody, cerr := c.send(ctx, method, endpoint, contentType, payload)
+		rep, cerr := c.send(ctx, req.method, endpoint, req.contentType, payload)
 		if cerr != nil {
-			return nil, cerr
+			return nil, req.failed(cerr, rep)
 		}
-		if status >= 200 && status < 300 {
-			return decodeSuccess[T](respBody)
+		if rep.status >= 200 && rep.status < 300 {
+			return decodeReply[T](req, rep)
 		}
-		lastErr := errorFromBody(status, respBody)
-		if status != http.StatusTooManyRequests || attempt >= len(c.backoff) {
+		lastErr := req.refused(rep)
+		if rep.status != http.StatusTooManyRequests || attempt >= len(c.backoff) {
 			return nil, lastErr
 		}
-		select {
-		case <-ctx.Done():
-			return nil, clierr.Canceled() // Ctrl-C while waiting to retry
-		case <-time.After(c.backoff[attempt]):
+		if werr := waitToRetry(ctx, c.backoff[attempt], lastErr); werr != nil {
+			return nil, werr
 		}
 	}
+}
+
+// failed is req's error for an attempt that got no usable response (rep is what it got): a write that had reached
+// the API is marked as one that may have been applied.
+func (req restRequest) failed(cerr *clierr.Error, rep reply) *clierr.Error {
+	if req.write && rep.sent {
+		return mayHaveApplied(cerr)
+	}
+	return cerr
+}
+
+// refused is req's error for a reply that is not a 2xx: the API's own, marked as one that may have been applied for a
+// write that got a status that does not say it was refused (unsureStatus).
+func (req restRequest) refused(rep reply) *clierr.Error {
+	e := errorFromBody(rep.status, rep.body)
+	if req.write && unsureStatus(rep.status) {
+		return mayHaveApplied(e)
+	}
+	return e
+}
+
+// decodeReply decodes a 2xx reply to req. A write's reply that cannot be decoded was still accepted, so its error
+// says so and is marked as one that may have been applied.
+func decodeReply[T any](req restRequest, rep reply) (*T, *clierr.Error) {
+	out, derr := decodeSuccess[T](rep.body)
+	if derr != nil && req.write {
+		return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
+			"the API accepted the request (HTTP %d), but its response could not be read: %s", rep.status,
+			derr.Message).WithStatus(rep.status).MarkMayHaveApplied()
+	}
+	return out, derr
+}
+
+// waitToRetry waits d before a 429 is retried, and returns nil to retry: Ctrl-C returns the canceled-request error
+// (a 429 applied nothing), and the caller's deadline returns lastErr, the 429, so a wait can tell the two apart.
+func waitToRetry(ctx context.Context, d time.Duration, lastErr *clierr.Error) *clierr.Error {
+	select {
+	case <-ctx.Done():
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return clierr.Canceled()
+		}
+		return lastErr
+	case <-time.After(d):
+		return nil
+	}
+}
+
+// unsureStatus reports whether a write that got status may still have been applied: a server error or a timeout
+// says nothing about whether the API acted on it before it failed, or will act on it later. Any other 4xx was
+// refused.
+func unsureStatus(status int) bool {
+	return status >= http.StatusInternalServerError || status == http.StatusRequestTimeout
+}
+
+// mayHaveApplied marks e as a write that reached the API and may have been applied, and says so in its message.
+// A canceled request keeps its placeholder message: Run names the command and adds the same words. A hint the
+// API's error carried is dropped: checking before sending it again comes first, and the command (or Run) says how.
+func mayHaveApplied(e *clierr.Error) *clierr.Error {
+	if !e.IsCancel() {
+		e.Message += "; " + clierr.MayHaveAppliedText
+	}
+	e.Hint = nil
+	return e.MarkMayHaveApplied()
 }
 
 // encodeBody is the request body's bytes, nil when there is no body.
@@ -117,20 +210,34 @@ func encodeBody(body any) ([]byte, *clierr.Error) {
 	return payload, nil
 }
 
-// send makes one attempt at a request, reading payload afresh, and returns the response's status and whole body.
-// The Content-Type header goes only with a payload, as contentType or else application/json.
+// reply is what one attempt at a request got: the response's status and whole body, and whether the request got a
+// connection to the API, so it may have reached it (sent). A request that failed before that (a DNS, connection or
+// TLS failure) never left this machine.
+type reply struct {
+	status int
+	body   []byte
+	sent   bool
+}
+
+// send makes one attempt at a request, reading payload afresh. On an error, the reply still says whether the
+// request was sent. The Content-Type header goes only with a payload, as contentType or else application/json.
 func (c *Client) send(
 	ctx context.Context,
 	method, endpoint, contentType string,
 	payload []byte,
-) (int, []byte, *clierr.Error) {
+) (reply, *clierr.Error) {
 	var reader io.Reader
 	if payload != nil {
 		reader = bytes.NewReader(payload)
 	}
+	var connected atomic.Bool
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
+		GotConn: func(httptrace.GotConnInfo) { connected.Store(true) },
+	})
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
 	if err != nil {
-		return 0, nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot build the request: %v", err)
+		return reply{status: 0, body: nil, sent: false},
+			clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot build the request: %v", err)
 	}
 	req.Header.Set("Salad-Api-Key", c.apiKey)
 	req.Header.Set("Accept", "application/json")
@@ -141,14 +248,14 @@ func (c *Client) send(
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return 0, nil, transportErr(ctx, "network error", err, c.now)
+		return reply{status: 0, body: nil, sent: connected.Load()}, transportErr(ctx, "network error", err, c.now)
 	}
 	respBody, err := io.ReadAll(resp.Body)
 	c.dbg.closeFailed(resp.Body.Close())
 	if err != nil {
-		return 0, nil, readErr(ctx, "response", err)
+		return reply{status: resp.StatusCode, body: nil, sent: true}, responseReadErr(ctx, resp.StatusCode, err)
 	}
-	return resp.StatusCode, respBody, nil
+	return reply{status: resp.StatusCode, body: respBody, sent: true}, nil
 }
 
 // decodeSuccess decodes a 2xx response body into a new T; an empty body is the zero T (mutating verbs return 202

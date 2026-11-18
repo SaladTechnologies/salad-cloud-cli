@@ -30,6 +30,17 @@ func readErr(ctx context.Context, what string, err error) *clierr.Error {
 	return clierr.New(clierr.CodeNetwork, clierr.KindNetwork, "network error reading %s: %v", what, err)
 }
 
+// responseReadErr is the error for a response whose status arrived but whose body could not be read: the
+// canceled-request error when Ctrl-C canceled ctx, otherwise an API error carrying the status (a network error is
+// one that got no HTTP response).
+func responseReadErr(ctx context.Context, status int, err error) *clierr.Error {
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return clierr.Canceled()
+	}
+	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the response (HTTP %d): %v", status, err).
+		WithStatus(status)
+}
+
 // networkErr wraps a transport failure as a network error. A certificate
 // outside its validity window gets a message naming the host and the date:
 // the Windows system verifier leaves x509's detail empty, which otherwise

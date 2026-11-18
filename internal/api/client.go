@@ -332,14 +332,7 @@ func (c *Client) QueryLogs(ctx context.Context, q logs.LogEntryQuery) (*logs.Log
 	if err := c.RequireOrg(); err != nil {
 		return nil, err
 	}
-	return restJSON[logs.LogEntryCollection](
-		ctx,
-		c,
-		"POST",
-		fmt.Sprintf("/organizations/%s/log-entries", seg(c.org)),
-		"",
-		q,
-	)
+	return restQuery[logs.LogEntryCollection](ctx, c, fmt.Sprintf("/organizations/%s/log-entries", seg(c.org)), q)
 }
 
 // GetWebhookSecret fetches the key the platform signs webhook deliveries

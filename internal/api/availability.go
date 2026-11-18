@@ -38,7 +38,7 @@ func (c *Client) GetGpuAvailability(
 	if err := c.RequireOrg(); err != nil {
 		return nil, err
 	}
-	return restJSON[organizations.GpuAvailability](ctx, c, "POST", c.availabilityPath("sce-gpu-availability"), "", req)
+	return restQuery[organizations.GpuAvailability](ctx, c, c.availabilityPath("sce-gpu-availability"), req)
 }
 
 // GetCPUAvailability is GetGpuAvailability for CPU-only requirements
@@ -51,5 +51,5 @@ func (c *Client) GetCPUAvailability(
 		return nil, err
 	}
 	req.GpuClasses = nil
-	return restJSON[organizations.CpuAvailability](ctx, c, "POST", c.availabilityPath("sce-cpu-availability"), "", req)
+	return restQuery[organizations.CpuAvailability](ctx, c, c.availabilityPath("sce-cpu-availability"), req)
 }

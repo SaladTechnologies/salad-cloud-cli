@@ -45,15 +45,16 @@ func testSecrets() []string {
 // projects; a gateway key's completion answers with its status in
 // gatewayKeys (absent: 401).
 type fakeAPI struct {
-	keys        map[string]bool
-	orgs        map[string][]string
-	orgOrder    []string // the listing's order; nil: sorted by name
-	display     map[string]string
-	listing     int            // status of the organizations listing; 0 answers 200 with the names
-	status      map[string]int // a path suffix answered with this status instead
+	keys     map[string]bool
+	orgs     map[string][]string
+	orgOrder []string // the listing's order; nil: sorted by name
+	display  map[string]string
+	listing  int // status of the organizations listing; 0 answers 200 with the names
+	// status answers a path suffix ("/quotas", or "PATCH /containers/demo" for one method) with a status instead.
+	status      map[string]int
 	gatewayKeys map[string]int
-	// cancelOn is a path suffix at which the fake presses Ctrl-C: it cancels
-	// the run and holds the request until the CLI gives up on it.
+	// cancelOn is a path suffix (or "METHOD suffix") at which the fake presses Ctrl-C: it cancels the run and holds
+	// the request until the CLI gives up on it.
 	cancelOn string
 	cancel   func()
 	// t is the test of the session serving the fake, which its handlers
@@ -129,18 +130,26 @@ func (f *fakeAPI) clone() *fakeAPI {
 // answerOverride answers r ahead of any route when the setup says to, and reports whether it did: Ctrl-C at
 // cancelOn, or the status set for a suffix of the path.
 func (f *fakeAPI) answerOverride(w http.ResponseWriter, r *http.Request) bool {
-	path := r.URL.Path
-	if f.cancelOn != "" && strings.HasSuffix(path, f.cancelOn) {
+	if f.cancelOn != "" && requestMatches(r, f.cancelOn) {
 		f.pressCtrlC(r)
 		return true
 	}
 	for suffix, code := range f.status {
-		if strings.HasSuffix(path, suffix) {
+		if requestMatches(r, suffix) {
 			w.WriteHeader(code)
 			return true
 		}
 	}
 	return false
+}
+
+// requestMatches reports whether r's path ends in suffix, or, for "METHOD suffix", whether r has that method and its
+// path ends in the suffix.
+func requestMatches(r *http.Request, suffix string) bool {
+	if method, rest, ok := strings.Cut(suffix, " "); ok {
+		return r.Method == method && strings.HasSuffix(r.URL.Path, rest)
+	}
+	return strings.HasSuffix(r.URL.Path, suffix)
 }
 
 // pressCtrlC cancels the run and holds the request r until the CLI gives up on it (or five seconds pass).

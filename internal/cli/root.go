@@ -262,10 +262,25 @@ func Run(ctx context.Context, d *Deps) int {
 		ce = suggestUnknownCommand(rootCmd, err.Error(), app.Args)
 	}
 	if canceledByCtrlC(ctx, ce) {
-		ce = clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "%s canceled", commandPath(cmd))
+		ce = canceledError(commandPath(cmd), ce)
+	}
+	if ce.MayHaveApplied() && ce.Hint == nil {
+		ce = ce.WithHint("check whether it took effect before you retry; sending it again may apply it twice")
 	}
 	app.printError(ce)
 	return ce.Code
+}
+
+// canceledError is the error for a command that Ctrl-C (or SIGTERM) stopped: "<path> canceled", and for a write that
+// had already reached the API, that it may have been applied, with the fix the command gave.
+func canceledError(path string, ce *clierr.Error) *clierr.Error {
+	out := clierr.New(clierr.CodeGeneric, clierr.KindInterrupted, "%s canceled", path)
+	if ce.MayHaveApplied() {
+		out.Message += "; " + clierr.MayHaveAppliedText
+		out.Hint = ce.Hint
+		out = out.MarkMayHaveApplied()
+	}
+	return out
 }
 
 // noteTreeErr records an error from building the command tree.

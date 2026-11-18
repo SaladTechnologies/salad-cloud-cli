@@ -74,7 +74,24 @@ type Error struct {
 	cancel bool
 	// final marks an error that already says what was not found (Final).
 	final bool
+	// mayHaveApplied marks the error of a write that reached the API and then failed in a way that does not say
+	// whether the API applied it (MarkMayHaveApplied).
+	mayHaveApplied bool
 }
+
+// MayHaveAppliedText is what the message of a marked error adds (MarkMayHaveApplied).
+const MayHaveAppliedText = "the request reached the API, so the change may have been applied"
+
+// MarkMayHaveApplied marks e as the failure of a write that reached the API, so the API may have applied it (a 5xx,
+// a dropped connection, a timeout or Ctrl-C after the request was sent); it returns e. Run gives a marked error
+// without a hint one that says to check before retrying, and a command that knows how to check gives its own.
+func (e *Error) MarkMayHaveApplied() *Error {
+	e.mayHaveApplied = true
+	return e
+}
+
+// MayHaveApplied reports whether e was marked MarkMayHaveApplied.
+func (e *Error) MayHaveApplied() bool { return e != nil && e.mayHaveApplied }
 
 // Final marks e as already naming what went wrong, so a command that would
 // add its own context to an error of this kind (a 404 rewritten to name the
@@ -117,13 +134,14 @@ func (e *Error) HintText() string {
 // a placeholder: the CLI reports it as "<command> canceled".
 func Canceled() *Error {
 	return &Error{
-		Code:       CodeGeneric,
-		Kind:       KindInterrupted,
-		Message:    "canceled",
-		cancel:     true,
-		Hint:       nil,
-		HTTPStatus: nil,
-		final:      false,
+		Code:           CodeGeneric,
+		Kind:           KindInterrupted,
+		Message:        "canceled",
+		cancel:         true,
+		Hint:           nil,
+		HTTPStatus:     nil,
+		final:          false,
+		mayHaveApplied: false,
 	}
 }
 
@@ -133,17 +151,21 @@ func (e *Error) IsCancel() bool { return e != nil && e.cancel }
 // New builds an *Error with a formatted message.
 func New(code int, kind Kind, format string, args ...any) *Error {
 	return &Error{
-		Code:       code,
-		Kind:       kind,
-		Message:    fmt.Sprintf(format, args...),
-		Hint:       nil,
-		HTTPStatus: nil,
-		cancel:     false,
-		final:      false,
+		Code:           code,
+		Kind:           kind,
+		Message:        fmt.Sprintf(format, args...),
+		Hint:           nil,
+		HTTPStatus:     nil,
+		cancel:         false,
+		final:          false,
+		mayHaveApplied: false,
 	}
 }
 
 // HTTP builds the *Error for an HTTP response with the given status.
 func HTTP(code int, kind Kind, status int, message string) *Error {
-	return &Error{Code: code, Kind: kind, Message: message, HTTPStatus: &status, Hint: nil, cancel: false, final: false}
+	return &Error{
+		Code: code, Kind: kind, Message: message, HTTPStatus: &status, Hint: nil,
+		cancel: false, final: false, mayHaveApplied: false,
+	}
 }

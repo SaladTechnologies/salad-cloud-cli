@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/saladtechnologies/salad-cloud-sdk-go/pkg/shared"
 	"github.com/spf13/cobra"
@@ -56,6 +57,21 @@ func shouldReenableSchedule(before, after *shared.ContainerGroup) bool {
 		return false
 	}
 	return ptr.Deref(before.ScheduledScalingEnabled) && !ptr.Deref(after.ScheduledScalingEnabled)
+}
+
+// scaleUnsureHint is scale's hint for a write that may have been applied, given the group before it. Setting replicas
+// makes no new version, so sending it again is safe. With --keep-schedule, though, a second run finds the schedule
+// already on hold and leaves it there, so the hint also says how to switch it back on.
+func scaleUnsureHint(name string, opts *scaleOptions) func(before *shared.ContainerGroup) string {
+	return func(before *shared.ContainerGroup) string {
+		hint := fmt.Sprintf("to see whether it was applied, run saladcloud container-groups get %s%s; "+
+			"setting %s again is safe", name, groupWas(before), replicas(opts.replicas))
+		if opts.keepSchedule {
+			hint += fmt.Sprintf("; if scheduled scaling is now on hold, to switch it back on, run saladcloud "+
+				"container-groups update %s -f <file>, the file setting scheduled-scaling-enabled to true", name)
+		}
+		return hint
+	}
 }
 
 // replicas renders a replica count: "1 replica", "3 replicas".
@@ -126,7 +142,14 @@ func (app *App) runScale(cmd *cobra.Command, opts *scaleOptions, name string) er
 			name,
 			patch,
 			nil,
-			patchSettle{wait: wait, timeout: timeout, doneMsg: doneMsg, waitReady: false},
+			patchSettle{
+				wait:       wait,
+				timeout:    timeout,
+				doneMsg:    doneMsg,
+				waitReady:  false,
+				deadline:   time.Time{},
+				unsureHint: scaleUnsureHint(name, opts),
+			},
 		)
 	}
 	var before *shared.ContainerGroup

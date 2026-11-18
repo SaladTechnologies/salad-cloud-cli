@@ -764,7 +764,10 @@ func (app *App) runGroupsUpdate(cmd *cobra.Command, opts *groupsUpdateOptions, a
 		}
 		raw, intent = patch.wire, patch.intent
 	}
-	settle := patchSettle{wait: wait, timeout: timeout, doneMsg: "update settled", waitReady: opts.ready.wait}
+	settle := patchSettle{
+		wait: wait, timeout: timeout, doneMsg: "update settled", waitReady: opts.ready.wait,
+		deadline: time.Time{}, unsureHint: nil,
+	}
 	group, err := app.updateApply(cmd, client, args[0], raw, intent, settle, opts.ready)
 	if err != nil {
 		return err
@@ -799,6 +802,9 @@ func (app *App) updateApply(
 	ready readyOptions,
 ) (*shared.ContainerGroup, error) {
 	deadline := time.Now().Add(settle.timeout)
+	if ready.wait {
+		settle.deadline = deadline // one --timeout covers the settle and the ready wait
+	}
 	group, err := app.applyPatch(cmd, client, name, raw, intent, settle)
 	if err != nil {
 		return nil, err
@@ -889,6 +895,12 @@ type patchSettle struct {
 	timeout   time.Duration
 	doneMsg   string
 	waitReady bool
+	// deadline, when set, is when timeout runs out for a write whose --timeout also covers what follows the settle
+	// (update --wait-ready), counted from before the write; zero is timeout from the start of the settle.
+	deadline time.Time
+	// unsureHint, when set, is the hint of a write that may have been applied, given the group before it (nil when
+	// that read failed); unset, it is update's (patchUnsureHint).
+	unsureHint func(before *shared.ContainerGroup) string
 }
 
 // applyPatch is the one write path for merge patches: update -f and scale
@@ -924,10 +936,11 @@ func (app *App) applyPatch(
 	}
 	group, cerr := client.UpdateGroupRaw(cmd.Context(), name, raw)
 	if cerr != nil {
-		return nil, groupNotFound(cerr, name, client.Org(), client.Project())
+		return nil, patchFailed(cerr, client, name, before, settle)
 	}
 	if settle.wait {
-		final, err := app.runGroupWait(cmd, client, name, settle.doneMsg, settleWaitGoal(), settle.timeout)
+		final, err := app.runGroupWaitUntil(cmd, client, name, settle.doneMsg, settleWaitGoal(), settle.timeout,
+			settle.deadline)
 		if err != nil {
 			return nil, err
 		}
@@ -953,6 +966,44 @@ func (app *App) applyPatch(
 		fprintln(app.errw(), note)
 	}
 	return group, nil
+}
+
+// patchFailed is applyPatch's error for a patch the API did not answer with a group: one that may have been applied
+// gets the hint that says how to check (settle.unsureHint, or update's), and a 404 names the group.
+func patchFailed(
+	cerr *clierr.Error,
+	client *api.Client,
+	name string,
+	before *shared.ContainerGroup,
+	settle patchSettle,
+) *clierr.Error {
+	if !cerr.MayHaveApplied() {
+		return groupNotFound(cerr, name, client.Org(), client.Project())
+	}
+	if settle.unsureHint != nil {
+		return cerr.WithHint("%s", settle.unsureHint(before))
+	}
+	return cerr.WithHint("%s", patchUnsureHint(name, before))
+}
+
+// patchUnsureHint is update's hint for a patch that reached the API and may have been applied: how to check, with
+// what the group was before the write when that is known. The platform makes a new version from an image,
+// environment or command change even when the value is the same, and the replicas then restart, so the hint warns
+// against sending it again blindly.
+func patchUnsureHint(name string, before *shared.ContainerGroup) string {
+	return fmt.Sprintf("to see whether it was applied, run saladcloud container-groups get %s and compare it with "+
+		"what you sent%s; a delayed change can still land, and an image, environment or command change sent again "+
+		"makes a new version and restarts the replicas", name, groupWas(before))
+}
+
+// groupWas is " (before this command it was version 7 with 2 replicas)" for the group a write started from, "" when
+// that is not known.
+func groupWas(before *shared.ContainerGroup) string {
+	if before == nil {
+		return ""
+	}
+	return fmt.Sprintf(" (before this command it was version %d with %s)",
+		ptr.Deref(before.Version), replicas(ptr.Deref(before.Replicas)))
 }
 
 // newVersionNote is the stderr note for a write that made a new version of a group with replicas to move: the
