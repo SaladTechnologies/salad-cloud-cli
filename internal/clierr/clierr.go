@@ -80,7 +80,7 @@ type Error struct {
 }
 
 // MayHaveAppliedText is what the message of a marked error adds (MarkMayHaveApplied).
-const MayHaveAppliedText = "the request reached the API, so the change may have been applied"
+const MayHaveAppliedText = "the request may have reached the API, so the change may have been applied"
 
 // MarkMayHaveApplied marks e as the failure of a write that reached the API, so the API may have applied it (a 5xx,
 // a dropped connection, a timeout or Ctrl-C after the request was sent); it returns e. Run gives a marked error

@@ -4,15 +4,16 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
-	"net/http/httptrace"
 	"net/url"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/saladtechnologies/salad-cloud-cli/internal/clierr"
@@ -124,10 +125,10 @@ func doRestJSON[T any](ctx context.Context, c *Client, req restRequest) (*T, *cl
 	}
 }
 
-// failed is req's error for an attempt that got no usable response (rep is what it got): a write that had reached
-// the API is marked as one that may have been applied, unless a status arrived that says it was refused.
+// failed is req's error for an attempt that got no usable response (rep is what it got): a write that may have
+// reached the API is marked as one that may have been applied.
 func (req restRequest) failed(cerr *clierr.Error, rep reply) *clierr.Error {
-	if req.write && rep.sent && (rep.status == 0 || rep.status < 300 || unsureStatus(rep.status)) {
+	if req.write && rep.reached {
 		return mayHaveApplied(cerr)
 	}
 	return cerr
@@ -143,14 +144,12 @@ func (req restRequest) refused(rep reply) *clierr.Error {
 	return e
 }
 
-// decodeReply decodes a 2xx reply to req. A write's reply that cannot be decoded was still accepted, so its error
-// says so and is marked as one that may have been applied.
+// decodeReply decodes a 2xx reply to req. A write's reply that cannot be decoded was accepted, so its error is marked
+// as one that may have been applied.
 func decodeReply[T any](req restRequest, rep reply) (*T, *clierr.Error) {
 	out, derr := decodeSuccess[T](rep.body)
 	if derr != nil && req.write {
-		return nil, clierr.New(clierr.CodeGeneric, clierr.KindAPIError,
-			"the API accepted the request (HTTP %d), but its response could not be read: %s", rep.status,
-			derr.Message).WithStatus(rep.status).MarkMayHaveApplied()
+		return nil, mayHaveApplied(derr)
 	}
 	return out, derr
 }
@@ -210,17 +209,16 @@ func encodeBody(body any) ([]byte, *clierr.Error) {
 	return payload, nil
 }
 
-// reply is what one attempt at a request got: the response's status and whole body, and whether the request got a
-// connection to the API, so it may have reached it (sent). A request that failed before that (a DNS, connection or
-// TLS failure) never left this machine.
+// reply is what one attempt at a request got: the response's status and whole body, and on an error whether the
+// request may have reached the API (reached). It did not when it was never built or never connected (neverSent).
 type reply struct {
-	status int
-	body   []byte
-	sent   bool
+	status  int
+	body    []byte
+	reached bool
 }
 
-// send makes one attempt at a request, reading payload afresh. On an error, the reply still says whether the
-// request was sent. The Content-Type header goes only with a payload, as contentType or else application/json.
+// send makes one attempt at a request, reading payload afresh. The Content-Type header goes only with a payload, as
+// contentType or else application/json.
 func (c *Client) send(
 	ctx context.Context,
 	method, endpoint, contentType string,
@@ -230,13 +228,9 @@ func (c *Client) send(
 	if payload != nil {
 		reader = bytes.NewReader(payload)
 	}
-	var connected atomic.Bool
-	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{
-		GotConn: func(httptrace.GotConnInfo) { connected.Store(true) },
-	})
 	req, err := http.NewRequestWithContext(ctx, method, endpoint, reader)
 	if err != nil {
-		return reply{status: 0, body: nil, sent: false},
+		return reply{status: 0, body: nil, reached: false},
 			clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot build the request: %v", err)
 	}
 	req.Header.Set("Salad-Api-Key", c.apiKey)
@@ -248,14 +242,29 @@ func (c *Client) send(
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return reply{status: 0, body: nil, sent: connected.Load()}, transportErr(ctx, "network error", err, c.now)
+		return reply{status: 0, body: nil, reached: !neverSent(err)}, transportErr(ctx, "network error", err, c.now)
 	}
 	respBody, err := io.ReadAll(resp.Body)
 	c.dbg.closeFailed(resp.Body.Close())
 	if err != nil {
-		return reply{status: resp.StatusCode, body: nil, sent: true}, responseReadErr(ctx, resp.StatusCode, err)
+		return reply{status: 0, body: nil, reached: true}, readErr(ctx, "response", err)
 	}
-	return reply{status: resp.StatusCode, body: respBody, sent: true}, nil
+	return reply{status: resp.StatusCode, body: respBody, reached: true}, nil
+}
+
+// neverSent reports whether err, from a request that got no response, says the request never left this machine: the
+// host's name did not resolve, the connection was refused or never made, or the server's certificate failed
+// verification. Any other failure may have come after the API received the request.
+func neverSent(err error) bool {
+	var dnsErr *net.DNSError
+	var opErr *net.OpError
+	var certErr *tls.CertificateVerificationError
+	var unknownAuthority x509.UnknownAuthorityError
+	var invalidCert x509.CertificateInvalidError
+	var hostname x509.HostnameError
+	return errors.As(err, &dnsErr) || (errors.As(err, &opErr) && opErr.Op == "dial") ||
+		errors.As(err, &certErr) || errors.As(err, &unknownAuthority) || errors.As(err, &invalidCert) ||
+		errors.As(err, &hostname)
 }
 
 // decodeSuccess decodes a 2xx response body into a new T; an empty body is the zero T (mutating verbs return 202

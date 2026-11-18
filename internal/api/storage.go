@@ -83,7 +83,7 @@ func (c *Client) UploadFile(
 	respBody, err := io.ReadAll(resp.Body)
 	c.dbg.closeFailed(resp.Body.Close())
 	if err != nil {
-		return "", responseReadErr(ctx, resp.StatusCode, err)
+		return "", readErr(ctx, "storage response", err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", errorFromBody(resp.StatusCode, respBody)

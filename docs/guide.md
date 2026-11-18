@@ -1294,13 +1294,13 @@ color; move files with `cp`, not `ssh -- cat`.
 
 ### When a write fails
 
-A write that reached the API and then failed without an answer that says whether the API acted on it (a 5xx such as a
-gateway's 504, a 408, a dropped connection or a timeout, a response that could not be read, or Ctrl-C while the API
-held it) may still have been applied, or may be applied later: a gateway can time out while the platform goes ahead.
-Its message ends `the request reached the API, so the change may have been applied`, and its hint says how to check
+A write that failed without an answer that says whether the API acted on it (a 5xx such as a gateway's 504, a 408, a
+dropped connection, a timeout or a response that could not be read, or Ctrl-C while the request was in flight) may
+still have been applied, or may be applied later: a gateway can time out while the platform goes ahead. Its message
+ends `the request may have reached the API, so the change may have been applied`, and its hint says how to check
 before you send it again. Kind and exit code are those of the failure (`api_error`, `network`, `interrupted`). A
-refused request (another 4xx, or a 429 after the CLI's retries) and one that never connected say nothing of the sort,
-and neither does a read.
+refused request (another 4xx, or a 429 after the CLI's retries), one that never left this machine (the host did not
+resolve, the connection was refused, the certificate failed) and a read say nothing of the sort.
 
 Check before retrying. Sending `update` again is not harmless: the platform makes a new version from any image,
 environment or command change, even to the value the group already has, and the replicas restart onto it. A job
@@ -1320,11 +1320,11 @@ script can switch on it. A new failure mode maps onto an existing kind.
 | `auth` | 3 | no API key, or the API rejected it (401/403) |
 | `not_found` | 4 | the resource does not exist (404) |
 | `rate_limited` | 5 | the API kept answering 429 after the CLI's retries |
-| `network` | 7 | no HTTP response: DNS, connection, timeout, TLS. A write whose request reached the API before the connection failed says the change may have been applied (see [When a write fails](#when-a-write-fails)) |
+| `network` | 7 | no HTTP response: DNS, connection, timeout, TLS. A write whose connection failed after it was made says the change may have been applied (see [When a write fails](#when-a-write-fails)) |
 | `not_available` | 10 | the AI Gateway declined the request for billing reasons (402) |
-| `api_error` | 1 | any other API failure (other 4xx, 5xx, a response that could not be read or decoded), local I/O on files the CLI chose, or a `doctor` check failed. A write that got a 5xx, a 408 or an unreadable response says the change may have been applied (see [When a write fails](#when-a-write-fails)) |
+| `api_error` | 1 | any other API failure (other 4xx, 5xx, an undecodable response), local I/O on files the CLI chose, or a `doctor` check failed. A write that got a 5xx, a 408 or an undecodable response says the change may have been applied (see [When a write fails](#when-a-write-fails)) |
 | `internal` | 1 | the CLI could not encode or copy its own data; a CLI bug, worth reporting |
-| `interrupted` | 1 | Ctrl-C during a wait (`--wait`, an `update`/`scale` settle, `inference transcribe`), a prompt or a request; end of input at a prompt; "n" at `ssh-key setup`'s generate prompt (`<command> canceled`, for example `container-groups list canceled`); what the server already received goes ahead, and a write it had received adds that the change may have been applied, with a hint. `logs --follow` and `--watch` end with exit 0 instead |
+| `interrupted` | 1 | Ctrl-C during a wait (`--wait`, an `update`/`scale` settle, `inference transcribe`), a prompt or a request; end of input at a prompt; "n" at `ssh-key setup`'s generate prompt (`<command> canceled`, for example `container-groups list canceled`); what the server already received goes ahead, and a write in flight adds that the change may have been applied, with a hint. `logs --follow` and `--watch` end with exit 0 instead |
 | `wait_timeout` | 1 | a wait ran past `--timeout`; the server keeps going |
 | `group_stopped` | 1 | a wait for running, or `update --wait-ready`, saw the group stop instead |
 | `group_failed` | 1 | a wait for running, or `update --wait-ready`, saw the group fail |

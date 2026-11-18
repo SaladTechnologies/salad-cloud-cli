@@ -8,24 +8,17 @@ may change, and every such change is listed here.
 
 ### Fixed
 
-- A write that reached the API and then failed without saying whether it was applied (a 5xx such as a gateway's 504, a
-  408, a dropped connection or timeout, an unreadable response, or Ctrl-C while the API held it) now says the change may
-  have been applied, and its hint says how to check before sending it again: `update` names the group's version and
-  replicas before the write, `scale` says sending it again is safe, `create` and the job creates say how to find what
-  they made. Before, the hint was `null`. Reads and refused requests are unchanged.
+- A write that failed without saying whether it was applied (a 5xx such as a gateway's 504, a 408, a dropped connection
+  or timeout, or Ctrl-C while the request was in flight) now says the change may have been applied, and its hint says
+  how to check before sending it again: `update` names the group's version and replicas before the write, `scale` says
+  sending it again is safe, `create` and the job creates say how to find what they made. Before, the hint was `null`.
+  Reads, refused requests and requests that never connected are unchanged.
 - `inference transcribe` and `transcription-lite` keep the upload when the job create may have been applied.
 - `update --wait-ready`, `--wait`, the `update`/`scale` settle and the job waits end at `--timeout`: the last poll is at
   the deadline, not up to a poll interval (10s for `--wait-ready`) past it, and a slow read cannot carry the wait far
   past it. Under `--wait-ready`, the settle gets only what is left of the shared `--timeout`.
 - Timeout hints no longer say to retry with a longer `--timeout`, which sent the update again (a new version and a
   restart) or created a second job; they say how to check on it instead.
-- `--debug=body` keeps the status of a response whose body was cut off.
-
-### Changed
-
-- A response whose status arrived but whose body was cut off now reports that status, with its `http_status`, and its
-  kind and exit code (`api_error`, exit 1, for a 2xx or 5xx; `not_found`, exit 4, for a 404), not `network` (exit 7),
-  which the guide keeps for requests that got no HTTP response. This covers the AI Gateway and storage uploads too.
 
 ## [0.2.0] - 2026-11-16
 

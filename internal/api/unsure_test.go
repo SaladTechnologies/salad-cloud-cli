@@ -2,9 +2,15 @@ package api
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -16,8 +22,8 @@ import (
 )
 
 // TestWriteFailureMarking pins which failures mark a write as one the API may have applied: a server error, a
-// timeout status, a dropped connection and an unreadable 2xx reach the API and say nothing about whether it acted;
-// a refusal does not, and a read never does.
+// timeout status, a dropped or cut-off connection and an undecodable 2xx may have reached the API and say nothing
+// about whether it acted; a refusal does not, and a read never does.
 func TestWriteFailureMarking(t *testing.T) {
 	t.Parallel()
 	patch := func(c *Client, ctx context.Context) *clierr.Error {
@@ -55,16 +61,15 @@ func TestWriteFailureMarking(t *testing.T) {
 			patch,
 			true,
 			clierr.KindAPIError,
-			http.StatusOK,
+			0,
 		},
 		{"patch 400", statusHandler(http.StatusBadRequest), patch, false, clierr.KindInvalidInput, 400},
 		{"patch 409", statusHandler(http.StatusConflict), patch, false, clierr.KindAPIError, 409},
 		{"get 504", gateway504, get, false, clierr.KindAPIError, http.StatusGatewayTimeout},
 		{"get dropped connection", hangUp, get, false, clierr.KindNetwork, 0},
 		{"log query 504", gateway504, query, false, clierr.KindAPIError, http.StatusGatewayTimeout},
-		{"patch 200 cut off", cutOff(t, http.StatusOK), patch, true, clierr.KindAPIError, http.StatusOK},
-		{"patch 409 cut off", cutOff(t, http.StatusConflict), patch, false, clierr.KindAPIError, http.StatusConflict},
-		{"get 404 cut off", cutOff(t, http.StatusNotFound), get, false, clierr.KindNotFound, http.StatusNotFound},
+		{"patch 200 cut off", cutOff(t, http.StatusOK), patch, true, clierr.KindNetwork, 0},
+		{"get 200 cut off", cutOff(t, http.StatusOK), get, false, clierr.KindNetwork, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -87,8 +92,7 @@ func TestWriteFailureMarking(t *testing.T) {
 // (0: no http_status).
 func checkMarkedError(t *testing.T, cerr *clierr.Error, want markWant) {
 	t.Helper()
-	says := strings.Contains(cerr.Message, "may have been applied") ||
-		strings.Contains(cerr.Message, "accepted the request")
+	says := strings.Contains(cerr.Message, "may have been applied")
 	if says != want.marked {
 		t.Errorf("message %q: says it may have applied = %v, want %v", cerr.Message, says, want.marked)
 	}
@@ -202,33 +206,58 @@ func TestDeadlineDuringBackoffIsNotACancel(t *testing.T) {
 	}
 }
 
-// TestDebugBodyKeepsTheStatusOfACutOffResponse: --debug=body reads the body itself; a body cut off mid-read still
-// reports the response's status, so a write's 2xx is not lost.
-func TestDebugBodyKeepsTheStatusOfACutOffResponse(t *testing.T) {
+// TestDebugBodyCutOffWriteIsMarked: --debug=body reads the body itself; a write whose body is cut off there is a
+// network error that may have applied, as it is without --debug.
+func TestDebugBodyCutOffWriteIsMarked(t *testing.T) {
 	t.Parallel()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Length", "1000")
-		w.WriteHeader(http.StatusOK)
-		respond(t, w, `{"name":`)
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
-		hangUpOn(t, w)
-	}))
+	srv := httptest.NewServer(cutOff(t, http.StatusOK))
 	t.Cleanup(srv.Close)
-	var debug strings.Builder
 	opts := testOptions(baseURLs(srv.URL))
-	opts.Debug, opts.DebugOut = DebugBodies, &debug
+	opts.Debug, opts.DebugOut = DebugBodies, io.Discard
 	c, cerr := New(testResolved(), opts)
 	if cerr != nil {
 		t.Fatalf("New: %v", cerr)
 	}
 	_, cerr = c.UpdateGroupRaw(t.Context(), "my-app", []byte(`{"replicas":2}`))
-	if cerr == nil || cerr.HTTPStatus == nil || *cerr.HTTPStatus != http.StatusOK || !cerr.MayHaveApplied() {
-		t.Fatalf("error = %+v, want HTTP 200 kept and marked as may have applied", cerr)
+	if cerr == nil || cerr.Kind != clierr.KindNetwork || !cerr.MayHaveApplied() {
+		t.Fatalf("error = %+v, want a network error marked as may have applied", cerr)
 	}
-	if !strings.Contains(debug.String(), "body cut off") {
-		t.Errorf("--debug output does not say the body was cut off:\n%s", debug.String())
+}
+
+// TestWriteNeverBuiltIsNotMarked: a request that could not be built never left this machine.
+func TestWriteNeverBuiltIsNotMarked(t *testing.T) {
+	t.Parallel()
+	c := newRestTestClient(t, "http://127.0.0.1:1")
+	_, cerr := restJSON[json.RawMessage](t.Context(), c, "NOT A METHOD", "/x", "", nil)
+	if cerr == nil || cerr.MayHaveApplied() {
+		t.Fatalf("error = %+v, want an unmarked build error", cerr)
+	}
+}
+
+// TestNeverSent pins the transport errors that say a request never left this machine.
+func TestNeverSent(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"dns", &net.DNSError{Err: "no such host", Name: "api.invalid"}, true},
+		{"refused", &net.OpError{Op: "dial", Err: errors.New("connection refused")}, true},
+		{"unknown authority", x509.UnknownAuthorityError{}, true},
+		{"hostname", x509.HostnameError{}, true},
+		{"expired", x509.CertificateInvalidError{}, true},
+		{"read reset", &net.OpError{Op: "read", Err: errors.New("connection reset by peer")}, false},
+		{"eof", io.ErrUnexpectedEOF, false},
+		{"timeout", context.DeadlineExceeded, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			wrapped := fmt.Errorf("no response: %w", &url.Error{Op: "Patch", URL: "https://x", Err: tc.err})
+			if got := neverSent(wrapped); got != tc.want {
+				t.Errorf("neverSent(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
 	}
 }
 
