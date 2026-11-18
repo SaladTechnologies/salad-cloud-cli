@@ -62,6 +62,9 @@ func TestWriteFailureMarking(t *testing.T) {
 		{"get 504", gateway504, get, false, clierr.KindAPIError, http.StatusGatewayTimeout},
 		{"get dropped connection", hangUp, get, false, clierr.KindNetwork, 0},
 		{"log query 504", gateway504, query, false, clierr.KindAPIError, http.StatusGatewayTimeout},
+		{"patch 200 cut off", cutOff(t, http.StatusOK), patch, true, clierr.KindAPIError, http.StatusOK},
+		{"patch 409 cut off", cutOff(t, http.StatusConflict), patch, false, clierr.KindAPIError, http.StatusConflict},
+		{"get 404 cut off", cutOff(t, http.StatusNotFound), get, false, clierr.KindNotFound, http.StatusNotFound},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -123,6 +126,20 @@ func hangUpOn(t *testing.T, w http.ResponseWriter) {
 		return
 	}
 	reportErr(t, conn.Close())
+}
+
+// cutOff answers with status and the start of a body, then hangs up before the rest arrives.
+func cutOff(t *testing.T, status int) http.HandlerFunc {
+	t.Helper()
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Length", "1000")
+		w.WriteHeader(status)
+		respond(t, w, `{"title":`)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		hangUpOn(t, w)
+	}
 }
 
 // statusHandler answers every request with status and an empty body.

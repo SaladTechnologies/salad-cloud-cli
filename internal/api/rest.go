@@ -125,9 +125,9 @@ func doRestJSON[T any](ctx context.Context, c *Client, req restRequest) (*T, *cl
 }
 
 // failed is req's error for an attempt that got no usable response (rep is what it got): a write that had reached
-// the API is marked as one that may have been applied.
+// the API is marked as one that may have been applied, unless a status arrived that says it was refused.
 func (req restRequest) failed(cerr *clierr.Error, rep reply) *clierr.Error {
-	if req.write && rep.sent {
+	if req.write && rep.sent && (rep.status == 0 || rep.status < 300 || unsureStatus(rep.status)) {
 		return mayHaveApplied(cerr)
 	}
 	return cerr

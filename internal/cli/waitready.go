@@ -191,7 +191,7 @@ func readyPollFailed(ctx, pollCtx context.Context, w io.Writer, cerr *clierr.Err
 	if ctx.Err() != nil {
 		return waitInterrupted()
 	}
-	if pollExpired(ctx, pollCtx) && !waitErrorIsFinal(cerr) {
+	if pollTimedOut(ctx, pollCtx, cerr) {
 		return cerr
 	}
 	return waitPollFailed(w, cerr)

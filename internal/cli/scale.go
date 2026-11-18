@@ -74,6 +74,16 @@ func scaleUnsureHint(name string, opts *scaleOptions) func(before *shared.Contai
 	}
 }
 
+// reenableUnsureHint is scale --keep-schedule's hint for the second write, switching scheduled scaling back on, when
+// it may have been applied: the replicas are set, and sending this write again is safe.
+func reenableUnsureHint(name string) func(*shared.ContainerGroup) string {
+	return func(*shared.ContainerGroup) string {
+		return fmt.Sprintf("to see whether scheduled scaling is back on, run saladcloud container-groups get %s; "+
+			"the replicas are set, and to switch it on again, run saladcloud container-groups update %s -f <file>, "+
+			"the file setting scheduled-scaling-enabled to true", name, name)
+	}
+}
+
 // replicas renders a replica count: "1 replica", "3 replicas".
 func replicas(n int64) string {
 	if n == 1 {
@@ -135,7 +145,11 @@ func (app *App) runScale(cmd *cobra.Command, opts *scaleOptions, name string) er
 	if cerr != nil {
 		return cerr
 	}
-	write := func(patch []byte, doneMsg string) (*shared.ContainerGroup, error) {
+	var write scaleWrite = func(
+		patch []byte,
+		doneMsg string,
+		unsure func(*shared.ContainerGroup) string,
+	) (*shared.ContainerGroup, error) {
 		return app.applyPatch(
 			cmd,
 			client,
@@ -148,7 +162,7 @@ func (app *App) runScale(cmd *cobra.Command, opts *scaleOptions, name string) er
 				doneMsg:    doneMsg,
 				waitReady:  false,
 				deadline:   time.Time{},
-				unsureHint: scaleUnsureHint(name, opts),
+				unsureHint: unsure,
 			},
 		)
 	}
@@ -159,12 +173,12 @@ func (app *App) runScale(cmd *cobra.Command, opts *scaleOptions, name string) er
 		}
 	}
 	// No settle line: the one success line below says it.
-	group, err := write(scalePatch(n), "")
+	group, err := write(scalePatch(n), "", scaleUnsureHint(name, opts))
 	if err != nil {
 		return err
 	}
 	if keep {
-		if err := app.scaleKeepSchedule(before, group, write); err != nil {
+		if err := app.scaleKeepSchedule(before, group, name, write); err != nil {
 			return err
 		}
 	}
@@ -174,16 +188,26 @@ func (app *App) runScale(cmd *cobra.Command, opts *scaleOptions, name string) er
 	}))
 }
 
+// scaleWrite is one of scale's writes: a patch, its settle line ("" for none), and its hint should it fail in a way
+// that may have applied it.
+type scaleWrite func(
+	patch []byte,
+	doneMsg string,
+	unsure func(*shared.ContainerGroup) string,
+) (*shared.ContainerGroup, error)
+
 // scaleKeepSchedule is --keep-schedule after the replicas write: switch the
 // schedule back on through write when the write put it on hold, or note
 // that there was none to keep.
 func (app *App) scaleKeepSchedule(
 	before, after *shared.ContainerGroup,
-	write func(patch []byte, doneMsg string) (*shared.ContainerGroup, error),
+	name string,
+	write scaleWrite,
 ) error {
 	switch {
 	case shouldReenableSchedule(before, after):
-		if _, err := write(reenableSchedulePatch(), "scheduled scaling re-enabled"); err != nil {
+		_, err := write(reenableSchedulePatch(), "scheduled scaling re-enabled", reenableUnsureHint(name))
+		if err != nil {
 			return err
 		}
 		fprintln(app.errw(), "note: scheduled scaling re-enabled (--keep-schedule)")

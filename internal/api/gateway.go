@@ -246,7 +246,7 @@ func gatewayJSON[T any](ctx context.Context, g *Gateway, method, path string, bo
 	defer g.dbg.closeBody(resp.Body)
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, readErr(ctx, "response", err)
+		return nil, responseReadErr(ctx, resp.StatusCode, err)
 	}
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		out := new(T)

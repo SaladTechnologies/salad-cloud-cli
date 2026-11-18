@@ -22,23 +22,15 @@ func transportErr(ctx context.Context, prefix string, err error, now func() time
 	return networkErr(prefix, err, now)
 }
 
-// readErr is transportErr for a response body that could not be read.
-func readErr(ctx context.Context, what string, err error) *clierr.Error {
-	if errors.Is(ctx.Err(), context.Canceled) {
-		return clierr.Canceled()
-	}
-	return clierr.New(clierr.CodeNetwork, clierr.KindNetwork, "network error reading %s: %v", what, err)
-}
-
 // responseReadErr is the error for a response whose status arrived but whose body could not be read: the
-// canceled-request error when Ctrl-C canceled ctx, otherwise an API error carrying the status (a network error is
-// one that got no HTTP response).
+// canceled-request error when Ctrl-C canceled ctx, otherwise the code and kind of the status (api_error for a 2xx),
+// carrying it: a network error is one that got no HTTP response.
 func responseReadErr(ctx context.Context, status int, err error) *clierr.Error {
 	if errors.Is(ctx.Err(), context.Canceled) {
 		return clierr.Canceled()
 	}
-	return clierr.New(clierr.CodeGeneric, clierr.KindAPIError, "cannot read the response (HTTP %d): %v", status, err).
-		WithStatus(status)
+	code, kind := codeForStatus(status)
+	return clierr.New(code, kind, "cannot read the response (HTTP %d): %v", status, err).WithStatus(status)
 }
 
 // networkErr wraps a transport failure as a network error. A certificate

@@ -207,11 +207,13 @@ func waitForJobTerminal[J any](
 	for {
 		pollCtx, cancel := pollContext(ctx, d.now(), deadline)
 		job, cerr := d.get(pollCtx)
-		cancel() // the poll's context keeps the error it had when get returned: canceling a done one changes nothing
+		timedOut := pollTimedOut(ctx, pollCtx, cerr)
+		cancel()
 		switch {
+		case timedOut:
+			return nil, jobWaitTimedOut(timeout, id, d.where, lastStatus, d.check)
 		case cerr != nil:
-			timedOut := jobWaitTimedOut(timeout, id, d.where, lastStatus, d.check)
-			if end := jobPollFailed(ctx, pollCtx, cerr, progress.w, timedOut); end != nil {
+			if end := jobPollFailed(ctx, cerr, progress.w); end != nil {
 				return nil, end
 			}
 		default:
@@ -233,22 +235,15 @@ func waitForJobTerminal[J any](
 	}
 }
 
-// jobPollFailed is a job wait's answer to a failed read under pollCtx, the poll's context: Ctrl-C ends it as
-// interrupted, the poll's own deadline as timedOut, an error waiting cannot fix as itself; anything else (network,
-// 5xx, rate limit) is transient, noted on w, and nil, to keep polling.
-func jobPollFailed(
-	ctx, pollCtx context.Context,
-	cerr *clierr.Error,
-	w io.Writer,
-	timedOut *clierr.Error,
-) *clierr.Error {
+// jobPollFailed is a job wait's answer to a failed read that its poll's deadline did not cut short: Ctrl-C ends it as
+// interrupted, an error waiting cannot fix as itself; anything else (network, 5xx, rate limit) is transient, noted on
+// w, and nil, to keep polling.
+func jobPollFailed(ctx context.Context, cerr *clierr.Error, w io.Writer) *clierr.Error {
 	switch {
 	case ctx.Err() != nil:
 		return jobWaitInterrupted()
 	case waitErrorIsFinal(cerr):
 		return cerr
-	case pollExpired(ctx, pollCtx):
-		return timedOut
 	}
 	fprintf(w, "warning: %s (still waiting)\n", cerr.Message)
 	return nil
